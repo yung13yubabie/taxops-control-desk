@@ -1,0 +1,347 @@
+"""Clients page: list view + search/filter/sort/pagination + CRUD actions."""
+
+from __future__ import annotations
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ...i18n import BUTTON_LABELS, NAV_LABELS, TABLE_HEADERS, error_message
+from ...services.clients import ClientValidationError
+from ...services.container import ServiceContainer
+from ..dialogs.bulk_import_wizard import BulkImportWizard
+from ..dialogs.edit_client_dialog import EditClientDialog
+from ..dialogs.new_client_dialog import NewClientDialog
+
+_PAGE_SIZE = 50
+
+_COLUMN_ORDER: tuple[str, ...] = (
+    "id",
+    "client_code",
+    "tax_id",
+    "client_name",
+    "short_name",
+    "contact_name",
+    "contact_phone",
+    "contact_email",
+    "updated_at",
+)
+
+_DEFAULT_SORT_COL = "client_code"
+_DEFAULT_SORT_DIR = "ASC"
+
+
+class ClientsPage(QWidget):
+    def __init__(
+        self,
+        container: ServiceContainer,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._container = container
+        self._page = 0
+        self._total = 0
+        self._sort_col = _DEFAULT_SORT_COL
+        self._sort_dir = _DEFAULT_SORT_DIR
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(24, 24, 24, 24)
+        outer.setSpacing(12)
+
+        title = QLabel(NAV_LABELS["clients"])
+        title.setStyleSheet("font-size: 20px; font-weight: 600;")
+        outer.addWidget(title)
+
+        # Search row
+        search_row = QHBoxLayout()
+        search_row.setSpacing(8)
+        self._search_input = QLineEdit()
+        self._search_input.setPlaceholderText("搜尋客戶代號、名稱或統一編號")
+        self._search_input.setMaxLength(100)
+        self._search_btn = QPushButton("搜尋")
+        self._clear_btn = QPushButton("清除")
+        self._count_label = QLabel("共 0 筆")
+        self._count_label.setStyleSheet("color: #555;")
+        search_row.addWidget(self._search_input, 1)
+        search_row.addWidget(self._search_btn)
+        search_row.addWidget(self._clear_btn)
+        search_row.addStretch(0)
+        search_row.addWidget(self._count_label)
+        outer.addLayout(search_row)
+
+        # Action toolbar
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(8)
+        self._new_btn = QPushButton(BUTTON_LABELS["clients.new"])
+        self._edit_btn = QPushButton("編輯客戶")
+        self._delete_btn = QPushButton("刪除客戶")
+        self._bulk_btn = QPushButton("批量匯入")
+        self._refresh_btn = QPushButton(BUTTON_LABELS["clients.refresh"])
+
+        self._edit_btn.setEnabled(False)
+        self._delete_btn.setEnabled(False)
+
+        for btn in (
+            self._new_btn,
+            self._edit_btn,
+            self._delete_btn,
+            self._bulk_btn,
+            self._refresh_btn,
+        ):
+            toolbar.addWidget(btn)
+        toolbar.addStretch(1)
+        outer.addLayout(toolbar)
+
+        # Empty state label
+        self._empty_label = QLabel("尚無客戶資料。請按「新增客戶」建立第一筆資料。")
+        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_label.setStyleSheet("color: #777; padding: 24px;")
+        outer.addWidget(self._empty_label)
+
+        # Table with sortable headers
+        self._table = QTableWidget(0, len(_COLUMN_ORDER))
+        headers = TABLE_HEADERS["clients"]
+        self._table.setHorizontalHeaderLabels(
+            [headers[col] for col in _COLUMN_ORDER]
+        )
+        self._table.verticalHeader().setVisible(False)
+        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        header_view = self._table.horizontalHeader()
+        header_view.setStretchLastSection(False)
+        header_view.setSectionResizeMode(
+            _COLUMN_ORDER.index("client_name"), QHeaderView.ResizeMode.Stretch
+        )
+        header_view.setSectionsClickable(True)
+        header_view.setSortIndicatorShown(True)
+        header_view.setSortIndicator(
+            _COLUMN_ORDER.index(_DEFAULT_SORT_COL), Qt.SortOrder.AscendingOrder
+        )
+        outer.addWidget(self._table, stretch=1)
+
+        # Pagination row
+        page_row = QHBoxLayout()
+        page_row.setSpacing(8)
+        self._prev_btn = QPushButton("◀ 上一頁")
+        self._next_btn = QPushButton("下一頁 ▶")
+        self._page_label = QLabel("")
+        self._page_label.setStyleSheet("color: #555;")
+        self._prev_btn.setEnabled(False)
+        self._next_btn.setEnabled(False)
+        page_row.addWidget(self._prev_btn)
+        page_row.addWidget(self._next_btn)
+        page_row.addStretch(1)
+        page_row.addWidget(self._page_label)  # shows "第 X–Y 筆 / 共 Z 筆"
+        outer.addLayout(page_row)
+
+        # Connect signals
+        self._new_btn.clicked.connect(self.on_new_client)
+        self._edit_btn.clicked.connect(self.on_edit_client)
+        self._delete_btn.clicked.connect(self.on_delete_client)
+        self._bulk_btn.clicked.connect(self.on_bulk_import)
+        self._refresh_btn.clicked.connect(self.on_refresh)
+        self._search_btn.clicked.connect(self._on_search)
+        self._clear_btn.clicked.connect(self._on_clear_search)
+        self._search_input.returnPressed.connect(self._on_search)
+        self._table.itemSelectionChanged.connect(self._on_selection_changed)
+        self._table.doubleClicked.connect(lambda _: self.on_edit_client())
+        self._prev_btn.clicked.connect(self._on_prev_page)
+        self._next_btn.clicked.connect(self._on_next_page)
+        header_view.sectionClicked.connect(self._on_header_clicked)
+
+        self.on_refresh()
+
+    # ------------------------------------------------------------------
+    # Search / pagination / sort
+    # ------------------------------------------------------------------
+
+    def _on_search(self) -> None:
+        self._page = 0
+        self.on_refresh()
+
+    def _on_clear_search(self) -> None:
+        self._search_input.clear()
+        self._page = 0
+        self.on_refresh()
+
+    def _on_prev_page(self) -> None:
+        if self._page > 0:
+            self._page -= 1
+            self.on_refresh()
+
+    def _on_next_page(self) -> None:
+        if (self._page + 1) * _PAGE_SIZE < self._total:
+            self._page += 1
+            self.on_refresh()
+
+    def _on_header_clicked(self, col_idx: int) -> None:
+        col_name = _COLUMN_ORDER[col_idx]
+        if self._sort_col == col_name:
+            self._sort_dir = "DESC" if self._sort_dir == "ASC" else "ASC"
+        else:
+            self._sort_col = col_name
+            self._sort_dir = "ASC"
+        self._page = 0
+        qt_order = (
+            Qt.SortOrder.AscendingOrder
+            if self._sort_dir == "ASC"
+            else Qt.SortOrder.DescendingOrder
+        )
+        self._table.horizontalHeader().setSortIndicator(col_idx, qt_order)
+        self.on_refresh()
+
+    def _update_pagination_controls(self) -> None:
+        self._prev_btn.setEnabled(self._page > 0)
+        has_next = (self._page + 1) * _PAGE_SIZE < self._total
+        self._next_btn.setEnabled(has_next)
+        if self._total == 0:
+            self._page_label.setText("共 0 筆")
+        else:
+            start = self._page * _PAGE_SIZE + 1
+            end = min((self._page + 1) * _PAGE_SIZE, self._total)
+            self._page_label.setText(f"第 {start}–{end} 筆 / 共 {self._total} 筆")
+
+    # ------------------------------------------------------------------
+    # Actions
+    # ------------------------------------------------------------------
+
+    def _on_selection_changed(self) -> None:
+        has_selection = bool(self._table.selectedItems())
+        self._edit_btn.setEnabled(has_selection)
+        self._delete_btn.setEnabled(has_selection)
+
+    def _selected_client_id(self) -> int | None:
+        """Always return client.id from the id column — never row index."""
+        rows = self._table.selectedItems()
+        if not rows:
+            return None
+        row = self._table.row(rows[0])
+        id_item = self._table.item(row, _COLUMN_ORDER.index("id"))
+        return int(id_item.text()) if id_item else None
+
+    def on_new_client(self) -> None:
+        registry_repo = None
+        try:
+            if self._container.tax_registry_repo.count() > 0:
+                registry_repo = self._container.tax_registry_repo
+        except Exception as err:
+            self._container.system_log.warn(
+                "tax_registry.count failed — registry lookup hidden",
+                detail={"exc": type(err).__name__},
+            )
+        dialog = NewClientDialog(
+            self._container.clients,
+            parent=self,
+            tax_registry_repo=registry_repo,
+        )
+        if dialog.exec() == NewClientDialog.DialogCode.Accepted:
+            self.on_refresh()
+
+    def on_edit_client(self) -> None:
+        client_id = self._selected_client_id()
+        if client_id is None:
+            return
+        client = self._container.clients.get_client(client_id)
+        if client is None:
+            QMessageBox.warning(self, "找不到客戶", error_message("client.not_found"))
+            self.on_refresh()
+            return
+        dialog = EditClientDialog(self._container.clients, client, parent=self)
+        if dialog.exec() == EditClientDialog.DialogCode.Accepted:
+            self.on_refresh()
+
+    def on_delete_client(self) -> None:
+        client_id = self._selected_client_id()
+        if client_id is None:
+            return
+        client = self._container.clients.get_client(client_id)
+        if client is None:
+            QMessageBox.warning(self, "找不到客戶", error_message("client.not_found"))
+            self.on_refresh()
+            return
+        reply = QMessageBox.question(
+            self,
+            "確認停用",
+            f"確定要停用客戶「{client.client_name}」（{client.client_code}）？\n\n"
+            "停用後客戶將不再顯示於列表，但資料仍保留於資料庫。\n"
+            "如需復原，請聯絡系統維護人員。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._container.clients.delete_client(client_id)
+        except ClientValidationError as exc:
+            QMessageBox.warning(self, "刪除失敗", error_message(exc.code))
+            return
+        except Exception:
+            QMessageBox.warning(self, "刪除失敗", error_message("client.delete.failed"))
+            return
+        self.on_refresh()
+
+    def on_bulk_import(self) -> None:
+        wizard = BulkImportWizard(
+            self._container.clients,
+            self._container.clients_repo,
+            parent=self,
+        )
+        if wizard.exec() == BulkImportWizard.DialogCode.Accepted:
+            self.on_refresh()
+
+    def on_refresh(self) -> None:
+        query = self._search_input.text()
+        try:
+            search_svc = getattr(self._container, "search", None)
+            if search_svc is not None and search_svc.is_fts_eligible(query):
+                all_rows = search_svc.search_clients(query.strip())
+                self._total = len(all_rows)
+                start = self._page * _PAGE_SIZE
+                rows = all_rows[start : start + _PAGE_SIZE]
+            else:
+                self._total = self._container.clients.count_clients(query)
+                rows = self._container.clients.search_clients(
+                    query,
+                    order_by=self._sort_col,
+                    order_dir=self._sort_dir,
+                    limit=_PAGE_SIZE,
+                    offset=self._page * _PAGE_SIZE,
+                )
+        except Exception as err:
+            self._container.system_log.error("clients.list failed", exc=err)
+            QMessageBox.warning(self, "載入失敗", error_message("client.list.failed"))
+            return
+
+        q = self._search_input.text().strip()
+        self._count_label.setText(f"符合 {self._total} 筆" if q else "")
+        self._table.setRowCount(len(rows))
+        for row_idx, client in enumerate(rows):
+            values = {
+                "id": str(client.id),
+                "client_code": client.client_code,
+                "tax_id": client.tax_id or "",
+                "client_name": client.client_name,
+                "short_name": client.short_name or "",
+                "contact_name": client.contact_name or "",
+                "contact_phone": client.contact_phone or "",
+                "contact_email": client.contact_email or "",
+                "updated_at": client.updated_at,
+            }
+            for col_idx, col in enumerate(_COLUMN_ORDER):
+                item = QTableWidgetItem(values[col])
+                item.setToolTip(values[col])
+                self._table.setItem(row_idx, col_idx, item)
+
+        self._empty_label.setVisible(self._total == 0)
+        self._table.setVisible(self._total > 0)
+        self._update_pagination_controls()

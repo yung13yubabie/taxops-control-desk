@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1366">
+<title>TaxOps · Slice 4 UI Prototype</title>
+<style>
+/* ── Token layer (mirrors style.py exactly) ── */
+:root {
+  --primary:         #2563EB;
+  --primary-hover:   #1D4ED8;
+  --primary-pressed: #1E40AF;
+  --surface:         #F8FAFC;
+  --sidebar-bg:      #1E293B;
+  --sidebar-text:    #CBD5E1;
+  --border:          #E2E8F0;
+  --text:            #0F172A;
+  --text-muted:      #64748B;
+  --input-bg:        #FFFFFF;
+  --danger:          #DC2626;
+  --danger-hover:    #B91C1C;
+  --selected-bg:     #DBEAFE;
+  --header-bg:       #F1F5F9;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1366px; height: 768px; overflow: hidden; }
+body {
+  font-family: "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Prototype toolbar ── */
+.proto-bar {
+  flex: 0 0 40px;
+  background: #0F172A;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 8px;
+  border-bottom: 2px solid #2563EB;
+}
+.proto-bar span { color: #94A3B8; font-size: 11px; letter-spacing: .06em; }
+.proto-tab {
+  background: none; border: 1px solid #334155; border-radius: 4px;
+  color: #94A3B8; font-size: 11px; padding: 3px 10px; cursor: pointer;
+  font-family: inherit;
+}
+.proto-tab.active { background: #2563EB; border-color: #2563EB; color: #fff; }
+.proto-tab:hover:not(.active) { border-color: #64748B; color: #CBD5E1; }
+
+/* ── App shell ── */
+.app { display: flex; flex: 1; overflow: hidden; }
+
+/* ── Sidebar ── */
+.sidebar {
+  width: 200px; flex: 0 0 200px;
+  background: var(--sidebar-bg);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-logo {
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid #2D3E52;
+}
+.sidebar-logo-mark {
+  width: 30px; height: 30px;
+  background: var(--primary);
+  border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 15px; font-weight: 700;
+  margin-bottom: 8px;
+}
+.sidebar-logo-name { display: block; color: #F1F5F9; font-size: 12px; font-weight: 600; }
+.sidebar-logo-sub  { color: #475569; font-size: 10px; }
+.nav-list { flex: 1; padding: 8px 0; overflow-y: auto; }
+.nav-item {
+  display: flex; align-items: center;
+  padding: 10px 20px;
+  color: var(--sidebar-text);
+  font-size: 13px; font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+}
+.nav-item:hover:not(.active) { background: #2D3E52; color: #fff; }
+.nav-item.active {
+  background: var(--primary); color: #fff;
+  border-left: 3px solid #93C5FD;
+  padding-left: 17px;
+}
+
+/* ── Main content ── */
+.main { flex: 1; overflow: hidden; display: flex; flex-direction: column; position: relative; }
+.screen { display: none; flex-direction: column; height: 100%; position: absolute; inset: 0; }
+.screen.visible { display: flex; }
+
+/* ── Page ── */
+.page-outer {
+  padding: 24px 24px 20px;
+  flex: 1; overflow: hidden;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.page-title { font-size: 20px; font-weight: 600; }
+.page-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+/* ── Toolbar row ── */
+.toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.toolbar-sep { flex: 1; }
+.vsep { width: 1px; height: 24px; background: var(--border); margin: 0 2px; }
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--primary); color: #fff;
+  border: none; border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px; font-weight: 500; min-height: 32px;
+  cursor: pointer; font-family: inherit; white-space: nowrap;
+  transition: background .12s;
+}
+.btn:hover { background: var(--primary-hover); }
+.btn.secondary {
+  background: var(--input-bg); color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn.secondary:hover { background: var(--header-bg); }
+.btn.danger { background: var(--danger); }
+.btn.danger:hover { background: var(--danger-hover); }
+.btn:disabled {
+  background: #CBD5E1; color: #94A3B8; cursor: default;
+  pointer-events: none;
+}
+.btn.secondary:disabled {
+  background: var(--header-bg); color: #94A3B8;
+  border-color: var(--border); cursor: default; pointer-events: none;
+}
+
+/* ── Input / select ── */
+.search-input, .combo-select {
+  padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: 13px; font-family: inherit;
+  background: var(--input-bg); outline: none;
+}
+.search-input:focus, .combo-select:focus { border-color: var(--primary); }
+.search-input { flex: 1; max-width: 260px; }
+.combo-select { min-width: 200px; cursor: pointer; }
+.count-label { color: var(--text-muted); font-size: 12px; }
+
+/* ── Table ── */
+.table-wrap {
+  flex: 1; overflow: auto;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--input-bg);
+}
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  background: var(--header-bg); color: var(--text-muted);
+  font-weight: 600; font-size: 12px;
+  padding: 8px 10px; text-align: left; white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 2;
+}
+th:last-child { border-right: none; }
+td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  vertical-align: middle;
+}
+td:last-child { border-right: none; }
+tr:last-child td { border-bottom: none; }
+tr:nth-child(even) td { background: var(--surface); }
+tr.selected td { background: var(--selected-bg) !important; }
+tr:hover:not(.selected) td { background: #F0F4FF; cursor: pointer; }
+
+/* ── Status badges ── */
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+}
+.b-draft     { background: #F1F5F9; color: #475569; }
+.b-pending   { background: #FEF3C7; color: #D97706; }
+.b-accepted  { background: #F0FDFA; color: #0D9488; }
+.b-progress  { background: #EFF6FF; color: #2563EB; }
+.b-wclient   { background: #FFF7ED; color: #EA580C; }
+.b-wreview   { background: #F5F3FF; color: #7C3AED; }
+.b-ready     { background: #EEF2FF; color: #4338CA; }
+.b-filed     { background: #F0FDF4; color: #16A34A; }
+.b-delivered { background: #ECFDF5; color: #059669; }
+.b-closed    { background: #F8FAFC; color: #64748B; border: 1px solid #CBD5E1; }
+.b-noreq     { background: #F8FAFC; color: #94A3B8; border: 1px solid var(--border); }
+.b-requested { background: #EFF6FF; color: #2563EB; }
+.b-partial   { background: #FEF3C7; color: #D97706; }
+.b-validating{ background: #FFF7ED; color: #EA580C; }
+.b-confirm   { background: #F5F3FF; color: #7C3AED; }
+/* item statuses */
+.bi-missing    { background: #FEF2F2; color: #DC2626; }
+.bi-received   { background: #EFF6FF; color: #2563EB; }
+.bi-incomplete { background: #FFFBEB; color: #D97706; }
+.bi-invalid    { background: #FEF2F2; color: #B91C1C; }
+.bi-accepted   { background: #F0FDF4; color: #16A34A; }
+.bi-na         { background: #F8FAFC; color: #94A3B8; }
+.bi-pending    { background: #F5F3FF; color: #7C3AED; }
+
+/* ── Pagination ── */
+.pagination { display: flex; align-items: center; gap: 8px; padding-top: 4px; }
+.page-info { color: var(--text-muted); font-size: 12px; }
+
+/* ── Modal ── */
+.modal-bg {
+  position: absolute; inset: 0; z-index: 50;
+  background: rgba(15,23,42,.42);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal {
+  background: var(--input-bg); border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.22);
+  width: 560px; max-height: calc(768px - 80px);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-header {
+  padding: 20px 24px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-title   { font-size: 16px; font-weight: 600; }
+.modal-subtitle{ font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+.modal-body    { padding: 18px 24px; overflow-y: auto; flex: 1; }
+.modal-footer  {
+  padding: 14px 24px; border-top: 1px solid var(--border);
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+.form-row { display: flex; gap: 16px; margin-bottom: 14px; }
+.form-row.col1 { flex-direction: column; }
+.field { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.label {
+  font-size: 11px; font-weight: 700; letter-spacing: .04em;
+  color: var(--text-muted); text-transform: uppercase;
+}
+.label .req { color: var(--danger); margin-left: 2px; }
+.field input, .field select, .field textarea {
+  padding: 7px 10px;
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: 13px; font-family: inherit;
+  background: var(--input-bg); outline: none;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px #BFDBFE;
+}
+.field textarea { resize: vertical; min-height: 68px; }
+.field-hint { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* ── Engagement context chip ── */
+.ctx-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--header-bg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 10px;
+  font-size: 12px; color: var(--text-muted);
+}
+.ctx-chip strong { color: var(--text); font-weight: 600; }
+
+/* ── Split view ── */
+.split { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.split-top {
+  flex: 0 0 200px; display: flex; flex-direction: column;
+  border-bottom: 2px solid var(--border);
+  overflow: hidden;
+}
+.split-bottom { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.split-header {
+  padding: 8px 16px; font-size: 11px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
+}
+.split-table { flex: 1; overflow-y: auto; background: var(--input-bg); }
+.items-grid {
+  flex: 1; overflow-y: auto;
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 8px; padding: 12px 16px;
+  align-content: start;
+}
+.item-card {
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 12px; background: var(--input-bg);
+  cursor: pointer; transition: border-color .12s, box-shadow .12s;
+}
+.item-card:hover { border-color: #93C5FD; box-shadow: 0 0 0 3px #EFF6FF; }
+.item-card.sel { border-color: var(--primary); background: #EFF6FF; }
+.item-name { font-size: 13px; font-weight: 500; margin-bottom: 4px; }
+
+/* ── Animations ── */
+.screen { animation: fade .14s ease; }
+@keyframes fade { from { opacity: .5; } to { opacity: 1; } }
+</style>
+</head>
+<body>
+
+<!-- Prototype switcher -->
+<div class="proto-bar">
+  <span>PROTOTYPE</span>
+  <button class="proto-tab active" onclick="go('eng')">① 案件管理</button>
+  <button class="proto-tab" onclick="go('new-eng')">② 新增案件 Dialog</button>
+  <button class="proto-tab" onclick="go('docreq')">③ 索件管理</button>
+  <div style="flex:1"></div>
+  <span style="color:#334155">Slice 4 UI · 依 DESIGN.md + style.py 色票</span>
+</div>
+
+<div class="app">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-mark">T</div>
+      <span class="sidebar-logo-name">TaxOps Control Desk</span>
+      <span class="sidebar-logo-sub">事務所作業系統</span>
+    </div>
+    <nav class="nav-list">
+      <div class="nav-item">首頁儀表板</div>
+      <div class="nav-item">客戶管理</div>
+      <div class="nav-item active" id="nav-eng">案件管理</div>
+      <div class="nav-item" id="nav-doc">索件管理</div>
+      <div class="nav-item">待辦事項</div>
+      <div class="nav-item">訊息模板</div>
+      <div class="nav-item">工商 / 稅籍查詢</div>
+      <div class="nav-item">滯納金試算</div>
+      <div class="nav-item">附件管理</div>
+      <div class="nav-item">覆核意見</div>
+      <div class="nav-item">設定</div>
+    </nav>
+  </div>
+
+  <div class="main">
+
+    <!-- ═══════════════════════════════════════════════
+         Screen A: Engagements Page
+    ═══════════════════════════════════════════════ -->
+    <div class="screen visible" id="sc-eng">
+      <div class="page-outer">
+        <div>
+          <div class="page-title">案件管理</div>
+          <div class="page-subtitle">依客戶篩選案件，管理申報工作流程與狀態轉換</div>
+        </div>
+
+        <div class="toolbar">
+          <!-- Client filter -->
+          <select class="combo-select">
+            <option value="">全部客戶</option>
+            <option value="1" selected>台灣科技股份有限公司</option>
+            <option value="2">永豐食品有限公司</option>
+            <option value="3">大成建設股份有限公司</option>
+          </select>
+          <div class="vsep"></div>
+          <!-- Primary action: always enabled -->
+          <button class="btn" onclick="go('new-eng')">＋ 新增案件</button>
+          <!-- Context actions: enabled only when row selected -->
+          <button class="btn secondary" id="btn-eng-status" disabled>切換狀態 ▾</button>
+          <button class="btn secondary" style="background:var(--input-bg);color:var(--danger);border-color:#FECACA" id="btn-eng-del" disabled>刪除案件</button>
+          <div class="toolbar-sep"></div>
+          <input class="search-input" type="text" placeholder="搜尋案件名稱、期間">
+          <button class="btn secondary">搜尋</button>
+          <button class="btn secondary">清除</button>
+          <span class="count-label">共 3 筆</span>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:36px"><input type="checkbox"></th>
+                <th>案件名稱</th>
+                <th style="width:90px">稅種</th>
+                <th style="width:76px">期間</th>
+                <th style="width:108px">狀態</th>
+                <th style="width:66px">負責人</th>
+                <th style="width:90px">截止日</th>
+                <th style="width:130px">更新時間</th>
+              </tr>
+            </thead>
+            <tbody id="eng-rows">
+              <tr class="selected" onclick="pickEng(this)">
+                <td><input type="checkbox" checked></td>
+                <td>台灣科技 2024 年度營業稅申報</td>
+                <td>營業稅</td>
+                <td>2024Q1</td>
+                <td><span class="badge b-progress">進行中</span></td>
+                <td>王小明</td>
+                <td>2024-03-31</td>
+                <td>2024-02-15 14:22</td>
+              </tr>
+              <tr onclick="pickEng(this)">
+                <td><input type="checkbox"></td>
+                <td>台灣科技 2023 年度所得稅申報</td>
+                <td>營利事業所得稅</td>
+                <td>2023</td>
+                <td><span class="badge b-wreview">等覆核</span></td>
+                <td>陳大華</td>
+                <td>2024-05-31</td>
+                <td>2024-02-10 09:15</td>
+              </tr>
+              <tr onclick="pickEng(this)">
+                <td><input type="checkbox"></td>
+                <td>台灣科技 2024 年度印花稅</td>
+                <td>印花稅</td>
+                <td>2024</td>
+                <td><span class="badge b-draft">草稿</span></td>
+                <td>—</td>
+                <td>—</td>
+                <td>2024-02-01 11:00</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pagination">
+          <button class="btn secondary" disabled>◀ 上一頁</button>
+          <span class="page-info">第 1–3 筆 / 共 3 筆</span>
+          <button class="btn secondary" disabled>下一頁 ▶</button>
+          <div style="flex:1"></div>
+          <!-- 點擊前往索件管理 (demo link) -->
+          <button class="btn secondary" onclick="go('docreq')" style="font-size:11px">
+            ▶ 查看選定案件的索件 (demo)
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════
+         Screen B: New Engagement Dialog
+    ═══════════════════════════════════════════════ -->
+    <div class="screen" id="sc-new-eng">
+      <!-- Dimmed background page -->
+      <div class="page-outer" style="filter:blur(1.5px);pointer-events:none;opacity:.55;flex:1">
+        <div><div class="page-title">案件管理</div></div>
+        <div class="toolbar">
+          <select class="combo-select"><option>台灣科技股份有限公司</option></select>
+          <button class="btn" disabled>＋ 新增案件</button>
+        </div>
+        <div class="table-wrap" style="flex:1">
+          <table><thead><tr>
+            <th></th><th>案件名稱</th><th>稅種</th><th>期間</th><th>狀態</th><th>負責人</th><th>截止日</th><th>更新時間</th>
+          </tr></thead><tbody>
+            <tr><td></td><td>台灣科技 2024 年度營業稅申報</td><td>營業稅</td><td>2024Q1</td>
+              <td><span class="badge b-progress">進行中</span></td><td>王小明</td><td>2024-03-31</td><td>2024-02-15</td>
+            </tr>
+          </tbody></table>
+        </div>
+      </div>
+
+      <!-- Modal -->
+      <div class="modal-bg">
+        <div class="modal">
+          <div class="modal-header">
+            <div class="modal-title">新增案件</div>
+            <div class="modal-subtitle">客戶：台灣科技股份有限公司</div>
+          </div>
+          <div class="modal-body">
+            <div class="form-row col1">
+              <div class="field">
+                <div class="label">案件名稱<span class="req">*</span></div>
+                <input type="text" placeholder="例：2024 年度營業稅 Q2 申報" value="台灣科技 2024 Q2 營業稅申報">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field">
+                <div class="label">稅種<span class="req">*</span></div>
+                <select>
+                  <option value="vat" selected>營業稅</option>
+                  <option value="cit">營利事業所得稅</option>
+                  <option value="iit">綜合所得稅</option>
+                  <option value="stamp">印花稅</option>
+                  <option value="inheritance">遺產稅</option>
+                  <option value="other">其他</option>
+                </select>
+              </div>
+              <div class="field">
+                <div class="label">期間名稱<span class="req">*</span></div>
+                <input type="text" placeholder="例：2024Q2 或 2024 上半年" value="2024Q2">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field">
+                <div class="label">初始狀態</div>
+                <select>
+                  <option value="draft" selected>草稿</option>
+                  <option value="pending_acceptance">待客戶確認</option>
+                  <option value="accepted">已確認</option>
+                  <option value="in_progress">進行中</option>
+                </select>
+                <span class="field-hint">建立後可透過「切換狀態」調整</span>
+              </div>
+              <div class="field">
+                <div class="label">負責人</div>
+                <input type="text" placeholder="負責人姓名（選填）" value="王小明">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field">
+                <div class="label">截止日</div>
+                <input type="text" placeholder="YYYY-MM-DD（選填）" value="2024-07-31">
+              </div>
+              <div class="field" style="visibility:hidden"></div>
+            </div>
+            <div class="form-row col1">
+              <div class="field">
+                <div class="label">備註</div>
+                <textarea placeholder="內部備忘（選填，最多 2,000 字）"></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn secondary" onclick="go('eng')">取消</button>
+            <button class="btn" onclick="go('eng')">建立案件</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════
+         Screen C: Document Requests Page
+    ═══════════════════════════════════════════════ -->
+    <div class="screen" id="sc-docreq">
+      <div class="page-outer">
+        <!-- Header row with engagement context -->
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <div class="page-title">索件管理</div>
+          <div class="ctx-chip">
+            案件：<strong>台灣科技 2024 年度營業稅申報</strong>
+            <span style="color:var(--border);margin:0 2px">│</span>
+            <span class="badge b-progress" style="font-size:11px">進行中</span>
+          </div>
+          <button class="btn secondary" onclick="go('eng')" style="font-size:11px;margin-left:auto">
+            ← 返回案件列表
+          </button>
+        </div>
+        <div class="page-subtitle">管理向客戶索取的文件批次與個別項目狀態</div>
+
+        <div class="toolbar">
+          <button class="btn">＋ 新增索件批次</button>
+          <button class="btn secondary" id="btn-req-mark" disabled>標記為已發出</button>
+          <button class="btn secondary" id="btn-req-fu" disabled>催件 ＋１</button>
+          <button class="btn secondary" style="background:var(--input-bg);color:var(--danger);border-color:#FECACA" id="btn-req-del" disabled>刪除批次</button>
+          <div class="toolbar-sep"></div>
+          <span class="count-label">共 2 筆批次</span>
+        </div>
+
+        <div class="split">
+          <!-- Upper: request list -->
+          <div class="split-top">
+            <div class="split-header">
+              索件批次
+            </div>
+            <div class="split-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:86px">稅種</th>
+                    <th style="width:76px">期間</th>
+                    <th style="width:108px">批次狀態</th>
+                    <th style="width:70px">催件次數</th>
+                    <th style="width:100px">截止日</th>
+                    <th>備註</th>
+                    <th style="width:128px">建立時間</th>
+                  </tr>
+                </thead>
+                <tbody id="req-rows">
+                  <tr class="selected" onclick="pickReq(this,1)">
+                    <td>營業稅</td>
+                    <td>2024Q1</td>
+                    <td><span class="badge b-partial">部分收件</span></td>
+                    <td style="text-align:center">1</td>
+                    <td>2024-03-15</td>
+                    <td style="color:var(--text-muted)">—</td>
+                    <td>2024-01-10 09:00</td>
+                  </tr>
+                  <tr onclick="pickReq(this,2)">
+                    <td>營業稅</td>
+                    <td>2024Q2</td>
+                    <td><span class="badge b-noreq">未索件</span></td>
+                    <td style="text-align:center">0</td>
+                    <td>2024-06-20</td>
+                    <td style="color:var(--text-muted)">—</td>
+                    <td>2024-02-01 14:30</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Lower: item grid -->
+          <div class="split-bottom">
+            <div class="split-header" id="items-header">
+              索件項目 — 2024Q1 批次
+              <span class="count-label">9 項目 · 3 已收到 · 1 不完整 · 5 未收到</span>
+            </div>
+            <div class="items-grid" id="items-grid"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<script>
+// ── Data ──
+const VAT = [
+  ['銷項發票明細',  'bi-received',   '已收到'],
+  ['進項憑證',      'bi-received',   '已收到'],
+  ['折讓單',        'bi-incomplete', '不完整'],
+  ['銀行交易資料',  'bi-received',   '已收到'],
+  ['租金憑證',      'bi-missing',    '未收到'],
+  ['薪資資料',      'bi-missing',    '未收到'],
+  ['電商平台報表',  'bi-na',         '不適用'],
+  ['海關進口資料',  'bi-missing',    '未收到'],
+  ['其他收據',      'bi-missing',    '未收到'],
+];
+
+const EMPTY_REQ = [
+  ['銷項發票明細',  'bi-missing', '未收到'],
+  ['進項憑證',      'bi-missing', '未收到'],
+  ['折讓單',        'bi-missing', '未收到'],
+  ['銀行交易資料',  'bi-missing', '未收到'],
+  ['租金憑證',      'bi-missing', '未收到'],
+  ['薪資資料',      'bi-missing', '未收到'],
+  ['電商平台報表',  'bi-missing', '未收到'],
+  ['海關進口資料',  'bi-missing', '未收到'],
+  ['其他收據',      'bi-missing', '未收到'],
+];
+
+function renderItems(items, selIdx) {
+  return items.map((it, i) => `
+    <div class="item-card${i===selIdx?' sel':''}" onclick="pickItem(this)">
+      <div class="item-name">${it[0]}</div>
+      <span class="badge ${it[1]}" style="font-size:11px">${it[2]}</span>
+    </div>`).join('');
+}
+document.getElementById('items-grid').innerHTML = renderItems(VAT, 2);
+
+// ── Screen navigation ──
+const SCREENS = { 'eng':'sc-eng', 'new-eng':'sc-new-eng', 'docreq':'sc-docreq' };
+const TABS = ['eng','new-eng','docreq'];
+function go(name) {
+  Object.values(SCREENS).forEach(id => document.getElementById(id).classList.remove('visible'));
+  document.querySelectorAll('.proto-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(SCREENS[name]).classList.add('visible');
+  document.querySelectorAll('.proto-tab')[TABS.indexOf(name)].classList.add('active');
+  // sidebar active
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  if (name==='eng'||name==='new-eng') document.getElementById('nav-eng').classList.add('active');
+  if (name==='docreq') document.getElementById('nav-doc').classList.add('active');
+}
+
+// ── Engagement row selection ──
+function pickEng(row) {
+  document.querySelectorAll('#eng-rows tr').forEach(r => {
+    r.classList.remove('selected');
+    r.querySelector('input').checked = false;
+  });
+  row.classList.add('selected');
+  row.querySelector('input').checked = true;
+  document.getElementById('btn-eng-status').disabled = false;
+  document.getElementById('btn-eng-del').disabled = false;
+}
+
+// ── Request row selection ──
+function pickReq(row, reqId) {
+  document.querySelectorAll('#req-rows tr').forEach(r => r.classList.remove('selected'));
+  row.classList.add('selected');
+  document.getElementById('btn-req-mark').disabled = false;
+  document.getElementById('btn-req-fu').disabled = false;
+  document.getElementById('btn-req-del').disabled = false;
+  // Show items for selected request
+  const header = document.getElementById('items-header');
+  const grid = document.getElementById('items-grid');
+  if (reqId === 1) {
+    header.innerHTML = '索件項目 — 2024Q1 批次 <span class="count-label">9 項目 · 3 已收到 · 1 不完整 · 5 未收到</span>';
+    grid.innerHTML = renderItems(VAT, 2);
+  } else {
+    header.innerHTML = '索件項目 — 2024Q2 批次 <span class="count-label">9 項目 · 全部未收到</span>';
+    grid.innerHTML = renderItems(EMPTY_REQ, -1);
+  }
+}
+
+// ── Item card selection ──
+function pickItem(card) {
+  document.querySelectorAll('.item-card').forEach(c => c.classList.remove('sel'));
+  card.classList.add('sel');
+}
+</script>
+</body>
+</html>
