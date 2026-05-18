@@ -73,9 +73,11 @@ class TemplateFormDialog(QDialog):
         self._body = QTextEdit()
         self._body.setMinimumHeight(180)
         self._body.setPlaceholderText(
-            "輸入模板內容，可使用 {{ client_name }}、{{ period_name }}、"
+            "輸入模板內容。可用變數：{{ client_name }}、{{ period_name }}、"
             "{{ tax_type_name }}、{{ missing_items }}、{{ invalid_items }}、"
-            "{{ incomplete_items }}、{{ due_date }}"
+            "{{ incomplete_items }}、{{ due_date }}、{{ tax_id }}、"
+            "{{ contact_person }}、{{ engagement_name }}、{{ notes }}\n"
+            "只允許純文字與 {{ 變數 }}，不支援運算或控制流程。"
         )
 
         form.addRow(QLabel("模板名稱 *"), self._name)

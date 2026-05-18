@@ -79,14 +79,6 @@ class GeneratedMessagesService:
             "incomplete_items": _fmt(incomplete),
             "due_date": request.due_date or "",
             "notes": request.notes or "",
-            # These four fields are not yet stored in the data model.
-            # Provided as "" so StrictUndefined accepts templates that reference
-            # them, but templates using them will render blank content until the
-            # fields are added to the schema and populated here.
-            "payment_due_date": "",
-            "office_owner": "",
-            "reviewer": "",
-            "last_followed_up_at": "",
         }
 
     def generate(self, payload: GenerateMessageInput) -> GeneratedMessageRow:

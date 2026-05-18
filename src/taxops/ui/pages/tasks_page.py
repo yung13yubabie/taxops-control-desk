@@ -127,10 +127,13 @@ class TasksPage(QWidget):
         self._eng_combo.addItem("（全部案件）", userData=_ALL_ENGAGEMENTS)
         try:
             engs = self._container.engagements.list_all()
-        except AttributeError:
+        except Exception as err:
+            self._container.system_log.warn(
+                "tasks_page: failed to load engagements for combo",
+                detail={"exc": type(err).__name__, "msg": str(err)},
+            )
             engs = []
-        except Exception:
-            engs = []
+            self._eng_combo.addItem("（載入案件失敗）", userData=_ALL_ENGAGEMENTS)
         for eng in engs:
             label = f"{eng.engagement_name} [{STATUS_LABELS.get(eng.tax_type, eng.tax_type)}]"
             self._eng_combo.addItem(label, userData=eng.id)

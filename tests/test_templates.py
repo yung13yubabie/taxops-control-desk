@@ -282,13 +282,42 @@ def test_render_template_missing_variable_fails(svc):
 
 
 def test_create_template_extended_allowed_variables(svc):
-    body = (
-        "{{ tax_id }} {{ contact_person }} {{ engagement_name }} "
-        "{{ payment_due_date }} {{ office_owner }} {{ reviewer }} "
-        "{{ last_followed_up_at }} {{ notes }}"
-    )
+    body = "{{ tax_id }} {{ contact_person }} {{ engagement_name }} {{ notes }}"
     tmpl = svc.create_template(CreateTemplateInput(name="Extended", body=body))
     assert tmpl.id > 0
+
+
+def test_create_template_future_fields_rejected(svc):
+    for field in ("payment_due_date", "office_owner", "reviewer", "last_followed_up_at"):
+        with pytest.raises(TemplateValidationError) as exc:
+            svc.create_template(CreateTemplateInput(name=f"Bad-{field}", body=f"{{{{ {field} }}}}"))
+        assert exc.value.code == "template.unknown_variable", f"expected rejection for {field}"
+
+
+def test_create_template_getattr_rejected(svc):
+    with pytest.raises(TemplateValidationError) as exc:
+        svc.create_template(CreateTemplateInput(name="Evil", body="{{ client_name.__class__ }}"))
+    assert exc.value.code in ("template.body.syntax_error", "template.body.unsafe_expression")
+
+
+def test_create_template_binary_expr_rejected(svc):
+    with pytest.raises(TemplateValidationError) as exc:
+        svc.create_template(CreateTemplateInput(name="Evil", body="{{ client_name ~ 'x' }}"))
+    assert exc.value.code == "template.body.unsafe_expression"
+
+
+def test_create_template_for_loop_rejected(svc):
+    with pytest.raises(TemplateValidationError) as exc:
+        svc.create_template(
+            CreateTemplateInput(name="Evil", body="{% for x in missing_items %}{{ x }}{% endfor %}")
+        )
+    assert exc.value.code == "template.body.unsafe_expression"
+
+
+def test_create_template_filter_rejected(svc):
+    with pytest.raises(TemplateValidationError) as exc:
+        svc.create_template(CreateTemplateInput(name="Evil", body="{{ client_name | upper }}"))
+    assert exc.value.code == "template.body.unsafe_expression"
 
 
 # ── audit ─────────────────────────────────────────────────────────────────────

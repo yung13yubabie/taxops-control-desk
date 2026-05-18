@@ -22,6 +22,7 @@ from ...i18n.status_labels import TEMPLATE_TYPE_LABELS
 from ...services.container import ServiceContainer
 from ...services.templates import TemplateValidationError
 from ..dialogs.template_form_dialog import TemplateFormDialog
+from ..style import _DANGER
 
 _COLUMN_ORDER = ("id", "name", "template_type", "is_builtin", "updated_at")
 
@@ -88,6 +89,13 @@ class TemplatesPage(QWidget):
         self._empty_label.hide()
         left_layout.addWidget(self._empty_label)
 
+        self._error_label = QLabel("載入模板失敗，請重新整理或重新啟動程式")
+        self._error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._error_label.setObjectName("ErrorState")
+        self._error_label.setStyleSheet(f"color: {_DANGER};")
+        self._error_label.hide()
+        left_layout.addWidget(self._error_label)
+
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
@@ -119,8 +127,14 @@ class TemplatesPage(QWidget):
     def _refresh(self) -> None:
         try:
             templates = self._container.templates.list_all()
-        except Exception:
+            load_error = False
+        except Exception as err:
+            self._container.system_log.warn(
+                "templates_page: failed to load templates",
+                detail={"exc": type(err).__name__, "msg": str(err)},
+            )
             templates = []
+            load_error = True
 
         self._body_cache = {tmpl.id: tmpl.body for tmpl in templates}
         self._table.setRowCount(len(templates))
@@ -137,9 +151,14 @@ class TemplatesPage(QWidget):
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self._table.setItem(row_idx, col_idx, item)
 
-        has_rows = len(templates) > 0
-        self._table.setVisible(has_rows)
-        self._empty_label.setVisible(not has_rows)
+        self._error_label.setVisible(load_error)
+        if not load_error:
+            has_rows = len(templates) > 0
+            self._table.setVisible(has_rows)
+            self._empty_label.setVisible(not has_rows)
+        else:
+            self._table.setVisible(False)
+            self._empty_label.setVisible(False)
         self._on_selection_changed()
 
     def _selected_template_id(self) -> int | None:

@@ -11,5 +11,9 @@ def now_iso() -> str:
 
 
 def today_iso() -> str:
-    """Return current UTC date as ISO 8601 ``YYYY-MM-DD`` string."""
-    return datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
+    """Return today's date in the local OS timezone as ``YYYY-MM-DD``.
+
+    Uses local time so due-date comparisons match the user's calendar,
+    not UTC (which differs from Asia/Taipei by +8 hours).
+    """
+    return datetime.now().strftime("%Y-%m-%d")

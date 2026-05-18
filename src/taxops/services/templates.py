@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import jinja2.nodes as _jinja_nodes
 from jinja2 import Environment, StrictUndefined, TemplateSyntaxError, UndefinedError, meta as _jinja_meta
 
 from ..core.text import sanitize_user_text
@@ -27,11 +28,16 @@ ALLOWED_VARIABLES = frozenset({
     "tax_id",
     "contact_person",
     "engagement_name",
-    "payment_due_date",
-    "office_owner",
-    "reviewer",
-    "last_followed_up_at",
     "notes",
+})
+
+# AST node types permitted in templates: pure text + simple variable references only.
+# Anything else (attribute access, expressions, control flow, filters, calls) is rejected.
+_SAFE_NODE_TYPES = frozenset({
+    _jinja_nodes.Template,
+    _jinja_nodes.Output,
+    _jinja_nodes.TemplateData,
+    _jinja_nodes.Name,
 })
 
 
@@ -68,6 +74,9 @@ class TemplatesService:
             ast = self._env.parse(body)
         except TemplateSyntaxError as err:
             raise TemplateValidationError("template.body.syntax_error") from err
+        for node in ast.find_all(_jinja_nodes.Node):
+            if type(node) not in _SAFE_NODE_TYPES:
+                raise TemplateValidationError("template.body.unsafe_expression")
         unknown = _jinja_meta.find_undeclared_variables(ast) - ALLOWED_VARIABLES
         if unknown:
             raise TemplateValidationError("template.unknown_variable")
