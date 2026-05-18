@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import jinja2.nodes as _jinja_nodes
-from jinja2 import Environment, StrictUndefined, TemplateSyntaxError, UndefinedError, meta as _jinja_meta
+from jinja2 import Environment, StrictUndefined, Template, TemplateSyntaxError, UndefinedError, meta as _jinja_meta
 
 from ..core.text import sanitize_user_text
 from ..repositories.templates import TemplateRow, TemplatesRepository
@@ -67,7 +67,7 @@ class TemplatesService:
         self._audit = audit
         self._env = Environment(undefined=StrictUndefined)
 
-    def _validate_body(self, body: str) -> None:
+    def _validate_body(self, body: str) -> Template:
         if not body.strip():
             raise TemplateValidationError("template.body.required")
         try:
@@ -80,6 +80,7 @@ class TemplatesService:
         unknown = _jinja_meta.find_undeclared_variables(ast) - ALLOWED_VARIABLES
         if unknown:
             raise TemplateValidationError("template.unknown_variable")
+        return self._env.from_string(body)
 
     def create_template(self, payload: CreateTemplateInput) -> TemplateRow:
         name = sanitize_user_text(payload.name, max_length=200)
@@ -149,14 +150,16 @@ class TemplatesService:
         """Render a template with provided variables.
 
         Only keys in ALLOWED_VARIABLES are passed to Jinja2.
-        Unknown variable names are rejected at create/update time.
+        Re-validates the stored body before rendering so that rows inserted
+        outside the service (direct SQL, old data, migrations) cannot bypass
+        the AST whitelist.
         """
         row = self._repo.get(template_id)
         if row is None:
             raise TemplateValidationError("template.not_found")
+        tmpl = self._validate_body(row.body)
         safe_vars = {k: v for k, v in variables.items() if k in ALLOWED_VARIABLES}
         try:
-            tmpl = self._env.from_string(row.body)
             return tmpl.render(**safe_vars)
         except UndefinedError as err:
             raise TemplateValidationError("template.variable.missing") from err

@@ -346,3 +346,19 @@ def test_delete_template_records_audit(conn, svc):
         "SELECT action FROM audit_logs WHERE action = 'template.delete' ORDER BY id DESC LIMIT 1"
     ).fetchall()
     assert len(rows) == 1
+
+
+def test_render_template_rejects_unsafe_db_body(conn, svc):
+    """render_template() must re-validate body from DB, rejecting templates inserted via direct SQL."""
+    ts = "2024-01-01T00:00:00"
+    cur = conn.execute(
+        "INSERT INTO message_templates(name, template_type, body, is_builtin, created_at, updated_at)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        ("Evil", "custom", "{{ client_name.__class__ }}", 0, ts, ts),
+    )
+    evil_id = cur.lastrowid
+    conn.commit()
+
+    with pytest.raises(TemplateValidationError) as exc:
+        svc.render_template(evil_id, {"client_name": "TestCo"})
+    assert exc.value.code in ("template.body.syntax_error", "template.body.unsafe_expression")

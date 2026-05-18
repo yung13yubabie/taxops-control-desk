@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
@@ -17,13 +19,16 @@ from PySide6.QtWidgets import (
 )
 
 from ...i18n import error_message
+from ...repositories.generated_messages import GeneratedMessageRow
 from ...services.generated_messages import (
     GenerateMessageInput,
     GeneratedMessageValidationError,
     GeneratedMessagesService,
 )
 from ...services.templates import TemplateValidationError, TemplatesService
-from ..style import _DANGER
+from ..style import DANGER_COLOR
+
+_log = logging.getLogger(__name__)
 
 
 class GenerateMessageDialog(QDialog):
@@ -55,7 +60,7 @@ class GenerateMessageDialog(QDialog):
         outer.addLayout(form)
 
         self._template_error_label = QLabel("載入模板清單失敗，請關閉後重試")
-        self._template_error_label.setStyleSheet(f"color: {_DANGER};")
+        self._template_error_label.setStyleSheet(f"color: {DANGER_COLOR};")
         self._template_error_label.hide()
         outer.addWidget(self._template_error_label)
 
@@ -90,7 +95,11 @@ class GenerateMessageDialog(QDialog):
         try:
             templates = self._templates_svc.list_all()
             self._template_error_label.hide()
-        except Exception:
+        except Exception as err:
+            _log.warning(
+                "generate_message_dialog: failed to load templates: %s: %s",
+                type(err).__name__, err,
+            )
             self._template_error_label.show()
             self._template_combo.setEnabled(False)
             templates = []
@@ -116,28 +125,25 @@ class GenerateMessageDialog(QDialog):
             self._save_btn.setEnabled(False)
             self._copy_btn.setEnabled(False)
 
-    def _generate(self) -> bool:
+    def _generate(self) -> GeneratedMessageRow | None:
         template_id = self._template_combo.currentData()
         if template_id is None:
-            return False
+            return None
         try:
-            self._gen_svc.generate(
+            return self._gen_svc.generate(
                 GenerateMessageInput(request_id=self._request_id, template_id=template_id)
             )
-            return True
         except GeneratedMessageValidationError as err:
             QMessageBox.warning(self, "儲存失敗", error_message(err.code))
         except Exception:
             QMessageBox.warning(self, "儲存失敗", error_message("gen_message.save_failed"))
-        return False
+        return None
 
     def _on_copy(self) -> None:
-        if not self._generate():
-            return
-        text = self._preview.toPlainText()
-        if text:
-            QApplication.clipboard().setText(text)
+        row = self._generate()
+        if row is not None and row.body:
+            QApplication.clipboard().setText(row.body)
 
     def _on_save(self) -> None:
-        if self._generate():
+        if self._generate() is not None:
             self.accept()

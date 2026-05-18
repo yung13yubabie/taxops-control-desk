@@ -24,6 +24,7 @@ from ...services.container import ServiceContainer
 from ...services.tasks import VALID_TASK_STATUSES, TaskValidationError
 from ..action_registry import FilterKey
 from ..dialogs.new_task_dialog import NewTaskDialog
+from ..style import DANGER_COLOR
 
 _COLUMN_ORDER = ("id", "title", "priority", "status", "assignee", "due_date", "updated_at")
 
@@ -99,6 +100,13 @@ class TasksPage(QWidget):
         self._empty_label.hide()
         outer.addWidget(self._empty_label)
 
+        self._error_label = QLabel("載入待辦事項失敗，請重新整理或重新啟動程式")
+        self._error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._error_label.setObjectName("ErrorState")
+        self._error_label.setStyleSheet(f"color: {DANGER_COLOR};")
+        self._error_label.hide()
+        outer.addWidget(self._error_label)
+
         self._new_btn.clicked.connect(self._on_new_task)
         self._complete_btn.clicked.connect(self._on_complete_task)
         self._status_btn.clicked.connect(self._on_set_status)
@@ -151,8 +159,14 @@ class TasksPage(QWidget):
                     tasks = self._container.tasks.list_all()
                 else:
                     tasks = self._container.tasks.list_by_engagement(eng_id)
-        except Exception:
+            load_error = False
+        except Exception as err:
+            self._container.system_log.warn(
+                "tasks_page: failed to load tasks",
+                detail={"exc": type(err).__name__, "msg": str(err)},
+            )
             tasks = []
+            load_error = True
 
         self._table.setRowCount(len(tasks))
         for row_idx, task in enumerate(tasks):
@@ -170,9 +184,10 @@ class TasksPage(QWidget):
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self._table.setItem(row_idx, col_idx, item)
 
-        has_rows = len(tasks) > 0
+        has_rows = bool(tasks) and not load_error
+        self._error_label.setVisible(load_error)
         self._table.setVisible(has_rows)
-        self._empty_label.setVisible(not has_rows)
+        self._empty_label.setVisible(not load_error and not has_rows)
         self._on_selection_changed()
 
     def _selected_task_id(self) -> int | None:

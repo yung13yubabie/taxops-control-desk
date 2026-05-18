@@ -22,7 +22,7 @@ from ...i18n.status_labels import TEMPLATE_TYPE_LABELS
 from ...services.container import ServiceContainer
 from ...services.templates import TemplateValidationError
 from ..dialogs.template_form_dialog import TemplateFormDialog
-from ..style import _DANGER
+from ..style import DANGER_COLOR
 
 _COLUMN_ORDER = ("id", "name", "template_type", "is_builtin", "updated_at")
 
@@ -92,7 +92,7 @@ class TemplatesPage(QWidget):
         self._error_label = QLabel("載入模板失敗，請重新整理或重新啟動程式")
         self._error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._error_label.setObjectName("ErrorState")
-        self._error_label.setStyleSheet(f"color: {_DANGER};")
+        self._error_label.setStyleSheet(f"color: {DANGER_COLOR};")
         self._error_label.hide()
         left_layout.addWidget(self._error_label)
 

@@ -216,3 +216,22 @@ def test_list_by_request_returns_generated(conn, gen_svc):
     msgs = gen_svc.list_by_request(req_id)
     assert len(msgs) == 2
     assert all(m.request_id == req_id for m in msgs)
+
+
+def test_generate_rejects_unsafe_db_template(conn, gen_svc):
+    """generate() must fail and NOT persist if the DB template body is unsafe."""
+    _, req_id = _seed_request(conn)
+    ts = "2024-01-01T00:00:00"
+    cur = conn.execute(
+        "INSERT INTO message_templates(name, template_type, body, is_builtin, created_at, updated_at)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        ("Evil", "custom", "{{ client_name.__class__ }}", 0, ts, ts),
+    )
+    evil_tmpl_id = cur.lastrowid
+    conn.commit()
+
+    with pytest.raises(Exception):
+        gen_svc.generate(GenerateMessageInput(request_id=req_id, template_id=evil_tmpl_id))
+
+    count = conn.execute("SELECT COUNT(*) FROM generated_messages").fetchone()[0]
+    assert count == 0, "unsafe template must not produce a persisted generated_message"
