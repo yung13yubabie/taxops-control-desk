@@ -40,7 +40,7 @@ _CARD_DEFS: tuple[tuple[str, str, str, str, str], ...] = (
     ("missing_item_requests", "缺件案件", PAGE_ENGAGEMENTS, "前往案件管理", ""),
     ("upcoming_engagements", "即將申報案件（7天內）", PAGE_ENGAGEMENTS, "前往案件管理", FilterKey.UPCOMING),
     ("overdue_engagements", "逾期繳款風險", PAGE_ENGAGEMENTS, "前往案件管理", FilterKey.OVERDUE),
-    ("high_risk_engagements", "高風險案件", PAGE_TASKS, "前往待辦事項", FilterKey.OVERDUE),
+    ("high_risk_engagements", "高風險案件", PAGE_REVIEW_NOTES, "前往覆核意見", FilterKey.HIGH_RISK),
 )
 
 

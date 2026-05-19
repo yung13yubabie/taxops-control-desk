@@ -307,7 +307,7 @@
 
 - [已確認] `src/taxops/db/migrations/_m0007_generated_messages.py`：generated_messages 表 + idx_generated_messages_request 索引。
 - [已確認] `src/taxops/repositories/generated_messages.py`：`GeneratedMessageRow` + `GeneratedMessagesRepository`（insert/get/list_by_request）。
-- [已確認] `src/taxops/services/generated_messages.py`：`GeneratedMessagesService`；`build_variables(request_id)` 組裝 15 個 ALLOWED_VARIABLES（4 個未來欄位 payment_due_date / office_owner / reviewer / last_followed_up_at 暫為空字串）；`generate()` 呼叫 build_variables + render_template + repo.insert + audit，TemplateValidationError → GeneratedMessageValidationError 轉傳 code。
+- [已確認] `src/taxops/services/generated_messages.py`：`GeneratedMessagesService`；`build_variables(request_id)` 組裝 11 個 ALLOWED_VARIABLES（4 個未來欄位 payment_due_date / office_owner / reviewer / last_followed_up_at 已於 Slice 15 安全修正中移除）；`generate()` 呼叫 build_variables + render_template + repo.insert + audit，TemplateValidationError → GeneratedMessageValidationError 轉傳 code。
 - [已確認] `src/taxops/ui/dialogs/generate_message_dialog.py`：`GenerateMessageDialog`；`__init__` 呼叫 `build_variables()` 預載；模板 combo `currentIndexChanged` 觸發即時 render；`_copy_btn` / `_save_btn` 初始 disabled，render 成功才 enable；`_on_save()` 呼叫 `generate()` 後 `accept()`。
 - [已確認] `src/taxops/ui/pages/document_requests_page.py`：新增「產生訊息」按鈕至 toolbar；`_on_req_selection_changed()` 更新 enabled；`_on_generate_message()` 開啟 dialog。
 - [已確認] `src/taxops/ui/action_registry.py`：PAGE_DOC_REQUESTS 新增「產生訊息」enabled contract。
@@ -332,7 +332,7 @@
 
 ### 給下一個 Agent 的注意事項
 
-- `build_variables(request_id)` 永遠回傳 15 個鍵；4 個未來欄位（payment_due_date / office_owner / reviewer / last_followed_up_at）目前為 `""`，等對應資料模型擴充後再填值。
+- `build_variables(request_id)` 永遠回傳 11 個鍵；4 個未來欄位（payment_due_date / office_owner / reviewer / last_followed_up_at）已從 ALLOWED_VARIABLES 移除（Slice 15 安全修正），不再支援。
 - `generate()` 的 TemplateValidationError → GeneratedMessageValidationError 轉傳保留原始 code；UI 可直接用 `error_message(exc.code)` 顯示中文錯誤。
 - `GenerateMessageDialog` 的 `_variables` 在 `__init__` 組裝一次；模板 combo 切換時重用同一份 variables dict。
 - `ClientRow.contact_name` 對應模板變數 `contact_person`（兩者名稱不同，已在 `build_variables()` 做轉換）。

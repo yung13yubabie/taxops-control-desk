@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -29,7 +30,7 @@ from ...services.review_notes import (
     UpdateReviewNoteStatusInput,
 )
 from ..action_registry import FilterKey
-from ..style import toolbar_icon
+from ..style import DANGER_COLOR, toolbar_icon
 
 _COLUMN_ORDER = ("id", "severity", "status", "comment", "assigned_to", "updated_at")
 _TABLE_HEADERS = {
@@ -182,6 +183,13 @@ class ReviewNotesPage(QWidget):
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         outer.addWidget(self._table)
 
+        self._error_label = QLabel("載入覆核意見失敗，請重新整理或重新啟動程式")
+        self._error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._error_label.setObjectName("ErrorState")
+        self._error_label.setStyleSheet(f"color: {DANGER_COLOR};")
+        self._error_label.hide()
+        outer.addWidget(self._error_label)
+
         self._filter_key: str = ""
         self._eng_combo.currentIndexChanged.connect(self._load)
         self._load_engagements()
@@ -202,13 +210,18 @@ class ReviewNotesPage(QWidget):
         try:
             for eng in self._container.engagements.list_all():
                 self._eng_combo.addItem(eng.engagement_name, eng.id)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._container.system_log.warn(
+                "review_notes_page: failed to load engagements",
+                detail={"exc": type(exc).__name__, "msg": str(exc)},
+            )
+            self._eng_combo.addItem("（載入案件失敗）", _ALL_ENGAGEMENTS)
         self._eng_combo.blockSignals(False)
         self._load()
 
     def _load(self) -> None:
         self._notes = []
+        load_error = False
         try:
             if self._filter_key == FilterKey.OPEN:
                 self._notes = self._container.review_notes.list_open_all()
@@ -223,8 +236,13 @@ class ReviewNotesPage(QWidget):
                         )
                 else:
                     self._notes = self._container.review_notes.list_by_engagement(eng_id)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._container.system_log.warn(
+                "review_notes_page: failed to load notes",
+                detail={"exc": type(exc).__name__, "msg": str(exc)},
+            )
+            load_error = True
+        self._error_label.setVisible(load_error)
         self._render_table()
 
     def _render_table(self) -> None:

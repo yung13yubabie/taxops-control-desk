@@ -137,7 +137,7 @@
 - [已確認] Slice 7：產生催件訊息（generated_messages）（2026-05-17）：
   - `src/taxops/db/migrations/_m0007_generated_messages.py`：generated_messages 表 + idx_generated_messages_request 索引。
   - `src/taxops/repositories/generated_messages.py`：`GeneratedMessageRow` + `GeneratedMessagesRepository`（insert/get/list_by_request）。
-  - `src/taxops/services/generated_messages.py`：`GeneratedMessagesService`（build_variables/generate/list_by_request/get_message）；`build_variables()` 組裝全部 15 個 ALLOWED_VARIABLES；`generate()` 呼叫 render + insert + audit，TemplateValidationError 轉成 GeneratedMessageValidationError。
+  - `src/taxops/services/generated_messages.py`：`GeneratedMessagesService`（build_variables/generate/list_by_request/get_message）；`build_variables()` 組裝全部 11 個 ALLOWED_VARIABLES（4 個未來欄位已於 Slice 15 移除）；`generate()` 呼叫 render + insert + audit，TemplateValidationError 轉成 GeneratedMessageValidationError。
   - `src/taxops/ui/dialogs/generate_message_dialog.py`：`GenerateMessageDialog`（模板 combo + 即時預覽 + 複製 + 儲存並關閉）。
   - `src/taxops/ui/pages/document_requests_page.py`：新增「產生訊息」按鈕；`_on_generate_message()` 開啟 dialog。
   - `src/taxops/ui/action_registry.py`：新增 1 個 enabled contract（產生訊息）。

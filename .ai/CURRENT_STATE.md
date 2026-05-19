@@ -22,7 +22,10 @@
 ## Current Status
 
 - [已確認] Slice 1、Slice 2（稅籍快取）、客戶管理功能閉環（批量匯入 + 編輯/刪除 + 衝突審查）、Slice 2.6（搜尋/排序/分頁 + sidebar 收合）、Slice 3（HTTP download）、Slice 4（案件 + 索件）、Slice 4.5（案件編輯 + 索件項目狀態 UI）、Slice 5（待辦事項）、Slice 6（訊息模板）、Slice 7（產生催件訊息）、Slice 8（覆核意見 + 滯納金試算）、Slice 9（附件證據鏈 MVP + closeout correction）、Slice 10（Excel 匯出缺件清單 + CSV formula injection defense）、Slice 11（備份 / 還原）、Slice 12（FTS5 全文搜尋）、Slice 13（本地工商 / 稅籍查詢頁）、Slice 14（Dashboard 真實統計 + 篩選導向補完）均已完成實作。
-- [已確認] `python -m pytest` 最後確認通過：643/643 passed（2026-05-17 resource hygiene closeout + regression tests）。
+- [已確認] `python -m pytest` 最後確認通過：651/651 passed（2026-05-19 G-1~G-15 UIUX 修復 + Blocker 修正 + regression tests）。
+- [已確認] G-1~G-15 UIUX 修復已完成：WA_DeleteOnClose、anti-double-click、toolbar_icon、error label、silent failure 修正等；dashboard high_risk_engagements 導向修正為 PAGE_REVIEW_NOTES + FilterKey.HIGH_RISK。
+- [已確認] ALLOWED_VARIABLES 現為 11 個（4 個未來欄位 payment_due_date / office_owner / reviewer / last_followed_up_at 已於 Slice 15 安全修正中移除）。
+- [待確認] Supply Chain Locking = UNKNOWN / OPEN：pyproject.toml 中 PySide6、Jinja2、openpyxl、pytest、pyinstaller 均未 pin 版本。
 - [已確認] 技術棧：Python 3.11+, PySide6, SQLite, SQLite FTS5, Jinja2, openpyxl, pytest, PyInstaller（Windows one-dir build + automated EXE smoke 已通過；人工 UI 驗收尚未完成）。
 
 ## Active Work
