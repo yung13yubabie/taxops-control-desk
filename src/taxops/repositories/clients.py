@@ -186,6 +186,13 @@ class ClientsRepository:
         "contact_name", "contact_phone", "contact_email", "updated_at",
     })
 
+    @staticmethod
+    def _deleted_filter(include_deleted: bool) -> tuple[str, str]:
+        """Return (base_filter, query_connector) for active-only or all-rows queries."""
+        if include_deleted:
+            return ("", "WHERE")
+        return (" WHERE deleted_at IS NULL", "AND")
+
     def search_clients(
         self,
         query: str = "",
@@ -194,36 +201,41 @@ class ClientsRepository:
         order_dir: str = "ASC",
         limit: int = 50,
         offset: int = 0,
+        include_deleted: bool = False,
     ) -> list[ClientRow]:
-        """Return paginated, optionally filtered + sorted active clients."""
+        """Return paginated, optionally filtered + sorted clients."""
         col = order_by if order_by in self._SORT_COLUMNS else "client_code"
         direction = "DESC" if order_dir.upper() == "DESC" else "ASC"
-        base = "SELECT * FROM clients WHERE deleted_at IS NULL"
+        base_filter, cond = self._deleted_filter(include_deleted)
         if query.strip():
             q = f"%{query.strip()}%"
             rows = self._conn.execute(
-                f"{base} AND (client_code LIKE ? OR client_name LIKE ? OR tax_id LIKE ?)"
+                f"SELECT * FROM clients{base_filter}"
+                f" {cond} (client_code LIKE ? OR client_name LIKE ? OR tax_id LIKE ?)"
                 f" ORDER BY {col} {direction} LIMIT ? OFFSET ?",
                 (q, q, q, limit, offset),
             ).fetchall()
         else:
             rows = self._conn.execute(
-                f"{base} ORDER BY {col} {direction} LIMIT ? OFFSET ?",
+                f"SELECT * FROM clients{base_filter} ORDER BY {col} {direction} LIMIT ? OFFSET ?",
                 (limit, offset),
             ).fetchall()
         return [_row_to_client(row) for row in rows]
 
-    def count_clients(self, query: str = "") -> int:
-        """Return total count of active clients matching optional query."""
-        base = "SELECT COUNT(*) AS c FROM clients WHERE deleted_at IS NULL"
+    def count_clients(self, query: str = "", *, include_deleted: bool = False) -> int:
+        """Return total count of clients matching optional query."""
+        base_filter, cond = self._deleted_filter(include_deleted)
         if query.strip():
             q = f"%{query.strip()}%"
             row = self._conn.execute(
-                f"{base} AND (client_code LIKE ? OR client_name LIKE ? OR tax_id LIKE ?)",
+                f"SELECT COUNT(*) AS c FROM clients{base_filter}"
+                f" {cond} (client_code LIKE ? OR client_name LIKE ? OR tax_id LIKE ?)",
                 (q, q, q),
             ).fetchone()
         else:
-            row = self._conn.execute(base).fetchone()
+            row = self._conn.execute(
+                f"SELECT COUNT(*) AS c FROM clients{base_filter}"
+            ).fetchone()
         return int(row["c"]) if row else 0
 
     def find_by_tax_id(self, tax_id: str) -> list["ClientRow"]:

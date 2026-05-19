@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QCheckBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -39,6 +41,8 @@ _COLUMN_ORDER: tuple[str, ...] = (
 
 _DEFAULT_SORT_COL = "client_code"
 _DEFAULT_SORT_DIR = "ASC"
+_ID_COL_IDX = _COLUMN_ORDER.index("id")
+_DELETED_FG = QColor(160, 160, 160)
 
 
 class ClientsPage(QWidget):
@@ -72,9 +76,11 @@ class ClientsPage(QWidget):
         self._clear_btn = QPushButton("清除")
         self._count_label = QLabel("共 0 筆")
         self._count_label.setStyleSheet("color: #555;")
+        self._show_deleted_check = QCheckBox("顯示已刪除客戶")
         search_row.addWidget(self._search_input, 1)
         search_row.addWidget(self._search_btn)
         search_row.addWidget(self._clear_btn)
+        search_row.addWidget(self._show_deleted_check)
         search_row.addStretch(0)
         search_row.addWidget(self._count_label)
         outer.addLayout(search_row)
@@ -85,16 +91,19 @@ class ClientsPage(QWidget):
         self._new_btn = QPushButton(BUTTON_LABELS["clients.new"])
         self._edit_btn = QPushButton("編輯客戶")
         self._delete_btn = QPushButton("刪除客戶")
+        self._restore_btn = QPushButton("復原客戶")
         self._bulk_btn = QPushButton("批量匯入")
         self._refresh_btn = QPushButton(BUTTON_LABELS["clients.refresh"])
 
         self._edit_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
+        self._restore_btn.setEnabled(False)
 
         for btn in (
             self._new_btn,
             self._edit_btn,
             self._delete_btn,
+            self._restore_btn,
             self._bulk_btn,
             self._refresh_btn,
         ):
@@ -148,8 +157,10 @@ class ClientsPage(QWidget):
         self._new_btn.clicked.connect(self.on_new_client)
         self._edit_btn.clicked.connect(self.on_edit_client)
         self._delete_btn.clicked.connect(self.on_delete_client)
+        self._restore_btn.clicked.connect(self.on_restore_client)
         self._bulk_btn.clicked.connect(self.on_bulk_import)
         self._refresh_btn.clicked.connect(self.on_refresh)
+        self._show_deleted_check.toggled.connect(self._on_show_deleted_toggled)
         self._search_btn.clicked.connect(self._on_search)
         self._clear_btn.clicked.connect(self._on_clear_search)
         self._search_input.returnPressed.connect(self._on_search)
@@ -215,10 +226,24 @@ class ClientsPage(QWidget):
     # Actions
     # ------------------------------------------------------------------
 
+    def _on_show_deleted_toggled(self) -> None:
+        self._page = 0
+        self.on_refresh()
+
     def _on_selection_changed(self) -> None:
-        has_selection = bool(self._table.selectedItems())
-        self._edit_btn.setEnabled(has_selection)
-        self._delete_btn.setEnabled(has_selection)
+        client_id = self._selected_client_id()
+        if client_id is None:
+            self._edit_btn.setEnabled(False)
+            self._delete_btn.setEnabled(False)
+            self._restore_btn.setEnabled(False)
+            return
+        rows = self._table.selectedItems()
+        row_idx = self._table.row(rows[0])
+        deleted_item = self._table.item(row_idx, _ID_COL_IDX)
+        is_deleted = bool(deleted_item.data(Qt.ItemDataRole.UserRole)) if deleted_item else False
+        self._edit_btn.setEnabled(not is_deleted)
+        self._delete_btn.setEnabled(not is_deleted)
+        self._restore_btn.setEnabled(is_deleted)
 
     def _selected_client_id(self) -> int | None:
         """Always return client.id from the id column — never row index."""
@@ -226,7 +251,7 @@ class ClientsPage(QWidget):
         if not rows:
             return None
         row = self._table.row(rows[0])
-        id_item = self._table.item(row, _COLUMN_ORDER.index("id"))
+        id_item = self._table.item(row, _ID_COL_IDX)
         return int(id_item.text()) if id_item else None
 
     def on_new_client(self) -> None:
@@ -290,6 +315,20 @@ class ClientsPage(QWidget):
             return
         self.on_refresh()
 
+    def on_restore_client(self) -> None:
+        client_id = self._selected_client_id()
+        if client_id is None:
+            return
+        try:
+            self._container.clients.restore_client(client_id)
+        except ClientValidationError as exc:
+            QMessageBox.warning(self, "復原失敗", error_message(exc.code))
+            return
+        except Exception:
+            QMessageBox.warning(self, "復原失敗", error_message("client.restore.failed"))
+            return
+        self.on_refresh()
+
     def on_bulk_import(self) -> None:
         wizard = BulkImportWizard(
             self._container.clients,
@@ -301,21 +340,23 @@ class ClientsPage(QWidget):
 
     def on_refresh(self) -> None:
         query = self._search_input.text()
+        include_deleted = self._show_deleted_check.isChecked()
         try:
             search_svc = getattr(self._container, "search", None)
-            if search_svc is not None and search_svc.is_fts_eligible(query):
+            if not include_deleted and search_svc is not None and search_svc.is_fts_eligible(query):
                 all_rows = search_svc.search_clients(query.strip())
                 self._total = len(all_rows)
                 start = self._page * _PAGE_SIZE
                 rows = all_rows[start : start + _PAGE_SIZE]
             else:
-                self._total = self._container.clients.count_clients(query)
+                self._total = self._container.clients.count_clients(query, include_deleted=include_deleted)
                 rows = self._container.clients.search_clients(
                     query,
                     order_by=self._sort_col,
                     order_dir=self._sort_dir,
                     limit=_PAGE_SIZE,
                     offset=self._page * _PAGE_SIZE,
+                    include_deleted=include_deleted,
                 )
         except Exception as err:
             self._container.system_log.error("clients.list failed", exc=err)
@@ -323,9 +364,10 @@ class ClientsPage(QWidget):
             return
 
         q = self._search_input.text().strip()
-        self._count_label.setText(f"符合 {self._total} 筆" if q else "")
+        self._count_label.setText(f"符合 {self._total} 筆" if q else f"共 {self._total} 筆")
         self._table.setRowCount(len(rows))
         for row_idx, client in enumerate(rows):
+            is_deleted = client.deleted_at is not None
             values = {
                 "id": str(client.id),
                 "client_code": client.client_code,
@@ -340,6 +382,10 @@ class ClientsPage(QWidget):
             for col_idx, col in enumerate(_COLUMN_ORDER):
                 item = QTableWidgetItem(values[col])
                 item.setToolTip(values[col])
+                if is_deleted:
+                    item.setForeground(_DELETED_FG)
+                if col == "id":
+                    item.setData(Qt.ItemDataRole.UserRole, is_deleted)
                 self._table.setItem(row_idx, col_idx, item)
 
         self._empty_label.setVisible(self._total == 0)

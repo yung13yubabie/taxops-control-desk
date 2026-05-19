@@ -30,6 +30,7 @@ from ...services.document_requests import (
 )
 from ...services.export import ExportValidationError
 from ...services.generated_messages import GeneratedMessageValidationError
+from ..dialogs.add_document_item_dialog import AddDocumentItemDialog
 from ..dialogs.generate_message_dialog import GenerateMessageDialog
 
 _REQ_COLUMNS = (
@@ -93,6 +94,7 @@ class DocumentRequestsPage(QWidget):
         self._mark_requested_btn = QPushButton("標記已發出")
         self._follow_up_btn = QPushButton("催件 +1")
         self._delete_req_btn = QPushButton("刪除批次")
+        self._add_item_btn = QPushButton("新增文件項目")
         self._item_status_btn = QPushButton("切換項目狀態")
         self._generate_btn = QPushButton("產生訊息")
         self._export_btn = QPushButton("匯出缺件清單")
@@ -101,6 +103,7 @@ class DocumentRequestsPage(QWidget):
         self._mark_requested_btn.setEnabled(False)
         self._follow_up_btn.setEnabled(False)
         self._delete_req_btn.setEnabled(False)
+        self._add_item_btn.setEnabled(False)
         self._item_status_btn.setEnabled(False)
         self._generate_btn.setEnabled(False)
         self._export_btn.setEnabled(False)
@@ -110,6 +113,7 @@ class DocumentRequestsPage(QWidget):
             self._mark_requested_btn,
             self._follow_up_btn,
             self._delete_req_btn,
+            self._add_item_btn,
             self._item_status_btn,
             self._generate_btn,
             self._export_btn,
@@ -173,6 +177,7 @@ class DocumentRequestsPage(QWidget):
         self._mark_requested_btn.clicked.connect(self._on_mark_requested)
         self._follow_up_btn.clicked.connect(self._on_follow_up)
         self._delete_req_btn.clicked.connect(self._on_delete_request)
+        self._add_item_btn.clicked.connect(self._on_add_item)
         self._item_status_btn.clicked.connect(self._on_set_item_status)
         self._generate_btn.clicked.connect(self._on_generate_message)
         self._export_btn.clicked.connect(self._on_export)
@@ -266,6 +271,7 @@ class DocumentRequestsPage(QWidget):
         self._mark_requested_btn.setEnabled(has_sel)
         self._follow_up_btn.setEnabled(has_sel)
         self._delete_req_btn.setEnabled(has_sel)
+        self._add_item_btn.setEnabled(has_sel)
         self._generate_btn.setEnabled(has_sel)
         if has_sel:
             self._load_items_for_selected()
@@ -373,6 +379,14 @@ class DocumentRequestsPage(QWidget):
             return
         self._refresh_requests()
 
+    def _on_add_item(self) -> None:
+        req_id = self._selected_request_id()
+        if req_id is None:
+            return
+        dlg = AddDocumentItemDialog(self._container.doc_requests, req_id, parent=self)
+        if dlg.exec() == AddDocumentItemDialog.DialogCode.Accepted:
+            self._refresh_requests()
+
     def _on_set_item_status(self) -> None:
         item_id = self._selected_item_id()
         if item_id is None:
@@ -399,7 +413,7 @@ class DocumentRequestsPage(QWidget):
         except Exception:
             QMessageBox.warning(self, "切換失敗", error_message("system.unexpected"))
             return
-        self._refresh_requests()
+        self._load_items_for_selected()
 
     def _on_generate_message(self) -> None:
         req_id = self._selected_request_id()

@@ -140,9 +140,9 @@ class GenerateMessageDialog(QDialog):
         return None
 
     def _on_copy(self) -> None:
-        row = self._generate()
-        if row is not None and row.body:
-            QApplication.clipboard().setText(row.body)
+        body = self._preview.toPlainText()
+        if body:
+            QApplication.clipboard().setText(body)
 
     def _on_save(self) -> None:
         if self._generate() is not None:

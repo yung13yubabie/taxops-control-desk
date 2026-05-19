@@ -277,13 +277,19 @@ class ClientsService:
         order_dir: str = "ASC",
         limit: int = 50,
         offset: int = 0,
+        include_deleted: bool = False,
     ) -> list[ClientRow]:
         return self._repo.search_clients(
-            query, order_by=order_by, order_dir=order_dir, limit=limit, offset=offset
+            query,
+            order_by=order_by,
+            order_dir=order_dir,
+            limit=limit,
+            offset=offset,
+            include_deleted=include_deleted,
         )
 
-    def count_clients(self, query: str = "") -> int:
-        return self._repo.count_clients(query)
+    def count_clients(self, query: str = "", *, include_deleted: bool = False) -> int:
+        return self._repo.count_clients(query, include_deleted=include_deleted)
 
     def get_client(self, client_id: int) -> ClientRow | None:
         return self._repo.get(client_id)

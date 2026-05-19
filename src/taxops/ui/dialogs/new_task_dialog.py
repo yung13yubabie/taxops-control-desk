@@ -5,7 +5,6 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
-    QDateEdit,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -20,6 +19,7 @@ from PySide6.QtWidgets import (
 from ...i18n import error_message
 from ...i18n.status_labels import PRIORITY_LABELS
 from ...services.tasks import CreateTaskInput, TaskValidationError, TasksService
+from ._shared import date_edit_value, make_nullable_date_edit
 
 _PRIORITY_CHOICES = [
     ("urgent", PRIORITY_LABELS["urgent"]),
@@ -58,10 +58,7 @@ class NewTaskDialog(QDialog):
         self._assignee = QLineEdit()
         self._assignee.setMaxLength(100)
 
-        self._due_date = QDateEdit()
-        self._due_date.setCalendarPopup(True)
-        self._due_date.setSpecialValueText("（不設定）")
-        self._due_date.setDate(self._due_date.minimumDate())
+        self._due_date = make_nullable_date_edit()
 
         self._priority = QComboBox()
         for value, label in _PRIORITY_CHOICES:
@@ -95,15 +92,11 @@ class NewTaskDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
 
     def on_save(self) -> None:
-        due = self._due_date.date()
-        is_set = due != self._due_date.minimumDate()
-        due_str = due.toString("yyyy-MM-dd") if is_set else None
-
         payload = CreateTaskInput(
             engagement_id=self._engagement_id,
             title=self._title.text(),
             assignee=self._assignee.text() or None,
-            due_date=due_str,
+            due_date=date_edit_value(self._due_date),
             priority=self._priority.currentData(),
             next_step=self._next_step.text() or None,
             notes=self._notes.toPlainText() or None,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
 
 from ..core.clock import now_iso
@@ -181,6 +182,26 @@ class DocumentRequestsService:
                 "period_name": existing.period_name,
             },
         )
+
+    def add_item(self, request_id: int, item_name: str) -> DocumentRequestItemRow:
+        name = sanitize_user_text(item_name, max_length=200)
+        if not name:
+            raise DocumentRequestValidationError("doc_request_item.name.required")
+        try:
+            item = self._repo.insert_item(request_id=request_id, item_name=name)
+        except sqlite3.IntegrityError as exc:
+            if "FOREIGN KEY" in str(exc).upper():
+                raise DocumentRequestValidationError("doc_request.not_found") from exc
+            raise
+        new_req_status = self._recompute_request_status(request_id)
+        self._repo.update_request_status(request_id, status=new_req_status)
+        self._audit.record(
+            action="doc_request_item.create",
+            target_type="document_request_item",
+            target_id=str(item.id),
+            detail={"request_id": request_id, "item_name": name},
+        )
+        return item
 
     def set_item_status(
         self,

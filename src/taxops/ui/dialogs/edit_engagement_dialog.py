@@ -23,7 +23,7 @@ from ...services.engagements import (
     EngagementsService,
     UpdateEngagementInput,
 )
-from ._shared import TAX_TYPE_CHOICES
+from ._shared import TAX_TYPE_CHOICES, date_edit_value, make_nullable_date_edit, set_date_edit_value
 
 
 class EditEngagementDialog(QDialog):
@@ -68,6 +68,9 @@ class EditEngagementDialog(QDialog):
         self._owner.setMaxLength(100)
         self._owner.setText(engagement.owner or "")
 
+        self._due_date = make_nullable_date_edit()
+        set_date_edit_value(self._due_date, engagement.due_date)
+
         self._notes = QTextEdit()
         self._notes.setFixedHeight(72)
         self._notes.setPlainText(engagement.notes or "")
@@ -76,6 +79,7 @@ class EditEngagementDialog(QDialog):
         form.addRow(QLabel("稅種 *"), self._tax_type)
         form.addRow(QLabel("期間名稱 *"), self._period)
         form.addRow(QLabel("負責人"), self._owner)
+        form.addRow(QLabel("到期日"), self._due_date)
         form.addRow(QLabel("備註"), self._notes)
 
         outer.addLayout(form)
@@ -98,6 +102,7 @@ class EditEngagementDialog(QDialog):
             period_name=self._period.text(),
             status=self._current_status,
             owner=self._owner.text() or None,
+            due_date=date_edit_value(self._due_date),
             notes=self._notes.toPlainText() or None,
         )
         try:

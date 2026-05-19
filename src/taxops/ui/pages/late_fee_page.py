@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
@@ -22,7 +23,11 @@ from PySide6.QtWidgets import (
 from ...i18n import error_message
 from ...i18n.status_labels import status_to_label
 from ...services.container import ServiceContainer
-from ...services.late_fee import CalculateLateFeeInput, LateFeeValidationError
+from ...services.late_fee import (
+    CalculateLateFeeInput,
+    LateFeeValidationError,
+    calculate_penalty_percent,
+)
 
 _HISTORY_COLUMNS = ("id", "overdue_days", "penalty_percent", "base_amount", "penalty_amount", "calc_at")
 _HISTORY_HEADERS = {
@@ -53,8 +58,13 @@ class LateFeePage(QWidget):
         title.setObjectName("PageTitle")
         outer.addWidget(title)
 
-        # -- Filter row --
-        filter_row = QHBoxLayout()
+        self._manual_check = QCheckBox("手動試算模式（不連結案件，結果不儲存）")
+        outer.addWidget(self._manual_check)
+
+        # -- Filter row (hidden in manual mode) --
+        self._filter_widget = QWidget()
+        filter_row = QHBoxLayout(self._filter_widget)
+        filter_row.setContentsMargins(0, 0, 0, 0)
         filter_row.setSpacing(8)
         filter_row.addWidget(QLabel("案件："))
         self._eng_combo = QComboBox()
@@ -66,7 +76,7 @@ class LateFeePage(QWidget):
         self._req_combo.setMinimumWidth(200)
         filter_row.addWidget(self._req_combo)
         filter_row.addStretch()
-        outer.addLayout(filter_row)
+        outer.addWidget(self._filter_widget)
 
         # -- Input form --
         form_box = QGroupBox("試算參數")
@@ -109,9 +119,18 @@ class LateFeePage(QWidget):
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         outer.addWidget(self._table)
 
+        self._manual_check.toggled.connect(self._on_mode_changed)
         self._eng_combo.currentIndexChanged.connect(self._on_engagement_changed)
         self._req_combo.currentIndexChanged.connect(self._load_history)
         self._load_engagements()
+
+    def _on_mode_changed(self, manual: bool) -> None:
+        self._filter_widget.setVisible(not manual)
+        self._result_label.setText("")
+        if manual:
+            self._table.setRowCount(0)
+        else:
+            self._load_history()
 
     def _load_engagements(self) -> None:
         self._eng_combo.blockSignals(True)
@@ -120,8 +139,12 @@ class LateFeePage(QWidget):
         try:
             for eng in self._container.engagements.list_all():
                 self._eng_combo.addItem(eng.engagement_name, eng.id)
-        except Exception:
-            pass
+        except Exception as err:
+            self._container.system_log.warn(
+                "late_fee_page: failed to load engagements",
+                detail={"exc": type(err).__name__, "msg": str(err)},
+            )
+            self._eng_combo.addItem("（載入案件失敗，請重新整理）", _ALL)
         self._eng_combo.blockSignals(False)
         self._on_engagement_changed()
 
@@ -135,8 +158,12 @@ class LateFeePage(QWidget):
                 for req in self._container.doc_requests.list_by_engagement(eng_id):
                     label = f"{req.period_name} ({status_to_label(req.tax_type)})"
                     self._req_combo.addItem(label, req.id)
-            except Exception:
-                pass
+            except Exception as err:
+                self._container.system_log.warn(
+                    "late_fee_page: failed to load requests",
+                    detail={"eng_id": eng_id, "exc": type(err).__name__, "msg": str(err)},
+                )
+                self._req_combo.addItem("（載入批次失敗，請重新整理）", _ALL)
         self._req_combo.blockSignals(False)
         self._load_history()
 
@@ -146,14 +173,17 @@ class LateFeePage(QWidget):
         if req_id and req_id != _ALL:
             try:
                 self._history = self._container.late_fee.list_by_request(req_id)
-            except Exception:
-                pass
+            except Exception as err:
+                self._container.system_log.warn(
+                    "late_fee_page: failed to load history",
+                    detail={"req_id": req_id, "exc": type(err).__name__, "msg": str(err)},
+                )
+                self._result_label.setText("試算記錄載入失敗，請重新整理頁面")
         self._render_table()
 
     def _render_table(self) -> None:
         self._table.setRowCount(0)
-        for rec in self._history:
-            row = self._table.rowCount()
+        for row, rec in enumerate(self._history):
             self._table.insertRow(row)
             vals = {
                 "id": str(rec.id),
@@ -167,17 +197,30 @@ class LateFeePage(QWidget):
                 self._table.setItem(row, col, QTableWidgetItem(vals[key]))
 
     def _on_calculate(self) -> None:
+        overdue_days = self._days_spin.value()
+        base_amount = self._base_spin.value()
+
+        if self._manual_check.isChecked():
+            penalty_percent = calculate_penalty_percent(overdue_days)
+            penalty_amount = round(base_amount * penalty_percent / 100, 2)
+            self._result_label.setText(
+                f"試算結果（未儲存）：滯納金率 {penalty_percent:.1f}%，"
+                f"滯納金 {penalty_amount:,.2f} 元"
+                f"（稅額 {base_amount:,.2f} 元，逾期 {overdue_days} 天）"
+            )
+            return
+
         req_id = self._req_combo.currentData()
         if not req_id or req_id == _ALL:
-            QMessageBox.warning(self, "提示", "請先選擇索件批次")
+            QMessageBox.warning(self, "提示", "請先選擇索件批次，或切換為手動試算模式")
             return
 
         try:
             row = self._container.late_fee.calculate_and_save(
                 CalculateLateFeeInput(
                     request_id=req_id,
-                    overdue_days=self._days_spin.value(),
-                    base_amount=self._base_spin.value(),
+                    overdue_days=overdue_days,
+                    base_amount=base_amount,
                 )
             )
         except LateFeeValidationError as err:
@@ -189,7 +232,7 @@ class LateFeePage(QWidget):
 
         if row.needs_manual_review:
             self._result_label.setText(
-                "⚠ 勞健保稅種需人工確認，無法自動計算滯納金。請聯絡主管確認滯納金金額。"
+                "[!] 勞健保稅種需人工確認，無法自動計算滯納金。請聯絡主管確認滯納金金額。"
             )
         else:
             self._result_label.setText(
