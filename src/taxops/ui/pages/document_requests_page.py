@@ -194,9 +194,11 @@ class DocumentRequestsPage(QWidget):
             QMessageBox.warning(self, "找不到案件", error_message("engagement.not_found"))
             return
         self._engagement_id = engagement_id
+        client = self._container.clients.get_client(eng.client_id)
+        client_part = f"【{client.client_name}】" if client else ""
         label = (
             f"{NAV_LABELS['doc_requests']} — "
-            f"{eng.engagement_name}（{status_to_label(eng.status)}）"
+            f"{client_part}{eng.engagement_name}（{status_to_label(eng.status)}）"
         )
         self._context_label.setText(label)
         self._new_req_btn.setEnabled(True)
@@ -393,11 +395,15 @@ class DocumentRequestsPage(QWidget):
             return
         label_to_value = {STATUS_LABELS.get(s, s): s for s in VALID_ITEM_STATUSES}
         choices = sorted(label_to_value)
+        item_row = self._item_table.currentRow()
+        cur_item_label = (self._item_table.item(item_row, _ITEM_COLUMNS.index("item_status")) or QTableWidgetItem()).text()
+        current_idx = choices.index(cur_item_label) if cur_item_label in choices else 0
         label, ok = QInputDialog.getItem(
             self,
             "切換項目狀態",
             "請選擇新狀態：",
             choices,
+            current=current_idx,
             editable=False,
         )
         if not ok or not label:

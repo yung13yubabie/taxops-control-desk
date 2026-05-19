@@ -249,8 +249,11 @@ class TasksPage(QWidget):
             return
         label_to_value = {STATUS_LABELS.get(s, s): s for s in VALID_TASK_STATUSES}
         choices = sorted(label_to_value)
+        row = self._table.currentRow()
+        cur_status_label = (self._table.item(row, _COLUMN_ORDER.index("status")) or QTableWidgetItem()).text()
+        current_idx = choices.index(cur_status_label) if cur_status_label in choices else 0
         label, ok = QInputDialog.getItem(
-            self, "切換狀態", "請選擇新狀態：", choices, editable=False
+            self, "切換狀態", "請選擇新狀態：", choices, current=current_idx, editable=False
         )
         if not ok or not label:
             return
