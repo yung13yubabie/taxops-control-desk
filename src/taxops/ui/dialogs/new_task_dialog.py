@@ -92,23 +92,26 @@ class NewTaskDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
 
     def on_save(self) -> None:
-        payload = CreateTaskInput(
-            engagement_id=self._engagement_id,
-            title=self._title.text(),
-            assignee=self._assignee.text() or None,
-            due_date=date_edit_value(self._due_date),
-            priority=self._priority.currentData(),
-            next_step=self._next_step.text() or None,
-            notes=self._notes.toPlainText() or None,
-        )
+        self._save_btn.setEnabled(False)
         try:
+            payload = CreateTaskInput(
+                engagement_id=self._engagement_id,
+                title=self._title.text(),
+                assignee=self._assignee.text() or None,
+                due_date=date_edit_value(self._due_date),
+                priority=self._priority.currentData(),
+                next_step=self._next_step.text() or None,
+                notes=self._notes.toPlainText() or None,
+            )
             self._svc.create_task(payload)
         except TaskValidationError as err:
             QMessageBox.warning(self, "輸入有誤", error_message(err.code))
             if err.code == "task.title.required":
                 self._title.setFocus()
+            self._save_btn.setEnabled(True)
             return
         except Exception:
             QMessageBox.warning(self, "新增失敗", error_message("task.create.failed"))
+            self._save_btn.setEnabled(True)
             return
         self.accept()

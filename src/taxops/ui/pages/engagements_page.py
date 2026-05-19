@@ -27,6 +27,7 @@ from ...services.engagements import EngagementValidationError
 from ..action_registry import FilterKey
 from ..dialogs.edit_engagement_dialog import EditEngagementDialog
 from ..dialogs.new_engagement_dialog import NewEngagementDialog
+from ..style import toolbar_icon
 
 _COLUMN_ORDER = (
     "id",
@@ -88,6 +89,13 @@ class EngagementsPage(QWidget):
         self._delete_btn = QPushButton("刪除案件")
         self._doc_btn = QPushButton("管理索件批次")
         self._refresh_btn = QPushButton("重新整理")
+
+        self._new_btn.setIcon(toolbar_icon("new"))
+        self._edit_btn.setIcon(toolbar_icon("edit"))
+        self._status_btn.setIcon(toolbar_icon("edit"))
+        self._delete_btn.setIcon(toolbar_icon("delete"))
+        self._doc_btn.setIcon(toolbar_icon("bulk"))
+        self._refresh_btn.setIcon(toolbar_icon("refresh"))
 
         self._new_btn.setEnabled(False)
         self._edit_btn.setEnabled(False)

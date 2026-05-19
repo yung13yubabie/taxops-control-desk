@@ -142,10 +142,11 @@ class NewClientDialog(QDialog):
             BUTTON_LABELS["client_dialog.cancel"],
             QDialogButtonBox.ButtonRole.RejectRole,
         )
-        save_btn.setDefault(True)
+        self._save_btn = save_btn
+        self._save_btn.setDefault(True)
         outer.addWidget(self._buttons)
 
-        save_btn.clicked.connect(self.on_save)
+        self._save_btn.clicked.connect(self.on_save)
         cancel_btn.clicked.connect(self.on_cancel)
 
     # ------------------------------------------------------------------
@@ -207,31 +208,34 @@ class NewClientDialog(QDialog):
     # ------------------------------------------------------------------
 
     def on_save(self) -> None:
-        payload = CreateClientInput(
-            client_code=self._client_code.text(),
-            client_name=self._client_name.text(),
-            tax_id=self._tax_id.text(),
-            short_name=self._short_name.text(),
-            contact_name=self._contact_name.text(),
-            contact_phone=self._contact_phone.text(),
-            contact_email=self._contact_email.text(),
-            address=self._address.text(),
-            note=self._note.toPlainText(),
-            registry_source_tax_id=(
-                self._registry_prefill["source_tax_id"] if self._registry_prefill else None
-            ),
-            registry_cache_version=(
-                self._registry_prefill["cache_version"] if self._registry_prefill else None
-            ),
-        )
+        self._save_btn.setEnabled(False)
         try:
+            payload = CreateClientInput(
+                client_code=self._client_code.text(),
+                client_name=self._client_name.text(),
+                tax_id=self._tax_id.text(),
+                short_name=self._short_name.text(),
+                contact_name=self._contact_name.text(),
+                contact_phone=self._contact_phone.text(),
+                contact_email=self._contact_email.text(),
+                address=self._address.text(),
+                note=self._note.toPlainText(),
+                registry_source_tax_id=(
+                    self._registry_prefill.get("source_tax_id") if self._registry_prefill else None
+                ),
+                registry_cache_version=(
+                    self._registry_prefill.get("cache_version") if self._registry_prefill else None
+                ),
+            )
             self._clients.create_client(payload)
         except ClientValidationError as err:
             self._show_error(error_message(err.code))
             self._focus_first_invalid(err.code)
+            self._save_btn.setEnabled(True)
             return
         except Exception:
             self._show_error(error_message("client.create.failed"))
+            self._save_btn.setEnabled(True)
             return
         self.accept()
 

@@ -72,37 +72,40 @@ class EditClientDialog(QDialog):
         outer.addLayout(form)
 
         self._buttons = QDialogButtonBox()
-        save_btn = self._buttons.addButton("儲存變更", QDialogButtonBox.ButtonRole.AcceptRole)
+        self._save_btn = self._buttons.addButton("儲存變更", QDialogButtonBox.ButtonRole.AcceptRole)
         cancel_btn = self._buttons.addButton(
             BUTTON_LABELS["client_dialog.cancel"],
             QDialogButtonBox.ButtonRole.RejectRole,
         )
-        save_btn.setDefault(True)
+        self._save_btn.setDefault(True)
         outer.addWidget(self._buttons)
 
-        save_btn.clicked.connect(self.on_save)
+        self._save_btn.clicked.connect(self.on_save)
         cancel_btn.clicked.connect(self.on_cancel)
 
     def on_save(self) -> None:
-        payload = UpdateClientInput(
-            client_code=self._client_code.text(),
-            client_name=self._client_name.text(),
-            tax_id=self._tax_id.text(),
-            short_name=self._short_name.text(),
-            contact_name=self._contact_name.text(),
-            contact_phone=self._contact_phone.text(),
-            contact_email=self._contact_email.text(),
-            address=self._address.text(),
-            note=self._note.toPlainText(),
-        )
+        self._save_btn.setEnabled(False)
         try:
+            payload = UpdateClientInput(
+                client_code=self._client_code.text(),
+                client_name=self._client_name.text(),
+                tax_id=self._tax_id.text(),
+                short_name=self._short_name.text(),
+                contact_name=self._contact_name.text(),
+                contact_phone=self._contact_phone.text(),
+                contact_email=self._contact_email.text(),
+                address=self._address.text(),
+                note=self._note.toPlainText(),
+            )
             self._clients.update_client(self._client_id, payload)
         except ClientValidationError as err:
             QMessageBox.warning(self, "輸入有誤", error_message(err.code))
             self._focus_first_invalid(err.code)
+            self._save_btn.setEnabled(True)
             return
         except Exception:
             QMessageBox.warning(self, "更新失敗", error_message("client.update.failed"))
+            self._save_btn.setEnabled(True)
             return
         self.accept()
 

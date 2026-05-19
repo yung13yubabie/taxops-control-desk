@@ -124,6 +124,10 @@ class GenerateMessageDialog(QDialog):
             self._preview.setPlainText(f"[預覽失敗：{error_message(err.code)}]")
             self._save_btn.setEnabled(False)
             self._copy_btn.setEnabled(False)
+        except Exception:
+            self._preview.setPlainText("[預覽失敗：內部錯誤]")
+            self._save_btn.setEnabled(False)
+            self._copy_btn.setEnabled(False)
 
     def _generate(self) -> GeneratedMessageRow | None:
         template_id = self._template_combo.currentData()
@@ -145,5 +149,8 @@ class GenerateMessageDialog(QDialog):
             QApplication.clipboard().setText(body)
 
     def _on_save(self) -> None:
+        self._save_btn.setEnabled(False)
         if self._generate() is not None:
             self.accept()
+        else:
+            self._save_btn.setEnabled(True)

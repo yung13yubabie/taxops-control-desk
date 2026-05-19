@@ -27,6 +27,7 @@ from ..action_registry import (
     PAGE_TASKS,
     FilterKey,
 )
+from ..style import toolbar_icon
 
 _log = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ _CARD_DEFS: tuple[tuple[str, str, str, str, str], ...] = (
     ("missing_item_requests", "缺件案件", PAGE_ENGAGEMENTS, "前往案件管理", ""),
     ("upcoming_engagements", "即將申報案件（7天內）", PAGE_ENGAGEMENTS, "前往案件管理", FilterKey.UPCOMING),
     ("overdue_engagements", "逾期繳款風險", PAGE_ENGAGEMENTS, "前往案件管理", FilterKey.OVERDUE),
-    ("high_risk_engagements", "高風險案件", PAGE_REVIEW_NOTES, "前往覆核意見", FilterKey.HIGH_RISK),
+    ("high_risk_engagements", "高風險案件", PAGE_TASKS, "前往待辦事項", FilterKey.OVERDUE),
 )
 
 
@@ -100,6 +101,7 @@ class DashboardPage(QWidget):
         header.addWidget(title)
         header.addStretch()
         self._refresh_btn = QPushButton("重新整理")
+        self._refresh_btn.setIcon(toolbar_icon("refresh"))
         self._refresh_btn.clicked.connect(self._on_refresh)
         header.addWidget(self._refresh_btn)
         outer.addLayout(header)

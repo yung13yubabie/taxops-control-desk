@@ -19,6 +19,7 @@ from taxops.repositories.generated_messages import GeneratedMessagesRepository
 from taxops.repositories.system_logs import SystemLogRepository
 from taxops.repositories.templates import TemplatesRepository
 from taxops.services.audit import AuditService
+from taxops.services.clients import ClientsService
 from taxops.services.document_requests import DocumentRequestsService
 from taxops.services.engagements import EngagementsService
 from taxops.services.generated_messages import GeneratedMessagesService
@@ -43,6 +44,7 @@ class _FakeContainer:
         self._audit = AuditService(audit_repo, actor="ui_test")
         self.system_log = SystemLogService(SystemLogRepository(conn))
         self.engagements = EngagementsService(EngagementsRepository(conn), self._audit)
+        self.clients = ClientsService(ClientsRepository(conn), self._audit)
         self.doc_requests = DocumentRequestsService(DocumentRequestsRepository(conn), self._audit)
         tmpl_repo = TemplatesRepository(conn)
         self.templates = TemplatesService(tmpl_repo, self._audit)

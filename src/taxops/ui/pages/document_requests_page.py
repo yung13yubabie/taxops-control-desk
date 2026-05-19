@@ -32,6 +32,7 @@ from ...services.export import ExportValidationError
 from ...services.generated_messages import GeneratedMessageValidationError
 from ..dialogs.add_document_item_dialog import AddDocumentItemDialog
 from ..dialogs.generate_message_dialog import GenerateMessageDialog
+from ..style import toolbar_icon
 
 _REQ_COLUMNS = (
     "id",
@@ -98,6 +99,16 @@ class DocumentRequestsPage(QWidget):
         self._item_status_btn = QPushButton("切換項目狀態")
         self._generate_btn = QPushButton("產生訊息")
         self._export_btn = QPushButton("匯出缺件清單")
+
+        self._back_btn.setIcon(toolbar_icon("back"))
+        self._new_req_btn.setIcon(toolbar_icon("new"))
+        self._mark_requested_btn.setIcon(toolbar_icon("complete"))
+        self._follow_up_btn.setIcon(toolbar_icon("trial"))
+        self._delete_req_btn.setIcon(toolbar_icon("delete"))
+        self._add_item_btn.setIcon(toolbar_icon("new"))
+        self._item_status_btn.setIcon(toolbar_icon("edit"))
+        self._generate_btn.setIcon(toolbar_icon("trial"))
+        self._export_btn.setIcon(toolbar_icon("export"))
 
         self._new_req_btn.setEnabled(False)
         self._mark_requested_btn.setEnabled(False)

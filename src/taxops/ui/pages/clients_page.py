@@ -24,6 +24,7 @@ from ...services.container import ServiceContainer
 from ..dialogs.bulk_import_wizard import BulkImportWizard
 from ..dialogs.edit_client_dialog import EditClientDialog
 from ..dialogs.new_client_dialog import NewClientDialog
+from ..style import toolbar_icon
 
 _PAGE_SIZE = 50
 
@@ -94,6 +95,13 @@ class ClientsPage(QWidget):
         self._restore_btn = QPushButton("復原客戶")
         self._bulk_btn = QPushButton("批量匯入")
         self._refresh_btn = QPushButton(BUTTON_LABELS["clients.refresh"])
+
+        self._new_btn.setIcon(toolbar_icon("new"))
+        self._edit_btn.setIcon(toolbar_icon("edit"))
+        self._delete_btn.setIcon(toolbar_icon("delete"))
+        self._restore_btn.setIcon(toolbar_icon("refresh"))
+        self._bulk_btn.setIcon(toolbar_icon("bulk"))
+        self._refresh_btn.setIcon(toolbar_icon("refresh"))
 
         self._edit_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)

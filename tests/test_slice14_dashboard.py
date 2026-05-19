@@ -412,6 +412,17 @@ class TestDashboardPageUI:
         page._cards["waiting_client"].nav_btn.click()
         assert emitted == [(PAGE_ENGAGEMENTS, "")]
 
+    def test_navigate_signal_high_risk_goes_to_tasks_overdue(self):
+        _make_app()
+        container = _fresh_container()
+        from taxops.ui.pages.dashboard_page import DashboardPage
+        from taxops.ui.action_registry import PAGE_TASKS, FilterKey
+        page = DashboardPage(container)
+        emitted: list[tuple[str, str]] = []
+        page.navigate_to_page.connect(lambda p, f: emitted.append((p, f)))
+        page._cards["high_risk_engagements"].nav_btn.click()
+        assert emitted == [(PAGE_TASKS, FilterKey.OVERDUE)]
+
     def test_refresh_updates_count_after_seed(self):
         _make_app()
         container = _fresh_container()

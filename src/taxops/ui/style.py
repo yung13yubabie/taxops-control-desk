@@ -168,6 +168,28 @@ QDialogButtonBox QPushButton {{ min-width: 80px; }}
 """
 
 
+from PySide6.QtWidgets import QStyle as _QStyle
+
+_TOOLBAR_ICON_MAP: dict[str, _QStyle.StandardPixmap] = {
+    "new": _QStyle.StandardPixmap.SP_FileDialogNewFolder,
+    "edit": _QStyle.StandardPixmap.SP_FileDialogDetailedView,
+    "delete": _QStyle.StandardPixmap.SP_TrashIcon,
+    "refresh": _QStyle.StandardPixmap.SP_BrowserReload,
+    "back": _QStyle.StandardPixmap.SP_ArrowBack,
+    "save": _QStyle.StandardPixmap.SP_DialogSaveButton,
+    "trial": _QStyle.StandardPixmap.SP_MessageBoxInformation,
+    "complete": _QStyle.StandardPixmap.SP_DialogApplyButton,
+    "export": _QStyle.StandardPixmap.SP_ArrowRight,
+    "bulk": _QStyle.StandardPixmap.SP_DirLinkIcon,
+}
+
+
+def toolbar_icon(role: str) -> "QIcon":
+    from PySide6.QtWidgets import QApplication
+    sp = _TOOLBAR_ICON_MAP.get(role, _QStyle.StandardPixmap.SP_MessageBoxInformation)
+    return QApplication.style().standardIcon(sp)
+
+
 def apply(app: object) -> None:
     """Apply the global stylesheet and app icon to a QApplication instance."""
     from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont

@@ -24,7 +24,7 @@ from ...services.container import ServiceContainer
 from ...services.tasks import VALID_TASK_STATUSES, TaskValidationError
 from ..action_registry import FilterKey
 from ..dialogs.new_task_dialog import NewTaskDialog
-from ..style import DANGER_COLOR
+from ..style import DANGER_COLOR, toolbar_icon
 
 _COLUMN_ORDER = ("id", "title", "priority", "status", "assignee", "due_date", "updated_at")
 
@@ -75,6 +75,11 @@ class TasksPage(QWidget):
         self._delete_btn = QPushButton("刪除待辦")
         self._delete_btn.setEnabled(False)
         self._refresh_btn = QPushButton("重新整理")
+        self._new_btn.setIcon(toolbar_icon("new"))
+        self._complete_btn.setIcon(toolbar_icon("complete"))
+        self._status_btn.setIcon(toolbar_icon("edit"))
+        self._delete_btn.setIcon(toolbar_icon("delete"))
+        self._refresh_btn.setIcon(toolbar_icon("refresh"))
         toolbar.addWidget(self._new_btn)
         toolbar.addWidget(self._complete_btn)
         toolbar.addWidget(self._status_btn)

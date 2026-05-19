@@ -138,11 +138,11 @@ class TemplateFormDialog(QDialog):
         self._body.setFocus()
 
     def on_save(self) -> None:
-        name = self._name.text()
-        template_type = self._type.currentData()
-        body = self._body.toPlainText()
-
+        self._save_btn.setEnabled(False)
         try:
+            name = self._name.text()
+            template_type = self._type.currentData()
+            body = self._body.toPlainText()
             if self._existing is None:
                 self._svc.create_template(
                     CreateTemplateInput(name=name, template_type=template_type, body=body)
@@ -158,9 +158,11 @@ class TemplateFormDialog(QDialog):
                 self._name.setFocus()
             elif err.code in _BODY_FOCUS_ERRORS:
                 self._body.setFocus()
+            self._save_btn.setEnabled(True)
             return
         except Exception:
             code = "template.update.failed" if self._existing else "template.create.failed"
             QMessageBox.warning(self, "操作失敗", error_message(code))
+            self._save_btn.setEnabled(True)
             return
         self.accept()

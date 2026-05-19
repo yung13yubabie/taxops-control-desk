@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from ...i18n import error_message
 from ...services.attachments import AttachmentValidationError, UploadAttachmentInput
 from ...services.container import ServiceContainer
+from ..style import toolbar_icon
 
 def _plain_label(text: str) -> QLabel:
     lbl = QLabel(str(text))
@@ -115,25 +116,30 @@ class AttachmentsPage(QWidget):
         btn_row.setSpacing(8)
 
         self._upload_btn = QPushButton("新增附件")
+        self._upload_btn.setIcon(toolbar_icon("new"))
         self._upload_btn.clicked.connect(self._on_upload)
         btn_row.addWidget(self._upload_btn)
 
         self._accept_btn = QPushButton("標記已驗收")
+        self._accept_btn.setIcon(toolbar_icon("complete"))
         self._accept_btn.setEnabled(False)
         self._accept_btn.clicked.connect(self._on_accept)
         btn_row.addWidget(self._accept_btn)
 
         self._reject_btn = QPushButton("標記退回")
+        self._reject_btn.setIcon(toolbar_icon("delete"))
         self._reject_btn.setEnabled(False)
         self._reject_btn.clicked.connect(self._on_reject)
         btn_row.addWidget(self._reject_btn)
 
         self._info_btn = QPushButton("檔案資訊")
+        self._info_btn.setIcon(toolbar_icon("trial"))
         self._info_btn.setEnabled(False)
         self._info_btn.clicked.connect(self._on_show_info)
         btn_row.addWidget(self._info_btn)
 
         self._open_btn = QPushButton("用系統程式開啟")
+        self._open_btn.setIcon(toolbar_icon("export"))
         self._open_btn.setEnabled(False)
         self._open_btn.setToolTip("此功能尚未開放")
         btn_row.addWidget(self._open_btn)

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -22,9 +25,23 @@ from ...i18n.status_labels import TEMPLATE_TYPE_LABELS
 from ...services.container import ServiceContainer
 from ...services.templates import TemplateValidationError
 from ..dialogs.template_form_dialog import TemplateFormDialog
-from ..style import DANGER_COLOR
+from ..style import DANGER_COLOR, toolbar_icon
 
 _COLUMN_ORDER = ("id", "name", "template_type", "is_builtin", "updated_at")
+
+_SAMPLE_VARS: dict[str, str] = {
+    "client_name": "範例客戶股份有限公司",
+    "tax_id": "12345678",
+    "contact_person": "王小明",
+    "period_name": "2024Q4",
+    "tax_type_name": "營業稅",
+    "engagement_name": "2024年度營業稅申報",
+    "missing_items": "- 進項憑證\n- 銷項憑證",
+    "invalid_items": "- 不明費用單據",
+    "incomplete_items": "- 薪資明細（缺損）",
+    "due_date": "2025-01-31",
+    "notes": "請盡速提供，謝謝",
+}
 
 _TABLE_HEADERS = {
     "id": "編號",
@@ -58,10 +75,19 @@ class TemplatesPage(QWidget):
         self._edit_btn.setEnabled(False)
         self._delete_btn = QPushButton("刪除模板")
         self._delete_btn.setEnabled(False)
+        self._trial_btn = QPushButton("試用模板")
+        self._trial_btn.setEnabled(False)
+        self._trial_btn.setToolTip("以範例資料預覽此模板的渲染結果")
         self._refresh_btn = QPushButton("重新整理")
+        self._new_btn.setIcon(toolbar_icon("new"))
+        self._edit_btn.setIcon(toolbar_icon("edit"))
+        self._delete_btn.setIcon(toolbar_icon("delete"))
+        self._trial_btn.setIcon(toolbar_icon("trial"))
+        self._refresh_btn.setIcon(toolbar_icon("refresh"))
         toolbar.addWidget(self._new_btn)
         toolbar.addWidget(self._edit_btn)
         toolbar.addWidget(self._delete_btn)
+        toolbar.addWidget(self._trial_btn)
         toolbar.addStretch()
         toolbar.addWidget(self._refresh_btn)
         outer.addLayout(toolbar)
@@ -116,6 +142,7 @@ class TemplatesPage(QWidget):
         self._new_btn.clicked.connect(self._on_new_template)
         self._edit_btn.clicked.connect(self._on_edit_template)
         self._delete_btn.clicked.connect(self._on_delete_template)
+        self._trial_btn.clicked.connect(self._on_trial_template)
         self._refresh_btn.clicked.connect(self._refresh)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
 
@@ -178,6 +205,7 @@ class TemplatesPage(QWidget):
         has_sel = tmpl_id is not None
         self._edit_btn.setEnabled(has_sel)
         self._delete_btn.setEnabled(has_sel)
+        self._trial_btn.setEnabled(has_sel)
         self._preview.setPlainText(self._body_cache.get(tmpl_id, "") if has_sel else "")
 
     # ------------------------------------------------------------------
@@ -226,3 +254,38 @@ class TemplatesPage(QWidget):
             QMessageBox.warning(self, "刪除失敗", error_message("template.delete.failed"))
             return
         self._refresh()
+
+    def _on_trial_template(self) -> None:
+        tmpl_id = self._selected_template_id()
+        if tmpl_id is None:
+            return
+        try:
+            rendered = self._container.templates.render_template(tmpl_id, _SAMPLE_VARS)
+        except TemplateValidationError as err:
+            QMessageBox.warning(self, "試用失敗", error_message(err.code))
+            return
+        except Exception as err:
+            self._container.system_log.warn(
+                "templates_page: render failed",
+                detail={"exc": type(err).__name__, "msg": str(err)},
+            )
+            QMessageBox.warning(self, "試用失敗", error_message("template.render.failed"))
+            return
+        dlg = QDialog(self)
+        dlg.setWindowTitle("試用模板（範例資料）")
+        dlg.setMinimumWidth(500)
+        dlg.setMinimumHeight(350)
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(QLabel("以下為範例資料渲染結果（未儲存）："))
+        preview = QTextEdit()
+        preview.setReadOnly(True)
+        preview.setPlainText(rendered)
+        layout.addWidget(preview, stretch=1)
+        buttons = QDialogButtonBox()
+        copy_btn = buttons.addButton("複製", QDialogButtonBox.ButtonRole.ActionRole)
+        buttons.addButton("關閉", QDialogButtonBox.ButtonRole.RejectRole)
+        copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(rendered))
+        buttons.rejected.connect(dlg.reject)
+        layout.addWidget(buttons)
+        dlg.exec()

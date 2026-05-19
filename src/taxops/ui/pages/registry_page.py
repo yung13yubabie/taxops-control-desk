@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from ...i18n import DISABLED_TOOLTIP
 from ...services.container import ServiceContainer
 from ..dialogs.registry_apply_dialog import RegistryApplyDialog
+from ..style import toolbar_icon
 
 _log = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ class RegistryPage(QWidget):
         search_layout.addWidget(self._query_edit, stretch=1)
 
         self._search_btn = QPushButton("查詢本地快取")
+        self._search_btn.setIcon(toolbar_icon("refresh"))
         self._search_btn.clicked.connect(self._on_search_local)
         search_layout.addWidget(self._search_btn)
 
@@ -114,6 +116,7 @@ class RegistryPage(QWidget):
         apply_layout.addWidget(self._client_combo, stretch=1)
 
         self._apply_btn = QPushButton("套用至客戶主檔")
+        self._apply_btn.setIcon(toolbar_icon("save"))
         self._apply_btn.setEnabled(False)
         self._apply_btn.clicked.connect(self._on_apply_to_client)
         apply_layout.addWidget(self._apply_btn)

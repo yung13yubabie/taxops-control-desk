@@ -88,16 +88,17 @@ class NewEngagementDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
 
     def on_save(self) -> None:
-        payload = CreateEngagementInput(
-            client_id=self._client_id,
-            engagement_name=self._name.text(),
-            tax_type=self._tax_type.currentData(),
-            period_name=self._period.text(),
-            owner=self._owner.text() or None,
-            due_date=date_edit_value(self._due_date),
-            notes=self._notes.toPlainText() or None,
-        )
+        self._save_btn.setEnabled(False)
         try:
+            payload = CreateEngagementInput(
+                client_id=self._client_id,
+                engagement_name=self._name.text(),
+                tax_type=self._tax_type.currentData(),
+                period_name=self._period.text(),
+                owner=self._owner.text() or None,
+                due_date=date_edit_value(self._due_date),
+                notes=self._notes.toPlainText() or None,
+            )
             self._svc.create_engagement(payload)
         except EngagementValidationError as err:
             QMessageBox.warning(self, "輸入有誤", error_message(err.code))
@@ -105,8 +106,10 @@ class NewEngagementDialog(QDialog):
                 self._name.setFocus()
             elif err.code == "engagement.period_name.required":
                 self._period.setFocus()
+            self._save_btn.setEnabled(True)
             return
         except Exception:
             QMessageBox.warning(self, "新增失敗", error_message("engagement.create.failed"))
+            self._save_btn.setEnabled(True)
             return
         self.accept()

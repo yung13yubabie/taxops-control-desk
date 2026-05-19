@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from ...i18n import error_message
 from ...i18n.status_labels import status_to_label
 from ...services.container import ServiceContainer
+from ..style import toolbar_icon
 from ...services.late_fee import (
     CalculateLateFeeInput,
     LateFeeValidationError,
@@ -95,6 +96,7 @@ class LateFeePage(QWidget):
         form_layout.addRow("申報稅額：", self._base_spin)
 
         self._calc_btn = QPushButton("開始試算")
+        self._calc_btn.setIcon(toolbar_icon("trial"))
         self._calc_btn.clicked.connect(self._on_calculate)
         form_layout.addRow("", self._calc_btn)
 

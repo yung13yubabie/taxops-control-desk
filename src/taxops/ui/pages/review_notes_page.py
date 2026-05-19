@@ -29,6 +29,7 @@ from ...services.review_notes import (
     UpdateReviewNoteStatusInput,
 )
 from ..action_registry import FilterKey
+from ..style import toolbar_icon
 
 _COLUMN_ORDER = ("id", "severity", "status", "comment", "assigned_to", "updated_at")
 _TABLE_HEADERS = {
@@ -133,10 +134,12 @@ class ReviewNotesPage(QWidget):
         filter_row.addStretch()
 
         self._refresh_btn = QPushButton("重新整理")
+        self._refresh_btn.setIcon(toolbar_icon("refresh"))
         self._refresh_btn.clicked.connect(self._load)
         filter_row.addWidget(self._refresh_btn)
 
         self._new_btn = QPushButton("新增覆核意見")
+        self._new_btn.setIcon(toolbar_icon("new"))
         self._new_btn.clicked.connect(self._on_new)
         filter_row.addWidget(self._new_btn)
 
@@ -147,18 +150,22 @@ class ReviewNotesPage(QWidget):
         action_row.addStretch()
 
         self._respond_btn = QPushButton("回覆")
+        self._respond_btn.setIcon(toolbar_icon("trial"))
         self._respond_btn.clicked.connect(self._on_respond)
         action_row.addWidget(self._respond_btn)
 
         self._resolve_btn = QPushButton("解決")
+        self._resolve_btn.setIcon(toolbar_icon("complete"))
         self._resolve_btn.clicked.connect(self._on_resolve)
         action_row.addWidget(self._resolve_btn)
 
         self._waive_btn = QPushButton("豁免")
+        self._waive_btn.setIcon(toolbar_icon("save"))
         self._waive_btn.clicked.connect(self._on_waive)
         action_row.addWidget(self._waive_btn)
 
         self._reopen_btn = QPushButton("重新開啟")
+        self._reopen_btn.setIcon(toolbar_icon("refresh"))
         self._reopen_btn.clicked.connect(self._on_reopen)
         action_row.addWidget(self._reopen_btn)
 
