@@ -20,26 +20,26 @@ def qapp() -> QApplication:
     return QApplication.instance() or QApplication([])
 
 
-def test_nullable_date_edit_defaults_to_local_today_not_qt_min(qapp: QApplication) -> None:
+def test_nullable_date_edit_defaults_to_sentinel_not_today(qapp: QApplication) -> None:
+    """Fresh widget defaults to 'not set' sentinel to prevent silent data overwrites."""
     from taxops.ui.dialogs._shared import date_edit_value, make_nullable_date_edit
 
     widget = make_nullable_date_edit()
 
-    assert widget.date() != widget.minimumDate()
-    assert widget.date() == QDate.currentDate()
-    assert date_edit_value(widget) == QDate.currentDate().toString("yyyy-MM-dd")
+    assert widget.date() == widget.minimumDate()
+    assert date_edit_value(widget) is None
 
 
-def test_invalid_date_value_resets_to_local_today_not_1752(qapp: QApplication) -> None:
+def test_invalid_date_value_resets_to_sentinel_not_today(qapp: QApplication) -> None:
+    """Invalid ISO date resets to sentinel (not set) rather than silently writing today."""
     from taxops.ui.dialogs._shared import date_edit_value, make_nullable_date_edit, set_date_edit_value
 
     widget = make_nullable_date_edit()
 
     set_date_edit_value(widget, "not-a-date")
 
-    assert widget.date() != widget.minimumDate()
-    assert widget.date() == QDate.currentDate()
-    assert date_edit_value(widget) == QDate.currentDate().toString("yyyy-MM-dd")
+    assert widget.date() == widget.minimumDate()
+    assert date_edit_value(widget) is None
 
 
 def test_engagements_page_refresh_context_loads_newly_created_client(
