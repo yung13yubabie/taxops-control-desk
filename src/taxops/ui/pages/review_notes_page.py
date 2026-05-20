@@ -201,9 +201,14 @@ class ReviewNotesPage(QWidget):
         self._filter_key = filter_key
         self._load()
 
+    def refresh_context(self) -> None:
+        """Reload engagement choices when the page becomes active."""
+        self._load_engagements()
+
     # ------------------------------------------------------------------
 
     def _load_engagements(self) -> None:
+        selected_id = self._eng_combo.currentData()
         self._eng_combo.blockSignals(True)
         self._eng_combo.clear()
         self._eng_combo.addItem("（全部案件）", _ALL_ENGAGEMENTS)
@@ -216,6 +221,11 @@ class ReviewNotesPage(QWidget):
                 detail={"exc": type(exc).__name__, "msg": str(exc)},
             )
             self._eng_combo.addItem("（載入案件失敗）", _ALL_ENGAGEMENTS)
+        if selected_id is not None:
+            for i in range(self._eng_combo.count()):
+                if self._eng_combo.itemData(i) == selected_id:
+                    self._eng_combo.setCurrentIndex(i)
+                    break
         self._eng_combo.blockSignals(False)
         self._load()
 

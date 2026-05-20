@@ -15,6 +15,7 @@ from taxops.repositories.audit_logs import AuditLogRepository
 from taxops.repositories.templates import TemplatesRepository
 from taxops.services.audit import AuditService
 from taxops.services.templates import CreateTemplateInput, TemplatesService
+from taxops.ui.dialogs.template_form_dialog import TemplateFormDialog
 from taxops.ui.pages.templates_page import TemplatesPage
 
 
@@ -153,3 +154,28 @@ def test_preview_updates_on_row_selection(page, container):
 def test_preview_cleared_on_deselect(page):
     page._table.clearSelection()
     assert page._preview.toPlainText() == ""
+
+
+def test_template_form_variable_list_uses_plain_language(container, qapp):
+    dialog = TemplateFormDialog(container.templates)
+
+    labels = [dialog._var_list.item(i).text() for i in range(dialog._var_list.count())]
+
+    assert "客戶名稱" in labels
+    assert "截止日" in labels
+    assert all("{{" not in label and "}}" not in label for label in labels)
+
+
+def test_template_form_insert_variable_uses_plain_language_placeholder(container, qapp):
+    dialog = TemplateFormDialog(container.templates)
+    item = next(
+        dialog._var_list.item(i)
+        for i in range(dialog._var_list.count())
+        if dialog._var_list.item(i).text() == "客戶名稱"
+    )
+
+    dialog._on_insert_variable(item)
+
+    body = dialog._body.toPlainText()
+    assert body == "【客戶名稱】"
+    assert "{{" not in body

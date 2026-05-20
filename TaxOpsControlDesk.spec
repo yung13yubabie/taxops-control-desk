@@ -9,7 +9,7 @@ a = Analysis(
     ["build_tools/pyinstaller_entry.py"],
     pathex=["src"],
     binaries=[],
-    datas=[],
+    datas=[("assets/app_icon.ico", "assets")],
     hiddenimports=[
         # PySide6 modules not always auto-detected but loaded at runtime
         "PySide6.QtSvg",
@@ -64,6 +64,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,          # No console window in production
+    icon="assets/app_icon.ico",
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

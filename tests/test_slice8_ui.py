@@ -7,6 +7,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtCore import QDate
 from PySide6.QtWidgets import QApplication
 
 from taxops.db.connection import open_connection
@@ -156,7 +157,8 @@ def test_late_fee_calculate_persists_to_db(qapp, conn, container):
             page._req_combo.setCurrentIndex(i)
             break
 
-    page._days_spin.setValue(7)
+    page._last_payment_date.setDate(QDate(2024, 12, 2))
+    page._actual_payment_date.setDate(QDate(2024, 12, 9))
     page._base_spin.setValue(10000.0)
     page._on_calculate()
 
@@ -164,6 +166,37 @@ def test_late_fee_calculate_persists_to_db(qapp, conn, container):
     assert len(records) == 1
     assert records[0].penalty_percent == 2.0
     assert records[0].penalty_amount == 200.0
+
+
+def test_late_fee_page_can_calculate_same_request_repeatedly(qapp, conn, container):
+    _, req_id = _seed(conn)
+    page = LateFeePage(container)
+
+    for i in range(page._eng_combo.count()):
+        if page._eng_combo.itemData(i) != -1:
+            page._eng_combo.setCurrentIndex(i)
+            break
+    for i in range(page._req_combo.count()):
+        if page._req_combo.itemData(i) == req_id:
+            page._req_combo.setCurrentIndex(i)
+            break
+
+    page._last_payment_date.setDate(QDate(2024, 12, 2))
+    page._actual_payment_date.setDate(QDate(2024, 12, 6))
+    page._base_spin.setValue(10000.0)
+    page._on_calculate()
+    page._on_calculate()
+
+    records = container.late_fee.list_by_request(req_id)
+    assert len(records) == 2
+
+
+def test_late_fee_page_uses_date_inputs_not_manual_days(qapp, conn, container):
+    page = LateFeePage(container)
+
+    assert hasattr(page, "_last_payment_date")
+    assert hasattr(page, "_actual_payment_date")
+    assert not hasattr(page, "_days_spin")
 
 
 # ── action registry contracts ─────────────────────────────────────────────────

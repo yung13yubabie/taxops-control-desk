@@ -126,7 +126,12 @@ class RegistryPage(QWidget):
 
         self._load_clients()
 
+    def refresh_context(self) -> None:
+        """Reload client choices when the page becomes active."""
+        self._load_clients()
+
     def _load_clients(self) -> None:
+        selected_id = self._client_combo.currentData()
         self._client_combo.clear()
         self._client_combo.addItem("— 請選擇客戶 —", None)
         try:
@@ -136,6 +141,11 @@ class RegistryPage(QWidget):
             return
         for c in clients:
             self._client_combo.addItem(f"{c.client_code}  {c.client_name}", c.id)
+        if selected_id is not None:
+            for i in range(self._client_combo.count()):
+                if self._client_combo.itemData(i) == selected_id:
+                    self._client_combo.setCurrentIndex(i)
+                    break
 
     def _clear_result(self, status_msg: str) -> None:
         self._status_label.setText(status_msg)

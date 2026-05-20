@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -13,7 +14,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
-    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -24,9 +24,11 @@ from ...i18n import error_message
 from ...i18n.status_labels import status_to_label
 from ...services.container import ServiceContainer
 from ..style import toolbar_icon
+from ..dialogs._shared import date_edit_value, make_nullable_date_edit
 from ...services.late_fee import (
     CalculateLateFeeInput,
     LateFeeValidationError,
+    calculate_overdue_days,
     calculate_penalty_percent,
 )
 
@@ -84,10 +86,11 @@ class LateFeePage(QWidget):
         form_layout = QFormLayout(form_box)
         form_layout.setSpacing(10)
 
-        self._days_spin = QSpinBox()
-        self._days_spin.setRange(0, 3650)
-        self._days_spin.setSuffix(" 天")
-        form_layout.addRow("逾期天數：", self._days_spin)
+        self._last_payment_date = make_nullable_date_edit()
+        self._actual_payment_date = make_nullable_date_edit()
+        self._actual_payment_date.setDate(QDate.currentDate())
+        form_layout.addRow("最後繳款日：", self._last_payment_date)
+        form_layout.addRow("實際繳款日：", self._actual_payment_date)
 
         self._base_spin = QDoubleSpinBox()
         self._base_spin.setRange(0, 999_999_999)
@@ -134,7 +137,12 @@ class LateFeePage(QWidget):
         else:
             self._load_history()
 
+    def refresh_context(self) -> None:
+        """Reload engagement/request choices when the page becomes active."""
+        self._load_engagements()
+
     def _load_engagements(self) -> None:
+        selected_id = self._eng_combo.currentData()
         self._eng_combo.blockSignals(True)
         self._eng_combo.clear()
         self._eng_combo.addItem("（請選擇案件）", _ALL)
@@ -147,6 +155,11 @@ class LateFeePage(QWidget):
                 detail={"exc": type(err).__name__, "msg": str(err)},
             )
             self._eng_combo.addItem("（載入案件失敗，請重新整理）", _ALL)
+        if selected_id is not None:
+            for i in range(self._eng_combo.count()):
+                if self._eng_combo.itemData(i) == selected_id:
+                    self._eng_combo.setCurrentIndex(i)
+                    break
         self._eng_combo.blockSignals(False)
         self._on_engagement_changed()
 
@@ -199,11 +212,20 @@ class LateFeePage(QWidget):
                 self._table.setItem(row, col, QTableWidgetItem(vals[key]))
 
     def _on_calculate(self) -> None:
-        overdue_days = self._days_spin.value()
+        last_payment_date = date_edit_value(self._last_payment_date)
+        actual_payment_date = date_edit_value(self._actual_payment_date)
+        if last_payment_date is None or actual_payment_date is None:
+            QMessageBox.warning(self, "提示", "請輸入最後繳款日與實際繳款日")
+            return
         base_amount = self._base_spin.value()
 
         if self._manual_check.isChecked():
-            penalty_percent = calculate_penalty_percent(overdue_days)
+            try:
+                overdue_days = calculate_overdue_days(last_payment_date, actual_payment_date)
+                penalty_percent = calculate_penalty_percent(overdue_days)
+            except LateFeeValidationError as err:
+                QMessageBox.critical(self, "試算失敗", error_message(err.code))
+                return
             penalty_amount = round(base_amount * penalty_percent / 100, 2)
             self._result_label.setText(
                 f"試算結果（未儲存）：滯納金率 {penalty_percent:.1f}%，"
@@ -221,8 +243,10 @@ class LateFeePage(QWidget):
             row = self._container.late_fee.calculate_and_save(
                 CalculateLateFeeInput(
                     request_id=req_id,
-                    overdue_days=overdue_days,
+                    overdue_days=0,
                     base_amount=base_amount,
+                    last_payment_date=last_payment_date,
+                    actual_payment_date=actual_payment_date,
                 )
             )
         except LateFeeValidationError as err:

@@ -28,6 +28,7 @@ from ...services.templates import (
     TemplateValidationError,
     TemplatesService,
     UpdateTemplateInput,
+    VARIABLE_LABELS,
 )
 
 _TYPE_CHOICES = [
@@ -77,8 +78,8 @@ class TemplateFormDialog(QDialog):
         self._body = QTextEdit()
         self._body.setMinimumHeight(180)
         self._body.setPlaceholderText(
-            "輸入模板內容。雙擊右側變數名稱即可插入。\n"
-            "只允許純文字與 {{ 變數 }}，不支援運算或控制流程。"
+            "輸入模板內容。雙擊右側欄位即可插入。\n"
+            "例如：【客戶名稱】、【截止日】。不支援運算或控制流程。"
         )
 
         form.addRow(QLabel("模板名稱 *"), self._name)
@@ -95,10 +96,13 @@ class TemplateFormDialog(QDialog):
 
         var_col = QVBoxLayout()
         var_col.setSpacing(4)
-        var_col.addWidget(QLabel("可用變數（雙擊插入）"))
+        var_col.addWidget(QLabel("可用欄位（雙擊插入）"))
         self._var_list = QListWidget()
         self._var_list.setMaximumWidth(180)
-        self._var_list.addItems(sorted(ALLOWED_VARIABLES))
+        for key in sorted(ALLOWED_VARIABLES, key=lambda value: VARIABLE_LABELS[value]):
+            item = QListWidgetItem(VARIABLE_LABELS[key])
+            item.setData(Qt.ItemDataRole.UserRole, key)
+            self._var_list.addItem(item)
         var_col.addWidget(self._var_list)
 
         body_area.addLayout(body_col, stretch=3)
@@ -121,7 +125,7 @@ class TemplateFormDialog(QDialog):
             idx = self._type.findData(existing.template_type)
             if idx >= 0:
                 self._type.setCurrentIndex(idx)
-            self._body.setPlainText(existing.body)
+            self._body.setPlainText(self._svc.body_for_edit(existing.body))
             if existing.is_builtin:
                 self._name.setEnabled(False)
                 self._type.setEnabled(False)
@@ -134,7 +138,7 @@ class TemplateFormDialog(QDialog):
                 self._type.setCurrentIndex(idx)
 
     def _on_insert_variable(self, item: QListWidgetItem) -> None:
-        self._body.insertPlainText(f"{{{{ {item.text()} }}}}")
+        self._body.insertPlainText(f"【{item.text()}】")
         self._body.setFocus()
 
     def on_save(self) -> None:

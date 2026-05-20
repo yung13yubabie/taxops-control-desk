@@ -13,6 +13,28 @@ def test_pyinstaller_spec_uses_absolute_import_entrypoint() -> None:
     assert "src/taxops/__main__.py" not in spec
 
 
+def test_pyinstaller_spec_embeds_windows_icon() -> None:
+    spec = (ROOT / "TaxOpsControlDesk.spec").read_text(encoding="utf-8")
+
+    assert "assets/app_icon.ico" in spec
+    assert "icon=" in spec
+    assert '("assets/app_icon.ico", "assets")' in spec
+    assert (ROOT / "assets" / "app_icon.ico").exists()
+
+
+def test_app_sets_windows_app_user_model_id() -> None:
+    app_py = (ROOT / "src" / "taxops" / "ui" / "app.py").read_text(encoding="utf-8")
+
+    assert "SetCurrentProcessExplicitAppUserModelID" in app_py
+
+
+def test_style_prefers_packaged_icon_asset() -> None:
+    style_py = (ROOT / "src" / "taxops" / "ui" / "style.py").read_text(encoding="utf-8")
+
+    assert "app_icon.ico" in style_py
+    assert "setWindowIcon(QIcon(str(icon_path)))" in style_py
+
+
 def test_pyinstaller_entrypoint_uses_absolute_import() -> None:
     entry = (ROOT / "build_tools" / "pyinstaller_entry.py").read_text(encoding="utf-8")
 

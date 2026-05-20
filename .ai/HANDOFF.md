@@ -345,7 +345,7 @@
 
 - [已確認] `src/taxops/db/migrations/_m0006_message_templates.py`：message_templates 表 + is_builtin 旗標；`INSERT OR IGNORE` seed 兩筆內建模板（首次索件 id=1 / 催件通知 id=2）。
 - [已確認] `src/taxops/repositories/templates.py`：`TemplateRow` frozen dataclass + `TemplatesRepository`（insert/get/list_all/update/delete）；UPDATE/DELETE 均加 `AND is_builtin = 0` 防改寫內建。/simplify 清除 `_row_to_template()` 內的死碼分支（`keys = row.keys()` 條件）；函式本身仍在使用，由 `get()` 和 `list_all()` 呼叫。
-- [已確認] `src/taxops/services/templates.py`：`TemplatesService`（create_template/update_template/delete_template/get_template/list_all/render_template）；`ALLOWED_VARIABLES` frozenset 擴充至 15 個變數（Slice 6 closeout）；`StrictUndefined`（缺少變數時拋 `template.variable.missing`，不靜默空字串）；`_validate_body()` 重用 `self._env` 解析 AST。
+- [已確認] `src/taxops/services/templates.py`：`TemplatesService`（create_template/update_template/delete_template/get_template/list_all/render_template）；`ALLOWED_VARIABLES` frozenset 11 個變數（4 個未來欄位已於 Slice 15 安全修正中移除，見下方注意事項）；`StrictUndefined`（缺少變數時拋 `template.variable.missing`，不靜默空字串）；`_validate_body()` 重用 `self._env` 解析 AST。
 - [已確認] `src/taxops/i18n/status_labels.py`：新增 `TEMPLATE_TYPE_LABELS`（首次索件 / 催件通知 / 自訂）。
 - [已確認] `src/taxops/ui/dialogs/template_form_dialog.py`：`TemplateFormDialog` 合併新增/編輯；is_builtin 時所有欄位 + save 停用；`_BODY_FOCUS_ERRORS` frozenset。
 - [已確認] `src/taxops/ui/pages/templates_page.py`：`TemplatesPage`（QSplitter 表格 + 預覽）；`_body_cache: dict[int, str]` O(1) lookup，不做 per-selection DB 查詢。
@@ -370,7 +370,7 @@
 ### 給下一個 Agent 的注意事項
 
 - `TemplatesService.render_template(template_id, variables)` 使用 `StrictUndefined`；缺少模板用到的任何變數時拋 `template.variable.missing`（不靜默成空字串）。
-- `ALLOWED_VARIABLES` 現有 15 個：client_name, period_name, tax_type_name, missing_items, invalid_items, incomplete_items, due_date, tax_id, contact_person, engagement_name, payment_due_date, office_owner, reviewer, last_followed_up_at, notes。
+- `ALLOWED_VARIABLES` 現有 **11 個**：client_name, period_name, tax_type_name, missing_items, invalid_items, incomplete_items, due_date, tax_id, contact_person, engagement_name, notes。（payment_due_date, office_owner, reviewer, last_followed_up_at 已於 Slice 15 安全修正中移除，這 4 個欄位的 schema 尚未實作。）
 - 內建模板 id=1（首次索件）+ id=2（催件通知）需要：client_name, period_name, tax_type_name, missing_items, due_date。
 - `TemplateFormDialog` 傳 `existing=None` 新增、傳 `TemplateRow` 編輯；`is_builtin=True` 時所有欄位唯讀。
 - `TemplatesPage._body_cache` 在 `_refresh()` 刷新；選取行改變時用 cache 顯示預覽，不做 DB 查詢。

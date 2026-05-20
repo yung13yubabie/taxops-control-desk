@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass
 
 from ..repositories.document_requests import DocumentRequestsRepository
@@ -22,6 +23,16 @@ def calculate_penalty_percent(overdue_days: int) -> float:
     return float(min(units, 10))
 
 
+def calculate_overdue_days(last_payment_date: str, actual_payment_date: str) -> int:
+    """Return calendar days after the last payment date until actual payment."""
+    try:
+        last_day = datetime.date.fromisoformat(last_payment_date)
+        paid_day = datetime.date.fromisoformat(actual_payment_date)
+    except ValueError as err:
+        raise LateFeeValidationError("late_fee.date.invalid") from err
+    return max((paid_day - last_day).days, 0)
+
+
 class LateFeeValidationError(Exception):
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -33,6 +44,8 @@ class CalculateLateFeeInput:
     request_id: int
     overdue_days: int
     base_amount: float
+    last_payment_date: str | None = None
+    actual_payment_date: str | None = None
 
 
 class LateFeeService:
@@ -47,7 +60,13 @@ class LateFeeService:
         self._audit = audit
 
     def calculate_and_save(self, payload: CalculateLateFeeInput) -> LateFeeRow:
-        if payload.overdue_days < 0:
+        overdue_days = payload.overdue_days
+        if payload.last_payment_date and payload.actual_payment_date:
+            overdue_days = calculate_overdue_days(
+                payload.last_payment_date,
+                payload.actual_payment_date,
+            )
+        elif overdue_days < 0:
             raise LateFeeValidationError("late_fee.negative_overdue_days")
         if payload.base_amount < 0:
             raise LateFeeValidationError("late_fee.negative_base_amount")
@@ -63,12 +82,12 @@ class LateFeeService:
             penalty_percent = 0.0
             penalty_amount = 0.0
         else:
-            penalty_percent = calculate_penalty_percent(payload.overdue_days)
+            penalty_percent = calculate_penalty_percent(overdue_days)
             penalty_amount = round(payload.base_amount * penalty_percent / 100, 2)
 
         row = self._repo.insert(
             request_id=payload.request_id,
-            overdue_days=payload.overdue_days,
+            overdue_days=overdue_days,
             penalty_percent=penalty_percent,
             base_amount=payload.base_amount,
             penalty_amount=penalty_amount,
@@ -81,7 +100,9 @@ class LateFeeService:
             target_id=str(row.id),
             detail={
                 "request_id": payload.request_id,
-                "overdue_days": payload.overdue_days,
+                "overdue_days": overdue_days,
+                "last_payment_date": payload.last_payment_date,
+                "actual_payment_date": payload.actual_payment_date,
                 "penalty_percent": penalty_percent,
                 "penalty_amount": penalty_amount,
             },

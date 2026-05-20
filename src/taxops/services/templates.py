@@ -31,6 +31,22 @@ ALLOWED_VARIABLES = frozenset({
     "notes",
 })
 
+VARIABLE_LABELS: dict[str, str] = {
+    "client_name": "客戶名稱",
+    "period_name": "申報期間",
+    "tax_type_name": "稅目",
+    "missing_items": "缺少文件",
+    "invalid_items": "格式錯誤文件",
+    "incomplete_items": "內容不完整文件",
+    "due_date": "截止日",
+    "tax_id": "統一編號",
+    "contact_person": "聯絡人",
+    "engagement_name": "案件名稱",
+    "notes": "備註",
+}
+
+_LABEL_TO_VARIABLE = {label: key for key, label in VARIABLE_LABELS.items()}
+
 # AST node types permitted in templates: pure text + simple variable references only.
 # Anything else (attribute access, expressions, control flow, filters, calls) is rejected.
 _SAFE_NODE_TYPES = frozenset({
@@ -67,11 +83,28 @@ class TemplatesService:
         self._audit = audit
         self._env = Environment(undefined=StrictUndefined)
 
+    @staticmethod
+    def body_for_edit(body: str) -> str:
+        """Convert stored engineering placeholders to user-facing labels."""
+        edited = body
+        for key, label in VARIABLE_LABELS.items():
+            edited = edited.replace(f"{{{{ {key} }}}}", f"【{label}】")
+            edited = edited.replace(f"{{{{{key}}}}}", f"【{label}】")
+        return edited
+
+    @staticmethod
+    def _compile_body(body: str) -> str:
+        compiled = body
+        for label, key in _LABEL_TO_VARIABLE.items():
+            compiled = compiled.replace(f"【{label}】", f"{{{{ {key} }}}}")
+        return compiled
+
     def _validate_body(self, body: str) -> Template:
         if not body.strip():
             raise TemplateValidationError("template.body.required")
+        compiled_body = self._compile_body(body)
         try:
-            ast = self._env.parse(body)
+            ast = self._env.parse(compiled_body)
         except TemplateSyntaxError as err:
             raise TemplateValidationError("template.body.syntax_error") from err
         for node in ast.find_all(_jinja_nodes.Node):
@@ -80,7 +113,7 @@ class TemplatesService:
         unknown = _jinja_meta.find_undeclared_variables(ast) - ALLOWED_VARIABLES
         if unknown:
             raise TemplateValidationError("template.unknown_variable")
-        return self._env.from_string(body)
+        return self._env.from_string(compiled_body)
 
     def create_template(self, payload: CreateTemplateInput) -> TemplateRow:
         name = sanitize_user_text(payload.name, max_length=200)

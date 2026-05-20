@@ -153,6 +153,10 @@ class EngagementsPage(QWidget):
         self._filter_key = filter_key
         self._refresh_engagements()
 
+    def refresh_context(self) -> None:
+        """Reload client choices when the page becomes active."""
+        self._on_load_and_refresh()
+
     # ------------------------------------------------------------------
     # Client loading
     # ------------------------------------------------------------------

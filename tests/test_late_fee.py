@@ -14,6 +14,7 @@ from taxops.services.late_fee import (
     CalculateLateFeeInput,
     LateFeeService,
     LateFeeValidationError,
+    calculate_overdue_days,
     calculate_penalty_percent,
 )
 
@@ -97,6 +98,22 @@ def test_calculate_penalty_percent(days, expected):
     assert calculate_penalty_percent(days) == expected
 
 
+@pytest.mark.parametrize("last_day,paid_day,expected", [
+    ("2024-12-02", "2024-12-02", 0),
+    ("2024-12-02", "2024-12-03", 1),
+    ("2024-12-02", "2024-12-05", 3),
+    ("2024-12-02", "2024-12-06", 4),
+])
+def test_calculate_overdue_days_from_payment_dates(last_day, paid_day, expected):
+    assert calculate_overdue_days(last_day, paid_day) == expected
+
+
+def test_calculate_overdue_days_rejects_bad_date():
+    with pytest.raises(LateFeeValidationError) as exc:
+        calculate_overdue_days("2024/12/02", "2024-12-06")
+    assert exc.value.code == "late_fee.date.invalid"
+
+
 # ── service: calculate_and_save ───────────────────────────────────────────────
 
 def test_calculate_and_save_vat(conn, svc):
@@ -108,6 +125,20 @@ def test_calculate_and_save_vat(conn, svc):
     assert row.penalty_amount == 200.0
     assert row.tax_type == "vat"
     assert row.needs_manual_review is False
+
+
+def test_calculate_and_save_uses_payment_dates(conn, svc):
+    req_id = _seed_request(conn, "vat")
+    row = svc.calculate_and_save(CalculateLateFeeInput(
+        request_id=req_id,
+        overdue_days=0,
+        base_amount=10000.0,
+        last_payment_date="2024-12-02",
+        actual_payment_date="2024-12-06",
+    ))
+    assert row.overdue_days == 4
+    assert row.penalty_percent == 1.0
+    assert row.penalty_amount == 100.0
 
 
 def test_calculate_and_save_no_penalty_within_3_days(conn, svc):

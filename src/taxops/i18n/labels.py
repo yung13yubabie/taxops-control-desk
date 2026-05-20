@@ -59,6 +59,10 @@ TABLE_HEADERS: dict[str, dict[str, str]] = {
         "contact_name": "聯絡人",
         "contact_phone": "聯絡電話",
         "contact_email": "聯絡信箱",
+        "address": "地址",
+        "note": "備註",
+        "lease_start": "租約起日",
+        "lease_end": "租約迄日",
         "updated_at": "更新時間",
     }
 }

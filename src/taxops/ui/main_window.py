@@ -88,7 +88,7 @@ class MainWindow(QMainWindow):
         self._page_indices: dict[str, int] = {}
         self._build_pages()
 
-        self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
+        self._nav.currentRowChanged.connect(self._on_nav_changed)
         self._nav.setCurrentRow(self._page_indices.get(PAGE_CLIENTS, 0))
 
         # Restore sidebar collapse state from persisted setting
@@ -144,14 +144,37 @@ class MainWindow(QMainWindow):
     def navigate_to(self, page_id: str, filter_key: str = "") -> None:
         idx = self._page_indices.get(page_id)
         if idx is not None:
-            self._stack.setCurrentIndex(idx)
             nav_idx = NAV_ORDER.index(page_id) if page_id in NAV_ORDER else -1
-            if nav_idx >= 0:
+            if nav_idx >= 0 and self._nav.currentRow() != nav_idx:
                 self._nav.setCurrentRow(nav_idx)
+            else:
+                self._activate_page(idx)
             if filter_key:
                 page = self._stack.widget(idx)
                 if hasattr(page, "set_filter"):
                     page.set_filter(filter_key)
+
+    def _on_nav_changed(self, idx: int) -> None:
+        if idx >= 0:
+            self._activate_page(idx)
+
+    def _activate_page(self, idx: int) -> None:
+        self._stack.setCurrentIndex(idx)
+        page = self._stack.widget(idx)
+        refresh = getattr(page, "refresh_context", None)
+        if refresh is None:
+            return
+        try:
+            refresh()
+        except Exception as err:
+            self._container.system_log.warn(
+                "page activation refresh failed",
+                detail={
+                    "page": type(page).__name__,
+                    "exc": type(err).__name__,
+                    "msg": str(err),
+                },
+            )
 
     def _on_open_doc_requests(self, engagement_id: int) -> None:
         self._doc_page.load_engagement(engagement_id)

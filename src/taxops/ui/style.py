@@ -194,8 +194,18 @@ def apply(app: object) -> None:
     """Apply the global stylesheet and app icon to a QApplication instance."""
     from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont
     from PySide6.QtCore import Qt
+    from pathlib import Path
+    import sys
 
     app.setStyleSheet(APP_STYLESHEET)  # type: ignore[attr-defined]
+
+    if getattr(sys, "frozen", False):
+        icon_path = Path(sys.executable).parent / "assets" / "app_icon.ico"
+    else:
+        icon_path = Path(__file__).resolve().parents[3] / "assets" / "app_icon.ico"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))  # type: ignore[attr-defined]
+        return
 
     # Generate a simple icon: blue square with white "T" letter
     px = QPixmap(64, 64)

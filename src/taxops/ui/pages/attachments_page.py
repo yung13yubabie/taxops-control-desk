@@ -159,7 +159,12 @@ class AttachmentsPage(QWidget):
         self._eng_combo.currentIndexChanged.connect(self._load_attachments)
         self._load_engagements()
 
+    def refresh_context(self) -> None:
+        """Reload engagement choices when the page becomes active."""
+        self._load_engagements()
+
     def _load_engagements(self) -> None:
+        selected_id = self._eng_combo.currentData()
         self._eng_combo.blockSignals(True)
         self._eng_combo.clear()
         self._eng_combo.addItem("（請選擇案件）", _ALL)
@@ -171,6 +176,11 @@ class AttachmentsPage(QWidget):
                 "attachments: failed to load engagements",
                 detail={"exc": type(exc).__name__, "msg": str(exc)},
             )
+        if selected_id is not None:
+            for i in range(self._eng_combo.count()):
+                if self._eng_combo.itemData(i) == selected_id:
+                    self._eng_combo.setCurrentIndex(i)
+                    break
         self._eng_combo.blockSignals(False)
         self._load_attachments()
 

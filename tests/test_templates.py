@@ -15,6 +15,7 @@ from taxops.services.templates import (
     TemplateValidationError,
     TemplatesService,
     UpdateTemplateInput,
+    VARIABLE_LABELS,
 )
 
 
@@ -218,6 +219,34 @@ def test_render_template_substitutes_variables(svc):
     assert "ABC Corp" in result
     assert "2024Q1" in result
     assert "ignored_key" not in result
+
+
+def test_render_template_accepts_plain_language_placeholders(svc):
+    created = svc.create_template(
+        CreateTemplateInput(
+            name="白話變數模板",
+            body="您好【客戶名稱】，請於【截止日】前提供【缺少文件】。",
+        )
+    )
+    result = svc.render_template(
+        created.id,
+        {
+            "client_name": "ABC Corp",
+            "due_date": "2026-05-31",
+            "missing_items": "- 發票",
+        },
+    )
+
+    assert "ABC Corp" in result
+    assert "2026-05-31" in result
+    assert "- 發票" in result
+
+
+def test_variable_labels_are_plain_language_not_codes():
+    labels = set(VARIABLE_LABELS.values())
+    assert "客戶名稱" in labels
+    assert "截止日" in labels
+    assert all("{" not in label and "}" not in label for label in labels)
 
 
 def test_render_template_unknown_variables_filtered(svc):

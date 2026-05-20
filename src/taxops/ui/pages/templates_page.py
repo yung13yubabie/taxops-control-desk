@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 from ...i18n import error_message
 from ...i18n.status_labels import TEMPLATE_TYPE_LABELS
 from ...services.container import ServiceContainer
-from ...services.templates import TemplateValidationError
+from ...services.templates import TemplateValidationError, TemplatesService
 from ..dialogs.template_form_dialog import TemplateFormDialog
 from ..style import DANGER_COLOR, toolbar_icon
 
@@ -206,7 +206,8 @@ class TemplatesPage(QWidget):
         self._edit_btn.setEnabled(has_sel)
         self._delete_btn.setEnabled(has_sel)
         self._trial_btn.setEnabled(has_sel)
-        self._preview.setPlainText(self._body_cache.get(tmpl_id, "") if has_sel else "")
+        body = self._body_cache.get(tmpl_id, "") if has_sel else ""
+        self._preview.setPlainText(TemplatesService.body_for_edit(body))
 
     # ------------------------------------------------------------------
     # Action handlers
