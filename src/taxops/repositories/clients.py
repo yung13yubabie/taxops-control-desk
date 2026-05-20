@@ -119,6 +119,18 @@ class ClientsRepository:
         ).fetchone()
         return _row_to_client(row) if row else None
 
+    def list_by_ids(self, ids: list[int]) -> list[ClientRow]:
+        """Return active clients for the given ID list, preserving FTS rank order."""
+        if not ids:
+            return []
+        placeholders = ",".join("?" * len(ids))
+        rows = self._conn.execute(
+            f"SELECT * FROM clients WHERE id IN ({placeholders}) AND deleted_at IS NULL",
+            ids,
+        ).fetchall()
+        by_id = {_row_to_client(r).id: _row_to_client(r) for r in rows}
+        return [by_id[i] for i in ids if i in by_id]
+
     def find_by_code(self, client_code: str) -> ClientRow | None:
         """Return active client by code; soft-deleted rows are invisible."""
         row = self._conn.execute(

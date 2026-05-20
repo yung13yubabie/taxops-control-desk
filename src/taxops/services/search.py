@@ -28,23 +28,13 @@ class SearchService:
         self, query: str, *, limit: int = _MAX_RESULTS
     ) -> list[ClientRow]:
         ids = self._repo.search_client_ids(query.strip(), limit=limit)
-        result: list[ClientRow] = []
-        for client_id in ids:
-            row = self._clients_repo.get(client_id)
-            if row is not None:
-                result.append(row)
-        return result
+        return self._clients_repo.list_by_ids(ids)
 
     def search_engagements(
         self, query: str, *, limit: int = _MAX_RESULTS
     ) -> list[EngagementRow]:
         ids = self._repo.search_engagement_ids(query.strip(), limit=limit)
-        result: list[EngagementRow] = []
-        for engagement_id in ids:
-            row = self._engagements_repo.get(engagement_id)
-            if row is not None:
-                result.append(row)
-        return result
+        return self._engagements_repo.list_by_ids(ids)
 
     def rebuild_index(self) -> None:
         clients = self._clients_repo.list_clients(limit=100_000)

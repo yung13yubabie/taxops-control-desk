@@ -17,11 +17,14 @@ Each worker opens → apply_migrations → build_container → closes on finish.
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Callable, Any
+
+_log = logging.getLogger(__name__)
 
 from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtGui import QGuiApplication
@@ -321,6 +324,7 @@ class SettingsPage(QWidget):
             else:
                 text = "尚無快取資料，請先匯入財政部 ZIP 或快取包。"
         except Exception:
+            _log.warning("_refresh_cache_status: failed to read cache status", exc_info=True)
             text = "無法取得快取狀態。"
         self._cache_status_label.setText(text)
 

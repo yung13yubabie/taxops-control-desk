@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -14,7 +15,10 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
+    QSplitter,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -26,11 +30,8 @@ from ...services.attachments import AttachmentValidationError, UploadAttachmentI
 from ...services.container import ServiceContainer
 from ..style import toolbar_icon
 
-def _plain_label(text: str) -> QLabel:
-    lbl = QLabel(str(text))
-    lbl.setTextFormat(Qt.TextFormat.PlainText)
-    return lbl
-
+_IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"})
+_TEXT_EXTS = frozenset({".txt", ".csv", ".log", ".xml", ".json", ".md"})
 
 _COLUMNS = ("id", "original_filename", "extension", "file_size", "status", "uploaded_at")
 _HEADERS = {
@@ -55,6 +56,17 @@ _FILE_FILTER = (
     ";;所有檔案 (*)"
 )
 _ALL = -1
+
+_PREVIEW_NONE = 0
+_PREVIEW_IMAGE = 1
+_PREVIEW_TEXT = 2
+_PREVIEW_META = 3
+
+
+def _plain_label(text: str) -> QLabel:
+    lbl = QLabel(str(text))
+    lbl.setTextFormat(Qt.TextFormat.PlainText)
+    return lbl
 
 
 class _AttachmentInfoDialog(QDialog):
@@ -141,23 +153,68 @@ class AttachmentsPage(QWidget):
         self._open_btn = QPushButton("用系統程式開啟")
         self._open_btn.setIcon(toolbar_icon("export"))
         self._open_btn.setEnabled(False)
-        self._open_btn.setToolTip("此功能尚未開放")
+        self._open_btn.clicked.connect(self._on_open_system)
         btn_row.addWidget(self._open_btn)
 
         btn_row.addStretch()
         outer.addLayout(btn_row)
 
-        # Attachment table
+        # Table
         self._table = QTableWidget(0, len(_COLUMNS))
         self._table.setHorizontalHeaderLabels([_HEADERS[c] for c in _COLUMNS])
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
-        outer.addWidget(self._table)
+
+        # Preview panel (right side of splitter)
+        preview_panel = self._build_preview_panel()
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self._table)
+        splitter.addWidget(preview_panel)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+        outer.addWidget(splitter, 1)
 
         self._eng_combo.currentIndexChanged.connect(self._load_attachments)
         self._load_engagements()
+
+    def _build_preview_panel(self) -> QWidget:
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(8, 0, 0, 0)
+        layout.setSpacing(4)
+
+        header = QLabel("預覽")
+        header.setStyleSheet("font-weight: bold;")
+        layout.addWidget(header)
+
+        self._preview_stack = QStackedWidget()
+
+        no_sel = QLabel("（選擇附件以預覽）")
+        no_sel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._preview_stack.addWidget(no_sel)  # index 0
+
+        self._preview_image = QLabel()
+        self._preview_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._preview_image.setMinimumSize(160, 160)
+        self._preview_stack.addWidget(self._preview_image)  # index 1
+
+        self._preview_text = QPlainTextEdit()
+        self._preview_text.setReadOnly(True)
+        self._preview_stack.addWidget(self._preview_text)  # index 2
+
+        self._preview_meta = QLabel()
+        self._preview_meta.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self._preview_meta.setTextFormat(Qt.TextFormat.PlainText)
+        self._preview_meta.setWordWrap(True)
+        self._preview_meta.setContentsMargins(4, 4, 4, 4)
+        self._preview_stack.addWidget(self._preview_meta)  # index 3
+
+        self._preview_stack.setCurrentIndex(_PREVIEW_NONE)
+        layout.addWidget(self._preview_stack, 1)
+        return panel
 
     def refresh_context(self) -> None:
         """Reload engagement choices when the page becomes active."""
@@ -196,6 +253,7 @@ class AttachmentsPage(QWidget):
                     detail={"exc": type(exc).__name__, "msg": str(exc)},
                 )
         self._render_table()
+        self._preview_stack.setCurrentIndex(_PREVIEW_NONE)
 
     def _render_table(self) -> None:
         self._table.setRowCount(0)
@@ -225,11 +283,55 @@ class AttachmentsPage(QWidget):
             return None
         return self._attachments[idx]
 
+    def _att_file_path(self, att) -> Path:
+        return self._container.paths.attachments_dir / att.stored_filename
+
     def _on_selection_changed(self) -> None:
         has = self._selected_index() is not None
         self._accept_btn.setEnabled(has)
         self._reject_btn.setEnabled(has)
         self._info_btn.setEnabled(has)
+        self._open_btn.setEnabled(has)
+        self._update_preview(self._selected_attachment())
+
+    def _update_preview(self, att) -> None:
+        if att is None:
+            self._preview_stack.setCurrentIndex(_PREVIEW_NONE)
+            return
+
+        file_path = self._att_file_path(att)
+        ext = att.extension.lower()
+
+        if ext in _IMAGE_EXTS and file_path.exists():
+            pixmap = QPixmap(str(file_path))
+            if not pixmap.isNull():
+                scaled = pixmap.scaled(
+                    480, 480,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                self._preview_image.setPixmap(scaled)
+                self._preview_stack.setCurrentIndex(_PREVIEW_IMAGE)
+                return
+
+        if ext in _TEXT_EXTS and file_path.exists():
+            try:
+                text = file_path.read_text(encoding="utf-8", errors="replace")[:4096]
+                self._preview_text.setPlainText(text)
+                self._preview_stack.setCurrentIndex(_PREVIEW_TEXT)
+                return
+            except OSError:
+                pass
+
+        size_kb = f"{att.file_size / 1024:.1f} KB"
+        self._preview_meta.setText(
+            f"檔案：{att.original_filename}\n"
+            f"大小：{size_kb}\n"
+            f"類型：{att.mime_type}\n"
+            f"狀態：{_STATUS_LABELS.get(att.status, att.status)}\n"
+            f"上傳：{att.uploaded_at}"
+        )
+        self._preview_stack.setCurrentIndex(_PREVIEW_META)
 
     def _on_upload(self) -> None:
         eng_id = self._eng_combo.currentData()
@@ -292,3 +394,13 @@ class AttachmentsPage(QWidget):
             return
         dlg = _AttachmentInfoDialog(att, self)
         dlg.exec()
+
+    def _on_open_system(self) -> None:
+        att = self._selected_attachment()
+        if att is None:
+            return
+        file_path = self._att_file_path(att)
+        if not file_path.exists():
+            QMessageBox.warning(self, "找不到檔案", f"檔案已移動或刪除：{att.original_filename}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(file_path)))

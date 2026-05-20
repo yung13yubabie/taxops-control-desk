@@ -334,9 +334,11 @@ def import_validated(
             )
             clients_service.create_client(payload_create)
             imported += 1
-        except (ClientValidationError, Exception) as exc:
-            code = exc.code if isinstance(exc, ClientValidationError) else "system.unexpected"
-            errors.append((vrow.row_number, code))
+        except ClientValidationError as exc:
+            errors.append((vrow.row_number, exc.code))
+            skipped += 1
+        except Exception:
+            errors.append((vrow.row_number, "system.unexpected"))
             skipped += 1
 
     return BulkImportResult(

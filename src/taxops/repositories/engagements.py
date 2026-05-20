@@ -91,6 +91,18 @@ class EngagementsRepository:
         ).fetchone()
         return _row_to_engagement(row) if row else None
 
+    def list_by_ids(self, ids: list[int]) -> list[EngagementRow]:
+        """Return active engagements for the given ID list, preserving FTS rank order."""
+        if not ids:
+            return []
+        placeholders = ",".join("?" * len(ids))
+        rows = self._conn.execute(
+            f"SELECT * FROM engagements WHERE id IN ({placeholders}) AND deleted_at IS NULL",
+            ids,
+        ).fetchall()
+        by_id = {_row_to_engagement(r).id: _row_to_engagement(r) for r in rows}
+        return [by_id[i] for i in ids if i in by_id]
+
     def list_by_client(
         self,
         client_id: int,

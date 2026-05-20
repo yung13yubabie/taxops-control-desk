@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import mimetypes
 import shutil
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 from ..core.clock import now_iso
 from ..repositories.attachments import AttachmentRow, AttachmentsRepository
@@ -116,7 +119,7 @@ class AttachmentsService:
             try:
                 dest.unlink(missing_ok=True)
             except OSError:
-                pass
+                _log.warning("upload_attachment: failed to clean up orphaned file %s", dest)
             raise
 
         return row

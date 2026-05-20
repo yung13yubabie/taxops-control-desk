@@ -26,9 +26,12 @@ import csv
 import hashlib
 import io
 import json
+import logging
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 from ...core.clock import now_iso, today_iso
 from ...repositories.tax_registry import (
@@ -236,7 +239,7 @@ class TaxCacheBundleService:
             try:
                 tmp.unlink(missing_ok=True)
             except Exception:
-                pass
+                _log.warning("export_bundle: failed to clean up temp file %s", tmp)
             raise
 
         self._audit.record(

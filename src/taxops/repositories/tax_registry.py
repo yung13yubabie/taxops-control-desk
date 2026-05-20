@@ -7,11 +7,14 @@ formal ``tax_registry_cache`` is never partially overwritten on failure
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from typing import Iterable, Iterator
 
 from ..core.clock import now_iso
 from ..services.registry.parser import TaxRegistryEntry
+
+_log = logging.getLogger(__name__)
 
 INSERT_SQL = (
     "INSERT INTO {table}("
@@ -163,7 +166,7 @@ class TaxRegistryRepository:
                 conn.execute(f"DROP TABLE IF EXISTS {self.STAGING_TABLE}")
                 conn.commit()
             except Exception:
-                pass
+                _log.warning("replace_all_from_entries: staging table cleanup failed", exc_info=True)
             raise
 
 

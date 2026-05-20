@@ -75,7 +75,6 @@ class CreateEngagementInput:
     engagement_name: str
     tax_type: str
     period_name: str
-    status: str = "draft"
     owner: str | None = None
     due_date: str | None = None
     notes: str | None = None
