@@ -14,7 +14,7 @@ from ..core.clock import now_iso
 @dataclass(frozen=True)
 class TaskRow:
     id: int
-    engagement_id: int
+    engagement_id: int | None
     title: str
     assignee: str | None
     due_date: str | None
@@ -56,7 +56,7 @@ class TasksRepository:
     def insert(
         self,
         *,
-        engagement_id: int,
+        engagement_id: int | None,
         title: str,
         assignee: str | None = None,
         due_date: str | None = None,

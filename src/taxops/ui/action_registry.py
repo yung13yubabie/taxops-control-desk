@@ -46,6 +46,7 @@ class FilterKey:
     UPCOMING = "upcoming"
     OPEN = "open"
     HIGH_RISK = "high_risk"
+    LEASE_EXPIRING = "lease_expiring"
 
 
 PLACEHOLDER_HANDLER = "placeholder"
@@ -201,6 +202,18 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
         failure_text="客戶刪除失敗，請稍後再試",
         audit_action="client.delete",
         test_marker="test_delete_client",
+        enabled=True,
+    ),
+    UIActionContract(
+        button_label="永久刪除",
+        page=PAGE_CLIENTS,
+        handler="ClientsPage.on_purge_client",
+        service="ClientsService.purge_client",
+        repository="ClientsRepository.purge",
+        success_text="客戶已永久刪除",
+        failure_text="客戶永久刪除失敗，請稍後再試",
+        audit_action="client.purge",
+        test_marker="test_purge_deleted_client",
         enabled=True,
     ),
     UIActionContract(

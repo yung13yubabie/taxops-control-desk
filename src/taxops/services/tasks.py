@@ -38,7 +38,7 @@ class TaskValidationError(Exception):
 
 @dataclass(frozen=True)
 class CreateTaskInput:
-    engagement_id: int
+    engagement_id: int | None
     title: str
     assignee: str | None = None
     due_date: str | None = None
@@ -53,7 +53,7 @@ class TasksService:
         self._audit = audit
 
     def create_task(self, payload: CreateTaskInput) -> TaskRow:
-        if not self._repo.engagement_exists(payload.engagement_id):
+        if payload.engagement_id is not None and not self._repo.engagement_exists(payload.engagement_id):
             raise TaskValidationError("task.engagement_not_found")
 
         title = sanitize_user_text(payload.title, max_length=200)

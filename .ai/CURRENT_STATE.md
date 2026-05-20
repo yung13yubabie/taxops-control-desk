@@ -22,8 +22,9 @@
 ## Current Status
 
 - [已確認] Slice 1、Slice 2（稅籍快取）、客戶管理功能閉環（批量匯入 + 編輯/刪除 + 衝突審查）、Slice 2.6（搜尋/排序/分頁 + sidebar 收合）、Slice 3（HTTP download）、Slice 4（案件 + 索件）、Slice 4.5（案件編輯 + 索件項目狀態 UI）、Slice 5（待辦事項）、Slice 6（訊息模板）、Slice 7（產生催件訊息）、Slice 8（覆核意見 + 滯納金試算）、Slice 9（附件證據鏈 MVP + closeout correction）、Slice 10（Excel 匯出缺件清單 + CSV formula injection defense）、Slice 11（備份 / 還原）、Slice 12（FTS5 全文搜尋）、Slice 13（本地工商 / 稅籍查詢頁）、Slice 14（Dashboard 真實統計 + 篩選導向補完）均已完成實作。
-- [已確認] `python -m pytest` 最後確認通過：651/651 passed（2026-05-19 G-1~G-15 UIUX 修復 + Blocker 修正 + regression tests）。
+- [已確認] `python -m pytest` 最後確認通過：674/674 passed（2026-05-20 Slice 15-rental + migrations 013/014）。
 - [已確認] G-1~G-15 UIUX 修復已完成：WA_DeleteOnClose、anti-double-click、toolbar_icon、error label、silent failure 修正等；dashboard high_risk_engagements 導向修正為 PAGE_REVIEW_NOTES + FilterKey.HIGH_RISK。
+- [已確認] Slice 15-rental 新功能：Migration 0013（clients.lease_start/lease_end）、Migration 0014（workflow_tasks.engagement_id nullable）、欄位顯示控制（QMenu）、租約到期通知 dashboard 卡、任務不強制關聯案件。
 - [已確認] ALLOWED_VARIABLES 現為 11 個（4 個未來欄位 payment_due_date / office_owner / reviewer / last_followed_up_at 已於 Slice 15 安全修正中移除）。
 - [待確認] Supply Chain Locking = UNKNOWN / OPEN：pyproject.toml 中 PySide6、Jinja2、openpyxl、pytest、pyinstaller 均未 pin 版本。
 - [已確認] 技術棧：Python 3.11+, PySide6, SQLite, SQLite FTS5, Jinja2, openpyxl, pytest, PyInstaller（Windows one-dir build + automated EXE smoke 已通過；人工 UI 驗收尚未完成）。
@@ -51,7 +52,7 @@
 - [已確認] Schema: `schema_migrations`, `app_settings`, `clients`, `audit_logs`, `system_logs`.
 - [已確認] Client minimal CRUD (create/list/get) + validation + audit trail + Chinese error labels.
 - [已確認] Settings page: data-path, display-name, tax-cache settings skeleton.
-- [已確認] 11 個導航項目。已實作頁面：dashboard、clients、engagements、doc_requests、tasks、templates、late_fee、review_notes、attachments、registry、settings（共 11 頁，無 placeholder）。registry 頁已完成（Slice 13）：本地快取查詢 + 套用至客戶主檔 diff dialog；GCIS 線上查詢保持 disabled。dashboard 頁已完成（Slice 14）：8 張真實統計卡片。
+- [已確認] 11 個導航項目。已實作頁面：dashboard、clients、engagements、doc_requests、tasks、templates、late_fee、review_notes、attachments、registry、settings（共 11 頁，無 placeholder）。registry 頁已完成（Slice 13）：本地快取查詢 + 套用至客戶主檔 diff dialog；GCIS 線上查詢保持 disabled。dashboard 頁已完成（Slice 14）：9 張真實統計卡片（含租約到期通知）。
 - [已確認] UI action contract registry 為 visible button 唯一真相來源。
 - [已確認] `.gitignore` 存在，排除 Python cache、build output、SQLite、attachments、cache bundles、`tmp/`。
 
@@ -161,7 +162,7 @@
 
 - [已確認] `src/taxops/db/migrations/_m0007_generated_messages.py`：generated_messages 表（id/request_id/template_id/body/generated_at）+ idx_generated_messages_request 索引。
 - [已確認] `src/taxops/repositories/generated_messages.py`：`GeneratedMessageRow` frozen dataclass + `GeneratedMessagesRepository`（insert/get/list_by_request）。
-- [已確認] `src/taxops/services/generated_messages.py`：`GeneratedMessagesService`；`build_variables(request_id)` 從 doc_request + engagement + client + items 組裝 15 個 ALLOWED_VARIABLES；`generate()` render + insert + audit；TemplateValidationError → GeneratedMessageValidationError code 轉傳。
+- [已確認] `src/taxops/services/generated_messages.py`：`GeneratedMessagesService`；`build_variables(request_id)` 從 doc_request + engagement + client + items 組裝 11 個 ALLOWED_VARIABLES（payment_due_date, office_owner, reviewer, last_followed_up_at 已於 Slice 15 安全修正中移除）；`generate()` render + insert + audit；TemplateValidationError → GeneratedMessageValidationError code 轉傳。
 - [已確認] `src/taxops/ui/dialogs/generate_message_dialog.py`：`GenerateMessageDialog`（模板 QComboBox + 即時預覽 QTextEdit + 複製/儲存按鈕）；選模板時即時 render；save 後關閉 dialog。
 - [已確認] `src/taxops/ui/pages/document_requests_page.py`：新增「產生訊息」QPushButton；選取索件批次後 enabled；`_on_generate_message()` 開啟 GenerateMessageDialog。
 - [已確認] `src/taxops/ui/action_registry.py`：PAGE_DOC_REQUESTS 新增 1 個 enabled contract（產生訊息）。

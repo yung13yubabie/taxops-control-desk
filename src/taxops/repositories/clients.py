@@ -27,6 +27,8 @@ class ClientRow:
     created_at: str
     updated_at: str
     deleted_at: str | None = None
+    lease_start: str | None = None
+    lease_end: str | None = None
 
 
 def _row_to_client(row: sqlite3.Row) -> ClientRow:
@@ -45,6 +47,8 @@ def _row_to_client(row: sqlite3.Row) -> ClientRow:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         deleted_at=row["deleted_at"] if "deleted_at" in keys else None,
+        lease_start=row["lease_start"] if "lease_start" in keys else None,
+        lease_end=row["lease_end"] if "lease_end" in keys else None,
     )
 
 
@@ -64,13 +68,16 @@ class ClientsRepository:
         contact_email: str | None = None,
         address: str | None = None,
         note: str | None = None,
+        lease_start: str | None = None,
+        lease_end: str | None = None,
     ) -> ClientRow:
         ts = now_iso()
         cur = self._conn.execute(
             "INSERT INTO clients("
             "client_code, tax_id, client_name, short_name, contact_name, "
-            "contact_phone, contact_email, address, note, created_at, updated_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "contact_phone, contact_email, address, note, lease_start, lease_end, "
+            "created_at, updated_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 client_code,
                 tax_id,
@@ -81,6 +88,8 @@ class ClientsRepository:
                 contact_email,
                 address,
                 note,
+                lease_start,
+                lease_end,
                 ts,
                 ts,
             ),
@@ -98,6 +107,14 @@ class ClientsRepository:
         """Return the client only if active (deleted_at IS NULL)."""
         row = self._conn.execute(
             "SELECT * FROM clients WHERE id = ? AND deleted_at IS NULL",
+            (client_id,),
+        ).fetchone()
+        return _row_to_client(row) if row else None
+
+    def get_any(self, client_id: int) -> ClientRow | None:
+        """Return the client regardless of soft-delete state."""
+        row = self._conn.execute(
+            "SELECT * FROM clients WHERE id = ?",
             (client_id,),
         ).fetchone()
         return _row_to_client(row) if row else None
@@ -131,12 +148,15 @@ class ClientsRepository:
         contact_email: str | None = None,
         address: str | None = None,
         note: str | None = None,
+        lease_start: str | None = None,
+        lease_end: str | None = None,
     ) -> ClientRow | None:
         ts = now_iso()
         self._conn.execute(
             "UPDATE clients SET client_code = ?, tax_id = ?, client_name = ?, "
             "short_name = ?, contact_name = ?, contact_phone = ?, "
-            "contact_email = ?, address = ?, note = ?, updated_at = ? "
+            "contact_email = ?, address = ?, note = ?, lease_start = ?, "
+            "lease_end = ?, updated_at = ? "
             "WHERE id = ?",
             (
                 client_code,
@@ -148,6 +168,8 @@ class ClientsRepository:
                 contact_email,
                 address,
                 note,
+                lease_start,
+                lease_end,
                 ts,
                 client_id,
             ),
@@ -176,6 +198,23 @@ class ClientsRepository:
         """
         cur = self._conn.execute(
             "UPDATE clients SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL",
+            (client_id,),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def count_engagement_refs(self, client_id: int) -> int:
+        """Return all engagement refs, including soft-deleted engagements."""
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM engagements WHERE client_id = ?",
+            (client_id,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def purge(self, client_id: int) -> bool:
+        """Permanently delete a soft-deleted client row."""
+        cur = self._conn.execute(
+            "DELETE FROM clients WHERE id = ? AND deleted_at IS NOT NULL",
             (client_id,),
         )
         self._conn.commit()
@@ -250,3 +289,15 @@ class ClientsRepository:
             "SELECT COUNT(*) AS c FROM clients WHERE deleted_at IS NULL"
         ).fetchone()
         return int(row["c"]) if row else 0
+
+    def list_lease_expiring_soon(self, today: str, until: str) -> list["ClientRow"]:
+        rows = self._conn.execute(
+            "SELECT * FROM clients"
+            " WHERE deleted_at IS NULL"
+            "   AND lease_end IS NOT NULL"
+            "   AND lease_end >= ?"
+            "   AND lease_end <= ?"
+            " ORDER BY lease_end ASC",
+            (today, until),
+        ).fetchall()
+        return [_row_to_client(r) for r in rows]

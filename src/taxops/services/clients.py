@@ -37,6 +37,8 @@ class CreateClientInput:
     contact_email: str | None = None
     address: str | None = None
     note: str | None = None
+    lease_start: str | None = None
+    lease_end: str | None = None
     registry_source_tax_id: str | None = None
     registry_cache_version: str | None = None
 
@@ -52,6 +54,8 @@ class UpdateClientInput:
     contact_email: str | None = None
     address: str | None = None
     note: str | None = None
+    lease_start: str | None = None
+    lease_end: str | None = None
 
 
 def _normalize_tax_id(value: str | None) -> str | None:
@@ -137,6 +141,9 @@ class ClientsService:
         if self._repo.find_by_code(client_code) is not None:
             raise ClientValidationError("client.client_code.duplicate")
 
+        lease_start = sanitize_user_text(payload.lease_start, max_length=10) or None
+        lease_end = sanitize_user_text(payload.lease_end, max_length=10) or None
+
         try:
             row = self._repo.insert(
                 client_code=client_code,
@@ -148,6 +155,8 @@ class ClientsService:
                 contact_email=contact_email,
                 address=address,
                 note=note,
+                lease_start=lease_start,
+                lease_end=lease_end,
             )
         except sqlite3.IntegrityError as exc:
             # Backstop in case the pre-check raced with another writer.
@@ -193,6 +202,8 @@ class ClientsService:
         contact_email = sanitize_user_text(payload.contact_email, max_length=200) or None
         address = sanitize_user_text(payload.address, max_length=500) or None
         note = sanitize_user_text(payload.note, max_length=2000) or None
+        lease_start_u = sanitize_user_text(payload.lease_start, max_length=10) or None
+        lease_end_u = sanitize_user_text(payload.lease_end, max_length=10) or None
 
         existing = self._repo.find_by_code(client_code)
         if existing is not None and existing.id != client_id:
@@ -210,6 +221,8 @@ class ClientsService:
                 contact_email=contact_email,
                 address=address,
                 note=note,
+                lease_start=lease_start_u,
+                lease_end=lease_end_u,
             )
         except sqlite3.IntegrityError as exc:
             if "client_code" in str(exc) or "UNIQUE" in str(exc).upper():
@@ -266,6 +279,31 @@ class ClientsService:
             },
         )
 
+    def purge_client(self, client_id: int) -> None:
+        """Permanently delete a soft-deleted client with no engagement refs."""
+        existing = self._repo.get_any(client_id)
+        if existing is None:
+            raise ClientValidationError("client.not_found")
+        if existing.deleted_at is None:
+            raise ClientValidationError("client.purge.requires_deleted")
+        if self._repo.count_engagement_refs(client_id) > 0:
+            raise ClientValidationError("client.purge.has_engagements")
+
+        purged = self._repo.purge(client_id)
+        if not purged:
+            raise ClientValidationError("client.not_found")
+        self._fts_delete(client_id)
+        self._audit.record(
+            action="client.purge",
+            target_type="client",
+            target_id=str(client_id),
+            detail={
+                "client_code": existing.client_code,
+                "client_name": existing.client_name,
+                "deleted_at": existing.deleted_at,
+            },
+        )
+
     def list_clients(self, *, limit: int = 500, offset: int = 0) -> list[ClientRow]:
         return self._repo.list_clients(limit=limit, offset=offset)
 
@@ -299,3 +337,6 @@ class ClientsService:
 
     def count(self) -> int:
         return self._repo.count()
+
+    def list_lease_expiring_soon(self, today: str, until: str) -> list[ClientRow]:
+        return self._repo.list_lease_expiring_soon(today, until)

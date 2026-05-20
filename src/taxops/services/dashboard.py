@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from ..repositories.dashboard import DashboardRepository
 
 _UPCOMING_DAYS = 7
+_LEASE_EXPIRY_DAYS = 30
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,7 @@ class DashboardCounts:
     upcoming_engagements: int
     overdue_engagements: int
     high_risk_engagements: int
+    lease_expiring_soon: int
 
 
 class DashboardService:
@@ -33,10 +35,9 @@ class DashboardService:
     def get_counts(self, *, today: str | None = None) -> DashboardCounts:
         if today is None:
             today = datetime.date.today().isoformat()
-        until = (
-            datetime.date.fromisoformat(today)
-            + datetime.timedelta(days=_UPCOMING_DAYS)
-        ).isoformat()
+        today_date = datetime.date.fromisoformat(today)
+        until = (today_date + datetime.timedelta(days=_UPCOMING_DAYS)).isoformat()
+        until_lease = (today_date + datetime.timedelta(days=_LEASE_EXPIRY_DAYS)).isoformat()
         return DashboardCounts(
             tasks_due_today=self._repo.count_tasks_due_today(today),
             tasks_overdue=self._repo.count_tasks_overdue(today),
@@ -46,4 +47,5 @@ class DashboardService:
             upcoming_engagements=self._repo.count_upcoming_engagements(today, until),
             overdue_engagements=self._repo.count_overdue_engagements(today),
             high_risk_engagements=self._repo.count_high_risk_engagements(),
+            lease_expiring_soon=self._repo.count_lease_expiring_soon(today, until_lease),
         )

@@ -7,9 +7,12 @@ first; only if that succeeds does it overwrite the live connection's data.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 from ..core.paths import AppPaths
 from ..db.migrate import apply_migrations
@@ -116,7 +119,7 @@ class BackupService:
         try:
             apply_migrations(self._conn)
         except Exception:
-            pass  # schema upgrade failures are non-fatal; user should restart
+            _log.error("backup.restore: apply_migrations failed — restart recommended", exc_info=True)
 
         self._audit.record(
             action="backup.restore",

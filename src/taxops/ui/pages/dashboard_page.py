@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from ...services.container import ServiceContainer
 from ..action_registry import (
+    PAGE_CLIENTS,
     PAGE_ENGAGEMENTS,
     PAGE_REVIEW_NOTES,
     PAGE_TASKS,
@@ -41,6 +42,7 @@ _CARD_DEFS: tuple[tuple[str, str, str, str, str], ...] = (
     ("upcoming_engagements", "即將申報案件（7天內）", PAGE_ENGAGEMENTS, "前往案件管理", FilterKey.UPCOMING),
     ("overdue_engagements", "逾期繳款風險", PAGE_ENGAGEMENTS, "前往案件管理", FilterKey.OVERDUE),
     ("high_risk_engagements", "高風險案件", PAGE_REVIEW_NOTES, "前往覆核意見", FilterKey.HIGH_RISK),
+    ("lease_expiring_soon", "租約即將到期（30天內）", PAGE_CLIENTS, "前往客戶清單", FilterKey.LEASE_EXPIRING),
 )
 
 
@@ -134,6 +136,10 @@ class DashboardPage(QWidget):
 
         self._on_refresh()
 
+    def refresh_context(self) -> None:
+        """Reload dashboard counts when the page becomes active."""
+        self._on_refresh()
+
     def _on_refresh(self) -> None:
         try:
             counts = self._container.dashboard.get_counts()
@@ -150,4 +156,5 @@ class DashboardPage(QWidget):
         self._cards["upcoming_engagements"].set_count(counts.upcoming_engagements)
         self._cards["overdue_engagements"].set_count(counts.overdue_engagements)
         self._cards["high_risk_engagements"].set_count(counts.high_risk_engagements)
+        self._cards["lease_expiring_soon"].set_count(counts.lease_expiring_soon)
         self._status_lbl.setText("")

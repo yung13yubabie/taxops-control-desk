@@ -131,10 +131,16 @@ class TasksPage(QWidget):
         self._filter_key = filter_key
         self._refresh()
 
+    def refresh_context(self) -> None:
+        """Reload engagement choices when clients/engagements changed elsewhere."""
+        self._load_engagements()
+        self._refresh()
+
     # ------------------------------------------------------------------
     # Private helpers
 
     def _load_engagements(self) -> None:
+        selected_id = self._eng_combo.currentData()
         self._eng_combo.blockSignals(True)
         self._eng_combo.clear()
         self._eng_combo.addItem("（全部案件）", userData=_ALL_ENGAGEMENTS)
@@ -150,6 +156,11 @@ class TasksPage(QWidget):
         for eng in engs:
             label = f"{eng.engagement_name} [{STATUS_LABELS.get(eng.tax_type, eng.tax_type)}]"
             self._eng_combo.addItem(label, userData=eng.id)
+        if selected_id is not None:
+            for i in range(self._eng_combo.count()):
+                if self._eng_combo.itemData(i) == selected_id:
+                    self._eng_combo.setCurrentIndex(i)
+                    break
         self._eng_combo.blockSignals(False)
 
     def _refresh(self) -> None:
@@ -218,10 +229,13 @@ class TasksPage(QWidget):
 
     def _on_new_task(self) -> None:
         eng_id: int = self._eng_combo.currentData() or _ALL_ENGAGEMENTS
-        if eng_id == _ALL_ENGAGEMENTS:
-            QMessageBox.information(self, "請選擇案件", "新增待辦前請先在上方選擇一個案件。")
-            return
-        dlg = NewTaskDialog(self._container.tasks, eng_id, parent=self)
+        fixed_id = eng_id if eng_id != _ALL_ENGAGEMENTS else None
+        dlg = NewTaskDialog(
+            self._container.tasks,
+            engagement_id=fixed_id,
+            parent=self,
+            engagements_service=self._container.engagements,
+        )
         if dlg.exec() == NewTaskDialog.DialogCode.Accepted:
             self._refresh()
 

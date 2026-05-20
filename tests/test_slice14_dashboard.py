@@ -307,6 +307,7 @@ class TestDashboardService:
         assert counts.upcoming_engagements == 0
         assert counts.overdue_engagements == 0
         assert counts.high_risk_engagements == 0
+        assert counts.lease_expiring_soon == 0
 
     def test_get_counts_no_hardcode_guarantee(self):
         """Empty DB must return 0 for every field — not any positive hardcoded number."""
@@ -321,6 +322,7 @@ class TestDashboardService:
             counts.upcoming_engagements,
             counts.overdue_engagements,
             counts.high_risk_engagements,
+            counts.lease_expiring_soon,
         ]:
             assert val == 0, f"Expected 0 from empty DB, got {val}"
 
@@ -355,12 +357,12 @@ class TestDashboardPageUI:
         page = DashboardPage(container)
         assert page is not None
 
-    def test_all_8_cards_present(self):
+    def test_all_cards_present(self):
         _make_app()
         container = _fresh_container()
         from taxops.ui.pages.dashboard_page import DashboardPage, _CARD_DEFS
         page = DashboardPage(container)
-        assert len(page._cards) == 8
+        assert len(page._cards) == 9
         assert len(page._cards) == len(_CARD_DEFS)
 
     def test_empty_db_cards_show_zero(self):

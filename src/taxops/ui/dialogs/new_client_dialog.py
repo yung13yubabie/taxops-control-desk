@@ -37,6 +37,7 @@ from ...services.clients import (
     ClientsService,
     CreateClientInput,
 )
+from ._shared import date_edit_value, make_nullable_date_edit
 
 _log = logging.getLogger(__name__)
 
@@ -120,6 +121,8 @@ class NewClientDialog(QDialog):
         self._address = QLineEdit()
         self._note = QTextEdit()
         self._note.setFixedHeight(80)
+        self._lease_start = make_nullable_date_edit()
+        self._lease_end = make_nullable_date_edit()
 
         form.addRow(QLabel("客戶代號"), self._client_code)
         form.addRow(QLabel("客戶名稱"), self._client_name)
@@ -130,6 +133,8 @@ class NewClientDialog(QDialog):
         form.addRow(QLabel("聯絡信箱"), self._contact_email)
         form.addRow(QLabel("地址"), self._address)
         form.addRow(QLabel("備註"), self._note)
+        form.addRow(QLabel("租約起日"), self._lease_start)
+        form.addRow(QLabel("租約迄日"), self._lease_end)
 
         outer.addLayout(form)
 
@@ -220,6 +225,8 @@ class NewClientDialog(QDialog):
                 contact_email=self._contact_email.text(),
                 address=self._address.text(),
                 note=self._note.toPlainText(),
+                lease_start=date_edit_value(self._lease_start),
+                lease_end=date_edit_value(self._lease_end),
                 registry_source_tax_id=(
                     self._registry_prefill.get("source_tax_id") if self._registry_prefill else None
                 ),

@@ -250,6 +250,67 @@ def test_deleted_client_code_remains_reserved(container: ServiceContainer) -> No
     assert exc.value.code == "client.client_code.duplicate"
 
 
+def test_purge_deleted_client_removes_row_and_writes_audit(
+    container: ServiceContainer,
+) -> None:
+    client = container.clients.create_client(
+        CreateClientInput(client_code="P001", client_name="永久刪除測試")
+    )
+    container.clients.delete_client(client.id)
+
+    container.clients.purge_client(client.id)
+
+    raw = container.conn.execute(
+        "SELECT id FROM clients WHERE id = ?", (client.id,)
+    ).fetchone()
+    assert raw is None
+    audit_rows = container.audit._repo.list_recent(limit=10)  # type: ignore[attr-defined]
+    assert any(
+        row.action == "client.purge" and row.target_id == str(client.id)
+        for row in audit_rows
+    )
+
+
+def test_purge_active_client_is_blocked(container: ServiceContainer) -> None:
+    client = container.clients.create_client(
+        CreateClientInput(client_code="P002", client_name="未封存不可永久刪除")
+    )
+
+    with pytest.raises(ClientValidationError) as exc:
+        container.clients.purge_client(client.id)
+
+    assert exc.value.code == "client.purge.requires_deleted"
+
+
+def test_purge_deleted_client_with_engagement_is_blocked(
+    container: ServiceContainer,
+) -> None:
+    from taxops.services.engagements import CreateEngagementInput
+
+    client = container.clients.create_client(
+        CreateClientInput(client_code="P003", client_name="有案件不可永久刪除")
+    )
+    container.engagements.create_engagement(
+        CreateEngagementInput(
+            client_id=client.id,
+            engagement_name="保留關聯案件",
+            tax_type="vat",
+            period_name="2026",
+        )
+    )
+    container.clients.delete_client(client.id)
+
+    with pytest.raises(ClientValidationError) as exc:
+        container.clients.purge_client(client.id)
+
+    assert exc.value.code == "client.purge.has_engagements"
+    raw = container.conn.execute(
+        "SELECT deleted_at FROM clients WHERE id = ?", (client.id,)
+    ).fetchone()
+    assert raw is not None
+    assert raw["deleted_at"] is not None
+
+
 # ---------------------------------------------------------------------------
 # Bulk service
 # ---------------------------------------------------------------------------

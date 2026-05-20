@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -18,7 +19,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import datetime
+import logging
+
+from ...core.clock import today_iso
 from ...i18n import BUTTON_LABELS, NAV_LABELS, TABLE_HEADERS, error_message
+
+_log = logging.getLogger(__name__)
 from ...services.clients import ClientValidationError
 from ...services.container import ServiceContainer
 from ..dialogs.bulk_import_wizard import BulkImportWizard
@@ -37,8 +44,15 @@ _COLUMN_ORDER: tuple[str, ...] = (
     "contact_name",
     "contact_phone",
     "contact_email",
+    "address",
+    "note",
+    "lease_start",
+    "lease_end",
     "updated_at",
 )
+
+# Columns hidden by default; user can toggle them via the "欄位顯示" menu.
+_DEFAULT_HIDDEN: frozenset[str] = frozenset({"id", "address", "note", "lease_start"})
 
 _DEFAULT_SORT_COL = "client_code"
 _DEFAULT_SORT_DIR = "ASC"
@@ -58,6 +72,8 @@ class ClientsPage(QWidget):
         self._total = 0
         self._sort_col = _DEFAULT_SORT_COL
         self._sort_dir = _DEFAULT_SORT_DIR
+        self._hidden_cols: set[str] = set(_DEFAULT_HIDDEN)
+        self._filter_key: str = ""
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 24, 24, 24)
@@ -93,26 +109,32 @@ class ClientsPage(QWidget):
         self._edit_btn = QPushButton("編輯客戶")
         self._delete_btn = QPushButton("刪除客戶")
         self._restore_btn = QPushButton("復原客戶")
+        self._purge_btn = QPushButton("永久刪除")
         self._bulk_btn = QPushButton("批量匯入")
+        self._cols_btn = QPushButton("欄位顯示 ▾")
         self._refresh_btn = QPushButton(BUTTON_LABELS["clients.refresh"])
 
         self._new_btn.setIcon(toolbar_icon("new"))
         self._edit_btn.setIcon(toolbar_icon("edit"))
         self._delete_btn.setIcon(toolbar_icon("delete"))
         self._restore_btn.setIcon(toolbar_icon("refresh"))
+        self._purge_btn.setIcon(toolbar_icon("delete"))
         self._bulk_btn.setIcon(toolbar_icon("bulk"))
         self._refresh_btn.setIcon(toolbar_icon("refresh"))
 
         self._edit_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
         self._restore_btn.setEnabled(False)
+        self._purge_btn.setEnabled(False)
 
         for btn in (
             self._new_btn,
             self._edit_btn,
             self._delete_btn,
             self._restore_btn,
+            self._purge_btn,
             self._bulk_btn,
+            self._cols_btn,
             self._refresh_btn,
         ):
             toolbar.addWidget(btn)
@@ -166,7 +188,9 @@ class ClientsPage(QWidget):
         self._edit_btn.clicked.connect(self.on_edit_client)
         self._delete_btn.clicked.connect(self.on_delete_client)
         self._restore_btn.clicked.connect(self.on_restore_client)
+        self._purge_btn.clicked.connect(self.on_purge_client)
         self._bulk_btn.clicked.connect(self.on_bulk_import)
+        self._cols_btn.clicked.connect(self._on_cols_menu)
         self._refresh_btn.clicked.connect(self.on_refresh)
         self._show_deleted_check.toggled.connect(self._on_show_deleted_toggled)
         self._search_btn.clicked.connect(self._on_search)
@@ -181,14 +205,43 @@ class ClientsPage(QWidget):
         self.on_refresh()
 
     # ------------------------------------------------------------------
+    # Column visibility
+    # ------------------------------------------------------------------
+
+    def _on_cols_menu(self) -> None:
+        headers = TABLE_HEADERS["clients"]
+        menu = QMenu(self)
+        for col in _COLUMN_ORDER:
+            label = headers.get(col, col)
+            action = menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(col not in self._hidden_cols)
+            action.setData(col)
+        chosen = menu.exec(self._cols_btn.mapToGlobal(self._cols_btn.rect().bottomLeft()))
+        if chosen is None:
+            return
+        col = chosen.data()
+        if chosen.isChecked():
+            self._hidden_cols.discard(col)
+        else:
+            self._hidden_cols.add(col)
+        self._apply_column_visibility()
+
+    def _apply_column_visibility(self) -> None:
+        for col_idx, col in enumerate(_COLUMN_ORDER):
+            self._table.setColumnHidden(col_idx, col in self._hidden_cols)
+
+    # ------------------------------------------------------------------
     # Search / pagination / sort
     # ------------------------------------------------------------------
 
     def _on_search(self) -> None:
+        self._filter_key = ""  # manual search overrides dashboard filter
         self._page = 0
         self.on_refresh()
 
     def _on_clear_search(self) -> None:
+        self._filter_key = ""
         self._search_input.clear()
         self._page = 0
         self.on_refresh()
@@ -238,12 +291,23 @@ class ClientsPage(QWidget):
         self._page = 0
         self.on_refresh()
 
+    def set_filter(self, filter_key: str) -> None:
+        self._filter_key = filter_key
+        self._search_input.clear()
+        self._page = 0
+        self.on_refresh()
+
+    def refresh_context(self) -> None:
+        """Reload client rows when the page becomes active."""
+        self.on_refresh()
+
     def _on_selection_changed(self) -> None:
         client_id = self._selected_client_id()
         if client_id is None:
             self._edit_btn.setEnabled(False)
             self._delete_btn.setEnabled(False)
             self._restore_btn.setEnabled(False)
+            self._purge_btn.setEnabled(False)
             return
         rows = self._table.selectedItems()
         row_idx = self._table.row(rows[0])
@@ -252,6 +316,7 @@ class ClientsPage(QWidget):
         self._edit_btn.setEnabled(not is_deleted)
         self._delete_btn.setEnabled(not is_deleted)
         self._restore_btn.setEnabled(is_deleted)
+        self._purge_btn.setEnabled(is_deleted)
 
     def _selected_client_id(self) -> int | None:
         """Always return client.id from the id column — never row index."""
@@ -318,7 +383,8 @@ class ClientsPage(QWidget):
         except ClientValidationError as exc:
             QMessageBox.warning(self, "刪除失敗", error_message(exc.code))
             return
-        except Exception:
+        except Exception as err:
+            _log.error("clients.delete failed", exc_info=err)
             QMessageBox.warning(self, "刪除失敗", error_message("client.delete.failed"))
             return
         self.on_refresh()
@@ -332,8 +398,35 @@ class ClientsPage(QWidget):
         except ClientValidationError as exc:
             QMessageBox.warning(self, "復原失敗", error_message(exc.code))
             return
-        except Exception:
+        except Exception as err:
+            _log.error("clients.restore failed", exc_info=err)
             QMessageBox.warning(self, "復原失敗", error_message("client.restore.failed"))
+            return
+        self.on_refresh()
+
+    def on_purge_client(self) -> None:
+        client_id = self._selected_client_id()
+        if client_id is None:
+            return
+        reply = QMessageBox.question(
+            self,
+            "永久刪除客戶",
+            "此操作會永久移除已封存客戶，且不能復原。\n"
+            "若客戶仍有案件資料，系統會阻止刪除。\n\n"
+            "確定要永久刪除？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._container.clients.purge_client(client_id)
+        except ClientValidationError as exc:
+            QMessageBox.warning(self, "永久刪除失敗", error_message(exc.code))
+            return
+        except Exception as err:
+            _log.error("clients.purge failed", exc_info=err)
+            QMessageBox.warning(self, "永久刪除失敗", error_message("client.purge.failed"))
             return
         self.on_refresh()
 
@@ -347,25 +440,34 @@ class ClientsPage(QWidget):
             self.on_refresh()
 
     def on_refresh(self) -> None:
+        from ..action_registry import FilterKey
         query = self._search_input.text()
         include_deleted = self._show_deleted_check.isChecked()
         try:
-            search_svc = getattr(self._container, "search", None)
-            if not include_deleted and search_svc is not None and search_svc.is_fts_eligible(query):
-                all_rows = search_svc.search_clients(query.strip())
-                self._total = len(all_rows)
+            if self._filter_key == FilterKey.LEASE_EXPIRING:
+                today = today_iso()
+                until = (datetime.date.fromisoformat(today) + datetime.timedelta(days=30)).isoformat()
+                rows = self._container.clients.list_lease_expiring_soon(today, until)
+                self._total = len(rows)
                 start = self._page * _PAGE_SIZE
-                rows = all_rows[start : start + _PAGE_SIZE]
+                rows = rows[start : start + _PAGE_SIZE]
             else:
-                self._total = self._container.clients.count_clients(query, include_deleted=include_deleted)
-                rows = self._container.clients.search_clients(
-                    query,
-                    order_by=self._sort_col,
-                    order_dir=self._sort_dir,
-                    limit=_PAGE_SIZE,
-                    offset=self._page * _PAGE_SIZE,
-                    include_deleted=include_deleted,
-                )
+                search_svc = getattr(self._container, "search", None)
+                if not include_deleted and search_svc is not None and search_svc.is_fts_eligible(query):
+                    all_rows = search_svc.search_clients(query.strip())
+                    self._total = len(all_rows)
+                    start = self._page * _PAGE_SIZE
+                    rows = all_rows[start : start + _PAGE_SIZE]
+                else:
+                    self._total = self._container.clients.count_clients(query, include_deleted=include_deleted)
+                    rows = self._container.clients.search_clients(
+                        query,
+                        order_by=self._sort_col,
+                        order_dir=self._sort_dir,
+                        limit=_PAGE_SIZE,
+                        offset=self._page * _PAGE_SIZE,
+                        include_deleted=include_deleted,
+                    )
         except Exception as err:
             self._container.system_log.error("clients.list failed", exc=err)
             QMessageBox.warning(self, "載入失敗", error_message("client.list.failed"))
@@ -385,6 +487,10 @@ class ClientsPage(QWidget):
                 "contact_name": client.contact_name or "",
                 "contact_phone": client.contact_phone or "",
                 "contact_email": client.contact_email or "",
+                "address": client.address or "",
+                "note": client.note or "",
+                "lease_start": client.lease_start or "",
+                "lease_end": client.lease_end or "",
                 "updated_at": client.updated_at,
             }
             for col_idx, col in enumerate(_COLUMN_ORDER):
@@ -399,3 +505,4 @@ class ClientsPage(QWidget):
         self._empty_label.setVisible(self._total == 0)
         self._table.setVisible(self._total > 0)
         self._update_pagination_controls()
+        self._apply_column_visibility()

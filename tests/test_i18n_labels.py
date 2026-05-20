@@ -61,6 +61,10 @@ def test_table_headers_no_raw_field_names() -> None:
         "contact_name",
         "contact_phone",
         "contact_email",
+        "address",
+        "note",
+        "lease_start",
+        "lease_end",
         "updated_at",
     }
     assert set(headers.keys()) == raw_field_names

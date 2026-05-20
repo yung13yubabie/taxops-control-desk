@@ -15,6 +15,8 @@ from . import (
     _m0010_attachments,
     _m0011_backup,
     _m0012_fts5,
+    _m0013_client_lease,
+    _m0014_nullable_engagement,
 )
 
 MIGRATIONS: tuple[tuple[str, str], ...] = (
@@ -30,4 +32,6 @@ MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("0010_attachments", _m0010_attachments.SQL),
     ("0011_backup", _m0011_backup.SQL),
     ("0012_fts5", _m0012_fts5.SQL),
+    ("0013_client_lease", _m0013_client_lease.SQL),
+    ("0014_nullable_engagement", _m0014_nullable_engagement.SQL),
 )

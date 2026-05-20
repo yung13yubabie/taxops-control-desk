@@ -90,3 +90,14 @@ class DashboardRepository:
             "   AND status = 'open'",
         ).fetchone()
         return row[0] if row else 0
+
+    def count_lease_expiring_soon(self, today: str, until: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM clients"
+            " WHERE deleted_at IS NULL"
+            "   AND lease_end IS NOT NULL"
+            "   AND lease_end >= ?"
+            "   AND lease_end <= ?",
+            (today, until),
+        ).fetchone()
+        return row[0] if row else 0

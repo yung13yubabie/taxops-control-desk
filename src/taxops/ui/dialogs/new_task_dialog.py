@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import Qt
+
+_log = logging.getLogger(__name__)
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -18,8 +22,11 @@ from PySide6.QtWidgets import (
 
 from ...i18n import error_message
 from ...i18n.status_labels import PRIORITY_LABELS
+from ...services.engagements import EngagementsService
 from ...services.tasks import CreateTaskInput, TaskValidationError, TasksService
 from ._shared import date_edit_value, make_nullable_date_edit
+
+_NO_ENGAGEMENT = -1
 
 _PRIORITY_CHOICES = [
     ("urgent", PRIORITY_LABELS["urgent"]),
@@ -33,12 +40,13 @@ class NewTaskDialog(QDialog):
     def __init__(
         self,
         tasks_service: TasksService,
-        engagement_id: int,
+        engagement_id: int | None = None,
         parent: QWidget | None = None,
+        engagements_service: EngagementsService | None = None,
     ) -> None:
         super().__init__(parent)
         self._svc = tasks_service
-        self._engagement_id = engagement_id
+        self._fixed_engagement_id = engagement_id
 
         self.setWindowTitle("新增待辦")
         self.setModal(True)
@@ -50,6 +58,17 @@ class NewTaskDialog(QDialog):
 
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self._eng_combo: QComboBox | None = None
+        if engagement_id is None and engagements_service is not None:
+            self._eng_combo = QComboBox()
+            self._eng_combo.addItem("（不指定）", userData=_NO_ENGAGEMENT)
+            try:
+                for eng in engagements_service.list_all():
+                    self._eng_combo.addItem(eng.engagement_name, userData=eng.id)
+            except Exception:
+                _log.warning("new_task_dialog: failed to load engagements", exc_info=True)
+            form.addRow(QLabel("關聯案件"), self._eng_combo)
 
         self._title = QLineEdit()
         self._title.setMaxLength(200)
@@ -93,9 +112,16 @@ class NewTaskDialog(QDialog):
 
     def on_save(self) -> None:
         self._save_btn.setEnabled(False)
+        if self._fixed_engagement_id is not None:
+            eng_id: int | None = self._fixed_engagement_id
+        elif self._eng_combo is not None:
+            raw = self._eng_combo.currentData()
+            eng_id = None if raw == _NO_ENGAGEMENT else int(raw)
+        else:
+            eng_id = None
         try:
             payload = CreateTaskInput(
-                engagement_id=self._engagement_id,
+                engagement_id=eng_id,
                 title=self._title.text(),
                 assignee=self._assignee.text() or None,
                 due_date=date_edit_value(self._due_date),
