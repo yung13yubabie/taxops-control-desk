@@ -27,6 +27,7 @@ from ..repositories.review_notes import ReviewNotesRepository
 from ..repositories.backup import BackupRepository
 from ..repositories.dashboard import DashboardRepository
 from ..repositories.search import SearchRepository
+from ..repositories.recurring_billing import RecurringBillingRepository
 from ..repositories.tasks import TasksRepository
 from ..repositories.templates import TemplatesRepository
 from ..repositories.tax_registry import (
@@ -50,6 +51,7 @@ from .search import SearchService
 from .generated_messages import GeneratedMessagesService
 from .late_fee import LateFeeService
 from .review_notes import ReviewNotesService
+from .recurring_billing import RecurringBillingService
 from .tasks import TasksService
 from .templates import TemplatesService
 
@@ -80,6 +82,7 @@ class ServiceContainer:
     backup: BackupService
     dashboard: DashboardService
     search: SearchService
+    recurring_billing: RecurringBillingService
 
     def close(self) -> None:
         """Close the owned SQLite connection.
@@ -162,6 +165,12 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
     dashboard_repo = DashboardRepository(conn)
     dashboard_service = DashboardService(dashboard_repo)
 
+    recurring_billing_repo = RecurringBillingRepository(conn)
+    recurring_billing_service = RecurringBillingService(
+        repo=recurring_billing_repo,
+        audit=audit_service,
+    )
+
     tax_cache_importer = TaxRegistryImporter(
         registry_repo=tax_registry_repo,
         metadata_repo=tax_cache_metadata_repo,
@@ -207,4 +216,5 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         backup=backup_service,
         dashboard=dashboard_service,
         search=search_service,
+        recurring_billing=recurring_billing_service,
     )
