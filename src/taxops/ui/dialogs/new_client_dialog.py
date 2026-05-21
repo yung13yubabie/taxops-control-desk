@@ -215,6 +215,12 @@ class NewClientDialog(QDialog):
     def on_save(self) -> None:
         self._save_btn.setEnabled(False)
         try:
+            lease_start = self._lease_start.validated_value()
+            lease_end = self._lease_end.validated_value()
+        except DateField.InvalidInput:
+            self._save_btn.setEnabled(True)
+            return
+        try:
             payload = CreateClientInput(
                 client_code=self._client_code.text(),
                 client_name=self._client_name.text(),
@@ -225,8 +231,8 @@ class NewClientDialog(QDialog):
                 contact_email=self._contact_email.text(),
                 address=self._address.text(),
                 note=self._note.toPlainText(),
-                lease_start=self._lease_start.value(),
-                lease_end=self._lease_end.value(),
+                lease_start=lease_start,
+                lease_end=lease_end,
                 registry_source_tax_id=(
                     self._registry_prefill.get("source_tax_id") if self._registry_prefill else None
                 ),

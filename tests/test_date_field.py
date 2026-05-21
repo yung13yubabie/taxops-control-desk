@@ -403,3 +403,120 @@ def test_late_fee_service_only_actual_payment_date_raises(container) -> None:
             )
         )
     assert exc.value.code == "late_fee.date.required_pair"
+
+
+# ---------------------------------------------------------------------------
+# 12. validated_value() -- strict API
+# ---------------------------------------------------------------------------
+
+def test_validated_value_empty_returns_none(qapp: QApplication) -> None:
+    from taxops.ui.widgets.date_field import DateField
+
+    field = DateField(required=False)
+    assert field.validated_value() is None
+
+
+def test_validated_value_valid_date_returns_iso(qapp: QApplication) -> None:
+    from taxops.ui.widgets.date_field import DateField
+
+    field = DateField(required=False)
+    field._edit.setText("2026-08-15")
+    assert field.validated_value() == "2026-08-15"
+
+
+def test_validated_value_invalid_text_raises(qapp: QApplication) -> None:
+    """Non-empty invalid text must raise InvalidInput, NOT silently return None."""
+    from taxops.ui.widgets.date_field import DateField
+
+    field = DateField(required=False)
+    field._edit.setText("not-a-date")
+    with pytest.raises(DateField.InvalidInput):
+        field.validated_value()
+
+
+def test_validated_value_invalid_sets_error_label(qapp: QApplication) -> None:
+    """validated_value() must mark the field with an error so the user sees it."""
+    from taxops.ui.widgets.date_field import DateField
+
+    field = DateField(required=False)
+    field._edit.setText("2026-99-99")
+    try:
+        field.validated_value()
+    except DateField.InvalidInput:
+        pass
+    assert not field._error_label.isHidden()
+
+
+def test_new_client_dialog_invalid_lease_does_not_save(qapp: QApplication, container) -> None:
+    """Invalid lease date must block save -- no DB row written."""
+    from taxops.ui.dialogs.new_client_dialog import NewClientDialog
+
+    dlg = NewClientDialog(container.clients)
+    dlg._client_code._edit.setText("INVAL01") if hasattr(dlg._client_code, "_edit") else dlg._client_code.setText("INVAL01")
+    dlg._client_name._edit.setText("無效日期客戶") if hasattr(dlg._client_name, "_edit") else dlg._client_name.setText("無效日期客戶")
+    dlg._lease_start._edit.setText("not-a-date")
+
+    before = len(container.clients.list_clients())
+    dlg.on_save()
+    after = len(container.clients.list_clients())
+    assert after == before  # no row written
+    assert dlg._save_btn.isEnabled()  # button re-enabled after rejection
+
+
+def test_new_engagement_dialog_invalid_due_date_does_not_save(qapp: QApplication, container) -> None:
+    """Invalid due_date must block engagement creation."""
+    from taxops.ui.dialogs.new_engagement_dialog import NewEngagementDialog
+    from taxops.services.clients import CreateClientInput
+
+    client = container.clients.create_client(
+        CreateClientInput(client_code="INVENG01", client_name="無效日期案件")
+    )
+    dlg = NewEngagementDialog(container.engagements, client_id=client.id)
+    dlg._name.setText("測試案件")
+    dlg._period.setText("2026")
+    dlg._due_date._edit.setText("bad-date")
+
+    before = len(container.engagements.list_all())
+    dlg.on_save()
+    after = len(container.engagements.list_all())
+    assert after == before
+    assert dlg._save_btn.isEnabled()
+
+
+def test_new_task_dialog_invalid_due_date_does_not_save(qapp: QApplication, container) -> None:
+    """Invalid due_date must block task creation."""
+    from taxops.ui.dialogs.new_task_dialog import NewTaskDialog
+
+    dlg = NewTaskDialog(container.tasks)
+    dlg._title.setText("測試待辦")
+    dlg._due_date._edit.setText("bad-date")
+
+    before = len(container.tasks.list_all())
+    dlg.on_save()
+    after = len(container.tasks.list_all())
+    assert after == before
+    assert dlg._save_btn.isEnabled()
+
+
+# ---------------------------------------------------------------------------
+# 13. Version consistency
+# ---------------------------------------------------------------------------
+
+def test_package_version_matches_pyproject() -> None:
+    """__version__ in taxops/__init__.py must match pyproject.toml version."""
+    import importlib.metadata
+    import taxops
+
+    try:
+        dist_version = importlib.metadata.version("taxops-control-desk")
+        assert taxops.__version__ == dist_version
+    except importlib.metadata.PackageNotFoundError:
+        # Package not installed via pip; verify pyproject.toml manually
+        import pathlib
+        import re
+        toml = (pathlib.Path(__file__).parent.parent / "pyproject.toml").read_text(encoding="utf-8")
+        m = re.search(r'^version\s*=\s*"([^"]+)"', toml, re.MULTILINE)
+        assert m is not None, "Could not find version in pyproject.toml"
+        assert taxops.__version__ == m.group(1), (
+            f"__version__ {taxops.__version__!r} != pyproject.toml {m.group(1)!r}"
+        )

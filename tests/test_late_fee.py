@@ -253,7 +253,7 @@ def test_only_actual_payment_date_raises(conn, svc):
     assert exc_info.value.code == "late_fee.date.required_pair"
 
 
-def test_actual_before_last_payment_date_gives_zero_days(conn, svc):
+def test_actual_equals_last_payment_date_gives_zero_days(conn, svc):
     req_id = _seed_request(conn)
     row = svc.calculate_and_save(
         CalculateLateFeeInput(
@@ -261,8 +261,39 @@ def test_actual_before_last_payment_date_gives_zero_days(conn, svc):
             overdue_days=0,
             base_amount=5000.0,
             last_payment_date="2026-05-10",
-            actual_payment_date="2026-05-01",
+            actual_payment_date="2026-05-10",
         )
     )
     assert row.overdue_days == 0
     assert row.penalty_amount == 0.0
+
+
+def test_actual_one_day_after_last_payment_date_gives_one_day(conn, svc):
+    req_id = _seed_request(conn)
+    row = svc.calculate_and_save(
+        CalculateLateFeeInput(
+            request_id=req_id,
+            overdue_days=0,
+            base_amount=5000.0,
+            last_payment_date="2026-05-10",
+            actual_payment_date="2026-05-11",
+        )
+    )
+    assert row.overdue_days == 1
+
+
+def test_actual_before_last_payment_date_raises_range_invalid(conn, svc):
+    """Reverse dates must raise, not silently store 0 days."""
+    req_id = _seed_request(conn)
+    with pytest.raises(LateFeeValidationError) as exc:
+        svc.calculate_and_save(
+            CalculateLateFeeInput(
+                request_id=req_id,
+                overdue_days=0,
+                base_amount=5000.0,
+                last_payment_date="2026-05-10",
+                actual_payment_date="2026-05-01",
+            )
+        )
+    assert exc.value.code == "late_fee.date.range_invalid"
+    assert len(svc.list_by_request(req_id)) == 0

@@ -142,12 +142,17 @@ class DateField(QWidget):
     required=False -- initializes empty, has clear button, value() returns None when empty
 
     API:
-        value() -> str | None          ISO date string or None
+        value() -> str | None          ISO date string or None (None for empty OR invalid)
+        validated_value() -> str | None  same but raises InvalidInput if text is non-empty
+                                         and not a valid date; also marks the field with error
         set_value(str | None)
         set_error(str | None)
         clear()                        only effective for optional fields
         set_date_range(min, max)
     """
+
+    class InvalidInput(Exception):
+        """Raised by validated_value() when raw_text is non-empty but not a valid ISO date."""
 
     value_changed = Signal(object)  # str | None
 
@@ -208,7 +213,7 @@ class DateField(QWidget):
     # ── public API ────────────────────────────────────────────────────────
 
     def value(self) -> str | None:
-        """Return normalized ISO string, or None if empty/invalid."""
+        """Return normalized ISO string, or None if empty OR invalid (silent)."""
         text = self._edit.text().strip()
         if not text:
             return None
@@ -216,6 +221,22 @@ class DateField(QWidget):
             return datetime.date.fromisoformat(text).isoformat()
         except ValueError:
             return None
+
+    def validated_value(self) -> str | None:
+        """Return normalized ISO string or None (if empty).
+
+        Raises DateField.InvalidInput if raw_text is non-empty but not a valid
+        date. Also marks the field with an inline error message so the user
+        sees exactly which field is wrong.
+        """
+        text = self._edit.text().strip()
+        if not text:
+            return None
+        try:
+            return datetime.date.fromisoformat(text).isoformat()
+        except ValueError:
+            self.set_error("日期格式不正確，請輸入 yyyy-MM-dd（例：2026-05-21）")
+            raise DateField.InvalidInput(f"invalid date text: {text!r}")
 
     def raw_text(self) -> str:
         """Return raw text from the line edit (may be invalid)."""

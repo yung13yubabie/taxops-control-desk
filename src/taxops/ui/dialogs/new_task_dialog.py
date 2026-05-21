@@ -112,6 +112,11 @@ class NewTaskDialog(QDialog):
 
     def on_save(self) -> None:
         self._save_btn.setEnabled(False)
+        try:
+            due_date = self._due_date.validated_value()
+        except DateField.InvalidInput:
+            self._save_btn.setEnabled(True)
+            return
         if self._fixed_engagement_id is not None:
             eng_id: int | None = self._fixed_engagement_id
         elif self._eng_combo is not None:
@@ -124,7 +129,7 @@ class NewTaskDialog(QDialog):
                 engagement_id=eng_id,
                 title=self._title.text(),
                 assignee=self._assignee.text() or None,
-                due_date=self._due_date.value(),
+                due_date=due_date,
                 priority=self._priority.currentData(),
                 next_step=self._next_step.text() or None,
                 notes=self._notes.toPlainText() or None,

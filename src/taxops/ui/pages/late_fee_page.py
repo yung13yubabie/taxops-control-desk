@@ -210,8 +210,11 @@ class LateFeePage(QWidget):
                 self._table.setItem(row, col, QTableWidgetItem(vals[key]))
 
     def _on_calculate(self) -> None:
-        last_payment_date = self._last_payment_date.value()
-        actual_payment_date = self._actual_payment_date.value()
+        try:
+            last_payment_date = self._last_payment_date.validated_value()
+            actual_payment_date = self._actual_payment_date.validated_value()
+        except DateField.InvalidInput:
+            return
         if last_payment_date is None or actual_payment_date is None:
             QMessageBox.warning(self, "提示", "請輸入最後繳款日與實際繳款日")
             return

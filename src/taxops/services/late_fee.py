@@ -27,13 +27,19 @@ def calculate_penalty_percent(overdue_days: int) -> float:
 
 
 def calculate_overdue_days(last_payment_date: str, actual_payment_date: str) -> int:
-    """Return calendar days after the last payment date until actual payment."""
+    """Return calendar days after the last payment date until actual payment.
+
+    Raises LateFeeValidationError("late_fee.date.range_invalid") if
+    actual_payment_date is before last_payment_date.
+    """
     try:
         last_day = datetime.date.fromisoformat(last_payment_date)
         paid_day = datetime.date.fromisoformat(actual_payment_date)
     except ValueError as err:
         raise LateFeeValidationError("late_fee.date.invalid") from err
-    return max((paid_day - last_day).days, 0)
+    if paid_day < last_day:
+        raise LateFeeValidationError("late_fee.date.range_invalid")
+    return (paid_day - last_day).days
 
 
 class LateFeeValidationError(Exception):
@@ -70,18 +76,9 @@ class LateFeeService:
 
         overdue_days = payload.overdue_days
         if has_last and has_actual:
-            try:
-                last_day = datetime.date.fromisoformat(payload.last_payment_date)
-                paid_day = datetime.date.fromisoformat(payload.actual_payment_date)
-            except ValueError as err:
-                raise LateFeeValidationError("late_fee.date.invalid") from err
-            if paid_day < last_day:
-                _log.warning(
-                    "late_fee: actual_payment_date %s is before last_payment_date %s; overdue_days = 0",
-                    payload.actual_payment_date,
-                    payload.last_payment_date,
-                )
-            overdue_days = max((paid_day - last_day).days, 0)
+            overdue_days = calculate_overdue_days(
+                payload.last_payment_date, payload.actual_payment_date
+            )
         elif overdue_days < 0:
             raise LateFeeValidationError("late_fee.negative_overdue_days")
         if payload.base_amount < 0:

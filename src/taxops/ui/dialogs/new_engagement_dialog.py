@@ -91,13 +91,18 @@ class NewEngagementDialog(QDialog):
     def on_save(self) -> None:
         self._save_btn.setEnabled(False)
         try:
+            due_date = self._due_date.validated_value()
+        except DateField.InvalidInput:
+            self._save_btn.setEnabled(True)
+            return
+        try:
             payload = CreateEngagementInput(
                 client_id=self._client_id,
                 engagement_name=self._name.text(),
                 tax_type=self._tax_type.currentData(),
                 period_name=self._period.text(),
                 owner=self._owner.text() or None,
-                due_date=self._due_date.value(),
+                due_date=due_date,
                 notes=self._notes.toPlainText() or None,
             )
             self._svc.create_engagement(payload)

@@ -118,6 +118,7 @@ ERROR_MESSAGES: dict[str, str] = dict(
             "review_note.create.failed": "新增覆核意見失敗，請稍後再試",
             "review_note.update.failed": "更新覆核意見失敗，請稍後再試",
             "late_fee.date.required_pair": "最後繳款日與實際繳款日必須同時提供，或同時不填",
+            "late_fee.date.range_invalid": "實際繳款日不可早於最後繳款日，請確認日期輸入",
             "late_fee.negative_overdue_days": "逾期天數不可為負數",
             "late_fee.negative_base_amount": "稅額不可為負數",
             "late_fee.date.invalid": "日期格式不正確，請使用有效日期",
