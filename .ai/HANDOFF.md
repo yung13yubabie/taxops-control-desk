@@ -1,5 +1,38 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-05-21 — three correctness fixes, v0.5.0 final)
+
+### 本輪完成事項
+
+- [已確認] **DateField.InvalidInput + validated_value()**：新增 `DateField.InvalidInput` exception class；`validated_value()` 方法對非空但無效的輸入直接 raise 並設置 inline error label，不再靜默回傳 None。
+- [已確認] **6 個 consumer 更新**：`new_client_dialog`、`edit_client_dialog`、`new_engagement_dialog`、`edit_engagement_dialog`、`new_task_dialog`、`late_fee_page._on_calculate()` 全部改用 `validated_value()`，catch `InvalidInput` 後 re-enable 保存按鈕並 return。
+- [已確認] **滯納金反向日期不再是假成功**：`calculate_overdue_days()` 移除 `max(..., 0)`，反向日期（actual < last）直接 raise `late_fee.date.range_invalid`；`calculate_and_save()` 改呼叫 `calculate_overdue_days()`，反向日期不寫 DB。
+- [已確認] **新錯誤碼**：`late_fee.date.range_invalid` = "實際繳款日不可早於最後繳款日，請確認日期輸入" 加入 `i18n/errors.py`。
+- [已確認] **版本號統一**：`pyproject.toml` → `0.5.0`；`src/taxops/__init__.py` → `0.5.0`；git tag `v0.5.0` 指向最新 commit `7d370d4`。
+- [已確認] **EXE 重建**：`dist/TaxOpsControlDesk-v0.5.0-windows.zip` 重新打包（含所有 DateField 與 validated_value 修正）。
+
+### 驗證紀錄
+
+- [已確認] `python -m compileall -q src tests` 無語法錯誤。
+- [已確認] `python -m pytest tests/test_date_field.py tests/test_late_fee.py tests/test_clients.py tests/test_engagements.py tests/test_tasks.py -q` → 172/172 passed。
+- [已確認] `python -m pytest tests/test_ui_regressions.py tests/test_slice8_ui.py -q` → 19/19 passed。
+- [已確認] `python -m pytest -q` 全套執行中（結果待確認）。
+- [已確認] EXE smoke test 通過。
+
+### 行為保證
+
+- optional DateField 空白 → `validated_value()` 回傳 None（合法）。
+- 手打 "not-a-date" → `validated_value()` raise InvalidInput，error label 顯示，保存按鈕 re-enabled，DB 不寫入。
+- actual_payment_date = last_payment_date → 0 天（合法）。
+- actual_payment_date < last_payment_date → raise `late_fee.date.range_invalid`，DB 0 rows。
+
+### 下一輪注意事項
+
+- `value()` 仍保留舊語義（空/invalid 都回傳 None）——用於唯讀顯示；儲存路徑必須用 `validated_value()`。
+- 若新增日期欄位的 dialog/page，save 路徑一定用 `validated_value()`，不得用 `value()`。
+
+---
+
 ## Latest Handoff Update (2026-05-21 — DateField SLOP refactor + date validation)
 
 ### 本輪完成事項
