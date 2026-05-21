@@ -390,3 +390,76 @@ def test_import_validated_overwrites_on_policy(container: ServiceContainer) -> N
     result = import_validated(vrows, container.clients, on_duplicate_code="overwrite")
     assert result.overwritten == 1
     assert container.clients.find_by_code("OW01").client_name == "新名"
+
+
+# ── lease date validation ──────────────────────────────────────────────────────
+
+def test_create_client_lease_invalid_date_rejected(container: ServiceContainer) -> None:
+    with pytest.raises(ClientValidationError) as exc_info:
+        container.clients.create_client(
+            CreateClientInput(
+                client_code="L001",
+                client_name="租約測試",
+                lease_start="2026-02-31",
+            )
+        )
+    assert exc_info.value.code == "client.lease_date.invalid"
+
+
+def test_create_client_lease_range_invalid_rejected(container: ServiceContainer) -> None:
+    with pytest.raises(ClientValidationError) as exc_info:
+        container.clients.create_client(
+            CreateClientInput(
+                client_code="L002",
+                client_name="租約測試",
+                lease_start="2026-12-31",
+                lease_end="2026-01-01",
+            )
+        )
+    assert exc_info.value.code == "client.lease_range.invalid"
+
+
+def test_create_client_lease_valid_accepted(container: ServiceContainer) -> None:
+    row = container.clients.create_client(
+        CreateClientInput(
+            client_code="L003",
+            client_name="租約測試",
+            lease_start="2026-01-01",
+            lease_end="2026-12-31",
+        )
+    )
+    assert row.lease_start == "2026-01-01"
+    assert row.lease_end == "2026-12-31"
+
+
+def test_update_client_lease_invalid_date_rejected(container: ServiceContainer) -> None:
+    client = container.clients.create_client(
+        CreateClientInput(client_code="L004", client_name="租約更新")
+    )
+    with pytest.raises(ClientValidationError) as exc_info:
+        container.clients.update_client(
+            client.id,
+            UpdateClientInput(
+                client_code="L004",
+                client_name="租約更新",
+                lease_start="not-a-date",
+            ),
+        )
+    assert exc_info.value.code == "client.lease_date.invalid"
+
+
+def test_update_client_lease_range_invalid_rejected(container: ServiceContainer) -> None:
+    client = container.clients.create_client(
+        CreateClientInput(client_code="L005", client_name="租約更新2")
+    )
+    with pytest.raises(ClientValidationError) as exc_info:
+        container.clients.update_client(
+            client.id,
+            UpdateClientInput(
+                client_code="L005",
+                client_name="租約更新2",
+                lease_start="2026-06-01",
+                lease_end="2026-05-01",
+            ),
+        )
+    assert exc_info.value.code == "client.lease_range.invalid"

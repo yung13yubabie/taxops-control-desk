@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import datetime
+import logging
 from dataclasses import dataclass
+
+_log = logging.getLogger(__name__)
 
 from ..repositories.document_requests import DocumentRequestsRepository
 from ..repositories.late_fee import LateFeeRow, LateFeeRepository
@@ -60,12 +63,25 @@ class LateFeeService:
         self._audit = audit
 
     def calculate_and_save(self, payload: CalculateLateFeeInput) -> LateFeeRow:
+        has_last = bool(payload.last_payment_date)
+        has_actual = bool(payload.actual_payment_date)
+        if has_last != has_actual:
+            raise LateFeeValidationError("late_fee.date.required_pair")
+
         overdue_days = payload.overdue_days
-        if payload.last_payment_date and payload.actual_payment_date:
-            overdue_days = calculate_overdue_days(
-                payload.last_payment_date,
-                payload.actual_payment_date,
-            )
+        if has_last and has_actual:
+            try:
+                last_day = datetime.date.fromisoformat(payload.last_payment_date)
+                paid_day = datetime.date.fromisoformat(payload.actual_payment_date)
+            except ValueError as err:
+                raise LateFeeValidationError("late_fee.date.invalid") from err
+            if paid_day < last_day:
+                _log.warning(
+                    "late_fee: actual_payment_date %s is before last_payment_date %s; overdue_days = 0",
+                    payload.actual_payment_date,
+                    payload.last_payment_date,
+                )
+            overdue_days = max((paid_day - last_day).days, 0)
         elif overdue_days < 0:
             raise LateFeeValidationError("late_fee.negative_overdue_days")
         if payload.base_amount < 0:

@@ -6,6 +6,7 @@ import logging
 import sqlite3
 from dataclasses import dataclass
 
+from ..core.dates import date_range_is_valid, parse_optional_iso_date
 from ..core.text import sanitize_user_text
 from ..repositories.clients import ClientRow, ClientsRepository
 from ..repositories.search import SearchRepository
@@ -143,6 +144,13 @@ class ClientsService:
 
         lease_start = sanitize_user_text(payload.lease_start, max_length=10) or None
         lease_end = sanitize_user_text(payload.lease_end, max_length=10) or None
+        try:
+            ls = parse_optional_iso_date(lease_start)
+            le = parse_optional_iso_date(lease_end)
+        except ValueError:
+            raise ClientValidationError("client.lease_date.invalid")
+        if not date_range_is_valid(ls, le):
+            raise ClientValidationError("client.lease_range.invalid")
 
         try:
             row = self._repo.insert(
@@ -204,6 +212,13 @@ class ClientsService:
         note = sanitize_user_text(payload.note, max_length=2000) or None
         lease_start_u = sanitize_user_text(payload.lease_start, max_length=10) or None
         lease_end_u = sanitize_user_text(payload.lease_end, max_length=10) or None
+        try:
+            ls_u = parse_optional_iso_date(lease_start_u)
+            le_u = parse_optional_iso_date(lease_end_u)
+        except ValueError:
+            raise ClientValidationError("client.lease_date.invalid")
+        if not date_range_is_valid(ls_u, le_u):
+            raise ClientValidationError("client.lease_range.invalid")
 
         existing = self._repo.find_by_code(client_code)
         if existing is not None and existing.id != client_id:

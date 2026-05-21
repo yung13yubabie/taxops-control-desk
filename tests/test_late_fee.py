@@ -219,3 +219,50 @@ def test_list_by_request_multiple(conn, svc):
 def test_list_by_request_empty(conn, svc):
     req_id = _seed_request(conn, "vat")
     assert svc.list_by_request(req_id) == []
+
+
+# ── date pair validation ───────────────────────────────────────────────────────
+
+def test_only_last_payment_date_raises(conn, svc):
+    req_id = _seed_request(conn)
+    with pytest.raises(LateFeeValidationError) as exc_info:
+        svc.calculate_and_save(
+            CalculateLateFeeInput(
+                request_id=req_id,
+                overdue_days=0,
+                base_amount=1000.0,
+                last_payment_date="2026-05-01",
+                actual_payment_date=None,
+            )
+        )
+    assert exc_info.value.code == "late_fee.date.required_pair"
+
+
+def test_only_actual_payment_date_raises(conn, svc):
+    req_id = _seed_request(conn)
+    with pytest.raises(LateFeeValidationError) as exc_info:
+        svc.calculate_and_save(
+            CalculateLateFeeInput(
+                request_id=req_id,
+                overdue_days=0,
+                base_amount=1000.0,
+                last_payment_date=None,
+                actual_payment_date="2026-05-10",
+            )
+        )
+    assert exc_info.value.code == "late_fee.date.required_pair"
+
+
+def test_actual_before_last_payment_date_gives_zero_days(conn, svc):
+    req_id = _seed_request(conn)
+    row = svc.calculate_and_save(
+        CalculateLateFeeInput(
+            request_id=req_id,
+            overdue_days=0,
+            base_amount=5000.0,
+            last_payment_date="2026-05-10",
+            actual_payment_date="2026-05-01",
+        )
+    )
+    assert row.overdue_days == 0
+    assert row.penalty_amount == 0.0

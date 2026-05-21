@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from ..core.dates import parse_optional_iso_date
 from ..core.text import sanitize_user_text
 from ..repositories.engagements import EngagementRow, EngagementsRepository
 from ..repositories.search import SearchRepository
@@ -148,6 +149,10 @@ class EngagementsService:
         status = "draft"
         owner = sanitize_user_text(payload.owner, max_length=100) or None
         due_date = sanitize_user_text(payload.due_date, max_length=20) or None
+        try:
+            parse_optional_iso_date(due_date)
+        except ValueError:
+            raise EngagementValidationError("engagement.due_date.invalid")
         notes = sanitize_user_text(payload.notes, max_length=2000) or None
 
         row = self._repo.insert(
@@ -201,6 +206,10 @@ class EngagementsService:
 
         owner = sanitize_user_text(payload.owner, max_length=100) or None
         due_date = sanitize_user_text(payload.due_date, max_length=20) or None
+        try:
+            parse_optional_iso_date(due_date)
+        except ValueError:
+            raise EngagementValidationError("engagement.due_date.invalid")
         notes = sanitize_user_text(payload.notes, max_length=2000) or None
 
         row = self._repo.update(

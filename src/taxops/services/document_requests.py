@@ -6,6 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 
 from ..core.clock import now_iso
+from ..core.dates import parse_optional_iso_date
 from ..core.text import sanitize_user_text
 from ..repositories.document_requests import (
     DocumentRequestItemRow,
@@ -101,6 +102,10 @@ class DocumentRequestsService:
             raise DocumentRequestValidationError("doc_request.engagement_not_found")
 
         due_date = sanitize_user_text(payload.due_date, max_length=20) or None
+        try:
+            parse_optional_iso_date(due_date)
+        except ValueError:
+            raise DocumentRequestValidationError("doc_request.due_date.invalid")
         notes = sanitize_user_text(payload.notes, max_length=2000) or None
         item_names = VAT_ITEMS if payload.use_vat_template else ()
 

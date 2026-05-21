@@ -262,3 +262,37 @@ def test_update_engagement_transition_guard(svc, client_id):
             ),
         )
     assert exc_info.value.code == "engagement.status.transition_invalid"
+
+
+# ── due_date validation ────────────────────────────────────────────────────────
+
+def test_create_engagement_invalid_due_date_rejected(svc, client_id):
+    with pytest.raises(EngagementValidationError) as exc_info:
+        svc.create_engagement(
+            _create_input(client_id, due_date="2026-02-31")
+        )
+    assert exc_info.value.code == "engagement.due_date.invalid"
+
+
+def test_create_engagement_nonsense_due_date_rejected(svc, client_id):
+    with pytest.raises(EngagementValidationError) as exc_info:
+        svc.create_engagement(
+            _create_input(client_id, due_date="not-a-date")
+        )
+    assert exc_info.value.code == "engagement.due_date.invalid"
+
+
+def test_update_engagement_invalid_due_date_rejected(svc, client_id):
+    row = svc.create_engagement(_create_input(client_id))
+    with pytest.raises(EngagementValidationError) as exc_info:
+        svc.update_engagement(
+            row.id,
+            UpdateEngagementInput(
+                engagement_name=row.engagement_name,
+                tax_type=row.tax_type,
+                period_name=row.period_name,
+                status=row.status,
+                due_date="2026-13-01",
+            ),
+        )
+    assert exc_info.value.code == "engagement.due_date.invalid"

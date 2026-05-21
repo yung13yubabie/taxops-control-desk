@@ -311,3 +311,26 @@ def test_recompute_mixed_resolved_gives_accepted(svc, engagement_id):
         svc.set_item_status(item.id, item_status=statuses[i % len(statuses)])
     updated = svc.get_request(req.id)
     assert updated.status == "accepted"
+
+
+# ── due_date validation ────────────────────────────────────────────────────────
+
+def test_create_request_invalid_due_date_rejected(svc, engagement_id):
+    with pytest.raises(DocumentRequestValidationError) as exc_info:
+        svc.create_request(
+            _req_input(engagement_id, due_date="2026-02-31")
+        )
+    assert exc_info.value.code == "doc_request.due_date.invalid"
+
+
+def test_create_request_nonsense_due_date_rejected(svc, engagement_id):
+    with pytest.raises(DocumentRequestValidationError) as exc_info:
+        svc.create_request(
+            _req_input(engagement_id, due_date="abc")
+        )
+    assert exc_info.value.code == "doc_request.due_date.invalid"
+
+
+def test_create_request_valid_due_date_accepted(svc, engagement_id):
+    req, _ = svc.create_request(_req_input(engagement_id, due_date="2026-06-30"))
+    assert req.due_date == "2026-06-30"
