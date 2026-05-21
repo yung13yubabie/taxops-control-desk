@@ -24,7 +24,7 @@ from ...i18n import error_message
 from ...i18n.status_labels import PRIORITY_LABELS
 from ...services.engagements import EngagementsService
 from ...services.tasks import CreateTaskInput, TaskValidationError, TasksService
-from ._shared import date_edit_value, make_nullable_date_edit
+from ..widgets.date_field import DateField
 
 _NO_ENGAGEMENT = -1
 
@@ -77,7 +77,7 @@ class NewTaskDialog(QDialog):
         self._assignee = QLineEdit()
         self._assignee.setMaxLength(100)
 
-        self._due_date = make_nullable_date_edit()
+        self._due_date = DateField(required=False)
 
         self._priority = QComboBox()
         for value, label in _PRIORITY_CHOICES:
@@ -124,7 +124,7 @@ class NewTaskDialog(QDialog):
                 engagement_id=eng_id,
                 title=self._title.text(),
                 assignee=self._assignee.text() or None,
-                due_date=date_edit_value(self._due_date),
+                due_date=self._due_date.value(),
                 priority=self._priority.currentData(),
                 next_step=self._next_step.text() or None,
                 notes=self._notes.toPlainText() or None,

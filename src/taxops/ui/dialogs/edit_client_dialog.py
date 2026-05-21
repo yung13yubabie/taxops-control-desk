@@ -22,7 +22,7 @@ from ...services.clients import (
     ClientsService,
     UpdateClientInput,
 )
-from ._shared import date_edit_value, make_nullable_date_edit, set_date_edit_value
+from ..widgets.date_field import DateField
 
 
 class EditClientDialog(QDialog):
@@ -59,10 +59,10 @@ class EditClientDialog(QDialog):
         self._address = QLineEdit(client.address or "")
         self._note = QTextEdit(client.note or "")
         self._note.setFixedHeight(80)
-        self._lease_start = make_nullable_date_edit()
-        self._lease_end = make_nullable_date_edit()
-        set_date_edit_value(self._lease_start, client.lease_start)
-        set_date_edit_value(self._lease_end, client.lease_end)
+        self._lease_start = DateField(required=False)
+        self._lease_start.set_value(client.lease_start)
+        self._lease_end = DateField(required=False)
+        self._lease_end.set_value(client.lease_end)
 
         form.addRow(QLabel("客戶代號"), self._client_code)
         form.addRow(QLabel("客戶名稱"), self._client_name)
@@ -103,8 +103,8 @@ class EditClientDialog(QDialog):
                 contact_email=self._contact_email.text(),
                 address=self._address.text(),
                 note=self._note.toPlainText(),
-                lease_start=date_edit_value(self._lease_start),
-                lease_end=date_edit_value(self._lease_end),
+                lease_start=self._lease_start.value(),
+                lease_end=self._lease_end.value(),
             )
             self._clients.update_client(self._client_id, payload)
         except ClientValidationError as err:

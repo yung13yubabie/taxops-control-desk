@@ -23,7 +23,8 @@ from ...services.engagements import (
     EngagementsService,
     UpdateEngagementInput,
 )
-from ._shared import TAX_TYPE_CHOICES, date_edit_value, make_nullable_date_edit, set_date_edit_value
+from ._shared import TAX_TYPE_CHOICES
+from ..widgets.date_field import DateField
 
 
 class EditEngagementDialog(QDialog):
@@ -68,8 +69,8 @@ class EditEngagementDialog(QDialog):
         self._owner.setMaxLength(100)
         self._owner.setText(engagement.owner or "")
 
-        self._due_date = make_nullable_date_edit()
-        set_date_edit_value(self._due_date, engagement.due_date)
+        self._due_date = DateField(required=False)
+        self._due_date.set_value(engagement.due_date)
 
         self._notes = QTextEdit()
         self._notes.setFixedHeight(72)
@@ -104,7 +105,7 @@ class EditEngagementDialog(QDialog):
                 period_name=self._period.text(),
                 status=self._current_status,
                 owner=self._owner.text() or None,
-                due_date=date_edit_value(self._due_date),
+                due_date=self._due_date.value(),
                 notes=self._notes.toPlainText() or None,
             )
             self._svc.update_engagement(self._engagement_id, payload)

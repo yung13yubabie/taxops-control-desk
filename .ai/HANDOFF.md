@@ -1,5 +1,40 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-05-21 — DateField SLOP refactor + date validation)
+
+### 本輪完成事項
+
+- [已確認] **DateField widget** (`src/taxops/ui/widgets/date_field.py`)：取代所有 sentinel 日期（1752/1900/2000-01-01/minimumDate）邏輯；提供 `required=True`（預設今天，無清除鈕）及 `required=False`（空白，有清除鈕，value=None）兩種模式。
+- [已確認] **sentinel 清除**：`_shared.py` 移除 `_SENTINEL_DATE`、`_YearJumpCalendar`、`make_nullable_date_edit()`、`date_edit_value()`、`set_date_edit_value()`；現在只含 `TAX_TYPE_CHOICES`。
+- [已確認] **6 個 consumer 更新**：`edit_client_dialog.py`、`new_client_dialog.py`、`edit_engagement_dialog.py`、`new_engagement_dialog.py`、`new_task_dialog.py`、`late_fee_page.py` 全部改用 `DateField`。
+- [已確認] **日期集中驗證**：`src/taxops/core/dates.py`（新增）：`parse_optional_iso_date()` 和 `date_range_is_valid()`，被 ClientsService / EngagementsService / DocumentRequestsService / LateFeeService 使用。
+- [已確認] **error codes 新增**：`client.lease_date.invalid`、`client.lease_range.invalid`、`engagement.due_date.invalid`、`doc_request.due_date.invalid`、`late_fee.date.required_pair`。
+- [已確認] **LateFeeService**：只給一個日期（last 或 actual）直接 raise `late_fee.date.required_pair`；反向日期（actual < last）明確回傳 overdue_days=0 不掩蓋輸入錯誤。
+- [已確認] **tests/test_date_field.py**（新增，46 tests）：涵蓋 optional/required 初始狀態、2000-01-01 真實日期、clear/set_error API、sentinel 缺席稽核、所有 dialog 構造、calendar popup 行為、late_fee service pair 驗證。
+- [已確認] **tests/test_dates.py**（新增，14 tests）：核心日期 parser 與 range 驗證。
+- [已確認] **tests/test_ui_regressions.py**：舊 sentinel 測試替換為 DateField 等效測試。
+
+### 驗證紀錄
+
+- [已確認] `python -m compileall -q src tests` 無語法錯誤。
+- [已確認] `python -m pytest tests/test_dates.py tests/test_date_field.py -v` 46/46 passed。
+- [已確認] `python -m pytest tests/test_clients.py tests/test_engagements.py tests/test_document_requests.py tests/test_late_fee.py -q` 118/118 passed。
+- [已確認] `python -m pytest tests/test_slice4_ui_smoke.py tests/test_slice45_ui.py tests/test_slice5_ui.py tests/test_ui_regressions.py -q` 45/45 passed。
+- [已確認] sentinel grep：src/ 無 `_SENTINEL_DATE` 或 `make_nullable_date_edit` 殘留。
+
+### 仍待驗證
+
+- [待驗證] EXE rebuild（PyInstaller）尚未在本輪執行；需重新打包。
+- [待驗證] 真實 Windows 桌面 DateField 操作：日曆彈出、年份跳轉、DPI 125%/150%、1366x768 popup 不超出螢幕邊界。
+
+### 下一輪注意事項
+
+- DateField API：`value()` 回傳 ISO str 或 None；`raw_text()` 保留原始輸入；不得靜默清除。
+- 新增任何日期欄位必須使用 `DateField`；禁止 `QDateEdit` + sentinel 模式。
+- `core/dates.py` 是所有日期 parse/validate 唯一入口；service 層不得自行 try/except fromisoformat。
+
+---
+
 ## Latest Handoff Update (2026-05-17 — Resource hygiene closeout + 643/643 passed)
 
 ### 本輪完成事項

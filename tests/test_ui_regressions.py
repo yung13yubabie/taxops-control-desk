@@ -20,26 +20,23 @@ def qapp() -> QApplication:
     return QApplication.instance() or QApplication([])
 
 
-def test_nullable_date_edit_defaults_to_sentinel_not_today(qapp: QApplication) -> None:
-    """Fresh widget defaults to 'not set' sentinel to prevent silent data overwrites."""
-    from taxops.ui.dialogs._shared import date_edit_value, make_nullable_date_edit
+def test_date_field_optional_defaults_to_none(qapp: QApplication) -> None:
+    """Optional DateField initializes empty — value is None, not any sentinel date."""
+    from taxops.ui.widgets.date_field import DateField
 
-    widget = make_nullable_date_edit()
+    field = DateField(required=False)
+    assert field.value() is None
+    assert field.raw_text() == ""
 
-    assert widget.date() == widget.minimumDate()
-    assert date_edit_value(widget) is None
 
+def test_date_field_invalid_input_does_not_silently_return_value(qapp: QApplication) -> None:
+    """Invalid text: value() returns None; raw_text() preserves the bad input."""
+    from taxops.ui.widgets.date_field import DateField
 
-def test_invalid_date_value_resets_to_sentinel_not_today(qapp: QApplication) -> None:
-    """Invalid ISO date resets to sentinel (not set) rather than silently writing today."""
-    from taxops.ui.dialogs._shared import date_edit_value, make_nullable_date_edit, set_date_edit_value
-
-    widget = make_nullable_date_edit()
-
-    set_date_edit_value(widget, "not-a-date")
-
-    assert widget.date() == widget.minimumDate()
-    assert date_edit_value(widget) is None
+    field = DateField(required=False)
+    field._edit.setText("not-a-date")
+    assert field.value() is None
+    assert field.raw_text() == "not-a-date"
 
 
 def test_engagements_page_refresh_context_loads_newly_created_client(

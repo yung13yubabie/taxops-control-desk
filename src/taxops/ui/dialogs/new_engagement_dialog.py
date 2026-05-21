@@ -22,7 +22,8 @@ from ...services.engagements import (
     EngagementValidationError,
     EngagementsService,
 )
-from ._shared import TAX_TYPE_CHOICES, date_edit_value, make_nullable_date_edit
+from ._shared import TAX_TYPE_CHOICES
+from ..widgets.date_field import DateField
 
 
 class NewEngagementDialog(QDialog):
@@ -62,7 +63,7 @@ class NewEngagementDialog(QDialog):
         self._owner = QLineEdit()
         self._owner.setMaxLength(100)
 
-        self._due_date = make_nullable_date_edit()
+        self._due_date = DateField(required=False)
 
         self._notes = QTextEdit()
         self._notes.setFixedHeight(72)
@@ -96,7 +97,7 @@ class NewEngagementDialog(QDialog):
                 tax_type=self._tax_type.currentData(),
                 period_name=self._period.text(),
                 owner=self._owner.text() or None,
-                due_date=date_edit_value(self._due_date),
+                due_date=self._due_date.value(),
                 notes=self._notes.toPlainText() or None,
             )
             self._svc.create_engagement(payload)

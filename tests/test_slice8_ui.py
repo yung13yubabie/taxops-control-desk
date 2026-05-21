@@ -7,7 +7,6 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QDate
 from PySide6.QtWidgets import QApplication
 
 from taxops.db.connection import open_connection
@@ -157,8 +156,8 @@ def test_late_fee_calculate_persists_to_db(qapp, conn, container):
             page._req_combo.setCurrentIndex(i)
             break
 
-    page._last_payment_date.setDate(QDate(2024, 12, 2))
-    page._actual_payment_date.setDate(QDate(2024, 12, 9))
+    page._last_payment_date.set_value("2024-12-02")
+    page._actual_payment_date.set_value("2024-12-09")
     page._base_spin.setValue(10000.0)
     page._on_calculate()
 
@@ -181,8 +180,8 @@ def test_late_fee_page_can_calculate_same_request_repeatedly(qapp, conn, contain
             page._req_combo.setCurrentIndex(i)
             break
 
-    page._last_payment_date.setDate(QDate(2024, 12, 2))
-    page._actual_payment_date.setDate(QDate(2024, 12, 6))
+    page._last_payment_date.set_value("2024-12-02")
+    page._actual_payment_date.set_value("2024-12-06")
     page._base_spin.setValue(10000.0)
     page._on_calculate()
     page._on_calculate()

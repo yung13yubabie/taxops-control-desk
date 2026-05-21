@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -24,7 +23,7 @@ from ...i18n import error_message
 from ...i18n.status_labels import status_to_label
 from ...services.container import ServiceContainer
 from ..style import toolbar_icon
-from ..dialogs._shared import date_edit_value, make_nullable_date_edit
+from ..widgets.date_field import DateField
 from ...services.late_fee import (
     CalculateLateFeeInput,
     LateFeeValidationError,
@@ -86,9 +85,8 @@ class LateFeePage(QWidget):
         form_layout = QFormLayout(form_box)
         form_layout.setSpacing(10)
 
-        self._last_payment_date = make_nullable_date_edit()
-        self._actual_payment_date = make_nullable_date_edit()
-        self._actual_payment_date.setDate(QDate.currentDate())
+        self._last_payment_date = DateField(required=False)
+        self._actual_payment_date = DateField(required=False)
         form_layout.addRow("最後繳款日：", self._last_payment_date)
         form_layout.addRow("實際繳款日：", self._actual_payment_date)
 
@@ -212,8 +210,8 @@ class LateFeePage(QWidget):
                 self._table.setItem(row, col, QTableWidgetItem(vals[key]))
 
     def _on_calculate(self) -> None:
-        last_payment_date = date_edit_value(self._last_payment_date)
-        actual_payment_date = date_edit_value(self._actual_payment_date)
+        last_payment_date = self._last_payment_date.value()
+        actual_payment_date = self._actual_payment_date.value()
         if last_payment_date is None or actual_payment_date is None:
             QMessageBox.warning(self, "提示", "請輸入最後繳款日與實際繳款日")
             return
