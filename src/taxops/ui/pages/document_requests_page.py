@@ -98,6 +98,8 @@ class DocumentRequestsPage(QWidget):
         self._follow_up_btn = QPushButton("催件 +1")
         self._delete_req_btn = QPushButton("刪除批次")
         self._add_item_btn = QPushButton("新增文件項目")
+        self._edit_item_btn = QPushButton("編輯項目")
+        self._delete_item_btn = QPushButton("刪除項目")
         self._item_status_btn = QPushButton("切換項目狀態")
         self._generate_btn = QPushButton("產生訊息")
         self._export_btn = QPushButton("匯出缺件清單")
@@ -109,6 +111,8 @@ class DocumentRequestsPage(QWidget):
         self._follow_up_btn.setIcon(toolbar_icon("trial"))
         self._delete_req_btn.setIcon(toolbar_icon("delete"))
         self._add_item_btn.setIcon(toolbar_icon("new"))
+        self._edit_item_btn.setIcon(toolbar_icon("edit"))
+        self._delete_item_btn.setIcon(toolbar_icon("delete"))
         self._item_status_btn.setIcon(toolbar_icon("edit"))
         self._generate_btn.setIcon(toolbar_icon("trial"))
         self._export_btn.setIcon(toolbar_icon("export"))
@@ -119,6 +123,8 @@ class DocumentRequestsPage(QWidget):
         self._follow_up_btn.setEnabled(False)
         self._delete_req_btn.setEnabled(False)
         self._add_item_btn.setEnabled(False)
+        self._edit_item_btn.setEnabled(False)
+        self._delete_item_btn.setEnabled(False)
         self._item_status_btn.setEnabled(False)
         self._generate_btn.setEnabled(False)
         self._export_btn.setEnabled(False)
@@ -130,6 +136,8 @@ class DocumentRequestsPage(QWidget):
             self._follow_up_btn,
             self._delete_req_btn,
             self._add_item_btn,
+            self._edit_item_btn,
+            self._delete_item_btn,
             self._item_status_btn,
             self._generate_btn,
             self._export_btn,
@@ -195,6 +203,8 @@ class DocumentRequestsPage(QWidget):
         self._follow_up_btn.clicked.connect(self._on_follow_up)
         self._delete_req_btn.clicked.connect(self._on_delete_request)
         self._add_item_btn.clicked.connect(self._on_add_item)
+        self._edit_item_btn.clicked.connect(self._on_edit_item)
+        self._delete_item_btn.clicked.connect(self._on_delete_item)
         self._item_status_btn.clicked.connect(self._on_set_item_status)
         self._generate_btn.clicked.connect(self._on_generate_message)
         self._export_btn.clicked.connect(self._on_export)
@@ -334,9 +344,14 @@ class DocumentRequestsPage(QWidget):
         else:
             self._item_table.setRowCount(0)
             self._item_status_btn.setEnabled(False)
+            self._edit_item_btn.setEnabled(False)
+            self._delete_item_btn.setEnabled(False)
 
     def _on_item_selection_changed(self) -> None:
-        self._item_status_btn.setEnabled(bool(self._item_table.selectedItems()))
+        has_item = bool(self._item_table.selectedItems())
+        self._item_status_btn.setEnabled(has_item)
+        self._edit_item_btn.setEnabled(has_item)
+        self._delete_item_btn.setEnabled(has_item)
 
     def _selected_request_id(self) -> int | None:
         items = self._req_table.selectedItems()
@@ -477,6 +492,54 @@ class DocumentRequestsPage(QWidget):
         dlg = AddDocumentItemDialog(self._container.doc_requests, req_id, parent=self)
         if dlg.exec() == AddDocumentItemDialog.DialogCode.Accepted:
             self._refresh_requests()
+
+    def _on_edit_item(self) -> None:
+        item_id = self._selected_item_id()
+        if item_id is None:
+            return
+        item_row = self._item_table.currentRow()
+        cur_name = (self._item_table.item(item_row, _ITEM_COLUMNS.index("item_name")) or QTableWidgetItem()).text()
+        new_name, ok = QInputDialog.getText(
+            self,
+            "編輯項目名稱",
+            "新名稱：",
+            text=cur_name,
+        )
+        if not ok or not new_name.strip():
+            return
+        try:
+            self._container.doc_requests.update_item(item_id, new_name.strip())
+        except DocumentRequestValidationError as exc:
+            QMessageBox.warning(self, "編輯失敗", error_message(exc.code))
+            return
+        except Exception:
+            QMessageBox.warning(self, "編輯失敗", error_message("doc_request_item.update.failed"))
+            return
+        self._load_items_for_selected()
+
+    def _on_delete_item(self) -> None:
+        item_id = self._selected_item_id()
+        if item_id is None:
+            return
+        reply = QMessageBox.question(
+            self,
+            "確認刪除",
+            "確定要刪除此文件項目？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._container.doc_requests.delete_item(item_id)
+        except DocumentRequestValidationError as exc:
+            QMessageBox.warning(self, "刪除失敗", error_message(exc.code))
+            return
+        except Exception:
+            QMessageBox.warning(self, "刪除失敗", error_message("doc_request_item.delete.failed"))
+            return
+        self._load_items_for_selected()
+        self._refresh_requests()
 
     def _on_set_item_status(self) -> None:
         item_id = self._selected_item_id()

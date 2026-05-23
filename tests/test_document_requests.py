@@ -334,3 +334,99 @@ def test_create_request_nonsense_due_date_rejected(svc, engagement_id):
 def test_create_request_valid_due_date_accepted(svc, engagement_id):
     req, _ = svc.create_request(_req_input(engagement_id, due_date="2026-06-30"))
     assert req.due_date == "2026-06-30"
+
+
+# ── Slice 19B: bulk add / update item / delete item ───────────────────────────
+
+def test_add_items_bulk_adds_each_line(svc, engagement_id):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    items = svc.add_items_bulk(req.id, "進項憑證\n銷項發票\n銀行對帳單")
+    assert len(items) == 3
+    names = [i.item_name for i in items]
+    assert "進項憑證" in names
+    assert "銷項發票" in names
+    assert "銀行對帳單" in names
+
+
+def test_add_items_bulk_skips_blank_lines(svc, engagement_id):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    items = svc.add_items_bulk(req.id, "A\n\n  \nB")
+    assert len(items) == 2
+
+
+def test_add_items_bulk_trims_whitespace(svc, engagement_id):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    items = svc.add_items_bulk(req.id, "  進項憑證  \n  ")
+    assert len(items) == 1
+    assert items[0].item_name == "進項憑證"
+
+
+def test_add_items_bulk_empty_text_raises(svc, engagement_id):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    with pytest.raises(DocumentRequestValidationError) as exc_info:
+        svc.add_items_bulk(req.id, "   \n  ")
+    assert exc_info.value.code == "doc_request_item.bulk.empty"
+
+
+def test_add_items_bulk_records_audit_per_item(svc, engagement_id, conn):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    svc.add_items_bulk(req.id, "A\nB")
+    rows = conn.execute(
+        "SELECT action FROM audit_logs WHERE action = 'doc_request_item.create'"
+    ).fetchall()
+    assert len(rows) == 2
+
+
+def test_update_item_changes_name(svc, engagement_id):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    item = svc.add_item(req.id, "舊名稱")
+    updated = svc.update_item(item.id, "新名稱")
+    assert updated.item_name == "新名稱"
+
+
+def test_update_item_empty_name_raises(svc, engagement_id):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    item = svc.add_item(req.id, "舊名稱")
+    with pytest.raises(DocumentRequestValidationError) as exc_info:
+        svc.update_item(item.id, "   ")
+    assert exc_info.value.code == "doc_request_item.name.required"
+
+
+def test_update_item_not_found_raises(svc, engagement_id):
+    with pytest.raises(DocumentRequestValidationError) as exc_info:
+        svc.update_item(99999, "名稱")
+    assert exc_info.value.code == "doc_request_item.not_found"
+
+
+def test_update_item_records_audit(svc, engagement_id, conn):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    item = svc.add_item(req.id, "舊名稱")
+    svc.update_item(item.id, "新名稱")
+    rows = conn.execute(
+        "SELECT action FROM audit_logs WHERE action = 'doc_request_item.update'"
+    ).fetchall()
+    assert len(rows) == 1
+
+
+def test_delete_item_removes_from_list(svc, engagement_id):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    item = svc.add_item(req.id, "要刪的")
+    svc.delete_item(item.id)
+    items = svc.list_items(req.id)
+    assert item.id not in {i.id for i in items}
+
+
+def test_delete_item_not_found_raises(svc, engagement_id):
+    with pytest.raises(DocumentRequestValidationError) as exc_info:
+        svc.delete_item(99999)
+    assert exc_info.value.code == "doc_request_item.not_found"
+
+
+def test_delete_item_records_audit(svc, engagement_id, conn):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    item = svc.add_item(req.id, "要刪的")
+    svc.delete_item(item.id)
+    rows = conn.execute(
+        "SELECT action FROM audit_logs WHERE action = 'doc_request_item.delete'"
+    ).fetchall()
+    assert len(rows) == 1

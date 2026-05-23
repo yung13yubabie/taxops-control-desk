@@ -208,6 +208,49 @@ class DocumentRequestsService:
         )
         return item
 
+    def add_items_bulk(
+        self, request_id: int, raw_text: str
+    ) -> list[DocumentRequestItemRow]:
+        """Add one item per non-empty line in raw_text."""
+        names = [line.strip() for line in raw_text.splitlines()]
+        names = [n for n in names if n]
+        if not names:
+            raise DocumentRequestValidationError("doc_request_item.bulk.empty")
+        items: list[DocumentRequestItemRow] = []
+        for name in names:
+            items.append(self.add_item(request_id, name))
+        return items
+
+    def update_item(
+        self, item_id: int, item_name: str, notes: str | None = None
+    ) -> DocumentRequestItemRow:
+        name = sanitize_user_text(item_name, max_length=200)
+        if not name:
+            raise DocumentRequestValidationError("doc_request_item.name.required")
+        notes_clean = sanitize_user_text(notes, max_length=500) or None
+        item = self._repo.update_item_name(item_id, item_name=name, notes=notes_clean)
+        if item is None:
+            raise DocumentRequestValidationError("doc_request_item.not_found")
+        self._audit.record(
+            action="doc_request_item.update",
+            target_type="document_request_item",
+            target_id=str(item_id),
+            detail={"item_name": name},
+        )
+        return item
+
+    def delete_item(self, item_id: int) -> None:
+        existing = self._repo.get_item(item_id)
+        if existing is None:
+            raise DocumentRequestValidationError("doc_request_item.not_found")
+        self._repo.delete_item(item_id)
+        self._audit.record(
+            action="doc_request_item.delete",
+            target_type="document_request_item",
+            target_id=str(item_id),
+            detail={"item_name": existing.item_name, "request_id": existing.request_id},
+        )
+
     def set_item_status(
         self,
         item_id: int,

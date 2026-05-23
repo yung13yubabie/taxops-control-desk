@@ -429,6 +429,8 @@ class RecurringBillingPage(QWidget):
         filter_row.addWidget(self._client_combo)
         self._archived_check = QCheckBox("包含已封存")
         filter_row.addWidget(self._archived_check)
+        self._add_plan_btn = QPushButton("+ 新增方案")
+        filter_row.addWidget(self._add_plan_btn)
         filter_row.addStretch()
         outer.addLayout(filter_row)
 
@@ -445,6 +447,7 @@ class RecurringBillingPage(QWidget):
 
         self._client_combo.currentIndexChanged.connect(lambda _: self._rebuild_accordion())
         self._archived_check.stateChanged.connect(lambda _: self._rebuild_accordion())
+        self._add_plan_btn.clicked.connect(self._on_add_plan_global)
 
         self._gen_btn = QPushButton("產生待開立紀錄")
         self._gen_btn.setToolTip("根據所有有效方案及明細產生本期預期開立紀錄")
@@ -458,6 +461,19 @@ class RecurringBillingPage(QWidget):
     def _refresh(self) -> None:
         self._repopulate_client_combo()
         self._rebuild_accordion()
+
+    def _on_add_plan_global(self) -> None:
+        client_id = self._client_combo.currentData()
+        if client_id == _ALL_CLIENTS or client_id is None:
+            QMessageBox.information(
+                self,
+                "請選擇客戶",
+                "新增方案前，請先在「客戶」下拉選單選擇一個特定客戶。",
+            )
+            return
+        dlg = PlanDialog(self._rb, client_id, parent=self)
+        if dlg.exec() == dlg.DialogCode.Accepted:
+            self._rebuild_accordion()
 
     def _on_generate_occurrences(self) -> None:
         self._gen_btn.setEnabled(False)
@@ -531,7 +547,7 @@ class RecurringBillingPage(QWidget):
             return
 
         if not plans:
-            empty = QLabel("目前沒有固定開立方案。請先新增客戶，展開後點「+ 新增方案」。")
+            empty = QLabel("目前沒有固定開立方案。請先在上方選擇客戶，再點「+ 新增方案」。")
             empty.setStyleSheet("color: #9CA3AF; padding: 20px;")
             self._content_layout.insertWidget(0, empty)
             return

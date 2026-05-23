@@ -207,6 +207,30 @@ class DocumentRequestsRepository:
         ).fetchall()
         return [_row_to_item(r) for r in rows]
 
+    def update_item_name(
+        self,
+        item_id: int,
+        *,
+        item_name: str,
+        notes: str | None = None,
+    ) -> DocumentRequestItemRow | None:
+        ts = now_iso()
+        self._conn.execute(
+            "UPDATE document_request_items SET item_name = ?, notes = ?, updated_at = ?"
+            " WHERE id = ?",
+            (item_name, notes, ts, item_id),
+        )
+        self._conn.commit()
+        return self.get_item(item_id)
+
+    def delete_item(self, item_id: int) -> bool:
+        cur = self._conn.execute(
+            "DELETE FROM document_request_items WHERE id = ?",
+            (item_id,),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
     def update_item_status(
         self,
         item_id: int,
