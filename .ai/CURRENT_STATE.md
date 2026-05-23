@@ -22,7 +22,7 @@
 ## Current Status
 
 - [已確認] Slice 1、Slice 2（稅籍快取）、客戶管理功能閉環（批量匯入 + 編輯/刪除 + 衝突審查）、Slice 2.6（搜尋/排序/分頁 + sidebar 收合）、Slice 3（HTTP download）、Slice 4（案件 + 索件）、Slice 4.5（案件編輯 + 索件項目狀態 UI）、Slice 5（待辦事項）、Slice 6（訊息模板）、Slice 7（產生催件訊息）、Slice 8（覆核意見 + 滯納金試算）、Slice 9（附件證據鏈 MVP + closeout correction）、Slice 10（Excel 匯出缺件清單 + CSV formula injection defense）、Slice 11（備份 / 還原）、Slice 12（FTS5 全文搜尋）、Slice 13（本地工商 / 稅籍查詢頁）、Slice 14（Dashboard 真實統計 + 篩選導向補完）均已完成實作。
-- [已確認] `python -m pytest` 最後確認通過：674/674 passed（2026-05-20 Slice 15-rental + migrations 013/014）。
+- [已確認] `python -m pytest` 最後確認通過：849/849 passed（2026-05-23 Slice 19A/B/C/D）。
 - [已確認] G-1~G-15 UIUX 修復已完成：WA_DeleteOnClose、anti-double-click、toolbar_icon、error label、silent failure 修正等；dashboard high_risk_engagements 導向修正為 PAGE_REVIEW_NOTES + FilterKey.HIGH_RISK。
 - [已確認] Slice 15-rental 新功能：Migration 0013（clients.lease_start/lease_end）、Migration 0014（workflow_tasks.engagement_id nullable）、欄位顯示控制（QMenu）、租約到期通知 dashboard 卡、任務不強制關聯案件。
 - [已確認] ALLOWED_VARIABLES 現為 11 個（4 個未來欄位 payment_due_date / office_owner / reviewer / last_followed_up_at 已於 Slice 15 安全修正中移除）。
@@ -31,7 +31,7 @@
 
 ## Active Work
 
-- [已確認] 目前無正在撰寫中的功能 slice；最新完成狀態是 Windows EXE packaging pre-closeout：build + automated smoke 已通過，人工 UI checklist 尚未完成。
+- [已確認] 2026-05-23 完成 Slice 19A/B/C/D：Dashboard filter 污染修復、各頁全域視圖、索件項目批量操作、附件刪除、固定開立新增入口。詳見下方 Slice 19A-D 記錄。
 - [已確認] EXE packaging 檔案已建立：`TaxOpsControlDesk.spec`, `build_tools/pyinstaller_entry.py`, `build_tools/clean_package.py`, `build_tools/package_windows.py`, `build_tools/smoke_test_exe.py`, `tests/test_packaging_tools.py`。
 - [已確認] PyInstaller 入口曾因 `src/taxops/__main__.py` relative import 造成 EXE 假啟動但不建 DB；已改用 `build_tools/pyinstaller_entry.py` absolute import，並以 regression test 固定。
 - [已確認] `python -m build_tools.package_windows` 已產出 `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`；`python -m build_tools.smoke_test_exe` 已驗證 EXE 啟動且在 temp `LOCALAPPDATA\TaxOpsControlDeskDev\taxops.sqlite` 建立 SQLite。
