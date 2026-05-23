@@ -54,6 +54,8 @@ _RECEIVED = frozenset({"received", "not_applicable", "client_said_none"})
 
 def _derive_request_status(statuses: frozenset[str]) -> str:
     """Derive request-level status from the set of item statuses."""
+    if not statuses:
+        return "requested"
     if statuses.issubset(_RESOLVED):
         return "accepted"
     if "pending_confirm" in statuses:
@@ -244,6 +246,8 @@ class DocumentRequestsService:
         if existing is None:
             raise DocumentRequestValidationError("doc_request_item.not_found")
         self._repo.delete_item(item_id)
+        new_req_status = self._recompute_request_status(existing.request_id)
+        self._repo.update_request_status(existing.request_id, status=new_req_status)
         self._audit.record(
             action="doc_request_item.delete",
             target_type="document_request_item",

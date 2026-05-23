@@ -430,3 +430,33 @@ def test_delete_item_records_audit(svc, engagement_id, conn):
         "SELECT action FROM audit_logs WHERE action = 'doc_request_item.delete'"
     ).fetchall()
     assert len(rows) == 1
+
+
+def test_delete_item_recomputes_request_status(svc, engagement_id):
+    """Deleting an accepted item must recompute request status."""
+    req, _ = svc.create_request(_req_input(engagement_id))
+    item = svc.add_item(req.id, "項目A")
+    svc.set_item_status(item.id, item_status="accepted")
+    req_after_accept = svc.get_request(req.id)
+    assert req_after_accept.status == "accepted"
+    svc.delete_item(item.id)
+    req_after_delete = svc.get_request(req.id)
+    assert req_after_delete.status == "requested", (
+        "Deleting all items must revert request to 'requested', not keep 'accepted'"
+    )
+
+
+def test_delete_all_items_returns_request_to_requested_not_accepted(svc, engagement_id):
+    """Empty item set must not be misidentified as accepted."""
+    req, _ = svc.create_request(_req_input(engagement_id))
+    item1 = svc.add_item(req.id, "甲")
+    item2 = svc.add_item(req.id, "乙")
+    svc.set_item_status(item1.id, item_status="accepted")
+    svc.set_item_status(item2.id, item_status="accepted")
+    svc.delete_item(item1.id)
+    svc.delete_item(item2.id)
+    assert svc.list_items(req.id) == []
+    req_final = svc.get_request(req.id)
+    assert req_final.status == "requested", (
+        "frozenset() is subset of any set — guard must prevent empty set from returning 'accepted'"
+    )
