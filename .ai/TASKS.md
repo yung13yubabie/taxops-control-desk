@@ -110,6 +110,16 @@
 
 - 無進行中項目。
 
+## RECENTLY COMPLETED
+
+- [已確認] Slice 19 hotfix v0.6.1（2026-05-23）：
+  - `_derive_request_status()` 加入空 frozenset 防衛（empty set → "requested"，避免被誤判 accepted）。
+  - `delete_item()` service 刪除後呼叫 `_recompute_request_status()` 更新父層 document request 狀態。
+  - `test_document_requests.py` 補 2 個測試：`test_delete_item_recomputes_request_status`、`test_delete_all_items_returns_request_to_requested_not_accepted`。
+  - `test_slice19d_recurring_billing.py` 補 2 個行為測試：全部客戶 → info dialog；指定客戶 → PlanDialog.exec()。
+  - pyproject.toml + __init__.py 版本升至 0.6.1；git tag v0.6.1；dist zip 重新打包為 v0.6.1。
+  - **856/856 passed**（2026-05-23）。
+
 ## BLOCKED
 
 - [已確認] No blocker is currently recorded in this file.

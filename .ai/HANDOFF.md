@@ -1,5 +1,28 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-05-23 — Slice 19 hotfix, v0.6.1)
+
+### 本輪完成事項
+
+- [已確認] **`_derive_request_status()` 空集合防衛**：`frozenset().issubset(任何集合)` 恆為 True，導致刪完所有 items 後 request status 誤判 "accepted"。已在函數頂部加 `if not statuses: return "requested"` guard。
+- [已確認] **`delete_item()` 重算父層狀態**：原本 `delete_item()` 僅刪除 item 並記 audit，不更新父層 document_request.status。現在補呼叫 `_recompute_request_status()` + `update_request_status()`。
+- [已確認] **test_document_requests.py 補 2 個測試**：`test_delete_item_recomputes_request_status`、`test_delete_all_items_returns_request_to_requested_not_accepted`。
+- [已確認] **test_slice19d_recurring_billing.py 補 2 個行為測試**：全部客戶 → info dialog；指定客戶 → PlanDialog.exec。
+- [已確認] **版本號統一**：pyproject.toml + __init__.py = 0.6.1；git tag v0.6.1。
+- [已確認] **dist zip**：`dist/TaxOpsControlDesk-v0.6.1-windows.zip`（71 MB）；v0.6.0 zip 已刪除。
+
+### 驗證紀錄
+
+- **856/856 passed** in 835.51s（2026-05-23）。
+- EXE build + smoke test + hygiene check 全部通過。
+
+### 下一輪注意事項
+
+- Slice 19 hotfix 完整閉環，v0.6.1 穩定。
+- 可進行下一個新 Slice。
+
+---
+
 ## Latest Handoff Update (2026-05-21 — three correctness fixes, v0.5.0 final)
 
 ### 本輪完成事項
