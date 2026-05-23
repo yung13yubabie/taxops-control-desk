@@ -153,13 +153,15 @@ ERROR_MESSAGES: dict[str, str] = dict(
             "recurring_billing.end_date.invalid": "結束日期格式不正確，請使用 YYYY-MM-DD 格式",
             "recurring_billing.date_range.invalid": "結束日期不可早於開始日期",
             "recurring_billing.months_json.invalid": "指定月份格式不正確，請填入 1-12 的月份數字清單",
+            "recurring_billing.months_json.empty": "自訂月份模式必須至少選擇一個月份",
+            "recurring_billing.skip_reason.empty": "跳過原因不可為空",
             "recurring_billing.plan.not_found": "找不到指定的固定開立方案",
             "recurring_billing.bill_to_name.empty": "請輸入開立對象名稱",
-            "recurring_billing.amount_cents.non_positive": "金額必須大於零",
+            "recurring_billing.amount.non_positive": "金額必須大於零",
             "recurring_billing.line.not_found": "找不到指定的開立明細",
             "recurring_billing.occurrence.not_found": "找不到指定的開立紀錄",
             "recurring_billing.occurrence.not_pending": "此開立紀錄已確認或跳過，無法再次操作",
-            "recurring_billing.confirmed_amount_cents.non_positive": "確認金額必須大於零",
+            "recurring_billing.confirmed_amount.non_positive": "確認金額必須大於零",
             "recurring_billing.confirmed_invoice_no.too_long": "發票號碼不可超過 50 個字元",
         }
     )

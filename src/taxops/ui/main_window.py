@@ -24,6 +24,7 @@ from .action_registry import (
     PAGE_DOC_REQUESTS,
     PAGE_ENGAGEMENTS,
     PAGE_LATE_FEE,
+    PAGE_RECURRING_BILLING,
     PAGE_REGISTRY,
     PAGE_REVIEW_NOTES,
     PAGE_SETTINGS,
@@ -40,6 +41,7 @@ from .pages.placeholder_page import PlaceholderPage
 from .pages.review_notes_page import ReviewNotesPage
 from .pages.settings_page import SettingsPage
 from .pages.tasks_page import TasksPage
+from .pages.recurring_billing_page import RecurringBillingPage
 from .pages.registry_page import RegistryPage
 from .pages.templates_page import TemplatesPage
 
@@ -132,6 +134,8 @@ class MainWindow(QMainWindow):
                 page = ReviewNotesPage(self._container)
             elif page_id == PAGE_ATTACHMENTS:
                 page = AttachmentsPage(self._container)
+            elif page_id == PAGE_RECURRING_BILLING:
+                page = RecurringBillingPage(self._container)
             elif page_id == PAGE_REGISTRY:
                 page = RegistryPage(self._container)
             elif page_id == PAGE_SETTINGS:

@@ -173,18 +173,18 @@ def test_create_line_returns_row(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid)
     line = svc.create_line(CreateLineInput(
-        plan_id=plan.id, bill_to_name="台積電", amount_cents=50000
+        plan_id=plan.id, bill_to_name="台積電", amount=50000
     ))
     assert line.id > 0
-    assert line.amount_cents == 50000
+    assert line.amount == 50000
     assert line.active is True
 
 
 def test_list_lines_for_plan(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A公司", amount_cents=10000))
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="B公司", amount_cents=20000))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A公司", amount=10000))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="B公司", amount=20000))
     lines = svc.list_lines(plan.id)
     assert len(lines) == 2
 
@@ -192,7 +192,7 @@ def test_list_lines_for_plan(conn, svc):
 def test_deactivate_line_sets_inactive(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid)
-    line = svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="C公司", amount_cents=5000))
+    line = svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="C公司", amount=5000))
     deactivated = svc.deactivate_line(line.id)
     assert deactivated.active is False
 
@@ -200,31 +200,31 @@ def test_deactivate_line_sets_inactive(conn, svc):
 def test_update_line_amount(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid)
-    line = svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="D公司", amount_cents=5000))
-    updated = svc.update_line(line.id, UpdateLineInput(bill_to_name="D公司", amount_cents=9900))
-    assert updated.amount_cents == 9900
+    line = svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="D公司", amount=5000))
+    updated = svc.update_line(line.id, UpdateLineInput(bill_to_name="D公司", amount=9900))
+    assert updated.amount == 9900
 
 
 def test_create_line_negative_amount_raises(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid)
     with pytest.raises(RecurringBillingError) as exc:
-        svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="E公司", amount_cents=-100))
-    assert exc.value.code == "recurring_billing.amount_cents.non_positive"
+        svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="E公司", amount=-100))
+    assert exc.value.code == "recurring_billing.amount.non_positive"
 
 
 def test_create_line_zero_amount_raises(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid)
     with pytest.raises(RecurringBillingError) as exc:
-        svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="F公司", amount_cents=0))
-    assert exc.value.code == "recurring_billing.amount_cents.non_positive"
+        svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="F公司", amount=0))
+    assert exc.value.code == "recurring_billing.amount.non_positive"
 
 
 def test_list_active_lines_excludes_inactive(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid)
-    line = svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="G公司", amount_cents=1000))
+    line = svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="G公司", amount=1000))
     svc.deactivate_line(line.id)
     assert svc.list_lines(plan.id, active_only=True) == []
 
@@ -252,7 +252,7 @@ def test_clamp_day_31_in_february_leap_year_clamps_to_29():
 def test_generate_monthly_creates_occurrences(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     until = datetime.date(2026, 3, 31)
     occs = svc.generate_occurrences(plan.id, until_date=until)
     dates = [o.expected_issue_date for o in occs]
@@ -265,7 +265,7 @@ def test_generate_quarterly_from_start_month(conn, svc):
     cid = _seed_client(conn)
     # start March -> billing months: Mar, Jun, Sep, Dec
     plan = _make_plan(svc, cid, start_date="2026-03-01", frequency="quarterly", issue_day=1)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     until = datetime.date(2027, 3, 31)
     occs = svc.generate_occurrences(plan.id, until_date=until)
     dates = [o.expected_issue_date for o in occs]
@@ -281,7 +281,7 @@ def test_generate_quarterly_from_start_month(conn, svc):
 def test_generate_semiannual(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="semiannual", issue_day=1)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     until = datetime.date(2027, 12, 31)
     occs = svc.generate_occurrences(plan.id, until_date=until)
     dates = [o.expected_issue_date for o in occs]
@@ -294,7 +294,7 @@ def test_generate_semiannual(conn, svc):
 def test_generate_annual(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-05-01", frequency="annual", issue_day=1)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     until = datetime.date(2028, 12, 31)
     occs = svc.generate_occurrences(plan.id, until_date=until)
     dates = [o.expected_issue_date for o in occs]
@@ -313,7 +313,7 @@ def test_generate_custom_months(conn, svc):
         months_json="[1, 4, 7, 10]",
         issue_day=15,
     )
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     until = datetime.date(2026, 12, 31)
     occs = svc.generate_occurrences(plan.id, until_date=until)
     dates = [o.expected_issue_date for o in occs]
@@ -327,7 +327,7 @@ def test_generate_custom_months(conn, svc):
 def test_generate_is_idempotent(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     until = datetime.date(2026, 3, 31)
     first = svc.generate_occurrences(plan.id, until_date=until)
     second = svc.generate_occurrences(plan.id, until_date=until)
@@ -338,7 +338,7 @@ def test_generate_is_idempotent(conn, svc):
 def test_generate_issue_day_31_feb_clamps(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-02-01", frequency="monthly", issue_day=31)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     until = datetime.date(2026, 2, 28)
     occs = svc.generate_occurrences(plan.id, until_date=until)
     assert any(o.expected_issue_date == "2026-02-28" for o in occs)
@@ -347,7 +347,7 @@ def test_generate_issue_day_31_feb_clamps(conn, svc):
 def test_generate_issue_day_31_april_clamps(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-04-01", frequency="monthly", issue_day=31)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     until = datetime.date(2026, 4, 30)
     occs = svc.generate_occurrences(plan.id, until_date=until)
     assert any(o.expected_issue_date == "2026-04-30" for o in occs)
@@ -359,7 +359,7 @@ def test_generate_respects_end_date(conn, svc):
         svc, cid, start_date="2026-01-01", end_date="2026-03-01",
         frequency="monthly", issue_day=1,
     )
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     occs = svc.generate_occurrences(plan.id, until_date=datetime.date(2027, 12, 31))
     dates = [o.expected_issue_date for o in occs]
     assert "2026-04-01" not in dates
@@ -369,7 +369,7 @@ def test_generate_respects_end_date(conn, svc):
 def test_generate_with_until_date_param(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     occs = svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 2, 28))
     dates = [o.expected_issue_date for o in occs]
     assert "2026-03-01" not in dates
@@ -386,8 +386,8 @@ def test_generate_plan_with_no_lines_returns_empty(conn, svc):
 def test_generate_for_multiple_lines(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="B", amount_cents=200))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="B", amount=200))
     occs = svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 2, 28))
     assert len(occs) == 4  # 2 lines × 2 months
 
@@ -395,7 +395,7 @@ def test_generate_for_multiple_lines(conn, svc):
 def test_generate_start_after_until_returns_empty(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2027-01-01", frequency="monthly", issue_day=1)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     occs = svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 12, 31))
     assert occs == []
 
@@ -403,7 +403,7 @@ def test_generate_start_after_until_returns_empty(conn, svc):
 def test_generate_archived_plan_returns_empty(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     svc.archive_plan(plan.id)
     occs = svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 6, 30))
     assert occs == []
@@ -414,7 +414,7 @@ def test_generate_archived_plan_returns_empty(conn, svc):
 def _seed_occurrence(svc, conn):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=50000))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=50000))
     occs = svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 1, 31))
     return plan, occs[0]
 
@@ -422,17 +422,17 @@ def _seed_occurrence(svc, conn):
 def test_confirm_occurrence(conn, svc):
     plan, occ = _seed_occurrence(svc, conn)
     confirmed = svc.confirm_occurrence(occ.id, ConfirmOccurrenceInput(
-        confirmed_amount_cents=50000,
+        confirmed_amount=50000,
         confirmed_invoice_no="INV-001",
     ))
     assert confirmed.status == "confirmed"
-    assert confirmed.confirmed_amount_cents == 50000
+    assert confirmed.confirmed_amount == 50000
     assert confirmed.confirmed_invoice_no == "INV-001"
 
 
 def test_confirm_occurrence_sets_confirmed_at(conn, svc):
     plan, occ = _seed_occurrence(svc, conn)
-    confirmed = svc.confirm_occurrence(occ.id, ConfirmOccurrenceInput(confirmed_amount_cents=100))
+    confirmed = svc.confirm_occurrence(occ.id, ConfirmOccurrenceInput(confirmed_amount=100))
     assert confirmed.confirmed_at is not None
 
 
@@ -449,18 +449,18 @@ def test_cancel_occurrence(conn, svc):
     assert cancelled.status == "cancelled"
 
 
-def test_confirm_rejects_non_positive_amount_cents(conn, svc):
+def test_confirm_rejects_non_positive_confirmed_amount(conn, svc):
     plan, occ = _seed_occurrence(svc, conn)
     with pytest.raises(RecurringBillingError) as exc:
-        svc.confirm_occurrence(occ.id, ConfirmOccurrenceInput(confirmed_amount_cents=0))
-    assert exc.value.code == "recurring_billing.confirmed_amount_cents.non_positive"
+        svc.confirm_occurrence(occ.id, ConfirmOccurrenceInput(confirmed_amount=0))
+    assert exc.value.code == "recurring_billing.confirmed_amount.non_positive"
 
 
 def test_confirm_rejects_long_invoice_no(conn, svc):
     plan, occ = _seed_occurrence(svc, conn)
     with pytest.raises(RecurringBillingError) as exc:
         svc.confirm_occurrence(occ.id, ConfirmOccurrenceInput(
-            confirmed_amount_cents=100,
+            confirmed_amount=100,
             confirmed_invoice_no="X" * 51,
         ))
     assert exc.value.code == "recurring_billing.confirmed_invoice_no.too_long"
@@ -468,17 +468,17 @@ def test_confirm_rejects_long_invoice_no(conn, svc):
 
 def test_cannot_confirm_skipped_occurrence(conn, svc):
     plan, occ = _seed_occurrence(svc, conn)
-    svc.skip_occurrence(occ.id)
+    svc.skip_occurrence(occ.id, "test skip")
     with pytest.raises(RecurringBillingError) as exc:
-        svc.confirm_occurrence(occ.id, ConfirmOccurrenceInput(confirmed_amount_cents=100))
+        svc.confirm_occurrence(occ.id, ConfirmOccurrenceInput(confirmed_amount=100))
     assert exc.value.code == "recurring_billing.occurrence.not_pending"
 
 
 def test_cannot_skip_confirmed_occurrence(conn, svc):
     plan, occ = _seed_occurrence(svc, conn)
-    svc.confirm_occurrence(occ.id, ConfirmOccurrenceInput(confirmed_amount_cents=100))
+    svc.confirm_occurrence(occ.id, ConfirmOccurrenceInput(confirmed_amount=100))
     with pytest.raises(RecurringBillingError) as exc:
-        svc.skip_occurrence(occ.id)
+        svc.skip_occurrence(occ.id, "test skip")
     assert exc.value.code == "recurring_billing.occurrence.not_pending"
 
 
@@ -487,7 +487,7 @@ def test_cannot_skip_confirmed_occurrence(conn, svc):
 def test_list_occurrences_for_plan(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="quarterly", issue_day=1)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 12, 31))
     occs = svc.list_occurrences(plan_id=plan.id)
     assert len(occs) == 4  # Jan, Apr, Jul, Oct
@@ -501,7 +501,7 @@ def test_list_pending_occurrences(conn, svc):
 
 def test_list_occurrences_by_status_after_confirm(conn, svc):
     plan, occ = _seed_occurrence(svc, conn)
-    svc.confirm_occurrence(occ.id, ConfirmOccurrenceInput(confirmed_amount_cents=100))
+    svc.confirm_occurrence(occ.id, ConfirmOccurrenceInput(confirmed_amount=100))
     confirmed = svc.list_occurrences(plan_id=plan.id, status="confirmed")
     assert len(confirmed) == 1
 
@@ -509,8 +509,8 @@ def test_list_occurrences_by_status_after_confirm(conn, svc):
 def test_list_occurrences_for_line(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
-    line_a = svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="B", amount_cents=200))
+    line_a = svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="B", amount=200))
     svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 3, 31))
     occs_a = svc.list_occurrences(line_id=line_a.id)
     assert all(o.line_id == line_a.id for o in occs_a)
@@ -521,7 +521,7 @@ def test_upcoming_notices_within_advance_notice_days(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly",
                       issue_day=10, advance_notice_days=14)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 3, 31))
     # ref = 2026-01-01, window = 14 days => up to 2026-01-15
     ref = datetime.date(2026, 1, 1)
@@ -535,7 +535,7 @@ def test_upcoming_notices_respects_zero_advance_notice_days(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-02-01", frequency="monthly",
                       issue_day=1, advance_notice_days=0)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 2, 28))
     # ref = 2026-01-31, window = 0 days => only up to 2026-01-31; issue date 2026-02-01 excluded
     ref = datetime.date(2026, 1, 31)
@@ -546,11 +546,11 @@ def test_upcoming_notices_respects_zero_advance_notice_days(conn, svc):
 def test_occurrence_summary_counts_by_status(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
-    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount_cents=100))
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 3, 31))
     occs = svc.list_occurrences(plan_id=plan.id)
-    svc.confirm_occurrence(occs[0].id, ConfirmOccurrenceInput(confirmed_amount_cents=100))
-    svc.skip_occurrence(occs[1].id)
+    svc.confirm_occurrence(occs[0].id, ConfirmOccurrenceInput(confirmed_amount=100))
+    svc.skip_occurrence(occs[1].id, "test skip")
     summary = svc.get_occurrence_summary(plan.id)
     assert summary["confirmed"] == 1
     assert summary["skipped"] == 1

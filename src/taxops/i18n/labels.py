@@ -19,6 +19,7 @@ NAV_LABELS: dict[str, str] = dict(
             "late_fee": "滯納金試算",
             "attachments": "附件管理",
             "review_notes": "覆核意見",
+            "recurring_billing": "固定開立",
             "settings": "設定",
         }
     )

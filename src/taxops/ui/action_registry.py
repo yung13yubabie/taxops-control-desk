@@ -25,6 +25,7 @@ PAGE_LATE_FEE = "late_fee"
 PAGE_ATTACHMENTS = "attachments"
 PAGE_REVIEW_NOTES = "review_notes"
 PAGE_SETTINGS = "settings"
+PAGE_RECURRING_BILLING = "recurring_billing"
 
 NAV_ORDER: tuple[str, ...] = (
     PAGE_DASHBOARD,
@@ -37,6 +38,7 @@ NAV_ORDER: tuple[str, ...] = (
     PAGE_LATE_FEE,
     PAGE_ATTACHMENTS,
     PAGE_REVIEW_NOTES,
+    PAGE_RECURRING_BILLING,
     PAGE_SETTINGS,
 )
 
@@ -794,6 +796,79 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
     ),
     # Registry page — GCIS remains disabled until official API docs are obtained
     _disabled("GCIS 工商查詢", PAGE_REGISTRY),
+    # Recurring billing page (slice 18B — enabled)
+    UIActionContract(
+        button_label="新增方案",
+        page=PAGE_RECURRING_BILLING,
+        handler="_ClientGroup._on_new_plan",
+        service="RecurringBillingService.create_plan",
+        repository="RecurringBillingRepository.insert_plan",
+        success_text="方案已新增",
+        failure_text="新增方案失敗，請確認輸入後再試",
+        audit_action="recurring_billing.plan.create",
+        test_marker="test_recurring_billing_create_plan",
+        enabled=True,
+    ),
+    UIActionContract(
+        button_label="編輯方案",
+        page=PAGE_RECURRING_BILLING,
+        handler="_PlanSection._on_edit",
+        service="RecurringBillingService.update_plan",
+        repository="RecurringBillingRepository.update_plan",
+        success_text="方案已更新",
+        failure_text="更新方案失敗，請確認輸入後再試",
+        audit_action="recurring_billing.plan.update",
+        test_marker="test_recurring_billing_update_plan",
+        enabled=True,
+    ),
+    UIActionContract(
+        button_label="封存",
+        page=PAGE_RECURRING_BILLING,
+        handler="_PlanSection._on_archive",
+        service="RecurringBillingService.archive_plan",
+        repository="RecurringBillingRepository.set_plan_status",
+        success_text="方案已封存",
+        failure_text="封存失敗，請稍後再試",
+        audit_action="recurring_billing.plan.archive",
+        test_marker="test_recurring_billing_archive_plan",
+        enabled=True,
+    ),
+    UIActionContract(
+        button_label="新增明細",
+        page=PAGE_RECURRING_BILLING,
+        handler="_PlanSection._on_add_line",
+        service="RecurringBillingService.create_line",
+        repository="RecurringBillingRepository.insert_line",
+        success_text="明細已新增",
+        failure_text="新增明細失敗，請確認輸入後再試",
+        audit_action="recurring_billing.line.create",
+        test_marker="test_recurring_billing_create_line",
+        enabled=True,
+    ),
+    UIActionContract(
+        button_label="確認開立",
+        page=PAGE_RECURRING_BILLING,
+        handler="_OccRow._on_confirm",
+        service="RecurringBillingService.confirm_occurrence",
+        repository="RecurringBillingRepository.update_occurrence_status",
+        success_text="已確認開立",
+        failure_text="確認失敗，請稍後再試",
+        audit_action="recurring_billing.occurrence.confirm",
+        test_marker="test_recurring_billing_confirm_occurrence",
+        enabled=True,
+    ),
+    UIActionContract(
+        button_label="確定跳過",
+        page=PAGE_RECURRING_BILLING,
+        handler="_OccRow._on_skip",
+        service="RecurringBillingService.skip_occurrence",
+        repository="RecurringBillingRepository.update_occurrence_status",
+        success_text="已跳過此筆開立",
+        failure_text="跳過失敗，請稍後再試",
+        audit_action="recurring_billing.occurrence.skip",
+        test_marker="test_recurring_billing_skip_occurrence",
+        enabled=True,
+    ),
 )
 
 

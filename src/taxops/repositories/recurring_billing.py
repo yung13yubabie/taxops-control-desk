@@ -33,7 +33,7 @@ class LineRow:
     plan_id: int
     bill_to_name: str
     description: str | None
-    amount_cents: int
+    amount: int
     tax_type: str | None
     sort_order: int
     active: bool
@@ -50,7 +50,7 @@ class OccurrenceRow:
     status: str
     confirmed_invoice_no: str | None
     confirmed_issue_date: str | None
-    confirmed_amount_cents: int | None
+    confirmed_amount: int | None
     confirmed_at: str | None
     skipped_reason: str | None
     notes: str | None
@@ -84,7 +84,7 @@ def _line(r: sqlite3.Row) -> LineRow:
         plan_id=r["plan_id"],
         bill_to_name=r["bill_to_name"],
         description=r["description"],
-        amount_cents=r["amount_cents"],
+        amount=r["amount"],
         tax_type=r["tax_type"],
         sort_order=r["sort_order"],
         active=bool(r["active"]),
@@ -102,7 +102,7 @@ def _occ(r: sqlite3.Row) -> OccurrenceRow:
         status=r["status"],
         confirmed_invoice_no=r["confirmed_invoice_no"],
         confirmed_issue_date=r["confirmed_issue_date"],
-        confirmed_amount_cents=r["confirmed_amount_cents"],
+        confirmed_amount=r["confirmed_amount"],
         confirmed_at=r["confirmed_at"],
         skipped_reason=r["skipped_reason"],
         notes=r["notes"],
@@ -220,7 +220,7 @@ class RecurringBillingRepository:
         plan_id: int,
         bill_to_name: str,
         description: str | None,
-        amount_cents: int,
+        amount: int,
         tax_type: str | None,
         sort_order: int,
     ) -> LineRow:
@@ -228,11 +228,11 @@ class RecurringBillingRepository:
         cur = self._conn.execute(
             """
             INSERT INTO recurring_billing_lines
-                (plan_id, bill_to_name, description, amount_cents,
+                (plan_id, bill_to_name, description, amount,
                  tax_type, sort_order, active, created_at, updated_at)
             VALUES (?,?,?,?,?,?,1,?,?)
             """,
-            (plan_id, bill_to_name, description, amount_cents, tax_type, sort_order, now, now),
+            (plan_id, bill_to_name, description, amount, tax_type, sort_order, now, now),
         )
         self._conn.commit()
         return self.get_line(cur.lastrowid)  # type: ignore[arg-type]
@@ -248,7 +248,7 @@ class RecurringBillingRepository:
         line_id: int,
         bill_to_name: str,
         description: str | None,
-        amount_cents: int,
+        amount: int,
         tax_type: str | None,
         sort_order: int,
     ) -> LineRow | None:
@@ -256,11 +256,11 @@ class RecurringBillingRepository:
         self._conn.execute(
             """
             UPDATE recurring_billing_lines
-               SET bill_to_name=?, description=?, amount_cents=?,
+               SET bill_to_name=?, description=?, amount=?,
                    tax_type=?, sort_order=?, updated_at=?
              WHERE id=?
             """,
-            (bill_to_name, description, amount_cents, tax_type, sort_order, now, line_id),
+            (bill_to_name, description, amount, tax_type, sort_order, now, line_id),
         )
         self._conn.commit()
         return self.get_line(line_id)
@@ -320,7 +320,7 @@ class RecurringBillingRepository:
         status: str,
         confirmed_invoice_no: str | None = None,
         confirmed_issue_date: str | None = None,
-        confirmed_amount_cents: int | None = None,
+        confirmed_amount: int | None = None,
         confirmed_at: str | None = None,
         skipped_reason: str | None = None,
         notes: str | None = None,
@@ -330,13 +330,13 @@ class RecurringBillingRepository:
             """
             UPDATE recurring_billing_occurrences
                SET status=?, confirmed_invoice_no=?, confirmed_issue_date=?,
-                   confirmed_amount_cents=?, confirmed_at=?,
+                   confirmed_amount=?, confirmed_at=?,
                    skipped_reason=?, notes=?, updated_at=?
              WHERE id=?
             """,
             (
                 status, confirmed_invoice_no, confirmed_issue_date,
-                confirmed_amount_cents, confirmed_at,
+                confirmed_amount, confirmed_at,
                 skipped_reason, notes, now, occurrence_id,
             ),
         )
