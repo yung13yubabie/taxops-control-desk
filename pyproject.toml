@@ -1,6 +1,6 @@
 [project]
 name = "taxops-control-desk"
-version = "0.5.0"
+version = "0.6.0"
 description = "Offline-first desktop operations workbench for Taiwan accounting and tax offices."
 requires-python = ">=3.11"
 dependencies = [

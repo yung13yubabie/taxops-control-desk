@@ -36,7 +36,7 @@ Manual verification checklist
 After automated checks pass, open the EXE (TAXOPS_DEV=1) and confirm:
 
   [ ] Main window title: "TaxOps Control Desk"
-  [ ] All 11 nav labels display in Traditional Chinese
+  [ ] All 12 nav labels display in Traditional Chinese
   [ ] Sidebar collapse/expand toggle works
   [ ] Settings page opens; data paths shown with copy + open buttons
   [ ] Can create a new client via dialog; client persists after restart
