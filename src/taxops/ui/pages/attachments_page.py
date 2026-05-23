@@ -144,6 +144,12 @@ class AttachmentsPage(QWidget):
         self._reject_btn.clicked.connect(self._on_reject)
         btn_row.addWidget(self._reject_btn)
 
+        self._delete_btn = QPushButton("刪除附件")
+        self._delete_btn.setIcon(toolbar_icon("delete"))
+        self._delete_btn.setEnabled(False)
+        self._delete_btn.clicked.connect(self._on_delete)
+        btn_row.addWidget(self._delete_btn)
+
         self._info_btn = QPushButton("檔案資訊")
         self._info_btn.setIcon(toolbar_icon("trial"))
         self._info_btn.setEnabled(False)
@@ -216,6 +222,12 @@ class AttachmentsPage(QWidget):
         layout.addWidget(self._preview_stack, 1)
         return panel
 
+    def clear_filter(self) -> None:
+        self._eng_combo.blockSignals(True)
+        self._eng_combo.setCurrentIndex(0)
+        self._eng_combo.blockSignals(False)
+        self._load_attachments()
+
     def refresh_context(self) -> None:
         """Reload engagement choices when the page becomes active."""
         self._load_engagements()
@@ -224,7 +236,7 @@ class AttachmentsPage(QWidget):
         selected_id = self._eng_combo.currentData()
         self._eng_combo.blockSignals(True)
         self._eng_combo.clear()
-        self._eng_combo.addItem("（請選擇案件）", _ALL)
+        self._eng_combo.addItem("全部案件", _ALL)
         try:
             for eng in self._container.engagements.list_all():
                 self._eng_combo.addItem(eng.engagement_name, eng.id)
@@ -244,14 +256,16 @@ class AttachmentsPage(QWidget):
     def _load_attachments(self) -> None:
         eng_id = self._eng_combo.currentData()
         self._attachments = []
-        if eng_id and eng_id != _ALL:
-            try:
+        try:
+            if eng_id == _ALL:
+                self._attachments = self._container.attachments.list_all()
+            elif eng_id:
                 self._attachments = self._container.attachments.list_by_engagement(eng_id)
-            except Exception as exc:
-                self._container.system_log.warn(
-                    "attachments: failed to load attachments",
-                    detail={"exc": type(exc).__name__, "msg": str(exc)},
-                )
+        except Exception as exc:
+            self._container.system_log.warn(
+                "attachments: failed to load attachments",
+                detail={"exc": type(exc).__name__, "msg": str(exc)},
+            )
         self._render_table()
         self._preview_stack.setCurrentIndex(_PREVIEW_NONE)
 
@@ -290,6 +304,7 @@ class AttachmentsPage(QWidget):
         has = self._selected_index() is not None
         self._accept_btn.setEnabled(has)
         self._reject_btn.setEnabled(has)
+        self._delete_btn.setEnabled(has)
         self._info_btn.setEnabled(has)
         self._open_btn.setEnabled(has)
         self._update_preview(self._selected_attachment())
@@ -385,6 +400,30 @@ class AttachmentsPage(QWidget):
             return
         except Exception:
             QMessageBox.critical(self, "操作失敗", error_message("attachment.reject.failed"))
+            return
+        self._load_attachments()
+
+    def _on_delete(self) -> None:
+        att = self._selected_attachment()
+        if att is None:
+            return
+        reply = QMessageBox.question(
+            self,
+            "確認刪除附件",
+            f"確定要刪除附件「{att.original_filename}」？\n"
+            "附件會從清單隱藏並保留稽核紀錄。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._container.attachments.delete_attachment(att.id)
+        except AttachmentValidationError as err:
+            QMessageBox.critical(self, "刪除失敗", error_message(err.code))
+            return
+        except Exception:
+            QMessageBox.critical(self, "刪除失敗", error_message("attachment.delete.failed"))
             return
         self._load_attachments()
 

@@ -297,6 +297,9 @@ class ClientsPage(QWidget):
         self._page = 0
         self.on_refresh()
 
+    def clear_filter(self) -> None:
+        self._filter_key = ""
+
     def refresh_context(self) -> None:
         """Reload client rows when the page becomes active."""
         self.on_refresh()

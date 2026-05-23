@@ -201,6 +201,9 @@ class ReviewNotesPage(QWidget):
         self._filter_key = filter_key
         self._load()
 
+    def clear_filter(self) -> None:
+        self._filter_key = ""
+
     def refresh_context(self) -> None:
         """Reload engagement choices when the page becomes active."""
         self._load_engagements()

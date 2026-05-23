@@ -108,6 +108,12 @@ class DocumentRequestsRepository:
         ).fetchone()
         return _row_to_request(row) if row else None
 
+    def list_all(self) -> list[DocumentRequestRow]:
+        rows = self._conn.execute(
+            "SELECT * FROM document_requests WHERE deleted_at IS NULL ORDER BY created_at ASC"
+        ).fetchall()
+        return [_row_to_request(r) for r in rows]
+
     def list_by_engagement(self, engagement_id: int) -> list[DocumentRequestRow]:
         rows = self._conn.execute(
             "SELECT * FROM document_requests"

@@ -133,6 +133,7 @@ ERROR_MESSAGES: dict[str, str] = dict(
             "attachment.upload.failed": "附件上傳失敗，請稍後再試",
             "attachment.accept.failed": "標記已驗收失敗，請稍後再試",
             "attachment.reject.failed": "標記退回失敗，請稍後再試",
+            "attachment.delete.failed": "刪除附件失敗，請稍後再試",
             "export.query_failed": "匯出查詢失敗，請稍後再試",
             "export.save_failed": "XLSX 檔案寫入失敗，請確認目標路徑後再試",
             "export.no_rows": "目前沒有符合條件的缺件項目可匯出",

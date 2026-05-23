@@ -160,6 +160,9 @@ class MainWindow(QMainWindow):
 
     def _on_nav_changed(self, idx: int) -> None:
         if idx >= 0:
+            page = self._stack.widget(idx)
+            if hasattr(page, "clear_filter"):
+                page.clear_filter()
             self._activate_page(idx)
 
     def _activate_page(self, idx: int) -> None:

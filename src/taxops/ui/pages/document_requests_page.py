@@ -27,6 +27,7 @@ from ...services.document_requests import (
     CreateDocumentRequestInput,
     DocumentRequestValidationError,
     VALID_ITEM_STATUSES,
+    VALID_REQUEST_STATUSES,
 )
 from ...services.export import ExportValidationError
 from ...services.generated_messages import GeneratedMessageValidationError
@@ -93,6 +94,7 @@ class DocumentRequestsPage(QWidget):
         toolbar.setSpacing(8)
         self._new_req_btn = QPushButton("新增索件批次")
         self._mark_requested_btn = QPushButton("標記已發出")
+        self._request_status_btn = QPushButton("設定進度")
         self._follow_up_btn = QPushButton("催件 +1")
         self._delete_req_btn = QPushButton("刪除批次")
         self._add_item_btn = QPushButton("新增文件項目")
@@ -103,6 +105,7 @@ class DocumentRequestsPage(QWidget):
         self._back_btn.setIcon(toolbar_icon("back"))
         self._new_req_btn.setIcon(toolbar_icon("new"))
         self._mark_requested_btn.setIcon(toolbar_icon("complete"))
+        self._request_status_btn.setIcon(toolbar_icon("edit"))
         self._follow_up_btn.setIcon(toolbar_icon("trial"))
         self._delete_req_btn.setIcon(toolbar_icon("delete"))
         self._add_item_btn.setIcon(toolbar_icon("new"))
@@ -112,6 +115,7 @@ class DocumentRequestsPage(QWidget):
 
         self._new_req_btn.setEnabled(False)
         self._mark_requested_btn.setEnabled(False)
+        self._request_status_btn.setEnabled(False)
         self._follow_up_btn.setEnabled(False)
         self._delete_req_btn.setEnabled(False)
         self._add_item_btn.setEnabled(False)
@@ -122,6 +126,7 @@ class DocumentRequestsPage(QWidget):
         for btn in (
             self._new_req_btn,
             self._mark_requested_btn,
+            self._request_status_btn,
             self._follow_up_btn,
             self._delete_req_btn,
             self._add_item_btn,
@@ -186,6 +191,7 @@ class DocumentRequestsPage(QWidget):
         self._back_btn.clicked.connect(self.back_to_engagements)
         self._new_req_btn.clicked.connect(self._on_new_request)
         self._mark_requested_btn.clicked.connect(self._on_mark_requested)
+        self._request_status_btn.clicked.connect(self._on_set_request_status)
         self._follow_up_btn.clicked.connect(self._on_follow_up)
         self._delete_req_btn.clicked.connect(self._on_delete_request)
         self._add_item_btn.clicked.connect(self._on_add_item)
@@ -198,6 +204,42 @@ class DocumentRequestsPage(QWidget):
     # ------------------------------------------------------------------
     # Public API called by MainWindow
     # ------------------------------------------------------------------
+
+    def clear_filter(self) -> None:
+        self._engagement_id = None
+
+    def refresh_context(self) -> None:
+        if self._engagement_id is None:
+            self._load_all_requests()
+        else:
+            self._refresh_requests()
+
+    def _load_all_requests(self) -> None:
+        try:
+            reqs = self._container.doc_requests.list_all()
+        except Exception as err:
+            self._container.system_log.error("doc_requests.list_all failed", exc=err)
+            return
+        self._context_label.setText(f"{NAV_LABELS['doc_requests']}（全部）")
+        self._no_engagement_label.setVisible(False)
+        self._splitter.setVisible(True)
+        self._req_table.setRowCount(len(reqs))
+        for row_idx, req in enumerate(reqs):
+            values = {
+                "id": str(req.id),
+                "tax_type": status_to_label(req.tax_type),
+                "period_name": req.period_name,
+                "status": status_to_label(req.status),
+                "follow_up_count": str(req.follow_up_count),
+                "requested_at": req.requested_at or "",
+                "due_date": req.due_date or "",
+            }
+            for col_idx, col in enumerate(_REQ_COLUMNS):
+                self._req_table.setItem(
+                    row_idx, col_idx, QTableWidgetItem(values[col])
+                )
+        self._item_table.setRowCount(0)
+        self._on_req_selection_changed()
 
     def load_engagement(self, engagement_id: int) -> None:
         eng = self._container.engagements.get_engagement(engagement_id)
@@ -282,6 +324,7 @@ class DocumentRequestsPage(QWidget):
     def _on_req_selection_changed(self) -> None:
         has_sel = bool(self._req_table.selectedItems())
         self._mark_requested_btn.setEnabled(has_sel)
+        self._request_status_btn.setEnabled(has_sel)
         self._follow_up_btn.setEnabled(has_sel)
         self._delete_req_btn.setEnabled(has_sel)
         self._add_item_btn.setEnabled(has_sel)
@@ -350,6 +393,41 @@ class DocumentRequestsPage(QWidget):
             return
         except Exception:
             QMessageBox.warning(self, "操作失敗", error_message("system.unexpected"))
+            return
+        self._refresh_requests()
+
+    def _on_set_request_status(self) -> None:
+        req_id = self._selected_request_id()
+        if req_id is None:
+            return
+        label_to_value = {STATUS_LABELS.get(s, s): s for s in VALID_REQUEST_STATUSES}
+        choices = sorted(label_to_value)
+        req_row = self._req_table.currentRow()
+        cur_label = (
+            self._req_table.item(req_row, _REQ_COLUMNS.index("status"))
+            or QTableWidgetItem()
+        ).text()
+        current_idx = choices.index(cur_label) if cur_label in choices else 0
+        label, ok = QInputDialog.getItem(
+            self,
+            "設定進度",
+            "請選擇目前索件進度",
+            choices,
+            current=current_idx,
+            editable=False,
+        )
+        if not ok or not label:
+            return
+        status = label_to_value.get(label)
+        if status is None:
+            return
+        try:
+            self._container.doc_requests.set_request_status(req_id, status)
+        except DocumentRequestValidationError as exc:
+            QMessageBox.warning(self, "設定進度失敗", error_message(exc.code))
+            return
+        except Exception:
+            QMessageBox.warning(self, "設定進度失敗", error_message("system.unexpected"))
             return
         self._refresh_requests()
 

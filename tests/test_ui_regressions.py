@@ -46,7 +46,8 @@ def test_engagements_page_refresh_context_loads_newly_created_client(
     from taxops.ui.pages.engagements_page import EngagementsPage
 
     page = EngagementsPage(container)
-    assert page._client_combo.count() == 0
+    # "全部客戶" sentinel is always present as index 0
+    assert page._client_combo.count() == 1
     assert not page._new_btn.isEnabled()
 
     client = container.clients.create_client(
@@ -54,8 +55,13 @@ def test_engagements_page_refresh_context_loads_newly_created_client(
     )
     page.refresh_context()
 
-    assert page._client_combo.count() == 1
-    assert page._client_combo.itemData(0) == client.id
+    # After refresh: index 0 = "全部客戶", index 1 = newly created client
+    assert page._client_combo.count() == 2
+    from taxops.ui.pages.engagements_page import _ALL_CLIENTS
+    assert page._client_combo.itemData(0) == _ALL_CLIENTS
+    assert page._client_combo.itemData(1) == client.id
+    # Select specific client to verify button enables
+    page._client_combo.setCurrentIndex(1)
     assert page._new_btn.isEnabled()
 
 

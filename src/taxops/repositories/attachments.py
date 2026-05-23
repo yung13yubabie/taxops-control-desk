@@ -173,16 +173,36 @@ class AttachmentsRepository:
         ).fetchone()
         return _row(r) if r else None
 
-    def list_by_engagement(self, engagement_id: int) -> list[AttachmentRow]:
+    def list_by_engagement(
+        self, engagement_id: int, *, include_archived: bool = False
+    ) -> list[AttachmentRow]:
+        where = (
+            "engagement_id = ?"
+            if include_archived
+            else "engagement_id = ? AND status != 'archived'"
+        )
         rows = self._conn.execute(
-            "SELECT * FROM attachments WHERE engagement_id = ? ORDER BY uploaded_at DESC",
+            f"SELECT * FROM attachments WHERE {where} ORDER BY uploaded_at DESC",
             (engagement_id,),
         ).fetchall()
         return [_row(r) for r in rows]
 
-    def list_by_request(self, request_id: int) -> list[AttachmentRow]:
+    def list_all(self) -> list[AttachmentRow]:
         rows = self._conn.execute(
-            "SELECT * FROM attachments WHERE request_id = ? ORDER BY uploaded_at DESC",
+            "SELECT * FROM attachments WHERE status != 'archived' ORDER BY uploaded_at DESC"
+        ).fetchall()
+        return [_row(r) for r in rows]
+
+    def list_by_request(
+        self, request_id: int, *, include_archived: bool = False
+    ) -> list[AttachmentRow]:
+        where = (
+            "request_id = ?"
+            if include_archived
+            else "request_id = ? AND status != 'archived'"
+        )
+        rows = self._conn.execute(
+            f"SELECT * FROM attachments WHERE {where} ORDER BY uploaded_at DESC",
             (request_id,),
         ).fetchall()
         return [_row(r) for r in rows]

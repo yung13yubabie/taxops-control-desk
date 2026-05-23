@@ -426,3 +426,43 @@ def test_upload_request_correct_engagement_allowed(conn, svc, tmp_path):
     ))
     assert row.request_id == request_id_b
     assert row.engagement_id == eng_id_b
+
+
+def test_delete_attachment_archives_and_hides_from_default_list(
+    conn, svc, repo, tmp_path
+):
+    _, eng_id = _seed(conn)
+    f = _make_file(tmp_path)
+    row = svc.upload_attachment(UploadAttachmentInput(
+        engagement_id=eng_id, request_id=None, source_path=f
+    ))
+
+    updated = svc.delete_attachment(row.id)
+
+    assert updated.status == "archived"
+    assert svc.list_by_engagement(eng_id) == []
+    archived = repo.list_by_engagement(eng_id, include_archived=True)
+    assert len(archived) == 1
+    assert archived[0].id == row.id
+
+
+def test_delete_attachment_records_audit(conn, svc, tmp_path):
+    _, eng_id = _seed(conn)
+    f = _make_file(tmp_path)
+    row = svc.upload_attachment(UploadAttachmentInput(
+        engagement_id=eng_id, request_id=None, source_path=f
+    ))
+
+    svc.delete_attachment(row.id)
+
+    log = conn.execute(
+        "SELECT * FROM audit_logs WHERE action = 'attachment.delete' AND target_id = ?",
+        (str(row.id),),
+    ).fetchone()
+    assert log is not None
+
+
+def test_delete_attachment_not_found(conn, svc):
+    with pytest.raises(AttachmentValidationError) as exc:
+        svc.delete_attachment(9999)
+    assert exc.value.code == "attachment.not_found"

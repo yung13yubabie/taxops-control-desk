@@ -151,8 +151,21 @@ class AttachmentsService:
         )
         return updated
 
+    def delete_attachment(self, attachment_id: int) -> AttachmentRow:
+        updated = self._update_status_or_raise(attachment_id, status="archived")
+        self._audit.record(
+            action="attachment.delete",
+            target_type="attachment",
+            target_id=str(attachment_id),
+            detail={"status": "archived"},
+        )
+        return updated
+
     def get(self, attachment_id: int) -> AttachmentRow | None:
         return self._repo.get(attachment_id)
+
+    def list_all(self) -> list[AttachmentRow]:
+        return self._repo.list_all()
 
     def list_by_engagement(self, engagement_id: int) -> list[AttachmentRow]:
         return self._repo.list_by_engagement(engagement_id)

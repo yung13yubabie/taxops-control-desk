@@ -131,6 +131,9 @@ class TasksPage(QWidget):
         self._filter_key = filter_key
         self._refresh()
 
+    def clear_filter(self) -> None:
+        self._filter_key = ""
+
     def refresh_context(self) -> None:
         """Reload engagement choices when clients/engagements changed elsewhere."""
         self._load_engagements()

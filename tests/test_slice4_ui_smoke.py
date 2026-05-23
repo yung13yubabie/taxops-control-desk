@@ -85,6 +85,8 @@ def test_engagements_page_new_btn_enabled_when_client_present() -> None:
     new_btn = next(
         b for b in page.findChildren(QPushButton) if b.text() == "新增案件"
     )
+    # Default selection is "全部客戶"; select the specific client to enable the button
+    page._client_combo.setCurrentIndex(1)
     assert new_btn.isEnabled(), "新增案件 must be enabled when a client exists"
     container.close()
 
@@ -479,3 +481,58 @@ def test_document_requests_page_delete_request_handler_soft_deletes_and_audit() 
     ).fetchone()
     assert audit is not None, "audit_logs must have doc_request.delete entry"
     container.close()
+
+
+def test_document_requests_page_set_progress_handler_updates_status_and_audit() -> None:
+    from unittest.mock import patch
+
+    _make_app()
+    container = _fresh_container()
+    client_id = _seed_client(container)
+    from taxops.i18n.status_labels import status_to_label
+    from taxops.services.engagements import CreateEngagementInput
+    from taxops.ui.pages.document_requests_page import DocumentRequestsPage
+
+    eng = container.engagements.create_engagement(
+        CreateEngagementInput(
+            client_id=client_id,
+            engagement_name="ProgressTest 2024Q1",
+            tax_type="vat",
+            period_name="2024Q1",
+        )
+    )
+    page = DocumentRequestsPage(container)
+    page.load_engagement(eng.id)
+    page._on_new_request()
+    page._req_table.selectRow(0)
+
+    with patch(
+        "taxops.ui.pages.document_requests_page.QInputDialog.getItem",
+        return_value=(status_to_label("pending_confirm"), True),
+    ):
+        page._on_set_request_status()
+
+    row = container.conn.execute(
+        "SELECT status FROM document_requests WHERE engagement_id = ?",
+        (eng.id,),
+    ).fetchone()
+    assert row is not None
+    assert row[0] == "pending_confirm"
+
+    audit = container.conn.execute(
+        "SELECT action FROM audit_logs WHERE action = 'doc_request.status_change'"
+    ).fetchone()
+    assert audit is not None, "audit_logs must have doc_request.status_change entry"
+    container.close()
+
+
+def test_document_request_progress_contract_registered() -> None:
+    from taxops.ui.action_registry import PAGE_DOC_REQUESTS, actions_for_page
+
+    progress = [
+        c for c in actions_for_page(PAGE_DOC_REQUESTS)
+        if c.button_label == "設定進度"
+    ]
+    assert len(progress) == 1
+    assert progress[0].service == "DocumentRequestsService.set_request_status"
+    assert progress[0].audit_action == "doc_request.status_change"

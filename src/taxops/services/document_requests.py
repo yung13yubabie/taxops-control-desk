@@ -239,6 +239,9 @@ class DocumentRequestsService:
     def get_request(self, request_id: int) -> DocumentRequestRow | None:
         return self._repo.get_request(request_id)
 
+    def list_all(self) -> list[DocumentRequestRow]:
+        return self._repo.list_all()
+
     def list_by_engagement(self, engagement_id: int) -> list[DocumentRequestRow]:
         return self._repo.list_by_engagement(engagement_id)
 

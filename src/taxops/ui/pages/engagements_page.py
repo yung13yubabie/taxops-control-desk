@@ -52,6 +52,9 @@ _TABLE_HEADERS = {
 }
 
 
+_ALL_CLIENTS = -1
+
+
 class EngagementsPage(QWidget):
     open_doc_requests = Signal(int)  # engagement_id
 
@@ -60,7 +63,7 @@ class EngagementsPage(QWidget):
     ) -> None:
         super().__init__(parent)
         self._container = container
-        self._current_client_id: int | None = None
+        self._current_client_id: int = _ALL_CLIENTS
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 24, 24, 24)
@@ -153,6 +156,10 @@ class EngagementsPage(QWidget):
         self._filter_key = filter_key
         self._refresh_engagements()
 
+    def clear_filter(self) -> None:
+        self._filter_key = ""
+        self._current_client_id = _ALL_CLIENTS
+
     def refresh_context(self) -> None:
         """Reload client choices when the page becomes active."""
         self._on_load_and_refresh()
@@ -165,6 +172,7 @@ class EngagementsPage(QWidget):
         saved_id = self._current_client_id
         self._client_combo.blockSignals(True)
         self._client_combo.clear()
+        self._client_combo.addItem("全部客戶", userData=_ALL_CLIENTS)
         try:
             clients = self._container.clients.search_clients("", limit=500)
         except Exception as err:
@@ -175,35 +183,24 @@ class EngagementsPage(QWidget):
             self._client_combo.addItem(label, userData=client.id)
         self._client_combo.blockSignals(False)
 
-        if not clients:
-            self._current_client_id = None
-            self._new_btn.setEnabled(False)
-            self._table.setRowCount(0)
-            self._empty_label.setVisible(True)
-            self._table.setVisible(False)
-            return
-
         restore_idx = 0
-        if saved_id is not None:
-            for i in range(self._client_combo.count()):
-                if self._client_combo.itemData(i) == saved_id:
-                    restore_idx = i
-                    break
+        for i in range(self._client_combo.count()):
+            if self._client_combo.itemData(i) == saved_id:
+                restore_idx = i
+                break
         self._client_combo.setCurrentIndex(restore_idx)
         self._current_client_id = self._client_combo.currentData()
-        self._new_btn.setEnabled(True)
+        self._new_btn.setEnabled(self._current_client_id != _ALL_CLIENTS)
         self._refresh_engagements()
 
     def _on_client_changed(self, idx: int) -> None:
         if idx < 0:
-            self._current_client_id = None
+            self._current_client_id = _ALL_CLIENTS
             self._new_btn.setEnabled(False)
-            self._table.setRowCount(0)
-            self._empty_label.setVisible(True)
-            self._table.setVisible(False)
+            self._refresh_engagements()
             return
         self._current_client_id = self._client_combo.itemData(idx)
-        self._new_btn.setEnabled(True)
+        self._new_btn.setEnabled(self._current_client_id != _ALL_CLIENTS)
         self._refresh_engagements()
 
     # ------------------------------------------------------------------
@@ -218,9 +215,9 @@ class EngagementsPage(QWidget):
                 rows = self._container.engagements.list_upcoming(today, until)
             elif self._filter_key == FilterKey.OVERDUE:
                 rows = self._container.engagements.list_overdue(today_iso())
+            elif self._current_client_id == _ALL_CLIENTS:
+                rows = self._container.engagements.list_all()
             else:
-                if self._current_client_id is None:
-                    return
                 rows = self._container.engagements.list_by_client(self._current_client_id)
         except Exception as err:
             self._container.system_log.error("engagements.list failed", exc=err)

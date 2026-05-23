@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -36,6 +37,7 @@ def qapp():
 
 class _FakeContainer:
     def __init__(self, conn, attachments_dir: Path):
+        self.paths = SimpleNamespace(attachments_dir=attachments_dir)
         audit_repo = AuditLogRepository(conn)
         self._audit = AuditService(audit_repo, actor="ui_test")
         self.system_log = SystemLogService(SystemLogRepository(conn))
@@ -116,6 +118,7 @@ def test_action_buttons_disabled_without_selection(qapp, tmp_path):
     page = AttachmentsPage(container)
     assert not page._accept_btn.isEnabled()
     assert not page._reject_btn.isEnabled()
+    assert not page._delete_btn.isEnabled()
     assert not page._info_btn.isEnabled()
     conn.close()
 
@@ -258,3 +261,51 @@ def test_info_dialog_labels_plain_text(qapp):
                 assert widget.textFormat() == Qt.TextFormat.PlainText, (
                     f"Row {i} label must use PlainText format"
                 )
+
+
+def test_delete_button_archives_row_and_audits(qapp, tmp_path):
+    from unittest.mock import patch
+
+    from PySide6.QtWidgets import QMessageBox
+
+    conn, attachments_dir = _make_conn(tmp_path)
+    eng_id = _seed(conn)
+    src = tmp_path / "delete_me.pdf"
+    src.write_bytes(b"delete me")
+    container = _FakeContainer(conn, attachments_dir)
+    row = container.attachments.upload_attachment(UploadAttachmentInput(
+        engagement_id=eng_id,
+        request_id=None,
+        source_path=src,
+    ))
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(1)
+    page._load_attachments()
+    page._table.selectRow(0)
+
+    with patch(
+        "taxops.ui.pages.attachments_page.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.Yes,
+    ):
+        page._on_delete()
+
+    db_row = conn.execute("SELECT status FROM attachments WHERE id = ?", (row.id,)).fetchone()
+    assert db_row is not None
+    assert db_row["status"] == "archived"
+    assert page._table.rowCount() == 0
+    log = conn.execute(
+        "SELECT * FROM audit_logs WHERE action = 'attachment.delete' AND target_id = ?",
+        (str(row.id),),
+    ).fetchone()
+    assert log is not None
+    conn.close()
+
+
+def test_attachment_delete_contract_is_registered():
+    delete = [
+        c for c in actions_for_page(PAGE_ATTACHMENTS)
+        if c.button_label == "刪除附件"
+    ]
+    assert len(delete) == 1
+    assert delete[0].service == "AttachmentsService.delete_attachment"
+    assert delete[0].audit_action == "attachment.delete"
