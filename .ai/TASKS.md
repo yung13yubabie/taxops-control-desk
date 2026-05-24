@@ -112,6 +112,16 @@
 
 ## RECENTLY COMPLETED
 
+- [已確認] Slice 20A v0.7.0（2026-05-24）— 索件管理上下文自主化：
+  - `src/taxops/ui/pages/document_requests_page.py` 重寫：新增 `_engagement_combo`（全部案件 + 全部 active engagements），label「客戶名 — 案件名 — 期別」；切換 combo 直接刷新索件列表，不需回案件管理頁。
+  - `_on_new_request()` 在全域模式（`_engagement_id is None`）改為彈出 `QInputDialog.getItem` engagement picker 而非 silent return；無案件時顯示 info dialog 引導建案件。
+  - `_on_edit_item` / `_on_set_item_status` / `_on_delete_item` 改為呼叫 `_refresh_requests()`（含 `_fill_request_table` 的選取保留 + 強制 `_load_items_for_selected()`），item 操作後 request 表立即同步且選取不跳掉。
+  - 全部 mutation catch-all 改為 `system_log.error(...)` + QMessageBox，不再 silent return。
+  - `tests/test_slice20a_doc_requests_context.py`（NEW，15 tests）：combo presence / label format / switch / global picker / item refresh sync / preserve selection / clear_filter 回 global。
+  - `tests/test_slice4_ui_smoke.py` 移除過時「新增按鈕 load 前 disabled」斷言。
+  - pyproject.toml + __init__.py 版本升至 0.7.0；git tag v0.7.0；dist zip `TaxOpsControlDesk-v0.7.0-windows.zip`。
+  - **871/871 passed**（2026-05-24，含 15 新測試）。
+
 - [已確認] Slice 19 hotfix v0.6.1（2026-05-23）：
   - `_derive_request_status()` 加入空 frozenset 防衛（empty set → "requested"，避免被誤判 accepted）。
   - `delete_item()` service 刪除後呼叫 `_recompute_request_status()` 更新父層 document request 狀態。

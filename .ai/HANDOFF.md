@@ -1,5 +1,48 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-05-24 — Slice 20A 索件管理上下文自主化, v0.7.0)
+
+### 本輪完成事項
+
+- [已確認] **DocumentRequestsPage 新增案件 combo**：頁面頂部新增案件篩選 combo（第一項「全部案件」+ 全部 active engagements），label 格式「客戶名 — 案件名 — 期別」；切換 combo 立即刷新索件列表，使用者不需要回案件管理頁。
+- [已確認] **全域模式新增索件批次不再 silent return**：原 `_on_new_request()` 在 `_engagement_id is None` 時 silent return；現改為彈出 `QInputDialog.getItem` engagement picker；無 engagement 時顯示 info dialog 引導使用者先建案件。選定案件後自動切到該案件視圖。
+- [已確認] **item 操作後同步刷新父層 request 表**：`_on_edit_item` / `_on_set_item_status` / `_on_delete_item` 均改為呼叫 `_refresh_requests()`（含 `_fill_request_table` 的選取保留邏輯），並強制 `_load_items_for_selected()` 以確保 item 表也更新；保留原本選取的 request 行，避免刷新後跳掉。
+- [已確認] **錯誤處理升級**：所有 mutation 路徑的 catch-all 改為 `system_log.error(...)` + QMessageBox，不再 silent return；新增 picker 失敗 / engagement 不存在 / 無案件三種情境均顯示中文訊息。
+- [已確認] **新增索件批次 / 匯出按鈕 always enabled**：兩者都不再依賴 `_engagement_id`（picker 與 global export 已能處理 None 情境）；舊「load 前 disabled」smoke test 已配套更新為「只對 row-dependent 按鈕做斷言」。
+
+### 新增/修改檔案
+
+- `src/taxops/ui/pages/document_requests_page.py`（重寫）：新增 `_ALL_ENGAGEMENTS = -1`、`_engagement_combo`、`_populate_engagement_combo()`、`_on_engagement_combo_changed()`、`_render_current_view()` / `_render_global_view()` / `_render_engagement_view()`、`_pick_engagement_id()`、`_fill_request_table(reqs, saved_req_id)`（含選取保留）。
+- `tests/test_slice20a_doc_requests_context.py`（NEW，15 tests）：combo presence / label format / switch / global new request picker / item refresh sync / preserve selection / clear_filter 回 global。
+- `tests/test_slice4_ui_smoke.py`：`test_document_requests_page_buttons_disabled_before_load` 移除 過時的「新增索件批次 disabled」斷言（Slice 20A 已合理化為 always enabled）。
+- `pyproject.toml` + `src/taxops/__init__.py`：版號 0.6.1 → 0.7.0。
+
+### 驗證紀錄
+
+- **871/871 passed** in 852.33s（2026-05-24，含 15 個新 Slice 20A 測試）
+- PyInstaller EXE build 成功（`dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`，6.9 MB）
+- `python -m build_tools.smoke_test_exe` 通過：EXE 啟動且建立 SQLite 於 temp `LOCALAPPDATA\TaxOpsControlDeskDev`
+- `python -m build_tools.check_resource_hygiene` 通過：無 TaxOps/pytest/pyinstaller 殘留進程
+- `dist/TaxOpsControlDesk-v0.7.0-windows.zip`（70 MB）；v0.6.1 zip 已刪除
+
+### 下一輪注意事項
+
+- Slice 20A 完整閉環，v0.7.0 穩定。
+- **下一輪建議實作 Slice 20B — 代辦事項客戶選擇**：
+  - migration 0015 加 `workflow_tasks.client_id INTEGER NULL`（含 FK→clients.id）
+  - 若 task 綁 `engagement_id`，service 層 `create_task` 自動同步 `client_id` 為該 engagement.client_id
+  - `TasksPage` 加客戶 combo（全部客戶 / 指定客戶 / 指定客戶下指定案件三段過濾）
+  - `NewTaskDialog` 加客戶 combo（過濾案件 combo），支援「不綁案件，只綁客戶」
+  - 舊資料 migration 填回 `client_id`（engagement_id 不為 null 的情況）
+- **再之後 Slice 20C — 固定開立 UX 重設**：
+  - service `create_plan_with_lines()` 原子 transaction（plan + 多 line 同時建，任一失敗 rollback）
+  - `PlanDialog` 兩段（合約資訊 + 多筆明細 table）
+  - bulk paste 支援（行格式 `開立對象\t金額\t稅別\t說明`，錯誤列顯示行號不部分成功）
+  - Occurrence confirm 保留 expected_amount → confirmed_amount 核定流程
+- 不要把「新增索件批次」按鈕還原為「load 前 disabled」— 那是 Slice 20A 修復的 SLOP 之一。
+
+---
+
 ## Latest Handoff Update (2026-05-23 — Slice 19 hotfix, v0.6.1)
 
 ### 本輪完成事項
