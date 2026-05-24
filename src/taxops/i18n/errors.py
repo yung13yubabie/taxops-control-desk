@@ -88,6 +88,7 @@ ERROR_MESSAGES: dict[str, str] = dict(
             "task.status.transition_invalid": "此待辦狀態不允許直接跳至目標狀態，請依正常流程操作",
             "task.not_found": "找不到指定待辦，可能已被刪除",
             "task.engagement_not_found": "找不到指定案件，待辦無法建立",
+            "task.client_not_found": "找不到指定客戶，待辦無法建立",
             "task.already_done": "此待辦已完成，無法再次完成",
             "task.create.failed": "新增待辦失敗，請確認輸入後再試",
             "task.complete.failed": "完成待辦失敗，請稍後再試",

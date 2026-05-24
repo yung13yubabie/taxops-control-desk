@@ -1,4 +1,4 @@
-"""Tasks page: all workflow tasks with engagement filter and CRUD actions."""
+"""Tasks page: all workflow tasks with client + engagement cascade filter."""
 
 from __future__ import annotations
 
@@ -38,6 +38,7 @@ _TABLE_HEADERS = {
     "updated_at": "更新時間",
 }
 
+_ALL_CLIENTS = -1
 _ALL_ENGAGEMENTS = -1
 
 
@@ -58,6 +59,10 @@ class TasksPage(QWidget):
 
         filter_row = QHBoxLayout()
         filter_row.setSpacing(8)
+        filter_row.addWidget(QLabel("客戶："))
+        self._client_combo = QComboBox()
+        self._client_combo.setMinimumWidth(180)
+        filter_row.addWidget(self._client_combo)
         filter_row.addWidget(QLabel("案件："))
         self._eng_combo = QComboBox()
         self._eng_combo.setMinimumWidth(220)
@@ -118,10 +123,12 @@ class TasksPage(QWidget):
         self._delete_btn.clicked.connect(self._on_delete_task)
         self._refresh_btn.clicked.connect(self._refresh)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
+        self._client_combo.currentIndexChanged.connect(self._on_client_changed)
         self._eng_combo.currentIndexChanged.connect(self._refresh)
 
         self._filter_key: str = ""
-        self._load_engagements()
+        self._load_clients()
+        self._reload_engagement_combo()
         self._refresh()
 
     # ------------------------------------------------------------------
@@ -135,36 +142,74 @@ class TasksPage(QWidget):
         self._filter_key = ""
 
     def refresh_context(self) -> None:
-        """Reload engagement choices when clients/engagements changed elsewhere."""
-        self._load_engagements()
+        """Reload client + engagement choices when data changed elsewhere."""
+        self._load_clients()
+        self._reload_engagement_combo()
         self._refresh()
 
     # ------------------------------------------------------------------
-    # Private helpers
+    # Combo population
 
-    def _load_engagements(self) -> None:
-        selected_id = self._eng_combo.currentData()
-        self._eng_combo.blockSignals(True)
-        self._eng_combo.clear()
-        self._eng_combo.addItem("（全部案件）", userData=_ALL_ENGAGEMENTS)
+    def _load_clients(self) -> None:
+        selected = self._client_combo.currentData()
+        self._client_combo.blockSignals(True)
         try:
-            engs = self._container.engagements.list_all()
-        except Exception as err:
-            self._container.system_log.warn(
-                "tasks_page: failed to load engagements for combo",
-                detail={"exc": type(err).__name__, "msg": str(err)},
-            )
-            engs = []
-            self._eng_combo.addItem("（載入案件失敗）", userData=_ALL_ENGAGEMENTS)
-        for eng in engs:
-            label = f"{eng.engagement_name} [{STATUS_LABELS.get(eng.tax_type, eng.tax_type)}]"
-            self._eng_combo.addItem(label, userData=eng.id)
-        if selected_id is not None:
-            for i in range(self._eng_combo.count()):
-                if self._eng_combo.itemData(i) == selected_id:
-                    self._eng_combo.setCurrentIndex(i)
-                    break
-        self._eng_combo.blockSignals(False)
+            self._client_combo.clear()
+            self._client_combo.addItem("（全部客戶）", userData=_ALL_CLIENTS)
+            try:
+                clients = self._container.clients.list_clients(limit=500)
+            except Exception as err:
+                self._container.system_log.warn(
+                    "tasks_page: failed to load clients",
+                    detail={"exc": type(err).__name__, "msg": str(err)},
+                )
+                clients = []
+                self._client_combo.addItem(
+                    "（載入客戶失敗）", userData=_ALL_CLIENTS
+                )
+            for c in clients:
+                self._client_combo.addItem(c.client_name, userData=c.id)
+            if selected is not None:
+                idx = self._client_combo.findData(selected)
+                if idx >= 0:
+                    self._client_combo.setCurrentIndex(idx)
+        finally:
+            self._client_combo.blockSignals(False)
+
+    def _reload_engagement_combo(self) -> None:
+        selected = self._eng_combo.currentData()
+        client_data = self._client_combo.currentData()
+        self._eng_combo.blockSignals(True)
+        try:
+            self._eng_combo.clear()
+            self._eng_combo.addItem("（全部案件）", userData=_ALL_ENGAGEMENTS)
+            try:
+                if client_data == _ALL_CLIENTS or client_data is None:
+                    engs = self._container.engagements.list_all()
+                else:
+                    engs = self._container.engagements.list_by_client(int(client_data))
+            except Exception as err:
+                self._container.system_log.warn(
+                    "tasks_page: failed to load engagements for combo",
+                    detail={"exc": type(err).__name__, "msg": str(err)},
+                )
+                engs = []
+                self._eng_combo.addItem(
+                    "（載入案件失敗）", userData=_ALL_ENGAGEMENTS
+                )
+            for eng in engs:
+                label = f"{eng.engagement_name} [{STATUS_LABELS.get(eng.tax_type, eng.tax_type)}]"
+                self._eng_combo.addItem(label, userData=eng.id)
+            if selected is not None:
+                idx = self._eng_combo.findData(selected)
+                if idx >= 0:
+                    self._eng_combo.setCurrentIndex(idx)
+        finally:
+            self._eng_combo.blockSignals(False)
+
+    def _on_client_changed(self) -> None:
+        self._reload_engagement_combo()
+        self._refresh()
 
     def _refresh(self) -> None:
         try:
@@ -173,11 +218,14 @@ class TasksPage(QWidget):
             elif self._filter_key == FilterKey.OVERDUE:
                 tasks = self._container.tasks.list_overdue(today_iso())
             else:
-                eng_id: int = self._eng_combo.currentData() or _ALL_ENGAGEMENTS
-                if eng_id == _ALL_ENGAGEMENTS:
-                    tasks = self._container.tasks.list_all()
+                client_data = self._client_combo.currentData() or _ALL_CLIENTS
+                eng_data = self._eng_combo.currentData() or _ALL_ENGAGEMENTS
+                if eng_data != _ALL_ENGAGEMENTS:
+                    tasks = self._container.tasks.list_by_engagement(int(eng_data))
+                elif client_data != _ALL_CLIENTS:
+                    tasks = self._container.tasks.list_by_client(int(client_data))
                 else:
-                    tasks = self._container.tasks.list_by_engagement(eng_id)
+                    tasks = self._container.tasks.list_all()
             load_error = False
         except Exception as err:
             self._container.system_log.warn(
@@ -231,13 +279,17 @@ class TasksPage(QWidget):
     # Action handlers
 
     def _on_new_task(self) -> None:
-        eng_id: int = self._eng_combo.currentData() or _ALL_ENGAGEMENTS
-        fixed_id = eng_id if eng_id != _ALL_ENGAGEMENTS else None
+        eng_data = self._eng_combo.currentData() or _ALL_ENGAGEMENTS
+        client_data = self._client_combo.currentData() or _ALL_CLIENTS
+        fixed_eng = int(eng_data) if eng_data != _ALL_ENGAGEMENTS else None
+        preset_client = int(client_data) if client_data != _ALL_CLIENTS else None
         dlg = NewTaskDialog(
             self._container.tasks,
-            engagement_id=fixed_id,
+            engagement_id=fixed_eng,
             parent=self,
             engagements_service=self._container.engagements,
+            clients_service=self._container.clients,
+            preset_client_id=preset_client,
         )
         if dlg.exec() == NewTaskDialog.DialogCode.Accepted:
             self._refresh()

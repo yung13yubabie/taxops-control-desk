@@ -1,4 +1,4 @@
-"""New task dialog."""
+"""New task dialog with client + engagement cascade."""
 
 from __future__ import annotations
 
@@ -22,10 +22,12 @@ from PySide6.QtWidgets import (
 
 from ...i18n import error_message
 from ...i18n.status_labels import PRIORITY_LABELS
+from ...services.clients import ClientsService
 from ...services.engagements import EngagementsService
 from ...services.tasks import CreateTaskInput, TaskValidationError, TasksService
 from ..widgets.date_field import DateField
 
+_NO_CLIENT = -1
 _NO_ENGAGEMENT = -1
 
 _PRIORITY_CHOICES = [
@@ -43,14 +45,18 @@ class NewTaskDialog(QDialog):
         engagement_id: int | None = None,
         parent: QWidget | None = None,
         engagements_service: EngagementsService | None = None,
+        clients_service: ClientsService | None = None,
+        preset_client_id: int | None = None,
     ) -> None:
         super().__init__(parent)
         self._svc = tasks_service
+        self._engagements_service = engagements_service
+        self._clients_service = clients_service
         self._fixed_engagement_id = engagement_id
 
         self.setWindowTitle("新增待辦")
         self.setModal(True)
-        self.setMinimumWidth(440)
+        self.setMinimumWidth(480)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 20, 20, 20)
@@ -59,16 +65,36 @@ class NewTaskDialog(QDialog):
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
+        self._client_combo: QComboBox | None = None
         self._eng_combo: QComboBox | None = None
-        if engagement_id is None and engagements_service is not None:
+
+        if engagement_id is None:
+            # Cascade mode: client picker + dependent engagement picker.
+            self._client_combo = QComboBox()
+            self._client_combo.addItem("（不指定客戶）", userData=_NO_CLIENT)
+            if clients_service is not None:
+                try:
+                    for c in clients_service.list_clients(limit=500):
+                        self._client_combo.addItem(c.client_name, userData=c.id)
+                except Exception:
+                    _log.warning(
+                        "new_task_dialog: failed to load clients", exc_info=True
+                    )
+            form.addRow(QLabel("關聯客戶"), self._client_combo)
+
             self._eng_combo = QComboBox()
-            self._eng_combo.addItem("（不指定）", userData=_NO_ENGAGEMENT)
-            try:
-                for eng in engagements_service.list_all():
-                    self._eng_combo.addItem(eng.engagement_name, userData=eng.id)
-            except Exception:
-                _log.warning("new_task_dialog: failed to load engagements", exc_info=True)
             form.addRow(QLabel("關聯案件"), self._eng_combo)
+
+            self._client_combo.currentIndexChanged.connect(self._on_client_changed)
+            if preset_client_id is not None:
+                idx = self._client_combo.findData(preset_client_id)
+                if idx >= 0:
+                    self._client_combo.setCurrentIndex(idx)
+                else:
+                    self._reload_engagement_combo()
+            else:
+                self._reload_engagement_combo()
+        # else: fixed engagement mode — both combos omitted; engagement_id locked.
 
         self._title = QLineEdit()
         self._title.setMaxLength(200)
@@ -110,6 +136,41 @@ class NewTaskDialog(QDialog):
         self._save_btn.clicked.connect(self.on_save)
         cancel_btn.clicked.connect(self.reject)
 
+    def _on_client_changed(self) -> None:
+        self._reload_engagement_combo()
+
+    def _reload_engagement_combo(self) -> None:
+        if self._eng_combo is None:
+            return
+        previous = self._eng_combo.currentData()
+        self._eng_combo.blockSignals(True)
+        try:
+            self._eng_combo.clear()
+            self._eng_combo.addItem("（不綁案件）", userData=_NO_ENGAGEMENT)
+            if self._engagements_service is None:
+                return
+            client_data = (
+                self._client_combo.currentData() if self._client_combo else None
+            )
+            try:
+                if client_data is None or client_data == _NO_CLIENT:
+                    engs = self._engagements_service.list_all()
+                else:
+                    engs = self._engagements_service.list_by_client(int(client_data))
+            except Exception:
+                _log.warning(
+                    "new_task_dialog: failed to load engagements", exc_info=True
+                )
+                engs = []
+            for eng in engs:
+                self._eng_combo.addItem(eng.engagement_name, userData=eng.id)
+            if previous is not None:
+                idx = self._eng_combo.findData(previous)
+                if idx >= 0:
+                    self._eng_combo.setCurrentIndex(idx)
+        finally:
+            self._eng_combo.blockSignals(False)
+
     def on_save(self) -> None:
         self._save_btn.setEnabled(False)
         try:
@@ -117,16 +178,21 @@ class NewTaskDialog(QDialog):
         except DateField.InvalidInput:
             self._save_btn.setEnabled(True)
             return
+
         if self._fixed_engagement_id is not None:
             eng_id: int | None = self._fixed_engagement_id
-        elif self._eng_combo is not None:
-            raw = self._eng_combo.currentData()
-            eng_id = None if raw == _NO_ENGAGEMENT else int(raw)
+            client_id: int | None = None
         else:
-            eng_id = None
+            eng_data = self._eng_combo.currentData() if self._eng_combo else _NO_ENGAGEMENT
+            client_data = (
+                self._client_combo.currentData() if self._client_combo else _NO_CLIENT
+            )
+            eng_id = None if eng_data in (_NO_ENGAGEMENT, None) else int(eng_data)
+            client_id = None if client_data in (_NO_CLIENT, None) else int(client_data)
         try:
             payload = CreateTaskInput(
                 engagement_id=eng_id,
+                client_id=client_id,
                 title=self._title.text(),
                 assignee=self._assignee.text() or None,
                 due_date=due_date,

@@ -19,6 +19,7 @@ from . import (
     _m0014_nullable_engagement,
     _m0015_recurring_billing,
     _m0016_rename_amount_cents,
+    _m0017_workflow_tasks_client_id,
 )
 
 MIGRATIONS: tuple[tuple[str, str], ...] = (
@@ -38,4 +39,5 @@ MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("0014_nullable_engagement", _m0014_nullable_engagement.SQL),
     ("0015_recurring_billing", _m0015_recurring_billing.SQL),
     ("0016_rename_amount_cents", _m0016_rename_amount_cents.SQL),
+    ("0017_workflow_tasks_client_id", _m0017_workflow_tasks_client_id.SQL),
 )

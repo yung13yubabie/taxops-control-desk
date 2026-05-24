@@ -15,6 +15,7 @@ from ..core.clock import now_iso
 class TaskRow:
     id: int
     engagement_id: int | None
+    client_id: int | None
     title: str
     assignee: str | None
     due_date: str | None
@@ -33,6 +34,7 @@ def _row_to_task(row: sqlite3.Row) -> TaskRow:
     return TaskRow(
         id=row["id"],
         engagement_id=row["engagement_id"],
+        client_id=row["client_id"] if "client_id" in keys else None,
         title=row["title"],
         assignee=row["assignee"],
         due_date=row["due_date"],
@@ -58,6 +60,7 @@ class TasksRepository:
         *,
         engagement_id: int | None,
         title: str,
+        client_id: int | None = None,
         assignee: str | None = None,
         due_date: str | None = None,
         priority: str = "normal",
@@ -68,10 +71,10 @@ class TasksRepository:
         ts = now_iso()
         cur = self._conn.execute(
             "INSERT INTO workflow_tasks("
-            "engagement_id, title, assignee, due_date, priority, status,"
+            "engagement_id, client_id, title, assignee, due_date, priority, status,"
             " next_step, notes, created_at, updated_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (engagement_id, title, assignee, due_date, priority, status,
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (engagement_id, client_id, title, assignee, due_date, priority, status,
              next_step, notes, ts, ts),
         )
         self._conn.commit()
@@ -208,3 +211,36 @@ class TasksRepository:
             (engagement_id,),
         ).fetchone()
         return row is not None
+
+    def get_engagement_client_id(self, engagement_id: int) -> int | None:
+        row = self._conn.execute(
+            "SELECT client_id FROM engagements WHERE id = ? AND deleted_at IS NULL",
+            (engagement_id,),
+        ).fetchone()
+        return row["client_id"] if row else None
+
+    def client_exists(self, client_id: int) -> bool:
+        row = self._conn.execute(
+            "SELECT id FROM clients WHERE id = ? AND deleted_at IS NULL",
+            (client_id,),
+        ).fetchone()
+        return row is not None
+
+    def list_by_client(
+        self,
+        client_id: int,
+        *,
+        order_by: str = "updated_at",
+        order_dir: str = "DESC",
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[TaskRow]:
+        col = order_by if order_by in self._SORT_COLUMNS else "updated_at"
+        direction = "DESC" if order_dir.upper() == "DESC" else "ASC"
+        rows = self._conn.execute(
+            f"SELECT * FROM workflow_tasks"
+            f" WHERE client_id = ? AND deleted_at IS NULL"
+            f" ORDER BY {col} {direction} LIMIT ? OFFSET ?",
+            (client_id, limit, offset),
+        ).fetchall()
+        return [_row_to_task(r) for r in rows]

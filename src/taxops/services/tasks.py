@@ -40,6 +40,7 @@ class TaskValidationError(Exception):
 class CreateTaskInput:
     engagement_id: int | None
     title: str
+    client_id: int | None = None
     assignee: str | None = None
     due_date: str | None = None
     priority: str = "normal"
@@ -53,8 +54,20 @@ class TasksService:
         self._audit = audit
 
     def create_task(self, payload: CreateTaskInput) -> TaskRow:
-        if payload.engagement_id is not None and not self._repo.engagement_exists(payload.engagement_id):
-            raise TaskValidationError("task.engagement_not_found")
+        if payload.engagement_id is not None:
+            if not self._repo.engagement_exists(payload.engagement_id):
+                raise TaskValidationError("task.engagement_not_found")
+            # Engagement is the source of truth — overrides any caller-supplied
+            # client_id so tasks always agree with their parent engagement.
+            effective_client_id: int | None = self._repo.get_engagement_client_id(
+                payload.engagement_id
+            )
+        else:
+            effective_client_id = payload.client_id
+            if effective_client_id is not None and not self._repo.client_exists(
+                effective_client_id
+            ):
+                raise TaskValidationError("task.client_not_found")
 
         title = sanitize_user_text(payload.title, max_length=200)
         if not title:
@@ -75,6 +88,7 @@ class TasksService:
 
         row = self._repo.insert(
             engagement_id=payload.engagement_id,
+            client_id=effective_client_id,
             title=title,
             assignee=assignee,
             due_date=due_date,
@@ -89,6 +103,7 @@ class TasksService:
             target_id=str(row.id),
             detail={
                 "engagement_id": payload.engagement_id,
+                "client_id": effective_client_id,
                 "title": row.title,
                 "priority": row.priority,
                 "due_date": row.due_date,
@@ -186,3 +201,20 @@ class TasksService:
 
     def list_due_today(self, today: str) -> list[TaskRow]:
         return self._repo.list_due_today(today)
+
+    def list_by_client(
+        self,
+        client_id: int,
+        *,
+        order_by: str = "updated_at",
+        order_dir: str = "DESC",
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[TaskRow]:
+        return self._repo.list_by_client(
+            client_id,
+            order_by=order_by,
+            order_dir=order_dir,
+            limit=limit,
+            offset=offset,
+        )

@@ -12,10 +12,14 @@ from PySide6.QtWidgets import QApplication
 from taxops.db.connection import open_connection
 from taxops.db.migrate import apply_migrations
 from taxops.repositories.audit_logs import AuditLogRepository
+from taxops.repositories.clients import ClientsRepository
 from taxops.repositories.engagements import EngagementsRepository
+from taxops.repositories.system_logs import SystemLogRepository
 from taxops.repositories.tasks import TasksRepository
 from taxops.services.audit import AuditService
+from taxops.services.clients import ClientsService
 from taxops.services.engagements import EngagementsService, CreateEngagementInput
+from taxops.services.system_log import SystemLogService
 from taxops.services.tasks import CreateTaskInput, TasksService
 from taxops.ui.pages.tasks_page import TasksPage
 
@@ -38,6 +42,8 @@ class _FakeContainer:
         audit_repo = AuditLogRepository(conn)
         self._audit = AuditService(audit_repo, actor="ui_test")
         self.audit_repo = audit_repo
+        self.system_log = SystemLogService(SystemLogRepository(conn))
+        self.clients = ClientsService(ClientsRepository(conn), self._audit)
         self.engagements = EngagementsService(EngagementsRepository(conn), self._audit)
         tasks_repo = TasksRepository(conn)
         self.tasks = TasksService(tasks_repo, self._audit)
