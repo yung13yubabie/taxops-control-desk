@@ -112,6 +112,15 @@
 
 ## RECENTLY COMPLETED
 
+- [已確認] Slice 20C v0.9.0（2026-05-25）— 固定開立 UX 重設：
+  - `services/recurring_billing.py`：新增 module-level `parse_bulk_lines(text) -> (lines, errors)` tab 分隔解析、空行跳過、行號錯誤回報；新增 `RecurringBillingService.create_plan_with_lines(plan_inp, lines_inp)` atomic 方法（驗證所有 inputs → 透過 repo 單一 transaction 寫入 → audit 一次紀錄 line_count）。
+  - `repositories/recurring_billing.py`：新增 `insert_plan_with_lines(plan_dict, lines_list)` 原子方法，try/commit/except/rollback 保證 plan + lines 一致。
+  - `ui/dialogs/recurring_billing_dialogs.py`：PlanDialog create-mode 重寫為兩段 QGroupBox（合約資訊 + 固定開立明細 table）；新增 `_BulkPasteDialog` 二級彈窗接 tab 分隔貼上；新增 `_on_add_line_row` / `_on_remove_line_row` / `_set_line_cell` / `_read_lines_from_table` 方法。Edit-mode 保留 update_plan 流程。
+  - `i18n/errors.py`：新增 `recurring_billing.lines.empty` + `recurring_billing.amount.invalid` 兩錯誤碼。
+  - `tests/test_slice20c_recurring_billing.py`（NEW，16 tests）：atomic create (5) + parse_bulk_lines (6) + confirm audit (1) + PlanDialog (4)。
+  - pyproject.toml + __init__.py 版本升至 0.9.0；git tag v0.9.0；dist zip `TaxOpsControlDesk-v0.9.0-windows.zip`；GitHub Release v0.9.0 含 EXE artifact。
+  - **907/907 passed**（2026-05-25，含 16 新測試）。
+
 - [已確認] Slice 20B v0.8.0（2026-05-24）— 代辦事項客戶選擇：
   - Migration 0017_workflow_tasks_client_id：`ALTER TABLE workflow_tasks ADD COLUMN client_id INTEGER REFERENCES clients(id)` + UPDATE backfill 從 engagements join + `idx_workflow_tasks_client` 索引。
   - `repositories/tasks.py`：`TaskRow.client_id`、`_row_to_task` mapping、`insert(... client_id=None)`；新增 `get_engagement_client_id(engagement_id)`、`client_exists(client_id)`、`list_by_client(client_id, ...)` 三個 helper。

@@ -1,5 +1,44 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-05-25 — Slice 20C 固定開立 UX 重設, v0.9.0)
+
+### 本輪完成事項
+
+- [已確認] **`create_plan_with_lines(plan_inp, lines_inp)` atomic transaction**：`RecurringBillingService` 新方法；驗證 plan 與每一條 line 後一次性透過 repo `insert_plan_with_lines` 寫入；任一錯誤（plan 驗證、line 驗證、DB 寫入）整批 rollback，不留半成品；audit 一次紀錄 `recurring_billing.plan.create_with_lines` 含 `line_count`。
+- [已確認] **`parse_bulk_lines(text)` 純函式**：解析 tab 分隔的 bulk paste 文字（`bill_to\tamount\ttax_type\tdescription`），空行跳過、錯誤列回傳 `(行號, 訊息)` tuple；錯誤列不寫入 valid 列表（caller 決定是否整批中止）。Slice 20C policy：UI 任一錯誤就拒絕整批。
+- [已確認] **`RecurringBillingRepository.insert_plan_with_lines(plan_dict, lines_list)` atomic 方法**：單一 sqlite transaction；try/except 包圍 + `self._conn.rollback()` on error 保證 plan 與 lines 一致。
+- [已確認] **`PlanDialog` create-mode 重寫為兩段佈局**：上半 QGroupBox「合約資訊」（客戶、方案名、頻率、開立日、月份、起訖、提醒天數、合約編號、備註）；下半 QGroupBox「固定開立明細」含「新增列」「刪除選取列」「批量貼上」按鈕 + QTableWidget（4 欄：開立對象/金額/稅別/說明）。儲存時呼叫 `create_plan_with_lines` 原子。Edit-mode 保留原有 update_plan 流程。
+- [已確認] **`_BulkPasteDialog` 二級彈窗**：QTextEdit 接受 tab 分隔輸入；OK 時 caller 呼叫 `parse_bulk_lines`、解析錯誤顯示行號清單（最多 20 行）並拒絕整批；解析成功則填入 lines table。
+- [已確認] **Occurrence confirm 保留 expected vs confirmed 區別**：`ConfirmOccurrenceDialog` 預填合約 line.amount，使用者輸入實際金額；audit 紀錄 `confirmed_amount` 欄。新增 Slice 20C 測試驗證 audit detail JSON 含 `confirmed_amount`。
+- [已確認] **i18n 新增** `recurring_billing.amount.invalid` 與 `recurring_billing.lines.empty` 兩個錯誤碼。
+
+### 新增/修改檔案
+
+- `src/taxops/services/recurring_billing.py`：新增 module-level `parse_bulk_lines()` + `RecurringBillingService.create_plan_with_lines()`。
+- `src/taxops/repositories/recurring_billing.py`：新增 `insert_plan_with_lines()` atomic 方法（try/commit/except/rollback）。
+- `src/taxops/i18n/errors.py`：兩個新錯誤碼。
+- `src/taxops/ui/dialogs/recurring_billing_dialogs.py`（重寫 PlanDialog + 新增 _BulkPasteDialog）：兩段 QGroupBox 佈局 + lines table + 批量貼上 + 原子儲存；其餘三個 dialogs (LineDialog / ConfirmOccurrenceDialog / SkipOccurrenceDialog) 保留。
+- `tests/test_slice20c_recurring_billing.py`（NEW，16 tests）：atomic create (5) + parse_bulk_lines (6) + confirm audit (1) + PlanDialog (4)。
+- `pyproject.toml` + `src/taxops/__init__.py`：版號 0.8.0 → 0.9.0。
+
+### 驗證紀錄
+
+- pytest 全套（含 16 個新 Slice 20C 測試）
+- PyInstaller EXE build + smoke + hygiene
+- `dist/TaxOpsControlDesk-v0.9.0-windows.zip`；v0.8.0 zip 已刪除
+
+### 下一輪注意事項
+
+- Slice 20C 完整閉環，v0.9.0 穩定。Slice 20 系列（A/B/C 上下文自主化）全部完成。
+- 下一輪可選方向：
+  - **真實 Windows 桌面驗收**：v0.9.0 EXE 在 1366×768 / 1920×1080 / 125% / 150% DPI 下的手動 UI checklist；尤其新 PlanDialog 兩段佈局、bulk paste 對話、line table 編輯體驗。
+  - **Traditional Chinese user manual**：`docs/user_manual_zh_tw.md` 已待寫項目；可從 dashboard、客戶管理、案件管理、索件、待辦、固定開立 6 大模組依序撰寫。
+  - **GCIS 線上查詢**：需先查官方 API 文件，不靠記憶實作（DECISIONS.md 已記錄）。
+  - **Supply Chain Locking**：pyproject.toml 中 PySide6 / Jinja2 / openpyxl / pytest / pyinstaller 全未 pin；正式交付前應 pin。
+- 不要把 `create_plan` 舊單行流程移除 — 它仍用於 EDIT mode 與 LineDialog 個別新增明細；`create_plan_with_lines` 只是新增的「create-with-lines」並行 API。
+
+---
+
 ## Latest Handoff Update (2026-05-24 — Slice 20B 代辦事項客戶選擇, v0.8.0)
 
 ### 本輪完成事項
