@@ -1,4 +1,18 @@
-"""Dialogs for recurring billing: plan, line, confirm, skip."""
+"""Dialogs for recurring billing: plan, line, confirm, skip.
+
+Slice 20C: ``PlanDialog`` in CREATE mode now contains a two-section layout:
+
+1. Top section: contract metadata (client, plan name, frequency, dates,
+   advance notice days, contract ref).
+2. Bottom section: a multi-row line table where users can enter every
+   billing target with amount, tax type, and description in a single dialog.
+   A 「批量貼上」 button accepts tab-separated input. On save the dialog
+   calls :meth:`RecurringBillingService.create_plan_with_lines` so the plan
+   and every line are written in one transaction (any error rolls back).
+
+EDIT mode is unchanged: lines stay editable via the existing ``LineDialog``
+on the recurring-billing page.
+"""
 
 from __future__ import annotations
 
@@ -13,11 +27,16 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -33,6 +52,7 @@ from ...services.recurring_billing import (
     RecurringBillingService,
     UpdateLineInput,
     UpdatePlanInput,
+    parse_bulk_lines,
 )
 from ..widgets.date_field import DateField
 from ._shared import TAX_TYPE_CHOICES
@@ -52,6 +72,57 @@ _MONTH_NAMES = [
     "7月","8月","9月","10月","11月","12月",
 ]
 
+_LINE_COL_BILL_TO = 0
+_LINE_COL_AMOUNT = 1
+_LINE_COL_TAX_TYPE = 2
+_LINE_COL_DESCRIPTION = 3
+
+_LINE_COL_KEYS = {
+    "bill_to": _LINE_COL_BILL_TO,
+    "amount": _LINE_COL_AMOUNT,
+    "tax_type": _LINE_COL_TAX_TYPE,
+    "description": _LINE_COL_DESCRIPTION,
+}
+
+
+class _BulkPasteDialog(QDialog):
+    """Secondary dialog that accepts tab-separated bulk paste input."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("批量貼上開立明細")
+        self.setModal(True)
+        self.setMinimumWidth(560)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(20, 20, 20, 20)
+        outer.setSpacing(12)
+
+        outer.addWidget(QLabel(
+            "請貼上以 Tab 分隔的明細列。每列格式：\n"
+            "開立對象 [Tab] 金額 [Tab] 稅別（可空） [Tab] 說明（可空）\n"
+            "空行會自動跳過；錯誤列會顯示行號，且不會部分寫入。"
+        ))
+
+        self._text = QTextEdit()
+        self._text.setPlaceholderText(
+            "台積電\t120000\tvat\t月度顧問費\n聯發科\t80000\tservice\t"
+        )
+        self._text.setMinimumHeight(220)
+        outer.addWidget(self._text)
+
+        buttons = QDialogButtonBox()
+        self._ok_btn = buttons.addButton("確定", QDialogButtonBox.ButtonRole.AcceptRole)
+        cancel_btn = buttons.addButton("取消", QDialogButtonBox.ButtonRole.RejectRole)
+        self._ok_btn.setDefault(True)
+        outer.addWidget(buttons)
+
+        self._ok_btn.clicked.connect(self.accept)
+        cancel_btn.clicked.connect(self.reject)
+
+    def text(self) -> str:
+        return self._text.toPlainText()
+
 
 class PlanDialog(QDialog):
     """Create or edit a recurring billing plan."""
@@ -67,16 +138,19 @@ class PlanDialog(QDialog):
         self._svc = svc
         self._client_id = client_id
         self._plan = plan
+        self._create_mode = plan is None
 
         self.setWindowTitle("新增方案" if plan is None else "編輯方案")
         self.setModal(True)
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(560 if self._create_mode else 480)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 20, 20, 20)
         outer.setSpacing(12)
 
-        form = QFormLayout()
+        # ── Section 1: contract metadata ─────────────────────────────────
+        contract_group = QGroupBox("合約資訊")
+        form = QFormLayout(contract_group)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self._name = QLineEdit()
@@ -126,11 +200,52 @@ class PlanDialog(QDialog):
         form.addRow(QLabel("合約編號"), self._contract_ref)
 
         self._notes = QTextEdit()
-        self._notes.setFixedHeight(68)
+        self._notes.setFixedHeight(56)
         form.addRow(QLabel("備註"), self._notes)
 
-        outer.addLayout(form)
+        outer.addWidget(contract_group)
 
+        # ── Section 2: line table (CREATE mode only) ─────────────────────
+        if self._create_mode:
+            lines_group = QGroupBox("固定開立明細（合約對象 + 金額）")
+            lines_layout = QVBoxLayout(lines_group)
+            lines_layout.setSpacing(6)
+
+            line_toolbar = QHBoxLayout()
+            self._add_line_btn = QPushButton("新增列")
+            self._remove_line_btn = QPushButton("刪除選取列")
+            self._bulk_paste_btn = QPushButton("批量貼上")
+            line_toolbar.addWidget(self._add_line_btn)
+            line_toolbar.addWidget(self._remove_line_btn)
+            line_toolbar.addStretch()
+            line_toolbar.addWidget(self._bulk_paste_btn)
+            lines_layout.addLayout(line_toolbar)
+
+            self._lines_table: QTableWidget | None = QTableWidget(0, 4)
+            self._lines_table.setHorizontalHeaderLabels(
+                ["開立對象 *", "金額 *", "稅別", "說明"]
+            )
+            self._lines_table.verticalHeader().setVisible(False)
+            self._lines_table.setSelectionBehavior(
+                QTableWidget.SelectionBehavior.SelectRows
+            )
+            header = self._lines_table.horizontalHeader()
+            header.setSectionResizeMode(_LINE_COL_BILL_TO, QHeaderView.ResizeMode.Stretch)
+            header.setSectionResizeMode(_LINE_COL_AMOUNT, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(_LINE_COL_TAX_TYPE, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(_LINE_COL_DESCRIPTION, QHeaderView.ResizeMode.Stretch)
+            self._lines_table.setMinimumHeight(160)
+            lines_layout.addWidget(self._lines_table)
+
+            outer.addWidget(lines_group)
+
+            self._add_line_btn.clicked.connect(self._on_add_line_row)
+            self._remove_line_btn.clicked.connect(self._on_remove_line_row)
+            self._bulk_paste_btn.clicked.connect(self._on_bulk_paste)
+        else:
+            self._lines_table = None
+
+        # ── buttons ──────────────────────────────────────────────────────
         buttons = QDialogButtonBox()
         label = "新增方案" if plan is None else "儲存變更"
         self._save_btn = buttons.addButton(label, QDialogButtonBox.ButtonRole.AcceptRole)
@@ -144,6 +259,10 @@ class PlanDialog(QDialog):
 
         self._populate(plan)
         self._on_freq_changed()
+
+    # ------------------------------------------------------------------
+    # Top section: populate / freq toggle
+    # ------------------------------------------------------------------
 
     def _populate(self, plan: PlanRow | None) -> None:
         if plan is None:
@@ -175,6 +294,113 @@ class PlanDialog(QDialog):
         months = [i + 1 for i, cb in enumerate(self._month_checks) if cb.isChecked()]
         return json.dumps(months)
 
+    # ------------------------------------------------------------------
+    # Bottom section: line table helpers (CREATE mode only)
+    # ------------------------------------------------------------------
+
+    def _on_add_line_row(self) -> None:
+        if self._lines_table is None:
+            return
+        row = self._lines_table.rowCount()
+        self._lines_table.insertRow(row)
+        for col in range(self._lines_table.columnCount()):
+            self._lines_table.setItem(row, col, QTableWidgetItem(""))
+
+    def _on_remove_line_row(self) -> None:
+        if self._lines_table is None:
+            return
+        row = self._lines_table.currentRow()
+        if row >= 0:
+            self._lines_table.removeRow(row)
+
+    def _set_line_cell(self, row: int, key: str, value: str) -> None:
+        """Test-friendly helper to populate a cell by semantic key."""
+        if self._lines_table is None:
+            return
+        col = _LINE_COL_KEYS.get(key)
+        if col is None:
+            return
+        item = self._lines_table.item(row, col)
+        if item is None:
+            item = QTableWidgetItem("")
+            self._lines_table.setItem(row, col, item)
+        item.setText(value)
+
+    def _on_bulk_paste(self) -> None:
+        if self._lines_table is None:
+            return
+        dlg = _BulkPasteDialog(self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        parsed, errors = parse_bulk_lines(dlg.text())
+        if errors:
+            msg_lines = [f"第 {n} 行：{m}" for n, m in errors[:20]]
+            extra = "" if len(errors) <= 20 else f"\n…等共 {len(errors)} 個錯誤"
+            QMessageBox.warning(
+                self,
+                "批量貼上失敗",
+                "請修正以下錯誤後再貼上（整批不寫入）：\n\n" + "\n".join(msg_lines) + extra,
+            )
+            return
+        if not parsed:
+            QMessageBox.information(self, "批量貼上", "未偵測到任何明細列。")
+            return
+        for ln in parsed:
+            row = self._lines_table.rowCount()
+            self._lines_table.insertRow(row)
+            self._lines_table.setItem(row, _LINE_COL_BILL_TO, QTableWidgetItem(ln.bill_to_name))
+            self._lines_table.setItem(row, _LINE_COL_AMOUNT, QTableWidgetItem(str(ln.amount)))
+            self._lines_table.setItem(
+                row, _LINE_COL_TAX_TYPE, QTableWidgetItem(ln.tax_type or "")
+            )
+            self._lines_table.setItem(
+                row, _LINE_COL_DESCRIPTION, QTableWidgetItem(ln.description or "")
+            )
+
+    def _read_lines_from_table(self) -> tuple[list[CreateLineInput], list[str]]:
+        """Read every row in the table. Returns (lines, errors)."""
+        lines: list[CreateLineInput] = []
+        errors: list[str] = []
+        if self._lines_table is None:
+            return lines, errors
+        for row in range(self._lines_table.rowCount()):
+            bill_to_item = self._lines_table.item(row, _LINE_COL_BILL_TO)
+            amount_item = self._lines_table.item(row, _LINE_COL_AMOUNT)
+            tax_item = self._lines_table.item(row, _LINE_COL_TAX_TYPE)
+            desc_item = self._lines_table.item(row, _LINE_COL_DESCRIPTION)
+            bill_to = (bill_to_item.text() if bill_to_item else "").strip()
+            amount_str = (amount_item.text() if amount_item else "").strip()
+            if not bill_to and not amount_str:
+                continue
+            if not bill_to:
+                errors.append(f"第 {row + 1} 列：開立對象不可為空")
+                continue
+            try:
+                amount = int(amount_str)
+            except ValueError:
+                errors.append(f"第 {row + 1} 列：金額必須為正整數")
+                continue
+            if amount <= 0:
+                errors.append(f"第 {row + 1} 列：金額必須大於零")
+                continue
+            tax_type = (tax_item.text() if tax_item else "").strip() or None
+            description = (desc_item.text() if desc_item else "").strip() or None
+            lines.append(
+                CreateLineInput(
+                    plan_id=0,
+                    bill_to_name=bill_to,
+                    amount=amount,
+                    tax_type=tax_type,
+                    description=description,
+                    sort_order=row,
+                )
+            )
+        return lines, errors
+
+    # ------------------------------------------------------------------
+    # Save
+    # ------------------------------------------------------------------
+
     def _on_save(self) -> None:
         self._save_btn.setEnabled(False)
         try:
@@ -196,38 +422,71 @@ class PlanDialog(QDialog):
                 QMessageBox.warning(self, "輸入有誤", "自訂月份模式必須至少選擇一個月份")
                 self._save_btn.setEnabled(True)
                 return
+
+        if self._create_mode:
+            lines, line_errors = self._read_lines_from_table()
+            if line_errors:
+                QMessageBox.warning(
+                    self,
+                    "明細有誤",
+                    "請修正以下問題後再儲存（整批不寫入）：\n\n" + "\n".join(line_errors),
+                )
+                self._save_btn.setEnabled(True)
+                return
+            if not lines:
+                QMessageBox.warning(
+                    self,
+                    "尚未輸入明細",
+                    "請至少新增一筆固定開立明細後再儲存。",
+                )
+                self._save_btn.setEnabled(True)
+                return
+            try:
+                self._svc.create_plan_with_lines(
+                    CreatePlanInput(
+                        client_id=self._client_id,
+                        plan_name=self._name.text(),
+                        frequency=self._freq.currentData(),
+                        issue_day=self._issue_day.value(),
+                        months_json=self._build_months_json(),
+                        start_date=start,
+                        end_date=end,
+                        advance_notice_days=self._notice_days.value(),
+                        contract_ref=self._contract_ref.text() or None,
+                        notes=self._notes.toPlainText() or None,
+                    ),
+                    lines,
+                )
+            except RecurringBillingError as err:
+                QMessageBox.warning(self, "輸入有誤", error_message(err.code))
+                self._save_btn.setEnabled(True)
+                return
+            except Exception:
+                _log.exception("PlanDialog create_with_lines failed")
+                QMessageBox.warning(self, "儲存失敗", error_message("system.unexpected"))
+                self._save_btn.setEnabled(True)
+                return
+            self.accept()
+            return
+
         try:
-            if self._plan is None:
-                self._svc.create_plan(CreatePlanInput(
-                    client_id=self._client_id,
-                    plan_name=self._name.text(),
-                    frequency=self._freq.currentData(),
-                    issue_day=self._issue_day.value(),
-                    months_json=self._build_months_json(),
-                    start_date=start,
-                    end_date=end,
-                    advance_notice_days=self._notice_days.value(),
-                    contract_ref=self._contract_ref.text() or None,
-                    notes=self._notes.toPlainText() or None,
-                ))
-            else:
-                self._svc.update_plan(self._plan.id, UpdatePlanInput(
-                    plan_name=self._name.text(),
-                    frequency=self._freq.currentData(),
-                    issue_day=self._issue_day.value(),
-                    months_json=self._build_months_json(),
-                    start_date=start,
-                    end_date=end,
-                    advance_notice_days=self._notice_days.value(),
-                    contract_ref=self._contract_ref.text() or None,
-                    notes=self._notes.toPlainText() or None,
-                ))
+            self._svc.update_plan(self._plan.id, UpdatePlanInput(
+                plan_name=self._name.text(),
+                frequency=self._freq.currentData(),
+                issue_day=self._issue_day.value(),
+                months_json=self._build_months_json(),
+                start_date=start,
+                end_date=end,
+                advance_notice_days=self._notice_days.value(),
+                contract_ref=self._contract_ref.text() or None,
+                notes=self._notes.toPlainText() or None,
+            ))
         except RecurringBillingError as err:
             QMessageBox.warning(self, "輸入有誤", error_message(err.code))
             self._save_btn.setEnabled(True)
             return
         except Exception:
-            _log.exception("PlanDialog save failed")
+            _log.exception("PlanDialog update failed")
             QMessageBox.warning(self, "儲存失敗", error_message("system.unexpected"))
             self._save_btn.setEnabled(True)
             return

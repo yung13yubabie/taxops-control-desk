@@ -183,6 +183,63 @@ def _validate_plan_input(
             raise RecurringBillingError("recurring_billing.months_json.empty")
 
 
+# ── bulk paste parser ─────────────────────────────────────────────────────────
+
+
+def parse_bulk_lines(
+    text: str,
+) -> tuple[list[CreateLineInput], list[tuple[int, str]]]:
+    """Parse tab-separated bulk paste into ``CreateLineInput`` rows.
+
+    Format per non-empty line:
+
+        bill_to_name<TAB>amount<TAB>tax_type<TAB>description
+
+    Only the first two fields are required. Empty lines are skipped.
+
+    Returns a tuple ``(valid_rows, errors)`` where ``errors`` is a list of
+    ``(line_number, message)`` pairs using 1-indexed visible line numbers
+    (matching what a user sees when they look at the source text). Rows with
+    errors are NOT included in ``valid_rows``; the caller decides whether to
+    commit only the valid rows or abort the whole batch (Slice 20C policy is
+    to abort — no partial success).
+    """
+    valid: list[CreateLineInput] = []
+    errors: list[tuple[int, str]] = []
+    for idx, raw in enumerate(text.splitlines(), start=1):
+        if not raw.strip():
+            continue
+        parts = raw.split("\t")
+        if len(parts) < 2:
+            errors.append((idx, "缺少必要欄位（開立對象 + 金額）"))
+            continue
+        bill_to = parts[0].strip()
+        if not bill_to:
+            errors.append((idx, "開立對象不可為空"))
+            continue
+        amount_str = parts[1].strip()
+        try:
+            amount = int(amount_str)
+        except ValueError:
+            errors.append((idx, f"金額必須為整數（收到「{amount_str}」）"))
+            continue
+        if amount <= 0:
+            errors.append((idx, f"金額必須大於零（收到 {amount}）"))
+            continue
+        tax_type = parts[2].strip() if len(parts) >= 3 and parts[2].strip() else None
+        description = parts[3].strip() if len(parts) >= 4 and parts[3].strip() else None
+        valid.append(
+            CreateLineInput(
+                plan_id=0,
+                bill_to_name=bill_to,
+                amount=amount,
+                tax_type=tax_type,
+                description=description,
+            )
+        )
+    return valid, errors
+
+
 # ── service ───────────────────────────────────────────────────────────────────
 
 class RecurringBillingService:
@@ -195,6 +252,65 @@ class RecurringBillingService:
         self._audit = audit
 
     # ── plans ──────────────────────────────────────────────────────────────
+
+    def create_plan_with_lines(
+        self,
+        plan_inp: CreatePlanInput,
+        lines_inp: list[CreateLineInput],
+    ) -> tuple[PlanRow, list[LineRow]]:
+        """Atomically create a plan together with its initial billing lines.
+
+        Validates the plan and every line up front; if any check fails, raises
+        ``RecurringBillingError`` and nothing is written. On success a single
+        audit log entry records the plan id and the line_count — the caller
+        does not need to record per-line creation events separately.
+        """
+        if not lines_inp:
+            raise RecurringBillingError("recurring_billing.lines.empty")
+        _validate_plan_input(
+            plan_inp.plan_name, plan_inp.frequency, plan_inp.issue_day,
+            plan_inp.months_json, plan_inp.start_date, plan_inp.end_date,
+            plan_inp.advance_notice_days,
+        )
+        for ln in lines_inp:
+            if not ln.bill_to_name.strip():
+                raise RecurringBillingError("recurring_billing.bill_to_name.empty")
+            if ln.amount <= 0:
+                raise RecurringBillingError("recurring_billing.amount.non_positive")
+        plan_data = {
+            "client_id": plan_inp.client_id,
+            "plan_name": plan_inp.plan_name,
+            "contract_ref": plan_inp.contract_ref,
+            "frequency": plan_inp.frequency,
+            "issue_day": plan_inp.issue_day,
+            "months_json": plan_inp.months_json,
+            "start_date": plan_inp.start_date,
+            "end_date": plan_inp.end_date,
+            "advance_notice_days": plan_inp.advance_notice_days,
+            "notes": plan_inp.notes,
+        }
+        lines_data = [
+            {
+                "bill_to_name": ln.bill_to_name,
+                "description": ln.description,
+                "amount": ln.amount,
+                "tax_type": ln.tax_type,
+                "sort_order": ln.sort_order,
+            }
+            for ln in lines_inp
+        ]
+        plan, lines = self._repo.insert_plan_with_lines(plan_data, lines_data)
+        self._audit.record(
+            action="recurring_billing.plan.create_with_lines",
+            target_type="recurring_billing_plan",
+            target_id=str(plan.id),
+            detail={
+                "plan_name": plan.plan_name,
+                "client_id": plan.client_id,
+                "line_count": len(lines),
+            },
+        )
+        return plan, lines
 
     def create_plan(self, inp: CreatePlanInput) -> PlanRow:
         _validate_plan_input(

@@ -148,6 +148,63 @@ class RecurringBillingRepository:
         self._conn.commit()
         return self.get_plan(cur.lastrowid)  # type: ignore[arg-type]
 
+    def insert_plan_with_lines(
+        self,
+        plan: dict,
+        lines: list[dict],
+    ) -> tuple[PlanRow, list[LineRow]]:
+        """Atomic insert: one plan + N lines. Rolls back on any error.
+
+        ``plan`` must contain the keys accepted by :meth:`insert_plan` (except
+        ``plan_id``). ``lines`` is a list of dicts each containing the keys
+        accepted by :meth:`insert_line` (excluding ``plan_id`` which is set
+        from the freshly-inserted plan).
+        """
+        now = now_iso()
+        try:
+            plan_cur = self._conn.execute(
+                """
+                INSERT INTO recurring_billing_plans
+                    (client_id, plan_name, contract_ref, frequency, issue_day,
+                     months_json, start_date, end_date, advance_notice_days,
+                     status, notes, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    plan["client_id"], plan["plan_name"], plan.get("contract_ref"),
+                    plan["frequency"], plan["issue_day"], plan["months_json"],
+                    plan["start_date"], plan.get("end_date"),
+                    plan["advance_notice_days"], "active", plan.get("notes"),
+                    now, now,
+                ),
+            )
+            plan_id = plan_cur.lastrowid
+            line_ids: list[int] = []
+            for ln in lines:
+                line_cur = self._conn.execute(
+                    """
+                    INSERT INTO recurring_billing_lines
+                        (plan_id, bill_to_name, description, amount,
+                         tax_type, sort_order, active, created_at, updated_at)
+                    VALUES (?,?,?,?,?,?,1,?,?)
+                    """,
+                    (
+                        plan_id, ln["bill_to_name"], ln.get("description"),
+                        ln["amount"], ln.get("tax_type"), ln.get("sort_order", 0),
+                        now, now,
+                    ),
+                )
+                line_ids.append(line_cur.lastrowid)
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+        plan_row = self.get_plan(plan_id)  # type: ignore[arg-type]
+        line_rows = [self.get_line(lid) for lid in line_ids]  # type: ignore[arg-type]
+        assert plan_row is not None
+        assert all(lr is not None for lr in line_rows)
+        return plan_row, [lr for lr in line_rows if lr is not None]
+
     def get_plan(self, plan_id: int) -> PlanRow | None:
         r = self._conn.execute(
             "SELECT * FROM recurring_billing_plans WHERE id = ?", (plan_id,)
