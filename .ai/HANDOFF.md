@@ -1,5 +1,50 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-05-24 — Slice 20B 代辦事項客戶選擇, v0.8.0)
+
+### 本輪完成事項
+
+- [已確認] **Migration 0017_workflow_tasks_client_id**：`ALTER TABLE workflow_tasks ADD COLUMN client_id INTEGER REFERENCES clients(id)`；UPDATE backfill 從 `engagements.client_id` 回填既有 task 行（idempotent）；新增 index `idx_workflow_tasks_client`。
+- [已確認] **TaskRow 加 client_id 欄**：`repositories/tasks.py` 的 `TaskRow` dataclass 加 `client_id: int | None`；`_row_to_task` 同步；`insert()` 接受 client_id；新增 `get_engagement_client_id(engagement_id)`、`client_exists(client_id)`、`list_by_client(client_id, ...)` 三個 helper 方法。
+- [已確認] **TasksService.create_task client_id 自動同步**：若 `engagement_id` 提供，從 `get_engagement_client_id()` 取得 client_id 並覆寫任何 caller 提供的 client_id（engagement 為單一真相來源）；若僅 client_id 提供，先驗證 `client_exists` 否則 raise `task.client_not_found`；兩者皆 None 時建立完全獨立的 task。audit log detail 追加 client_id 欄。
+- [已確認] **TasksService.list_by_client(client_id)** 新方法：回傳該 client 所有任務（含 engagement-bound 與只綁 client 的）。
+- [已確認] **i18n 新增 `task.client_not_found = "找不到指定客戶，待辦無法建立"`**。
+- [已確認] **TasksPage 客戶+案件 cascade**：新增 `_client_combo`（全部客戶 + 全部 active clients）；`_eng_combo` 依 client 選取重新載入（list_by_client / list_all）；三段 filter 邏輯：DUE_TODAY/OVERDUE filter_key → list_due_today/list_overdue；指定案件 → list_by_engagement；指定客戶 + 全部案件 → list_by_client；全部 → list_all。`refresh_context()` 同時 reload client + engagement combos，可看到新建客戶。
+- [已確認] **NewTaskDialog cascade**：新增 `clients_service` + `preset_client_id` 參數；fixed engagement mode 保留（無 combos）；cascade mode 顯示「關聯客戶」combo（含「不指定客戶」哨兵 `_NO_CLIENT = -1`）+ 「關聯案件」combo（含「不綁案件」哨兵 `_NO_ENGAGEMENT = -1`）。`on_save()` 依 combo 值組裝 `CreateTaskInput.engagement_id` 與 `client_id`，service 層負責同步。
+- [已確認] **test_slice5_ui.py _FakeContainer 補 dependencies**：加 `system_log` + `clients` services，符合 Slice 20B 的 TasksPage 新依賴。
+
+### 新增/修改檔案
+
+- `src/taxops/db/migrations/_m0017_workflow_tasks_client_id.py`（NEW）：ALTER TABLE + UPDATE backfill + CREATE INDEX。
+- `src/taxops/db/migrations/__init__.py`：註冊新 migration。
+- `src/taxops/repositories/tasks.py`：`TaskRow.client_id`、`_row_to_task` mapping、`insert(... client_id=None)`、`get_engagement_client_id()`、`client_exists()`、`list_by_client()`。
+- `src/taxops/services/tasks.py`：`CreateTaskInput.client_id` 欄、`create_task` client_id 自動同步邏輯、`list_by_client()` wrapper。
+- `src/taxops/i18n/errors.py`：`task.client_not_found` 中文錯誤碼。
+- `src/taxops/ui/pages/tasks_page.py`（重寫）：客戶 combo + 案件 combo cascade、三段 filter、`refresh_context()` 同步 reload。
+- `src/taxops/ui/dialogs/new_task_dialog.py`（重寫）：cascade UI、fixed engagement mode 保留、客戶 + 案件 sentinels。
+- `tests/test_slice20b_tasks_client.py`（NEW，20 tests）：schema / backfill / service / list_by_client / TasksPage cascade / NewTaskDialog cascade。
+- `tests/test_db_migrations.py`：versions list 追加 0017，count 16→17。
+- `tests/test_slice5_ui.py`：`_FakeContainer` 加 system_log + clients。
+- `pyproject.toml` + `src/taxops/__init__.py`：版號 0.7.0 → 0.8.0。
+
+### 驗證紀錄
+
+- **891/891 passed** in 831.68s（2026-05-24，含 20 個新 Slice 20B 測試）
+- PyInstaller EXE build 成功、smoke 通過、hygiene 無殘留
+- `dist/TaxOpsControlDesk-v0.8.0-windows.zip`；v0.7.0 zip 已刪除
+
+### 下一輪注意事項
+
+- Slice 20B 完整閉環，v0.8.0 穩定。
+- **下一輪實作 Slice 20C — 固定開立 UX 重設**（v0.9.0）：
+  - service `create_plan_with_lines(plan_payload, lines_payload)` 原子 transaction：建 plan + 多 line 同時建，任一失敗 rollback；audit 一次紀錄 plan + line_count。
+  - `PlanDialog` 改成兩段：上半合約資訊（客戶、方案名、頻率、起訖、提醒天數、合約編號）；下半 line table 可新增多列（開立對象、金額、稅別、說明）。
+  - bulk paste 支援：tab 分隔 `開立對象\t金額\t稅別\t說明`，每列驗證並顯示行號錯誤訊息；任一錯誤不寫 DB（全 rollback）。
+  - Occurrence confirm 流程保留 expected vs confirmed amount 區別；audit 紀錄兩個值。
+- 不要把 `workflow_tasks.client_id` 改回 NOT NULL — Slice 20B 設計支援「不綁客戶也不綁案件」的獨立 task。
+
+---
+
 ## Latest Handoff Update (2026-05-24 — Slice 20A 索件管理上下文自主化, v0.7.0)
 
 ### 本輪完成事項

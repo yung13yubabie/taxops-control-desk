@@ -22,7 +22,7 @@
 ## Current Status
 
 - [已確認] Slice 1、Slice 2（稅籍快取）、客戶管理功能閉環（批量匯入 + 編輯/刪除 + 衝突審查）、Slice 2.6（搜尋/排序/分頁 + sidebar 收合）、Slice 3（HTTP download）、Slice 4（案件 + 索件）、Slice 4.5（案件編輯 + 索件項目狀態 UI）、Slice 5（待辦事項）、Slice 6（訊息模板）、Slice 7（產生催件訊息）、Slice 8（覆核意見 + 滯納金試算）、Slice 9（附件證據鏈 MVP + closeout correction）、Slice 10（Excel 匯出缺件清單 + CSV formula injection defense）、Slice 11（備份 / 還原）、Slice 12（FTS5 全文搜尋）、Slice 13（本地工商 / 稅籍查詢頁）、Slice 14（Dashboard 真實統計 + 篩選導向補完）均已完成實作。
-- [已確認] `python -m pytest` 最後確認通過：871/871 passed（2026-05-24 Slice 20A v0.7.0；含 15 個新測試）。
+- [已確認] `python -m pytest` 最後確認通過：891/891 passed（2026-05-24 Slice 20B v0.8.0；含 20 個新測試）。
 - [已確認] G-1~G-15 UIUX 修復已完成：WA_DeleteOnClose、anti-double-click、toolbar_icon、error label、silent failure 修正等；dashboard high_risk_engagements 導向修正為 PAGE_REVIEW_NOTES + FilterKey.HIGH_RISK。
 - [已確認] Slice 15-rental 新功能：Migration 0013（clients.lease_start/lease_end）、Migration 0014（workflow_tasks.engagement_id nullable）、欄位顯示控制（QMenu）、租約到期通知 dashboard 卡、任務不強制關聯案件。
 - [已確認] ALLOWED_VARIABLES 現為 11 個（4 個未來欄位 payment_due_date / office_owner / reviewer / last_followed_up_at 已於 Slice 15 安全修正中移除）。
@@ -31,6 +31,7 @@
 
 ## Active Work
 
+- [已確認] 2026-05-24 完成 Slice 20B：workflow_tasks 加 client_id nullable（migration 0017，含 backfill）；TasksService.create_task 從 engagement 自動同步 client_id；TasksPage / NewTaskDialog 客戶 + 案件 cascade；新增 list_by_client、client_exists、get_engagement_client_id helpers；20 個新測試。下一輪 Slice 20C（固定開立 UX 重設）。詳見 .ai/HANDOFF.md。
 - [已確認] 2026-05-24 完成 Slice 20A：DocumentRequestsPage 加案件 combo（全部案件 / 指定案件兩段）、全域模式新增索件批次彈出 engagement picker 不再 silent return、item 操作後同步刷新 request table 且保留選取；新增 15 個 UI 行為測試。Slice 20A 屬上下文自主化系列，B（代辦客戶選擇）與 C（固定開立 UX 重設）尚未開始。詳見 .ai/HANDOFF.md。
 - [已確認] 2026-05-23 完成 Slice 19A/B/C/D + hotfix v0.6.1：Dashboard filter 污染修復、各頁全域視圖、索件項目批量操作、附件刪除、固定開立新增入口；hotfix 補修 delete_item 未重算父層狀態 + 空 item 集誤判為 accepted。詳見下方 Slice 19 記錄。
 - [已確認] EXE packaging 檔案已建立：`TaxOpsControlDesk.spec`, `build_tools/pyinstaller_entry.py`, `build_tools/clean_package.py`, `build_tools/package_windows.py`, `build_tools/smoke_test_exe.py`, `tests/test_packaging_tools.py`。

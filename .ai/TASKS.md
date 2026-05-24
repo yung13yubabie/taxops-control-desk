@@ -112,6 +112,19 @@
 
 ## RECENTLY COMPLETED
 
+- [已確認] Slice 20B v0.8.0（2026-05-24）— 代辦事項客戶選擇：
+  - Migration 0017_workflow_tasks_client_id：`ALTER TABLE workflow_tasks ADD COLUMN client_id INTEGER REFERENCES clients(id)` + UPDATE backfill 從 engagements join + `idx_workflow_tasks_client` 索引。
+  - `repositories/tasks.py`：`TaskRow.client_id`、`_row_to_task` mapping、`insert(... client_id=None)`；新增 `get_engagement_client_id(engagement_id)`、`client_exists(client_id)`、`list_by_client(client_id, ...)` 三個 helper。
+  - `services/tasks.py`：`CreateTaskInput.client_id` 欄；`create_task` 自動從 engagement 同步 client_id（engagement 為單一真相來源，覆寫任何 caller 提供值）；只綁 client 時驗證 `client_exists` 否則 raise `task.client_not_found`；新增 `list_by_client(client_id)` wrapper。
+  - `ui/pages/tasks_page.py` 重寫：`_client_combo` + `_eng_combo` cascade；三段 filter（指定案件 → list_by_engagement；指定客戶 → list_by_client；全部 → list_all）；`refresh_context()` reload client + engagement combos。
+  - `ui/dialogs/new_task_dialog.py` 重寫：fixed engagement mode 保留；cascade mode 客戶 combo（含「不指定客戶」`_NO_CLIENT=-1`）+ 依 client 過濾的案件 combo（含「不綁案件」`_NO_ENGAGEMENT=-1`）；`on_save` 組裝 `CreateTaskInput` 由 service 負責 client_id 同步。
+  - `i18n/errors.py`：新增 `task.client_not_found = "找不到指定客戶，待辦無法建立"`。
+  - `tests/test_slice20b_tasks_client.py`（NEW，20 tests）：schema 3 + backfill 1 + service create_task 5 + list_by_client 2 + page cascade 6 + dialog 4。
+  - `tests/test_db_migrations.py`：versions list 追加 0017，count 16→17。
+  - `tests/test_slice5_ui.py`：`_FakeContainer` 補 `system_log` + `clients` services 以支援新 TasksPage。
+  - pyproject.toml + __init__.py 版本升至 0.8.0；git tag v0.8.0；dist zip `TaxOpsControlDesk-v0.8.0-windows.zip`。
+  - **891/891 passed**（2026-05-24，含 20 新測試）。
+
 - [已確認] Slice 20A v0.7.0（2026-05-24）— 索件管理上下文自主化：
   - `src/taxops/ui/pages/document_requests_page.py` 重寫：新增 `_engagement_combo`（全部案件 + 全部 active engagements），label「客戶名 — 案件名 — 期別」；切換 combo 直接刷新索件列表，不需回案件管理頁。
   - `_on_new_request()` 在全域模式（`_engagement_id is None`）改為彈出 `QInputDialog.getItem` engagement picker 而非 silent return；無案件時顯示 info dialog 引導建案件。
