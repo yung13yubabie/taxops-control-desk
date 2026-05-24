@@ -185,18 +185,25 @@ def test_document_requests_page_has_required_buttons() -> None:
 
 
 def test_document_requests_page_buttons_disabled_before_load() -> None:
+    """Row-dependent buttons stay disabled before any request row is selected.
+
+    Slice 20A change: 新增索件批次 is now always enabled because global mode
+    opens an engagement picker; only row-dependent actions remain gated.
+    """
     _make_app()
     container = _fresh_container()
     from PySide6.QtWidgets import QPushButton
     from taxops.ui.pages.document_requests_page import DocumentRequestsPage
 
     page = DocumentRequestsPage(container)
-    for label in ("新增索件批次", "標記已發出", "催件 +1", "刪除批次"):
+    for label in ("標記已發出", "催件 +1", "刪除批次"):
         btn = next(
             (b for b in page.findChildren(QPushButton) if b.text() == label), None
         )
         assert btn is not None, f"button '{label}' not found"
-        assert not btn.isEnabled(), f"'{label}' must be disabled before load_engagement()"
+        assert not btn.isEnabled(), (
+            f"'{label}' must be disabled before a request row is selected"
+        )
     container.close()
 
 
