@@ -23,9 +23,12 @@
 
 ### 驗證紀錄
 
-- pytest 全套（含 16 個新 Slice 20C 測試）
-- PyInstaller EXE build + smoke + hygiene
-- `dist/TaxOpsControlDesk-v0.9.0-windows.zip`；v0.8.0 zip 已刪除
+- [已確認] `python -m pytest -q` → **907/907 passed**（2026-05-25，含 16 個新 Slice 20C 測試）。
+- [已確認] `python -m build_tools.package_windows` → 成功；第一次因舊 EXE 進程鎖住 dist 失敗，已只關閉該 TaxOpsControlDesk.exe 後重跑成功。
+- [已確認] `python -m build_tools.smoke_test_exe` → 成功；EXE 啟動且 temp LOCALAPPDATA 建立 SQLite。
+- [已確認] `python -m build_tools.check_resource_hygiene` → 未列出 TaxOpsControlDesk / pytest / pyinstaller 殘留進程；TIME_WAIT = 15。
+- [已確認] `dist/TaxOpsControlDesk-v0.9.0-windows.zip` 已重新壓縮（2026-05-25 22:12）；v0.8.0 zip 已刪除。
+- [已確認] Codex review 修正 release 風險：`insert_plan_with_lines()` read-back check 不再使用 `assert`，改為明確 `RuntimeError`，避免 Python `-O` 移除防護。
 
 ### 下一輪注意事項
 

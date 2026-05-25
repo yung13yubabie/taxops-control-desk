@@ -200,10 +200,15 @@ class RecurringBillingRepository:
             self._conn.rollback()
             raise
         plan_row = self.get_plan(plan_id)  # type: ignore[arg-type]
-        line_rows = [self.get_line(lid) for lid in line_ids]  # type: ignore[arg-type]
-        assert plan_row is not None
-        assert all(lr is not None for lr in line_rows)
-        return plan_row, [lr for lr in line_rows if lr is not None]
+        if plan_row is None:
+            raise RuntimeError("inserted recurring billing plan could not be read back")
+        line_rows: list[LineRow] = []
+        for line_id in line_ids:
+            line_row = self.get_line(line_id)  # type: ignore[arg-type]
+            if line_row is None:
+                raise RuntimeError("inserted recurring billing line could not be read back")
+            line_rows.append(line_row)
+        return plan_row, line_rows
 
     def get_plan(self, plan_id: int) -> PlanRow | None:
         r = self._conn.execute(
