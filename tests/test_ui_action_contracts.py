@@ -6,14 +6,21 @@ from taxops.i18n import DISABLED_TOOLTIP, NAV_LABELS
 from taxops.ui.action_registry import (
     ACTION_REGISTRY,
     NAV_ORDER,
+    PAGE_DOC_REQUESTS,
     PLACEHOLDER_HANDLER,
     actions_for_page,
 )
 
+# Pages whose contracts still exist even though the page is no longer a
+# sidebar destination (Slice 21B: doc_requests merged into engagements as
+# an embedded widget; the contracts still describe real handlers on that
+# embedded instance).
+_EMBEDDED_ONLY_PAGES = {PAGE_DOC_REQUESTS}
+
 
 def test_every_action_targets_a_known_page() -> None:
     for action in ACTION_REGISTRY:
-        assert action.page in NAV_ORDER, action
+        assert action.page in NAV_ORDER or action.page in _EMBEDDED_ONLY_PAGES, action
         assert action.page in NAV_LABELS, action
 
 

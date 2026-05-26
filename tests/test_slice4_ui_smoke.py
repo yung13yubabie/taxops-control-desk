@@ -70,7 +70,8 @@ def test_engagements_page_has_required_buttons() -> None:
     assert "新增案件" in btn_texts
     assert "切換狀態" in btn_texts
     assert "刪除案件" in btn_texts
-    assert "管理索件批次" in btn_texts
+    # Slice 21B: "管理索件批次" button removed — doc requests are now
+    # embedded directly below the case list in the merged page.
     container.close()
 
 
@@ -99,7 +100,7 @@ def test_engagements_page_toolbar_disabled_with_no_selection() -> None:
     from taxops.ui.pages.engagements_page import EngagementsPage
 
     page = EngagementsPage(container)
-    for label in ("切換狀態", "刪除案件", "管理索件批次"):
+    for label in ("切換狀態", "刪除案件"):
         btn = next(
             (b for b in page.findChildren(QPushButton) if b.text() == label), None
         )

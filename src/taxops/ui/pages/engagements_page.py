@@ -1,10 +1,20 @@
-"""Engagements page: per-client list + CRUD + navigate to doc requests."""
+"""Engagements page: master-detail vertical split (Slice 21B).
+
+Top half: engagement list with client filter + CRUD toolbar (the historical
+EngagementsPage UI). Bottom half: embedded DocumentRequestsPage in
+``embedded=True`` mode — its back button and engagement combo are hidden
+because the parent page already owns engagement selection.
+
+Selecting a row in the top table calls ``load_engagement()`` on the bottom
+widget; clearing the selection falls back to the global ("全部案件") view
+of all doc requests across every engagement.
+"""
 
 from __future__ import annotations
 
 import datetime
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -13,6 +23,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -28,6 +39,7 @@ from ..action_registry import FilterKey
 from ..dialogs.edit_engagement_dialog import EditEngagementDialog
 from ..dialogs.new_engagement_dialog import NewEngagementDialog
 from ..style import toolbar_icon
+from .document_requests_page import DocumentRequestsPage
 
 _COLUMN_ORDER = (
     "id",
@@ -56,8 +68,6 @@ _ALL_CLIENTS = -1
 
 
 class EngagementsPage(QWidget):
-    open_doc_requests = Signal(int)  # engagement_id
-
     def __init__(
         self, container: ServiceContainer, parent: QWidget | None = None
     ) -> None:
@@ -73,7 +83,13 @@ class EngagementsPage(QWidget):
         title.setStyleSheet("font-size: 20px; font-weight: 600;")
         outer.addWidget(title)
 
-        # Client filter
+        self._splitter = QSplitter(Qt.Orientation.Vertical)
+
+        master = QWidget()
+        master_layout = QVBoxLayout(master)
+        master_layout.setContentsMargins(0, 0, 0, 0)
+        master_layout.setSpacing(8)
+
         filter_row = QHBoxLayout()
         filter_row.setSpacing(8)
         filter_row.addWidget(QLabel("客戶："))
@@ -81,47 +97,42 @@ class EngagementsPage(QWidget):
         self._client_combo.setMinimumWidth(260)
         filter_row.addWidget(self._client_combo)
         filter_row.addStretch(1)
-        outer.addLayout(filter_row)
+        master_layout.addLayout(filter_row)
 
-        # Toolbar
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
         self._new_btn = QPushButton("新增案件")
         self._edit_btn = QPushButton("編輯案件")
         self._status_btn = QPushButton("切換狀態")
         self._delete_btn = QPushButton("刪除案件")
-        self._doc_btn = QPushButton("管理索件批次")
         self._refresh_btn = QPushButton("重新整理")
 
         self._new_btn.setIcon(toolbar_icon("new"))
         self._edit_btn.setIcon(toolbar_icon("edit"))
         self._status_btn.setIcon(toolbar_icon("edit"))
         self._delete_btn.setIcon(toolbar_icon("delete"))
-        self._doc_btn.setIcon(toolbar_icon("bulk"))
         self._refresh_btn.setIcon(toolbar_icon("refresh"))
 
         self._new_btn.setEnabled(False)
         self._edit_btn.setEnabled(False)
         self._status_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
-        self._doc_btn.setEnabled(False)
 
         for btn in (
             self._new_btn,
             self._edit_btn,
             self._status_btn,
             self._delete_btn,
-            self._doc_btn,
             self._refresh_btn,
         ):
             toolbar.addWidget(btn)
         toolbar.addStretch(1)
-        outer.addLayout(toolbar)
+        master_layout.addLayout(toolbar)
 
         self._empty_label = QLabel("請先選擇客戶，或此客戶尚無案件。")
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_label.setStyleSheet("color: #777; padding: 24px;")
-        outer.addWidget(self._empty_label)
+        master_layout.addWidget(self._empty_label)
 
         self._table = QTableWidget(0, len(_COLUMN_ORDER))
         self._table.setHorizontalHeaderLabels(
@@ -135,22 +146,32 @@ class EngagementsPage(QWidget):
         hv.setSectionResizeMode(
             _COLUMN_ORDER.index("engagement_name"), QHeaderView.ResizeMode.Stretch
         )
-        outer.addWidget(self._table, stretch=1)
+        master_layout.addWidget(self._table, stretch=1)
+
+        detail = QWidget()
+        detail_layout = QVBoxLayout(detail)
+        detail_layout.setContentsMargins(0, 8, 0, 0)
+        detail_layout.setSpacing(6)
+        detail_layout.addWidget(QLabel("索件批次（依上方選取的案件顯示；未選時顯示全部）"))
+        self._doc_requests_widget = DocumentRequestsPage(container, embedded=True)
+        detail_layout.addWidget(self._doc_requests_widget, stretch=1)
+
+        self._splitter.addWidget(master)
+        self._splitter.addWidget(detail)
+        self._splitter.setStretchFactor(0, 1)
+        self._splitter.setStretchFactor(1, 2)
+        outer.addWidget(self._splitter, stretch=1)
 
         self._client_combo.currentIndexChanged.connect(self._on_client_changed)
         self._new_btn.clicked.connect(self._on_new_engagement)
         self._edit_btn.clicked.connect(self._on_edit_engagement)
         self._status_btn.clicked.connect(self._on_set_status)
         self._delete_btn.clicked.connect(self._on_delete)
-        self._doc_btn.clicked.connect(self._on_open_doc_requests)
         self._refresh_btn.clicked.connect(self._on_load_and_refresh)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
 
         self._filter_key: str = ""
         self._on_load_and_refresh()
-
-    # ------------------------------------------------------------------
-    # Public filter API (called by MainWindow on dashboard navigation)
 
     def set_filter(self, filter_key: str) -> None:
         self._filter_key = filter_key
@@ -161,12 +182,8 @@ class EngagementsPage(QWidget):
         self._current_client_id = _ALL_CLIENTS
 
     def refresh_context(self) -> None:
-        """Reload client choices when the page becomes active."""
         self._on_load_and_refresh()
-
-    # ------------------------------------------------------------------
-    # Client loading
-    # ------------------------------------------------------------------
+        self._doc_requests_widget.refresh_context()
 
     def _on_load_and_refresh(self) -> None:
         saved_id = self._current_client_id
@@ -202,10 +219,6 @@ class EngagementsPage(QWidget):
         self._current_client_id = self._client_combo.itemData(idx)
         self._new_btn.setEnabled(self._current_client_id != _ALL_CLIENTS)
         self._refresh_engagements()
-
-    # ------------------------------------------------------------------
-    # Table refresh
-    # ------------------------------------------------------------------
 
     def _refresh_engagements(self) -> None:
         try:
@@ -245,17 +258,22 @@ class EngagementsPage(QWidget):
         self._empty_label.setVisible(not has_rows)
         self._table.setVisible(has_rows)
         self._on_selection_changed()
-
-    # ------------------------------------------------------------------
-    # Selection
-    # ------------------------------------------------------------------
+        self._sync_embedded_to_selection()
 
     def _on_selection_changed(self) -> None:
         has_sel = bool(self._table.selectedItems())
         self._edit_btn.setEnabled(has_sel)
         self._status_btn.setEnabled(has_sel)
         self._delete_btn.setEnabled(has_sel)
-        self._doc_btn.setEnabled(has_sel)
+        self._sync_embedded_to_selection()
+
+    def _sync_embedded_to_selection(self) -> None:
+        eng_id = self._selected_engagement_id()
+        if eng_id is None:
+            self._doc_requests_widget.clear_filter()
+            self._doc_requests_widget.refresh_context()
+        else:
+            self._doc_requests_widget.load_engagement(eng_id)
 
     def _selected_engagement_id(self) -> int | None:
         items = self._table.selectedItems()
@@ -264,10 +282,6 @@ class EngagementsPage(QWidget):
         row = self._table.row(items[0])
         id_item = self._table.item(row, 0)
         return int(id_item.text()) if id_item else None
-
-    # ------------------------------------------------------------------
-    # Actions
-    # ------------------------------------------------------------------
 
     def _on_new_engagement(self) -> None:
         if self._current_client_id is None:
@@ -364,8 +378,3 @@ class EngagementsPage(QWidget):
             QMessageBox.warning(self, "刪除失敗", error_message("engagement.delete.failed"))
             return
         self._refresh_engagements()
-
-    def _on_open_doc_requests(self) -> None:
-        eng_id = self._selected_engagement_id()
-        if eng_id is not None:
-            self.open_doc_requests.emit(eng_id)

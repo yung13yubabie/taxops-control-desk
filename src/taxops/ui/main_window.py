@@ -21,7 +21,6 @@ from .action_registry import (
     PAGE_ATTACHMENTS,
     PAGE_CLIENTS,
     PAGE_DASHBOARD,
-    PAGE_DOC_REQUESTS,
     PAGE_ENGAGEMENTS,
     PAGE_LATE_FEE,
     PAGE_RECURRING_BILLING,
@@ -34,7 +33,6 @@ from .action_registry import (
 from .pages.attachments_page import AttachmentsPage
 from .pages.clients_page import ClientsPage
 from .pages.dashboard_page import DashboardPage
-from .pages.document_requests_page import DocumentRequestsPage
 from .pages.engagements_page import EngagementsPage
 from .pages.late_fee_page import LateFeePage
 from .pages.placeholder_page import PlaceholderPage
@@ -114,16 +112,8 @@ class MainWindow(QMainWindow):
                 page = ClientsPage(self._container)
             elif page_id == PAGE_ENGAGEMENTS:
                 eng_page = EngagementsPage(self._container)
-                eng_page.open_doc_requests.connect(self._on_open_doc_requests)
                 self._eng_page = eng_page
                 page = eng_page
-            elif page_id == PAGE_DOC_REQUESTS:
-                doc_page = DocumentRequestsPage(self._container)
-                doc_page.back_to_engagements.connect(
-                    lambda: self.navigate_to(PAGE_ENGAGEMENTS)
-                )
-                self._doc_page = doc_page
-                page = doc_page
             elif page_id == PAGE_TASKS:
                 page = TasksPage(self._container)
             elif page_id == PAGE_TEMPLATES:
@@ -182,10 +172,6 @@ class MainWindow(QMainWindow):
                     "msg": str(err),
                 },
             )
-
-    def _on_open_doc_requests(self, engagement_id: int) -> None:
-        self._doc_page.load_engagement(engagement_id)
-        self.navigate_to(PAGE_DOC_REQUESTS)
 
     def _on_toggle_sidebar(self) -> None:
         if self._nav.isVisible():

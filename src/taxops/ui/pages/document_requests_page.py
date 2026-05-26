@@ -84,17 +84,22 @@ class DocumentRequestsPage(QWidget):
     back_to_engagements = Signal()
 
     def __init__(
-        self, container: ServiceContainer, parent: QWidget | None = None
+        self,
+        container: ServiceContainer,
+        parent: QWidget | None = None,
+        embedded: bool = False,
     ) -> None:
         super().__init__(parent)
         self._container = container
         self._engagement_id: int | None = None
+        self._embedded = embedded
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(24, 24, 24, 24)
+        margin = 0 if embedded else 24
+        outer.setContentsMargins(margin, margin, margin, margin)
         outer.setSpacing(12)
 
-        # Header row: back button + page title
+        # Header row: back button + page title (hidden in embedded mode)
         hdr_row = QHBoxLayout()
         hdr_row.setSpacing(8)
         self._back_btn = QPushButton("← 返回案件")
@@ -104,16 +109,24 @@ class DocumentRequestsPage(QWidget):
         hdr_row.addWidget(self._context_label)
         hdr_row.addStretch(1)
         outer.addLayout(hdr_row)
+        if embedded:
+            self._back_btn.hide()
+            self._context_label.hide()
 
-        # Engagement selector row
+        # Engagement selector row (hidden in embedded mode — the parent
+        # EngagementsPage picks the engagement via its master list).
         filter_row = QHBoxLayout()
         filter_row.setSpacing(8)
-        filter_row.addWidget(QLabel("案件："))
+        self._eng_combo_label = QLabel("案件：")
+        filter_row.addWidget(self._eng_combo_label)
         self._engagement_combo = QComboBox()
         self._engagement_combo.setMinimumWidth(360)
         filter_row.addWidget(self._engagement_combo)
         filter_row.addStretch(1)
         outer.addLayout(filter_row)
+        if embedded:
+            self._eng_combo_label.hide()
+            self._engagement_combo.hide()
 
         # Toolbar
         toolbar = QHBoxLayout()
