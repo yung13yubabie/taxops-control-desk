@@ -15,6 +15,16 @@
 
 ### DONE
 
+- [已確認] Slice 21E：待辦父子/批量 UI + 附件 PDF 預覽/檔案位置/`file:///` URL 顯示、複製、開啟，含空附件切換時清除 stale URL（2026-05-26）。
+  - 相關檔案或模組：`src/taxops/ui/pages/tasks_page.py`, `src/taxops/ui/dialogs/task_bulk_dialogs.py`, `src/taxops/ui/pages/attachments_page.py`, `src/taxops/ui/action_registry.py`, `tests/test_slice21e_tasks_ui.py`, `tests/test_slice9_ui.py`
+  - 驗收方式：`python -m pytest tests/test_slice21e_tasks_ui.py tests/test_slice21d_tasks_parent_bulk.py tests/test_slice5_ui.py -q --tb=short` => 36 passed；`python -m pytest tests/test_slice9_ui.py tests/test_attachments.py -q --tb=short` => 51 passed；cross suite => 105 passed；full suite `python -m pytest -q` => 972 passed；EXE build + smoke passed；resource hygiene 無殘留。
+  - 待補驗證：人工在 EXE 內選取 PDF 附件確認視覺預覽。
+
+- [已確認] Slice 21D backend：待辦 parent/child + bulk CRUD（2026-05-26）。
+  - 相關檔案或模組：`src/taxops/db/migrations/_m0018_task_parent.py`, `src/taxops/services/tasks.py`, `src/taxops/repositories/tasks.py`, `tests/test_slice21d_tasks_parent_bulk.py`
+  - 驗收方式：`python -m pytest tests/test_slice21d_tasks_parent_bulk.py tests/test_tasks.py tests/test_db_migrations.py -q --tb=short` => 60 passed；full pytest 輸出 958 passed。
+  - 是否可延後：否，21E UI 已依此 backend 接線。
+
 - [已確認] Resource hygiene closeout completed（2026-05-17）.
   - 相關檔案或模組：`src/taxops/services/registry_download.py`, `src/taxops/ui/pages/settings_page.py`, `build_tools/check_resource_hygiene.py`, `tests/test_slice3_download.py`, `tests/test_resource_cleanup.py`, `.ai/RESOURCE_CLEANUP_AUDIT.md`
   - 驗收方式：`python -m pytest tests/test_resource_cleanup.py tests/test_slice3_download.py tests/test_packaging_tools.py -q` => 29/29 passed；`python -m pytest -x --tb=short` => 643/643 passed；`python -m build_tools.check_resource_hygiene` 已輸出 process/TCP/listen port 證據。

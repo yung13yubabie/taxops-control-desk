@@ -16,6 +16,7 @@ class TaskRow:
     id: int
     engagement_id: int | None
     client_id: int | None
+    parent_task_id: int | None
     title: str
     assignee: str | None
     due_date: str | None
@@ -35,6 +36,7 @@ def _row_to_task(row: sqlite3.Row) -> TaskRow:
         id=row["id"],
         engagement_id=row["engagement_id"],
         client_id=row["client_id"] if "client_id" in keys else None,
+        parent_task_id=row["parent_task_id"] if "parent_task_id" in keys else None,
         title=row["title"],
         assignee=row["assignee"],
         due_date=row["due_date"],
@@ -225,6 +227,32 @@ class TasksRepository:
             (client_id,),
         ).fetchone()
         return row is not None
+
+    def update_parent(self, task_id: int, parent_task_id: int | None) -> TaskRow | None:
+        ts = now_iso()
+        self._conn.execute(
+            "UPDATE workflow_tasks SET parent_task_id = ?, updated_at = ?"
+            " WHERE id = ? AND deleted_at IS NULL",
+            (parent_task_id, ts, task_id),
+        )
+        self._conn.commit()
+        return self.get(task_id)
+
+    def count_children(self, task_id: int) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM workflow_tasks"
+            " WHERE parent_task_id = ? AND deleted_at IS NULL",
+            (task_id,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def get_parent_id(self, task_id: int) -> int | None:
+        row = self._conn.execute(
+            "SELECT parent_task_id FROM workflow_tasks"
+            " WHERE id = ? AND deleted_at IS NULL",
+            (task_id,),
+        ).fetchone()
+        return row["parent_task_id"] if row else None
 
     def list_by_client(
         self,

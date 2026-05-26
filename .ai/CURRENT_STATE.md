@@ -22,7 +22,7 @@
 ## Current Status
 
 - [已確認] Slice 1、Slice 2（稅籍快取）、客戶管理功能閉環（批量匯入 + 編輯/刪除 + 衝突審查）、Slice 2.6（搜尋/排序/分頁 + sidebar 收合）、Slice 3（HTTP download）、Slice 4（案件 + 索件）、Slice 4.5（案件編輯 + 索件項目狀態 UI）、Slice 5（待辦事項）、Slice 6（訊息模板）、Slice 7（產生催件訊息）、Slice 8（覆核意見 + 滯納金試算）、Slice 9（附件證據鏈 MVP + closeout correction）、Slice 10（Excel 匯出缺件清單 + CSV formula injection defense）、Slice 11（備份 / 還原）、Slice 12（FTS5 全文搜尋）、Slice 13（本地工商 / 稅籍查詢頁）、Slice 14（Dashboard 真實統計 + 篩選導向補完）均已完成實作。
-- [已確認] `python -m pytest` 最後確認通過：942/942 passed（2026-05-26 Slice 21C v0.12.0；含 9 個新測試）。
+- [已確認] `python -m pytest` 最後完整確認通過：972/972 passed（2026-05-27 Slice 21E v0.14.0 + attachment file URL）。
 - [已確認] G-1~G-15 UIUX 修復已完成：WA_DeleteOnClose、anti-double-click、toolbar_icon、error label、silent failure 修正等；dashboard high_risk_engagements 導向修正為 PAGE_REVIEW_NOTES + FilterKey.HIGH_RISK。
 - [已確認] Slice 15-rental 新功能：Migration 0013（clients.lease_start/lease_end）、Migration 0014（workflow_tasks.engagement_id nullable）、欄位顯示控制（QMenu）、租約到期通知 dashboard 卡、任務不強制關聯案件。
 - [已確認] ALLOWED_VARIABLES 現為 11 個（4 個未來欄位 payment_due_date / office_owner / reviewer / last_followed_up_at 已於 Slice 15 安全修正中移除）。
@@ -31,6 +31,8 @@
 
 ## Active Work
 
+- [已確認] 2026-05-26 完成 Slice 21E：TasksPage 接上 21D backend UI（批量新增/編輯/刪除、設為子待辦、父子縮排、multi-select、action contracts）；附件管理新增 PDF 內嵌預覽、「檔案位置」按鈕、`file:///` URL 顯示/複製/開啟，並修正切換到空附件案件時舊 URL 未清除的狀態同步問題。14 個新 UI 測試。版號 0.14.0。full suite 972/972 passed；EXE build + smoke passed；resource hygiene 無殘留。
+- [已確認] 2026-05-26 完成 Slice 21D backend：workflow_tasks.parent_task_id migration；TasksService parent/child + bulk CRUD；Codex 接手補 context_mismatch guard 與 bulk update validation/sanitize。16 個新測試；targeted + full backend suite 通過。
 - [已確認] 2026-05-26 完成 Slice 21C：新 `ColumnSettings` helper widget（右鍵 header 選單 + 自動 persist hidden/widths）；8 個新 app_settings keys；4 表全接入（engagements/doc_requests/doc_items/tasks）；核心欄保護不可隱藏。9 個新測試。
 - [已確認] 2026-05-26 完成 Slice 21B：EngagementsPage 重寫為 master-detail vertical split（上半案件清單、下半嵌入式 DocumentRequestsPage(embedded=True)）；sidebar 移除「索件管理」入口（NAV_ORDER 12→11）；main_window 不再 instance DocumentRequestsPage；DocumentRequestsPage 加 embedded 參數隱藏 back/combo；EngagementsPage 移除 _doc_btn 與 open_doc_requests signal。8 個新測試。
 - [已確認] 2026-05-26 完成 Slice 21A：CreateDocumentRequestInput breaking API（`item_names` 取代 `use_vat_template`）；新 DocumentItemTemplateDialog 含 checklist + 自訂項目 + 持久化（per-tax-type）；DocumentRequestsPage 加批量刪除文件項目；conftest autouse mock 修 modal-exec hang。18 個新測試。Slice 21 系列開始（A 完成，B/C/D 進行中）。

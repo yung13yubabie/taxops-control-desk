@@ -23,11 +23,16 @@ from taxops.services.attachments import AttachmentsService, UploadAttachmentInpu
 from taxops.services.audit import AuditService
 from taxops.services.engagements import EngagementsService
 from taxops.services.system_log import SystemLogService
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
 
 from taxops.repositories.attachments import AttachmentRow
 from taxops.ui.action_registry import PAGE_ATTACHMENTS, actions_for_page
-from taxops.ui.pages.attachments_page import _AttachmentInfoDialog, AttachmentsPage
+from taxops.ui.pages.attachments_page import (
+    QPdfDocument,
+    _AttachmentInfoDialog,
+    _PREVIEW_PDF,
+    AttachmentsPage,
+)
 
 
 @pytest.fixture(scope="session")
@@ -128,6 +133,7 @@ def test_open_button_always_disabled(qapp, tmp_path):
     container = _FakeContainer(conn, attachments_dir)
     page = AttachmentsPage(container)
     assert not page._open_btn.isEnabled()
+    assert not page._location_btn.isEnabled()
     conn.close()
 
 
@@ -309,3 +315,192 @@ def test_attachment_delete_contract_is_registered():
     assert len(delete) == 1
     assert delete[0].service == "AttachmentsService.delete_attachment"
     assert delete[0].audit_action == "attachment.delete"
+
+
+def _minimal_pdf() -> bytes:
+    objects = [
+        b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+        b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R >>\nendobj\n",
+        b"4 0 obj\n<< /Length 44 >>\nstream\nBT /F1 12 Tf 40 120 Td (TaxOps PDF) Tj ET\nendstream\nendobj\n",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for obj in objects:
+        offsets.append(len(out))
+        out.extend(obj)
+    xref_at = len(out)
+    out.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    out.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        out.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    out.extend(
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+        f"startxref\n{xref_at}\n%%EOF\n".encode("ascii")
+    )
+    return bytes(out)
+
+
+def test_pdf_attachment_uses_embedded_preview(qapp, tmp_path):
+    if QPdfDocument is None:
+        pytest.skip("QtPdf unavailable in this environment")
+
+    conn, attachments_dir = _make_conn(tmp_path)
+    eng_id = _seed(conn)
+    src = tmp_path / "preview.pdf"
+    src.write_bytes(_minimal_pdf())
+    container = _FakeContainer(conn, attachments_dir)
+    container.attachments.upload_attachment(UploadAttachmentInput(
+        engagement_id=eng_id,
+        request_id=None,
+        source_path=src,
+    ))
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(1)
+    page._load_attachments()
+    page._table.selectRow(0)
+    assert page._preview_stack.currentIndex() == _PREVIEW_PDF
+    conn.close()
+
+
+def test_location_button_opens_attachment_folder(qapp, monkeypatch, tmp_path):
+    from PySide6.QtCore import QUrl
+
+    conn, attachments_dir = _make_conn(tmp_path)
+    eng_id = _seed(conn)
+    src = tmp_path / "location.pdf"
+    src.write_bytes(b"PDF content")
+    container = _FakeContainer(conn, attachments_dir)
+    container.attachments.upload_attachment(UploadAttachmentInput(
+        engagement_id=eng_id,
+        request_id=None,
+        source_path=src,
+    ))
+    opened: list[QUrl] = []
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QDesktopServices.openUrl",
+        lambda url: opened.append(url) or True,
+    )
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(1)
+    page._load_attachments()
+    page._table.selectRow(0)
+    page._on_open_location()
+    assert opened
+    assert Path(opened[0].toLocalFile()).is_dir()
+    conn.close()
+
+
+def test_selected_attachment_shows_file_url(qapp, tmp_path):
+    conn, attachments_dir = _make_conn(tmp_path)
+    eng_id = _seed(conn)
+    src = tmp_path / "url.pdf"
+    src.write_bytes(b"PDF content")
+    container = _FakeContainer(conn, attachments_dir)
+    row = container.attachments.upload_attachment(UploadAttachmentInput(
+        engagement_id=eng_id,
+        request_id=None,
+        source_path=src,
+    ))
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(1)
+    page._load_attachments()
+    page._table.selectRow(0)
+    expected = QUrl.fromLocalFile(str(attachments_dir / row.stored_filename)).toString()
+    assert page._file_url_edit.text() == expected
+    assert page._file_url_edit.text().startswith("file:///")
+    assert page._copy_url_btn.isEnabled()
+    assert page._open_url_btn.isEnabled()
+    conn.close()
+
+
+def test_copy_file_url_writes_clipboard(qapp, tmp_path):
+    conn, attachments_dir = _make_conn(tmp_path)
+    eng_id = _seed(conn)
+    src = tmp_path / "copy.pdf"
+    src.write_bytes(b"PDF content")
+    container = _FakeContainer(conn, attachments_dir)
+    row = container.attachments.upload_attachment(UploadAttachmentInput(
+        engagement_id=eng_id,
+        request_id=None,
+        source_path=src,
+    ))
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(1)
+    page._load_attachments()
+    page._table.selectRow(0)
+    page._copy_file_url()
+    expected = QUrl.fromLocalFile(str(attachments_dir / row.stored_filename)).toString()
+    assert QApplication.clipboard().text() == expected
+    conn.close()
+
+
+def test_open_file_url_uses_file_url(qapp, monkeypatch, tmp_path):
+    conn, attachments_dir = _make_conn(tmp_path)
+    eng_id = _seed(conn)
+    src = tmp_path / "open-url.pdf"
+    src.write_bytes(b"PDF content")
+    container = _FakeContainer(conn, attachments_dir)
+    row = container.attachments.upload_attachment(UploadAttachmentInput(
+        engagement_id=eng_id,
+        request_id=None,
+        source_path=src,
+    ))
+    opened: list[QUrl] = []
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QDesktopServices.openUrl",
+        lambda url: opened.append(url) or True,
+    )
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(1)
+    page._load_attachments()
+    page._table.selectRow(0)
+    page._on_open_file_url()
+    expected = QUrl.fromLocalFile(str(attachments_dir / row.stored_filename)).toString()
+    assert opened
+    assert opened[0].toString() == expected
+    conn.close()
+
+
+def test_loading_empty_attachment_list_clears_stale_file_url(qapp, tmp_path):
+    conn, attachments_dir = _make_conn(tmp_path)
+    eng_id = _seed(conn)
+    client_id = conn.execute("SELECT client_id FROM engagements WHERE id = ?", (eng_id,)).fetchone()[0]
+    conn.execute(
+        "INSERT INTO engagements (client_id, engagement_name, tax_type, period_name, "
+        "status, created_at, updated_at) "
+        "VALUES (?, '空附件案件', 'vat', '202502', 'draft', '2026-01-01T00:00:00', '2026-01-01T00:00:00')",
+        (client_id,),
+    )
+    conn.commit()
+    src = tmp_path / "stale.pdf"
+    src.write_bytes(b"PDF content")
+    container = _FakeContainer(conn, attachments_dir)
+    container.attachments.upload_attachment(UploadAttachmentInput(
+        engagement_id=eng_id,
+        request_id=None,
+        source_path=src,
+    ))
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(1)
+    page._load_attachments()
+    page._table.selectRow(0)
+    assert page._file_url_edit.text().startswith("file:///")
+
+    page._eng_combo.setCurrentIndex(2)
+    page._load_attachments()
+    assert page._table.rowCount() == 0
+    assert page._file_url_edit.text() == ""
+    assert not page._copy_url_btn.isEnabled()
+    assert not page._open_url_btn.isEnabled()
+    conn.close()
+
+
+def test_attachment_location_contract_is_registered():
+    location = [
+        c for c in actions_for_page(PAGE_ATTACHMENTS)
+        if c.button_label == "檔案位置"
+    ]
+    assert len(location) == 1
+    assert location[0].handler == "AttachmentsPage._on_open_location"
+    assert location[0].enabled

@@ -20,6 +20,15 @@ VALID_TASK_STATUSES = frozenset({
     "cancelled",
 })
 
+_BULK_UPDATE_FIELDS = frozenset({
+    "status",
+    "priority",
+    "assignee",
+    "due_date",
+    "next_step",
+    "notes",
+})
+
 _ALLOWED_TASK_TRANSITIONS: dict[str, frozenset[str]] = {
     "todo": frozenset({"todo", "doing", "waiting_client", "waiting_internal_review", "cancelled"}),
     "doing": frozenset({"doing", "todo", "waiting_client", "waiting_internal_review", "done", "cancelled"}),
@@ -41,6 +50,17 @@ class CreateTaskInput:
     engagement_id: int | None
     title: str
     client_id: int | None = None
+    assignee: str | None = None
+    due_date: str | None = None
+    priority: str = "normal"
+    next_step: str | None = None
+    notes: str | None = None
+
+
+@dataclass(frozen=True)
+class BulkTaskTemplate:
+    """Common fields applied to every task in a bulk-create operation."""
+    title: str
     assignee: str | None = None
     due_date: str | None = None
     priority: str = "normal"
@@ -158,6 +178,9 @@ class TasksService:
         existing = self._repo.get(task_id)
         if existing is None:
             raise TaskValidationError("task.not_found")
+        # Slice 21D: forbid deleting a parent that still has live children.
+        if self._repo.count_children(task_id) > 0:
+            raise TaskValidationError("task.delete.has_children")
         self._repo.delete(task_id)
         self._audit.record(
             action="task.delete",
@@ -165,6 +188,208 @@ class TasksService:
             target_id=str(task_id),
             detail={"title": existing.title},
         )
+
+    # ── Slice 21D: parent/child + bulk CRUD ──────────────────────────
+
+    def convert_to_child(self, task_id: int, parent_task_id: int) -> TaskRow:
+        """Mark ``task_id`` as a child of ``parent_task_id``.
+
+        Enforces 2-level depth: the chosen parent must itself be a root
+        (parent_task_id IS NULL). Also rejects self-reference. The child
+        inherits nothing automatically here — caller can update the child's
+        client_id/engagement_id separately if desired.
+        """
+        if task_id == parent_task_id:
+            raise TaskValidationError("task.parent.self_reference")
+        child = self._repo.get(task_id)
+        if child is None:
+            raise TaskValidationError("task.not_found")
+        parent = self._repo.get(parent_task_id)
+        if parent is None:
+            raise TaskValidationError("task.parent.not_found")
+        if (
+            child.client_id != parent.client_id
+            or child.engagement_id != parent.engagement_id
+        ):
+            raise TaskValidationError("task.parent.context_mismatch")
+        # 2-level cap: parent must be a root (no grandparent).
+        if parent.parent_task_id is not None:
+            raise TaskValidationError("task.parent.depth_exceeded")
+        # Also reject if the child already has its own children — converting
+        # it would make a grandchild and exceed depth.
+        if self._repo.count_children(task_id) > 0:
+            raise TaskValidationError("task.parent.depth_exceeded")
+        row = self._repo.update_parent(task_id, parent_task_id)
+        if row is None:
+            raise TaskValidationError("task.not_found")
+        self._audit.record(
+            action="task.convert_to_child",
+            target_type="task",
+            target_id=str(task_id),
+            detail={"parent_task_id": parent_task_id},
+        )
+        return row
+
+    def create_tasks_bulk(
+        self,
+        client_ids: list[int],
+        template: BulkTaskTemplate,
+    ) -> list[TaskRow]:
+        """Create one task per ``client_id`` from a shared template.
+
+        Each task is created with ``client_id`` set and ``engagement_id``
+        left NULL — bulk operations are client-scoped, never tied to a
+        specific case. Invalid client_ids are silently skipped (per-row
+        validation; caller can compare returned len vs input len). A single
+        ``task.bulk_create`` audit entry records the operation; per-task
+        ``task.create`` audits also fire (one per row).
+        """
+        created: list[TaskRow] = []
+        for cid in client_ids:
+            try:
+                row = self.create_task(CreateTaskInput(
+                    engagement_id=None,
+                    client_id=cid,
+                    title=template.title,
+                    assignee=template.assignee,
+                    due_date=template.due_date,
+                    priority=template.priority,
+                    next_step=template.next_step,
+                    notes=template.notes,
+                ))
+                created.append(row)
+            except TaskValidationError:
+                # Skip invalid clients (e.g. nonexistent id) and continue.
+                continue
+        if created:
+            self._audit.record(
+                action="task.bulk_create",
+                target_type="task",
+                target_id=",".join(str(t.id) for t in created),
+                detail={
+                    "task_count": len(created),
+                    "title": template.title,
+                    "client_ids": client_ids,
+                },
+            )
+        return created
+
+    def update_tasks_bulk(
+        self,
+        task_ids: list[int],
+        fields: dict,
+    ) -> int:
+        """Apply the same set of field updates to every listed task.
+
+        Supported fields: ``status``, ``priority``, ``assignee``, ``due_date``.
+        Status changes still respect the per-task transition rules; tasks
+        whose transition would be invalid are silently skipped (partial
+        success allowed). Returns the count of successfully updated tasks.
+        """
+        if not task_ids or not fields:
+            return 0
+        normalized_fields = self._normalize_bulk_update_fields(fields)
+        updated = 0
+        for tid in task_ids:
+            existing = self._repo.get(tid)
+            if existing is None:
+                continue
+            try:
+                if "status" in normalized_fields:
+                    self.set_status(tid, normalized_fields["status"])
+                if any(k in normalized_fields for k in ("priority", "assignee", "due_date", "next_step", "notes")):
+                    refreshed = self._repo.get(tid) or existing
+                    self._repo.update(
+                        tid,
+                        title=refreshed.title,
+                        assignee=normalized_fields.get("assignee", refreshed.assignee),
+                        due_date=normalized_fields.get("due_date", refreshed.due_date),
+                        priority=normalized_fields.get("priority", refreshed.priority),
+                        next_step=normalized_fields.get("next_step", refreshed.next_step),
+                        notes=normalized_fields.get("notes", refreshed.notes),
+                    )
+                updated += 1
+            except TaskValidationError:
+                continue
+        if updated:
+            self._audit.record(
+                action="task.bulk_update",
+                target_type="task",
+                target_id=",".join(str(i) for i in task_ids),
+                detail={
+                    "updated_count": updated,
+                    "skipped_count": len(task_ids) - updated,
+                    "fields": list(normalized_fields.keys()),
+                },
+            )
+        return updated
+
+    def _normalize_bulk_update_fields(self, fields: dict) -> dict:
+        unknown_fields = set(fields) - _BULK_UPDATE_FIELDS
+        if unknown_fields:
+            raise TaskValidationError("task.bulk.update.invalid_field")
+
+        normalized: dict = {}
+        if "status" in fields:
+            status = fields["status"]
+            if status not in VALID_TASK_STATUSES:
+                raise TaskValidationError("task.status.invalid")
+            normalized["status"] = status
+
+        if "priority" in fields:
+            priority = fields["priority"]
+            if priority not in VALID_PRIORITIES:
+                raise TaskValidationError("task.priority.invalid")
+            normalized["priority"] = priority
+
+        if "assignee" in fields:
+            normalized["assignee"] = sanitize_user_text(
+                fields["assignee"], max_length=100
+            ) or None
+
+        if "due_date" in fields:
+            due_date = sanitize_user_text(fields["due_date"], max_length=20) or None
+            if due_date is not None:
+                try:
+                    datetime.date.fromisoformat(due_date)
+                except ValueError:
+                    raise TaskValidationError("task.due_date.invalid")
+            normalized["due_date"] = due_date
+
+        if "next_step" in fields:
+            normalized["next_step"] = sanitize_user_text(
+                fields["next_step"], max_length=500
+            ) or None
+
+        if "notes" in fields:
+            normalized["notes"] = sanitize_user_text(
+                fields["notes"], max_length=2000
+            ) or None
+
+        return normalized
+
+    def delete_tasks_bulk(self, task_ids: list[int]) -> int:
+        """Soft-delete each listed task; skip parents that still have
+        children (same protection as single delete). Returns deleted count.
+        """
+        deleted = 0
+        for tid in task_ids:
+            try:
+                self.delete_task(tid)
+                deleted += 1
+            except TaskValidationError:
+                continue
+        if deleted:
+            self._audit.record(
+                action="task.bulk_delete",
+                target_type="task",
+                target_id=",".join(str(i) for i in task_ids),
+                detail={
+                    "deleted_count": deleted,
+                    "skipped_count": len(task_ids) - deleted,
+                },
+            )
+        return deleted
 
     def get_task(self, task_id: int) -> TaskRow | None:
         return self._repo.get(task_id)

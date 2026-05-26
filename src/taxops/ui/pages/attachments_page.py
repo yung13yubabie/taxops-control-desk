@@ -7,6 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -24,6 +26,13 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+try:  # PySide6 ships QtPdf on the supported Windows build.
+    from PySide6.QtPdf import QPdfDocument
+    from PySide6.QtPdfWidgets import QPdfView
+except Exception:  # pragma: no cover - fallback for minimal Qt installs.
+    QPdfDocument = None  # type: ignore[assignment]
+    QPdfView = None  # type: ignore[assignment]
 
 from ...i18n import error_message
 from ...services.attachments import AttachmentValidationError, UploadAttachmentInput
@@ -61,6 +70,7 @@ _PREVIEW_NONE = 0
 _PREVIEW_IMAGE = 1
 _PREVIEW_TEXT = 2
 _PREVIEW_META = 3
+_PREVIEW_PDF = 4
 
 
 def _plain_label(text: str) -> QLabel:
@@ -78,6 +88,7 @@ class _AttachmentInfoDialog(QDialog):
         form.setSpacing(10)
         form.addRow("編號：", _plain_label(str(att.id)))
         form.addRow("原始檔名：", _plain_label(att.original_filename))
+        form.addRow("檔案位置：", _plain_label(att.stored_filename))
         form.addRow("副檔名：", _plain_label(att.extension))
         size_kb = f"{att.file_size / 1024:.1f} KB ({att.file_size:,} bytes)"
         form.addRow("大小：", _plain_label(size_kb))
@@ -162,6 +173,12 @@ class AttachmentsPage(QWidget):
         self._open_btn.clicked.connect(self._on_open_system)
         btn_row.addWidget(self._open_btn)
 
+        self._location_btn = QPushButton("檔案位置")
+        self._location_btn.setIcon(toolbar_icon("trial"))
+        self._location_btn.setEnabled(False)
+        self._location_btn.clicked.connect(self._on_open_location)
+        btn_row.addWidget(self._location_btn)
+
         btn_row.addStretch()
         outer.addLayout(btn_row)
 
@@ -196,6 +213,23 @@ class AttachmentsPage(QWidget):
         header.setStyleSheet("font-weight: bold;")
         layout.addWidget(header)
 
+        url_row = QHBoxLayout()
+        url_row.setSpacing(6)
+        url_row.addWidget(QLabel("檔案URL："))
+        self._file_url_edit = QLineEdit()
+        self._file_url_edit.setReadOnly(True)
+        self._file_url_edit.setPlaceholderText("選擇附件後顯示 file:/// 路徑")
+        url_row.addWidget(self._file_url_edit, 1)
+        self._copy_url_btn = QPushButton("複製")
+        self._copy_url_btn.setEnabled(False)
+        self._copy_url_btn.clicked.connect(self._copy_file_url)
+        url_row.addWidget(self._copy_url_btn)
+        self._open_url_btn = QPushButton("開啟")
+        self._open_url_btn.setEnabled(False)
+        self._open_url_btn.clicked.connect(self._on_open_file_url)
+        url_row.addWidget(self._open_url_btn)
+        layout.addLayout(url_row)
+
         self._preview_stack = QStackedWidget()
 
         no_sel = QLabel("（選擇附件以預覽）")
@@ -217,6 +251,16 @@ class AttachmentsPage(QWidget):
         self._preview_meta.setWordWrap(True)
         self._preview_meta.setContentsMargins(4, 4, 4, 4)
         self._preview_stack.addWidget(self._preview_meta)  # index 3
+
+        if QPdfDocument is not None and QPdfView is not None:
+            self._preview_pdf_doc = QPdfDocument(self)
+            self._preview_pdf = QPdfView()
+            self._preview_pdf.setDocument(self._preview_pdf_doc)
+            self._preview_pdf.setZoomMode(QPdfView.ZoomMode.FitInView)
+            self._preview_stack.addWidget(self._preview_pdf)  # index 4
+        else:
+            self._preview_pdf_doc = None
+            self._preview_pdf = None
 
         self._preview_stack.setCurrentIndex(_PREVIEW_NONE)
         layout.addWidget(self._preview_stack, 1)
@@ -267,7 +311,7 @@ class AttachmentsPage(QWidget):
                 detail={"exc": type(exc).__name__, "msg": str(exc)},
             )
         self._render_table()
-        self._preview_stack.setCurrentIndex(_PREVIEW_NONE)
+        self._on_selection_changed()
 
     def _render_table(self) -> None:
         self._table.setRowCount(0)
@@ -300,6 +344,9 @@ class AttachmentsPage(QWidget):
     def _att_file_path(self, att) -> Path:
         return self._container.paths.attachments_dir / att.stored_filename
 
+    def _att_file_url(self, att) -> str:
+        return QUrl.fromLocalFile(str(self._att_file_path(att))).toString()
+
     def _on_selection_changed(self) -> None:
         has = self._selected_index() is not None
         self._accept_btn.setEnabled(has)
@@ -307,15 +354,26 @@ class AttachmentsPage(QWidget):
         self._delete_btn.setEnabled(has)
         self._info_btn.setEnabled(has)
         self._open_btn.setEnabled(has)
+        self._location_btn.setEnabled(has)
+        self._copy_url_btn.setEnabled(has)
+        self._open_url_btn.setEnabled(has)
         self._update_preview(self._selected_attachment())
 
     def _update_preview(self, att) -> None:
         if att is None:
+            self._file_url_edit.clear()
             self._preview_stack.setCurrentIndex(_PREVIEW_NONE)
             return
 
         file_path = self._att_file_path(att)
+        self._file_url_edit.setText(self._att_file_url(att))
         ext = att.extension.lower()
+
+        if ext == ".pdf" and file_path.exists() and self._preview_pdf_doc is not None:
+            status = self._preview_pdf_doc.load(str(file_path))
+            if status == QPdfDocument.Error.None_:
+                self._preview_stack.setCurrentIndex(_PREVIEW_PDF)
+                return
 
         if ext in _IMAGE_EXTS and file_path.exists():
             pixmap = QPixmap(str(file_path))
@@ -341,6 +399,7 @@ class AttachmentsPage(QWidget):
         size_kb = f"{att.file_size / 1024:.1f} KB"
         self._preview_meta.setText(
             f"檔案：{att.original_filename}\n"
+            f"位置：{file_path}\n"
             f"大小：{size_kb}\n"
             f"類型：{att.mime_type}\n"
             f"狀態：{_STATUS_LABELS.get(att.status, att.status)}\n"
@@ -443,3 +502,29 @@ class AttachmentsPage(QWidget):
             QMessageBox.warning(self, "找不到檔案", f"檔案已移動或刪除：{att.original_filename}")
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(file_path)))
+
+    def _copy_file_url(self) -> None:
+        url = self._file_url_edit.text().strip()
+        if url:
+            QApplication.clipboard().setText(url)
+
+    def _on_open_file_url(self) -> None:
+        att = self._selected_attachment()
+        if att is None:
+            return
+        file_path = self._att_file_path(att)
+        if not file_path.exists():
+            QMessageBox.warning(self, "找不到檔案", f"檔案已移動或刪除：{att.original_filename}")
+            return
+        QDesktopServices.openUrl(QUrl(self._att_file_url(att)))
+
+    def _on_open_location(self) -> None:
+        att = self._selected_attachment()
+        if att is None:
+            return
+        file_path = self._att_file_path(att)
+        folder = file_path.parent if file_path.parent.exists() else self._container.paths.attachments_dir
+        if not folder.exists():
+            QMessageBox.warning(self, "找不到資料夾", "附件資料夾不存在，請確認資料目錄。")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))

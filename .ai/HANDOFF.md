@@ -1,5 +1,111 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-05-26 — Slice 21E Tasks UI + Attachment Preview, v0.14.0)
+
+### 本輪完成事項（21E UI + 附件補強）
+
+- [已確認] **TasksPage 補齊 Slice 21D backend 的 UI 入口**：
+  - 新增 toolbar buttons：`批量新增`、`批量編輯`、`批量刪除`、`設為子待辦`。
+  - table 改為 `ExtendedSelection`，多選時停用單筆完成/狀態/刪除，啟用批量操作。
+  - `批量新增` 使用 `BulkCreateTasksDialog`：客戶 checklist + 共用待辦模板，一次建立每客戶一筆 task。
+  - `批量編輯` 使用 `BulkEditTasksDialog`：per-field checkbox，只有勾選欄位會更新。
+  - `批量刪除` 走 `TasksService.delete_tasks_bulk()`；父任務仍有子任務時由 service 略過並回報部分刪除。
+  - `設為子待辦` 使用 `ParentTaskDialog`，最後仍由 service 檢查同客戶/同案件/depth/self-reference。
+  - `_refresh()` 將子待辦顯示為 `　└ 標題`，避免資料已建立但 UI 看不出階層。
+- [已確認] **Action registry 補 4 個 PAGE_TASKS contracts**：
+  - `批量新增` → `TasksService.create_tasks_bulk`
+  - `批量編輯` → `TasksService.update_tasks_bulk`
+  - `批量刪除` → `TasksService.delete_tasks_bulk`
+  - `設為子待辦` → `TasksService.convert_to_child`
+- [已確認] **附件管理補強**：
+  - PDF 附件可使用 QtPdf (`QPdfDocument` + `QPdfView`) 內嵌預覽。
+  - 新增 `檔案位置` 按鈕，開啟附件實際存放資料夾。
+  - 新增可複製/可開啟的 `file:///` 檔案 URL 欄位，方便貼到其他地方後直接開啟附件。
+  - `_load_attachments()` 載入後統一同步 selection state；切換到空附件案件時會清掉舊 URL 並停用複製/開啟，避免 stale file URL 假成功。
+  - 附件資訊 dialog 顯示 `stored_filename`，使用 PlainText label，避免 rich text injection。
+  - 預覽 metadata 顯示完整本機路徑，方便追查檔案位置。
+- [已確認] **版號**：pyproject.toml + `src/taxops/__init__.py` 更新至 0.14.0。
+
+### 新增/修改檔案
+
+- `src/taxops/ui/dialogs/task_bulk_dialogs.py`（NEW）：`BulkCreateTasksDialog`、`BulkEditTasksDialog`、`ParentTaskDialog`。
+- `src/taxops/ui/pages/tasks_page.py`：21E toolbar、multi-select、bulk handlers、parent-child display。
+- `src/taxops/ui/pages/attachments_page.py`：PDF preview、檔案位置 button、`file:///` URL 顯示/複製/開啟、stored filename/path display。
+- `src/taxops/ui/action_registry.py`：新增 4 個 task contracts + 1 個 attachment location contract。
+- `tests/test_slice21e_tasks_ui.py`（NEW，7 tests）。
+- `tests/test_slice9_ui.py`：新增 PDF preview、檔案位置、`file:///` URL 顯示/複製/開啟、stale URL 清除、action contract tests。
+
+### 驗證紀錄
+
+- `python -m compileall -q src tests`：通過。
+- `python -m pytest tests/test_slice21e_tasks_ui.py tests/test_slice21d_tasks_parent_bulk.py tests/test_slice5_ui.py -q --tb=short`：36 passed。
+- `python -m pytest tests/test_slice9_ui.py tests/test_attachments.py -q --tb=short`：51 passed。
+- `python -m pytest tests/test_slice21e_tasks_ui.py tests/test_slice21d_tasks_parent_bulk.py tests/test_slice5_ui.py tests/test_slice9_ui.py tests/test_attachments.py tests/test_ui_action_contracts.py tests/test_db_migrations.py tests/test_packaging_tools.py -q --tb=short`：105 passed。
+- `python -m pytest -q`：972 passed in 1000.73s。
+- `python -m build_tools.package_windows`：通過；PyInstaller log 已包含 `hook-PySide6.QtPdf.py` 與 `hook-PySide6.QtPdfWidgets.py`。
+- `python -m build_tools.smoke_test_exe`：通過；EXE 啟動並建立 temp SQLite。
+- `python -m build_tools.check_resource_hygiene`：通過；檢查結束後 `Get-Process python,pytest,tail,bash,TaxOpsControlDesk,pyinstaller` 無殘留。
+
+### 剩餘風險
+
+- PDF 預覽依賴 PySide6 QtPdf；本機 import、PyInstaller hook、EXE smoke 均已驗證。仍需人工在 EXE 內選取 PDF 附件確認視覺預覽。
+- 21E 只補 TasksPage 與附件管理；全站 RWD/視覺一致性仍需獨立 UI audit。
+
+---
+
+## Latest Handoff Update (2026-05-26 — Slice 21D backend: 待辦 parent/child + bulk CRUD, v0.13.0)
+
+### 本輪完成事項（21D 後端層）
+
+- [已確認] **Migration 0018_task_parent**：`ALTER TABLE workflow_tasks ADD COLUMN parent_task_id INTEGER NULL REFERENCES workflow_tasks(id)` + `idx_workflow_tasks_parent` 索引。Depth (2 層) 由 service 層強制執行，schema 不檢查（SQLite CHECK 無法表達 self-reference depth）。
+- [已確認] **TaskRow + repository 擴充**：dataclass 加 `parent_task_id: int | None`；`_row_to_task` mapping；新 helpers `update_parent(task_id, parent_id)`、`count_children(task_id) -> int`、`get_parent_id(task_id) -> int | None`。
+- [已確認] **TasksService 新方法**：
+  - `convert_to_child(task_id, parent_id)`：驗 self-reference、不存在、depth_exceeded（parent 已有父 OR child 已有子）；audit `task.convert_to_child`。
+  - `create_tasks_bulk(client_ids, BulkTaskTemplate)`：每 client 建一筆 task（engagement_id=NULL，client_id=cid）；invalid client_id silent skip；audit `task.bulk_create` 含 task_count + client_ids。
+  - `update_tasks_bulk(ids, fields)`：對每筆 task 套用相同 fields（支援 status / priority / assignee / due_date / next_step / notes）；status 仍走 set_status transition 守衛；違反規則的 silently skip；返回 updated count；audit `task.bulk_update`。
+  - `delete_tasks_bulk(ids)`：逐筆 delete_task，跳過「父任務有子」的；audit `task.bulk_delete`。
+  - `delete_task` 既有 method 新增 children check：父有 live children 直接 raise `task.delete.has_children`。
+- [已確認] **新 BulkTaskTemplate dataclass**：title / assignee / due_date / priority / next_step / notes 共用模板。
+- [已確認] **i18n 新增 6 個錯誤碼**：`task.parent.not_found`、`task.parent.self_reference`、`task.parent.depth_exceeded`、`task.parent.context_mismatch`、`task.delete.has_children`、`task.bulk.update.invalid_field`。
+- [已確認] **Codex 接手補強（2026-05-26）**：`convert_to_child()` 新增同一客戶/案件 context guard，避免跨客戶或跨案件父子關聯污染；`update_tasks_bulk()` 新增欄位 allowlist、priority/status/due_date 驗證與文字欄位 sanitize，避免未知欄位或非法日期造成假成功/audit。
+- [已確認] **tests/test_slice21d_tasks_parent_bulk.py（NEW，16 tests）**：schema 2 + convert_to_child 4 + delete protection 2 + bulk CRUD 8。
+- [已確認] **tests/test_db_migrations.py**：versions list 加 `0018_task_parent`，count 17 → 18。
+- [已確認] **pyproject.toml + __init__.py** 版號 0.12.0 → 0.13.0。
+
+### 21D UI 狀態
+
+本段為 21D 當時的交接記錄。下列 UI 工作已於上方 **Slice 21E** 完成，不再是待辦：
+
+1. **TasksPage 多選模式**：`QTableWidget.SelectionMode.ExtendedSelection`、第一欄 row-checkbox（可省略，用 Ctrl/Shift 點擊）、selection-change 邏輯區分「單筆 vs 多筆」按鈕互鎖。
+2. **批量新增對話**：`BulkCreateTasksDialog`（客戶 checkbox grid + 模板表單 + 預覽筆數 + 確認）。
+3. **批量編輯對話**：`BulkEditTasksDialog`（4 個 per-field checkbox + 共用值 + 預覽影響範圍）。
+4. **批量刪除確認**：兩段 QMessageBox + 「無法復原」警示。
+5. **轉子任務按鈕**：toolbar 加按鈕，需選取一筆 child + 一筆 parent（或先選 child 再點按鈕跳父選擇 dialog）；service `convert_to_child` 已 ready。
+6. **縮排顯示子任務**：title 前綴 `　└ ` 顯示階層；可於 `_refresh()` 內排序時把 parent 前置、children 緊鄰。
+
+21E 已把這些 UI 接到已測試的 service；保留本段只是為了交接追溯。
+
+### 新增/修改檔案
+
+- `src/taxops/db/migrations/_m0018_task_parent.py`（NEW）。
+- `src/taxops/db/migrations/__init__.py`：註冊 0018。
+- `src/taxops/repositories/tasks.py`：TaskRow + helpers。
+- `src/taxops/services/tasks.py`：新 dataclass + 4 個 service methods。
+- `src/taxops/i18n/errors.py`：6 個錯誤碼。
+- `tests/test_slice21d_tasks_parent_bulk.py`（NEW，16 tests）。
+- `tests/test_db_migrations.py`：versions list + count。
+- pyproject + __init__.py 版號 0.13.0。
+
+### 驗證紀錄
+
+- `python -m compileall -q src tests`：通過（Codex 接手驗證，2026-05-26）。
+- `python -m pytest tests/test_slice21d_tasks_parent_bulk.py tests/test_tasks.py tests/test_db_migrations.py -q --tb=short`：60 passed（Codex 接手驗證，2026-05-26）。
+- pytest full suite：已由 21E 重跑，972 passed。
+- PyInstaller EXE build / smoke / hygiene check（待執行）。
+- `dist/TaxOpsControlDesk-v0.13.0-windows.zip`（待產出）；v0.12.0 zip 會被刪除。
+
+---
+
 ## Latest Handoff Update (2026-05-26 — Slice 21C 欄位顯示控制 + 欄寬持久化, v0.12.0)
 
 ### 本輪完成事項
