@@ -48,6 +48,7 @@ from ..dialogs.add_document_item_dialog import AddDocumentItemDialog
 from ..dialogs.document_item_template_dialog import DocumentItemTemplateDialog
 from ..dialogs.generate_message_dialog import GenerateMessageDialog
 from ..style import toolbar_icon
+from ..widgets.column_settings import ColumnSettings
 
 _REQ_COLUMNS = (
     "id",
@@ -76,6 +77,10 @@ _ITEM_HEADERS = {
     "item_status": "狀態",
     "notes": "備註",
 }
+
+# Slice 21C: required cols per table (cannot be hidden via context menu).
+_REQ_CORE_COLS = frozenset({"period_name", "status"})
+_ITEM_CORE_COLS = frozenset({"item_name", "item_status"})
 
 _ALL_ENGAGEMENTS = -1
 
@@ -239,6 +244,26 @@ class DocumentRequestsPage(QWidget):
         self._splitter.addWidget(item_widget)
 
         outer.addWidget(self._splitter, stretch=1)
+
+        # Slice 21C: install column settings (hide/show + persist widths)
+        self._req_col_settings = ColumnSettings(
+            table=self._req_table,
+            table_id="doc_requests",
+            all_cols=_REQ_COLUMNS,
+            core_cols=_REQ_CORE_COLS,
+            headers=_REQ_HEADERS,
+            settings=container.settings,
+        )
+        self._req_col_settings.install()
+        self._item_col_settings = ColumnSettings(
+            table=self._item_table,
+            table_id="doc_items",
+            all_cols=_ITEM_COLUMNS,
+            core_cols=_ITEM_CORE_COLS,
+            headers=_ITEM_HEADERS,
+            settings=container.settings,
+        )
+        self._item_col_settings.install()
 
         self._back_btn.clicked.connect(self.back_to_engagements)
         self._engagement_combo.currentIndexChanged.connect(

@@ -19,6 +19,16 @@ DEFAULT_SETTINGS: tuple[tuple[str, str], ...] = (
     ),
     ("ui.sidebar_collapsed", "0"),
     ("ui.doc_request_template.vat", ""),
+    # Slice 21C: column visibility (CSV of hidden col keys) + width
+    # presets (JSON {col_key: pixels}) per major table.
+    ("ui.engagements.columns_hidden", ""),
+    ("ui.engagements.column_widths", ""),
+    ("ui.doc_requests.columns_hidden", ""),
+    ("ui.doc_requests.column_widths", ""),
+    ("ui.doc_items.columns_hidden", ""),
+    ("ui.doc_items.column_widths", ""),
+    ("ui.tasks.columns_hidden", ""),
+    ("ui.tasks.column_widths", ""),
 )
 
 VALID_QUERY_MODES = ("local_only", "allow_online")

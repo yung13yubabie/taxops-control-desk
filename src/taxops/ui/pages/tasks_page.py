@@ -25,6 +25,7 @@ from ...services.tasks import VALID_TASK_STATUSES, TaskValidationError
 from ..action_registry import FilterKey
 from ..dialogs.new_task_dialog import NewTaskDialog
 from ..style import DANGER_COLOR, toolbar_icon
+from ..widgets.column_settings import ColumnSettings
 
 _COLUMN_ORDER = ("id", "title", "priority", "status", "assignee", "due_date", "updated_at")
 
@@ -37,6 +38,9 @@ _TABLE_HEADERS = {
     "due_date": "到期日",
     "updated_at": "更新時間",
 }
+
+# Slice 21C: cols user cannot hide via header context menu.
+_CORE_COLS = frozenset({"title", "status"})
 
 _ALL_CLIENTS = -1
 _ALL_ENGAGEMENTS = -1
@@ -125,6 +129,16 @@ class TasksPage(QWidget):
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
         self._client_combo.currentIndexChanged.connect(self._on_client_changed)
         self._eng_combo.currentIndexChanged.connect(self._refresh)
+
+        self._col_settings = ColumnSettings(
+            table=self._table,
+            table_id="tasks",
+            all_cols=_COLUMN_ORDER,
+            core_cols=_CORE_COLS,
+            headers=_TABLE_HEADERS,
+            settings=container.settings,
+        )
+        self._col_settings.install()
 
         self._filter_key: str = ""
         self._load_clients()

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication
 
 from taxops.db.connection import open_connection
 from taxops.db.migrate import apply_migrations
+from taxops.repositories.app_settings import AppSettingsRepository
 from taxops.repositories.audit_logs import AuditLogRepository
 from taxops.repositories.clients import ClientsRepository
 from taxops.repositories.document_requests import DocumentRequestsRepository
@@ -23,6 +24,7 @@ from taxops.services.clients import ClientsService
 from taxops.services.document_requests import DocumentRequestsService
 from taxops.services.engagements import EngagementsService
 from taxops.services.generated_messages import GeneratedMessagesService
+from taxops.services.settings import SettingsService
 from taxops.services.system_log import SystemLogService
 from taxops.services.templates import TemplatesService
 from taxops.ui.dialogs.generate_message_dialog import GenerateMessageDialog
@@ -56,6 +58,9 @@ class _FakeContainer:
             templates_svc=self.templates,
             audit=self._audit,
         )
+        settings_repo = AppSettingsRepository(conn)
+        settings_repo.seed_defaults()
+        self.settings = SettingsService(settings_repo, self._audit)
 
 
 @pytest.fixture()

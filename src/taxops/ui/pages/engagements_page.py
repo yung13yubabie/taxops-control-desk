@@ -39,6 +39,7 @@ from ..action_registry import FilterKey
 from ..dialogs.edit_engagement_dialog import EditEngagementDialog
 from ..dialogs.new_engagement_dialog import NewEngagementDialog
 from ..style import toolbar_icon
+from ..widgets.column_settings import ColumnSettings
 from .document_requests_page import DocumentRequestsPage
 
 _COLUMN_ORDER = (
@@ -62,6 +63,9 @@ _TABLE_HEADERS = {
     "due_date": "截止日",
     "updated_at": "更新時間",
 }
+
+# Slice 21C: cols the user cannot hide via header context menu.
+_CORE_COLS = frozenset({"engagement_name", "status"})
 
 
 _ALL_CLIENTS = -1
@@ -169,6 +173,16 @@ class EngagementsPage(QWidget):
         self._delete_btn.clicked.connect(self._on_delete)
         self._refresh_btn.clicked.connect(self._on_load_and_refresh)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
+
+        self._col_settings = ColumnSettings(
+            table=self._table,
+            table_id="engagements",
+            all_cols=_COLUMN_ORDER,
+            core_cols=_CORE_COLS,
+            headers=_TABLE_HEADERS,
+            settings=container.settings,
+        )
+        self._col_settings.install()
 
         self._filter_key: str = ""
         self._on_load_and_refresh()
