@@ -1,5 +1,42 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-05-26 — Slice 21C 欄位顯示控制 + 欄寬持久化, v0.12.0)
+
+### 本輪完成事項
+
+- [已確認] **新 `ColumnSettings` helper widget**（`src/taxops/ui/widgets/column_settings.py`）：對任意 QTableWidget 安裝右鍵 header 選單（per-col 顯示/隱藏 checkbox + 「自動調整所有欄寬」+ 「重設預設」），自動 persist 隱藏欄位 (CSV) 與欄寬 (JSON) 到 `app_settings`。核心欄（core_cols）checkbox 灰掉不可隱藏。
+- [已確認] **8 個新 app_settings keys**：`ui.{engagements,doc_requests,doc_items,tasks}.{columns_hidden,column_widths}` 全部加入 DEFAULT_SETTINGS 並自動進入 ALLOWED_KEYS whitelist。
+- [已確認] **4 個表格全部接入**：
+  - EngagementsPage._table（table_id=engagements，core={engagement_name, status}）
+  - DocumentRequestsPage._req_table（table_id=doc_requests，core={period_name, status}）
+  - DocumentRequestsPage._item_table（table_id=doc_items，core={item_name, item_status}）
+  - TasksPage._table（table_id=tasks，core={title, status}）
+- [已確認] **欄寬 persist 機制**：QHeaderView.sectionResized signal → `_save_widths`；JSON 容量 480 字元安全上限（settings 500 字元上限），超過記 warning 不寫入。
+- [已確認] **核心欄隱藏保護**：即使 `columns_hidden` 設定誤寫入核心欄 key，restore 階段會強制顯示（防止使用者意外把識別欄位藏掉）。
+
+### 新增/修改檔案
+
+- `src/taxops/ui/widgets/column_settings.py`（NEW）：`ColumnSettings` 類別含 install/restore/save_hidden/save_widths/menu handler。
+- `src/taxops/repositories/app_settings.py`：DEFAULT_SETTINGS 加 8 個 keys。
+- `src/taxops/ui/pages/engagements_page.py`：import + `_CORE_COLS` + `_col_settings`。
+- `src/taxops/ui/pages/document_requests_page.py`：import + `_REQ_CORE_COLS` + `_ITEM_CORE_COLS` + `_req_col_settings` + `_item_col_settings`。
+- `src/taxops/ui/pages/tasks_page.py`：import + `_CORE_COLS` + `_col_settings`。
+- `tests/test_slice21c_column_settings.py`（NEW，9 tests）：helper unit (6) + page integration (3)。
+- `pyproject.toml` + `src/taxops/__init__.py`：版號 0.11.0 → 0.12.0。
+
+### 下一輪注意事項
+
+- Slice 21C 完整閉環，v0.12.0 穩定。
+- **下一輪 Slice 21D（v0.13.0）— 待辦事項 parent/child + bulk CRUD**：
+  - migration 0018 `workflow_tasks.parent_task_id INTEGER NULL REFERENCES workflow_tasks(id)` + 2-level depth check。
+  - TasksService 新增 `convert_to_child(task_id, parent_id)`、`create_tasks_bulk(template, client_ids)`、`update_tasks_bulk(ids, fields)`、`delete_tasks_bulk(ids)`。
+  - 3 個新對話：`BulkCreateTasksDialog`（client checkbox grid + template form）、`BulkEditTasksDialog`（4 個 per-field checkbox 套用 same change）、bulk delete two-step confirm。
+  - TasksPage 加 multi-select (ExtendedSelection) + 一欄 checkbox + 全選 header + 單筆/多筆 按鈕互鎖。
+  - Title 縮排前綴 `　└ ` 顯示子任務階層。
+  - 子任務 client_id/engagement_id 繼承自父，禁止刪父若仍有子，允許「轉子任務」。
+
+---
+
 ## Latest Handoff Update (2026-05-26 — Slice 21B 索件管理併入案件管理, v0.11.0)
 
 ### 本輪完成事項

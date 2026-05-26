@@ -112,6 +112,15 @@
 
 ## RECENTLY COMPLETED
 
+- [已確認] Slice 21C v0.12.0（2026-05-26）— 欄位顯示控制 + 欄寬持久化：
+  - 新 `src/taxops/ui/widgets/column_settings.py` helper：對任意 QTableWidget 安裝右鍵 header 選單（per-col checkbox + 自動調整 + 重設預設）；auto-persist `columns_hidden` (CSV) + `column_widths` (JSON) 到 app_settings；核心欄不可隱藏（即使設定誤寫也會被強制顯示）。
+  - 8 個新 app_settings keys：`ui.{engagements,doc_requests,doc_items,tasks}.{columns_hidden,column_widths}` 加入 DEFAULT_SETTINGS（自動納入 ALLOWED_KEYS）。
+  - 4 表全接入：EngagementsPage / DocumentRequestsPage 兩個 tables / TasksPage；各定義 `_CORE_COLS` 依 Grill #2.5 規格（案件={engagement_name, status}、索件批次={period_name, status}、文件項目={item_name, item_status}、待辦={title, status}）。
+  - 欄寬 JSON 容量 480 字元安全上限（settings 500 字元 cap）。
+  - `tests/test_slice21c_column_settings.py`（NEW，9 tests）：helper unit (6) + page integration (3)。
+  - pyproject.toml + __init__.py 版本升至 0.12.0；git tag v0.12.0；dist zip + GitHub Release。
+  - **942/942 passed**（2026-05-26，含 9 新測試）。
+
 - [已確認] Slice 21B v0.11.0（2026-05-26）— 索件管理併入案件管理：
   - **DocumentRequestsPage 加 `embedded` 參數**：True 時隱藏 back_btn / context_label / engagement combo + label，外緣 margin 0；standalone 模式完全保留。
   - **EngagementsPage master-detail 重寫**：QSplitter(Vertical) 上半案件清單 + 下半嵌入式 `DocumentRequestsPage(embedded=True)`；row 選取 → `load_engagement(id)`；無選取 → `clear_filter` + 全部案件視圖。
