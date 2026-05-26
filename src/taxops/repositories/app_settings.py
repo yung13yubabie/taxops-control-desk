@@ -18,6 +18,7 @@ DEFAULT_SETTINGS: tuple[tuple[str, str], ...] = (
         "https://data.gcis.nat.gov.tw/resources/swagger/swagger.json",
     ),
     ("ui.sidebar_collapsed", "0"),
+    ("ui.doc_request_template.vat", ""),
 )
 
 VALID_QUERY_MODES = ("local_only", "allow_online")

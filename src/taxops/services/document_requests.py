@@ -80,7 +80,7 @@ class CreateDocumentRequestInput:
     period_name: str
     due_date: str | None = None
     notes: str | None = None
-    use_vat_template: bool = False
+    item_names: tuple[str, ...] = ()
 
 
 class DocumentRequestsService:
@@ -109,7 +109,6 @@ class DocumentRequestsService:
         except ValueError:
             raise DocumentRequestValidationError("doc_request.due_date.invalid")
         notes = sanitize_user_text(payload.notes, max_length=2000) or None
-        item_names = VAT_ITEMS if payload.use_vat_template else ()
 
         request, items = self._repo.insert_request_with_items(
             engagement_id=payload.engagement_id,
@@ -117,7 +116,7 @@ class DocumentRequestsService:
             period_name=payload.period_name,
             due_date=due_date,
             notes=notes,
-            item_names=item_names,
+            item_names=payload.item_names,
         )
         self._audit.record(
             action="doc_request.create",
@@ -128,7 +127,6 @@ class DocumentRequestsService:
                 "tax_type": payload.tax_type,
                 "period_name": payload.period_name,
                 "item_count": len(items),
-                "use_vat_template": payload.use_vat_template,
             },
         )
         return request, items
@@ -240,6 +238,36 @@ class DocumentRequestsService:
             detail={"item_name": name},
         )
         return item
+
+    def delete_items_bulk(self, item_ids: list[int]) -> int:
+        """Delete multiple items by id; silently skip nonexistent ids.
+
+        Recomputes the parent request status for each affected request once
+        per request (not once per item) and records a single audit entry with
+        the list of ids and final deleted count.
+        """
+        if not item_ids:
+            return 0
+        affected_request_ids: set[int] = set()
+        deleted: list[int] = []
+        for item_id in item_ids:
+            existing = self._repo.get_item(item_id)
+            if existing is None:
+                continue
+            self._repo.delete_item(item_id)
+            affected_request_ids.add(existing.request_id)
+            deleted.append(item_id)
+        for req_id in affected_request_ids:
+            new_status = self._recompute_request_status(req_id)
+            self._repo.update_request_status(req_id, status=new_status)
+        if deleted:
+            self._audit.record(
+                action="doc_request_item.bulk_delete",
+                target_type="document_request_item",
+                target_id=",".join(str(i) for i in deleted),
+                detail={"item_ids": deleted, "deleted_count": len(deleted)},
+            )
+        return len(deleted)
 
     def delete_item(self, item_id: int) -> None:
         existing = self._repo.get_item(item_id)

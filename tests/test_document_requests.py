@@ -80,14 +80,14 @@ def test_create_request_returns_row(svc, engagement_id):
 
 
 def test_create_request_vat_template(svc, engagement_id):
-    req, items = svc.create_request(_req_input(engagement_id, use_vat_template=True))
+    req, items = svc.create_request(_req_input(engagement_id, item_names=VAT_ITEMS))
     assert len(items) == len(VAT_ITEMS)
     names = [i.item_name for i in items]
     assert names == list(VAT_ITEMS)
 
 
 def test_create_request_all_items_default_missing(svc, engagement_id):
-    _, items = svc.create_request(_req_input(engagement_id, use_vat_template=True))
+    _, items = svc.create_request(_req_input(engagement_id, item_names=VAT_ITEMS))
     for item in items:
         assert item.item_status == "missing"
 
@@ -163,27 +163,27 @@ def test_delete_request_not_found(svc):
 
 
 def test_set_item_status(svc, engagement_id):
-    req, items = svc.create_request(_req_input(engagement_id, use_vat_template=True))
+    req, items = svc.create_request(_req_input(engagement_id, item_names=VAT_ITEMS))
     item = items[0]
     updated = svc.set_item_status(item.id, item_status="received")
     assert updated.item_status == "received"
 
 
 def test_set_item_status_invalid(svc, engagement_id):
-    req, items = svc.create_request(_req_input(engagement_id, use_vat_template=True))
+    req, items = svc.create_request(_req_input(engagement_id, item_names=VAT_ITEMS))
     with pytest.raises(DocumentRequestValidationError) as exc_info:
         svc.set_item_status(items[0].id, item_status="bad_status")
     assert exc_info.value.code == "doc_request_item.status.invalid"
 
 
 def test_set_item_status_with_notes(svc, engagement_id):
-    req, items = svc.create_request(_req_input(engagement_id, use_vat_template=True))
+    req, items = svc.create_request(_req_input(engagement_id, item_names=VAT_ITEMS))
     updated = svc.set_item_status(items[0].id, item_status="incomplete", notes="缺少月份")
     assert updated.notes == "缺少月份"
 
 
 def test_set_item_status_records_audit(svc, engagement_id, conn):
-    req, items = svc.create_request(_req_input(engagement_id, use_vat_template=True))
+    req, items = svc.create_request(_req_input(engagement_id, item_names=VAT_ITEMS))
     svc.set_item_status(items[0].id, item_status="received")
     rows = conn.execute(
         "SELECT action FROM audit_logs WHERE action = 'doc_request_item.status_change'"
@@ -209,7 +209,7 @@ def test_list_by_engagement_excludes_deleted(svc, engagement_id):
 
 
 def test_list_items(svc, engagement_id):
-    req, items = svc.create_request(_req_input(engagement_id, use_vat_template=True))
+    req, items = svc.create_request(_req_input(engagement_id, item_names=VAT_ITEMS))
     fetched = svc.list_items(req.id)
     assert len(fetched) == len(VAT_ITEMS)
 
@@ -273,7 +273,7 @@ def test_create_request_vat_template_is_atomic(conn, engagement_id):
 
 
 def test_recompute_all_received_gives_partially_received(svc, engagement_id):
-    req, items = svc.create_request(_req_input(engagement_id, use_vat_template=True))
+    req, items = svc.create_request(_req_input(engagement_id, item_names=VAT_ITEMS))
     for item in items:
         svc.set_item_status(item.id, item_status="received")
     updated = svc.get_request(req.id)
@@ -281,7 +281,7 @@ def test_recompute_all_received_gives_partially_received(svc, engagement_id):
 
 
 def test_recompute_all_accepted_gives_accepted(svc, engagement_id):
-    req, items = svc.create_request(_req_input(engagement_id, use_vat_template=True))
+    req, items = svc.create_request(_req_input(engagement_id, item_names=VAT_ITEMS))
     for item in items:
         svc.set_item_status(item.id, item_status="accepted")
     updated = svc.get_request(req.id)
@@ -289,7 +289,7 @@ def test_recompute_all_accepted_gives_accepted(svc, engagement_id):
 
 
 def test_recompute_any_invalid_gives_under_validation(svc, engagement_id):
-    req, items = svc.create_request(_req_input(engagement_id, use_vat_template=True))
+    req, items = svc.create_request(_req_input(engagement_id, item_names=VAT_ITEMS))
     svc.set_item_status(items[0].id, item_status="received")
     svc.set_item_status(items[1].id, item_status="invalid")
     updated = svc.get_request(req.id)
@@ -297,7 +297,7 @@ def test_recompute_any_invalid_gives_under_validation(svc, engagement_id):
 
 
 def test_recompute_pending_confirm_gives_pending_confirm(svc, engagement_id):
-    req, items = svc.create_request(_req_input(engagement_id, use_vat_template=True))
+    req, items = svc.create_request(_req_input(engagement_id, item_names=VAT_ITEMS))
     svc.set_item_status(items[0].id, item_status="accepted")
     svc.set_item_status(items[1].id, item_status="pending_confirm")
     updated = svc.get_request(req.id)
@@ -305,7 +305,7 @@ def test_recompute_pending_confirm_gives_pending_confirm(svc, engagement_id):
 
 
 def test_recompute_mixed_resolved_gives_accepted(svc, engagement_id):
-    req, items = svc.create_request(_req_input(engagement_id, use_vat_template=True))
+    req, items = svc.create_request(_req_input(engagement_id, item_names=VAT_ITEMS))
     statuses = ["accepted", "not_applicable", "client_said_none"]
     for i, item in enumerate(items):
         svc.set_item_status(item.id, item_status=statuses[i % len(statuses)])

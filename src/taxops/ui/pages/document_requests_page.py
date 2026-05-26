@@ -45,6 +45,7 @@ from ...services.document_requests import (
 )
 from ...services.export import ExportValidationError
 from ..dialogs.add_document_item_dialog import AddDocumentItemDialog
+from ..dialogs.document_item_template_dialog import DocumentItemTemplateDialog
 from ..dialogs.generate_message_dialog import GenerateMessageDialog
 from ..style import toolbar_icon
 
@@ -125,6 +126,7 @@ class DocumentRequestsPage(QWidget):
         self._add_item_btn = QPushButton("新增文件項目")
         self._edit_item_btn = QPushButton("編輯項目")
         self._delete_item_btn = QPushButton("刪除項目")
+        self._bulk_delete_items_btn = QPushButton("批量刪除項目")
         self._item_status_btn = QPushButton("切換項目狀態")
         self._generate_btn = QPushButton("產生訊息")
         self._export_btn = QPushButton("匯出缺件清單")
@@ -138,6 +140,7 @@ class DocumentRequestsPage(QWidget):
         self._add_item_btn.setIcon(toolbar_icon("new"))
         self._edit_item_btn.setIcon(toolbar_icon("edit"))
         self._delete_item_btn.setIcon(toolbar_icon("delete"))
+        self._bulk_delete_items_btn.setIcon(toolbar_icon("delete"))
         self._item_status_btn.setIcon(toolbar_icon("edit"))
         self._generate_btn.setIcon(toolbar_icon("trial"))
         self._export_btn.setIcon(toolbar_icon("export"))
@@ -151,6 +154,7 @@ class DocumentRequestsPage(QWidget):
         self._add_item_btn.setEnabled(False)
         self._edit_item_btn.setEnabled(False)
         self._delete_item_btn.setEnabled(False)
+        self._bulk_delete_items_btn.setEnabled(False)
         self._item_status_btn.setEnabled(False)
         self._generate_btn.setEnabled(False)
 
@@ -163,6 +167,7 @@ class DocumentRequestsPage(QWidget):
             self._add_item_btn,
             self._edit_item_btn,
             self._delete_item_btn,
+            self._bulk_delete_items_btn,
             self._item_status_btn,
             self._generate_btn,
             self._export_btn,
@@ -212,6 +217,7 @@ class DocumentRequestsPage(QWidget):
         self._item_table.verticalHeader().setVisible(False)
         self._item_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._item_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._item_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         ih = self._item_table.horizontalHeader()
         ih.setSectionResizeMode(
             _ITEM_COLUMNS.index("item_name"), QHeaderView.ResizeMode.Stretch
@@ -233,6 +239,7 @@ class DocumentRequestsPage(QWidget):
         self._add_item_btn.clicked.connect(self._on_add_item)
         self._edit_item_btn.clicked.connect(self._on_edit_item)
         self._delete_item_btn.clicked.connect(self._on_delete_item)
+        self._bulk_delete_items_btn.clicked.connect(self._on_bulk_delete_items)
         self._item_status_btn.clicked.connect(self._on_set_item_status)
         self._generate_btn.clicked.connect(self._on_generate_message)
         self._export_btn.clicked.connect(self._on_export)
@@ -458,10 +465,13 @@ class DocumentRequestsPage(QWidget):
             self._delete_item_btn.setEnabled(False)
 
     def _on_item_selection_changed(self) -> None:
-        has_item = bool(self._item_table.selectedItems())
-        self._item_status_btn.setEnabled(has_item)
-        self._edit_item_btn.setEnabled(has_item)
-        self._delete_item_btn.setEnabled(has_item)
+        rows = self._selected_item_rows()
+        single = len(rows) == 1
+        multi = len(rows) >= 1
+        self._item_status_btn.setEnabled(single)
+        self._edit_item_btn.setEnabled(single)
+        self._delete_item_btn.setEnabled(single)
+        self._bulk_delete_items_btn.setEnabled(multi)
 
     def _selected_request_id(self) -> int | None:
         items = self._req_table.selectedItems()
@@ -478,6 +488,25 @@ class DocumentRequestsPage(QWidget):
         row = self._item_table.row(items[0])
         id_cell = self._item_table.item(row, 0)
         return int(id_cell.text()) if id_cell else None
+
+    def _selected_item_rows(self) -> list[int]:
+        """Distinct row indices currently selected in the item table."""
+        rows: set[int] = set()
+        for item in self._item_table.selectedItems():
+            rows.add(self._item_table.row(item))
+        return sorted(rows)
+
+    def _selected_item_ids(self) -> list[int]:
+        ids: list[int] = []
+        for row in self._selected_item_rows():
+            cell = self._item_table.item(row, 0)
+            if cell is None:
+                continue
+            try:
+                ids.append(int(cell.text()))
+            except ValueError:
+                continue
+        return ids
 
     # ------------------------------------------------------------------
     # Engagement picker (global-mode 新增索件批次)
@@ -542,11 +571,17 @@ class DocumentRequestsPage(QWidget):
                 self, "找不到案件", error_message("engagement.not_found")
             )
             return
+        dlg = DocumentItemTemplateDialog(
+            self._container, tax_type=eng.tax_type, parent=self
+        )
+        if dlg.exec() != DocumentItemTemplateDialog.DialogCode.Accepted:
+            return
+        item_names = dlg.selected_items()
         payload = CreateDocumentRequestInput(
             engagement_id=eng_id,
             tax_type=eng.tax_type,
             period_name=eng.period_name,
-            use_vat_template=(eng.tax_type == "vat"),
+            item_names=item_names,
         )
         try:
             self._container.doc_requests.create_request(payload)
@@ -710,6 +745,37 @@ class DocumentRequestsPage(QWidget):
                 self, "編輯失敗", error_message("doc_request_item.update.failed")
             )
             return
+        self._refresh_requests()
+
+    def _on_bulk_delete_items(self) -> None:
+        ids = self._selected_item_ids()
+        if not ids:
+            return
+        reply = QMessageBox.question(
+            self,
+            "確認批量刪除",
+            f"確定要刪除選取的 {len(ids)} 筆文件項目？此操作無法復原。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            count = self._container.doc_requests.delete_items_bulk(ids)
+        except DocumentRequestValidationError as exc:
+            QMessageBox.warning(self, "批量刪除失敗", error_message(exc.code))
+            return
+        except Exception as err:
+            self._container.system_log.error(
+                "doc_request_item.bulk_delete failed", exc=err
+            )
+            QMessageBox.warning(
+                self, "批量刪除失敗", error_message("doc_request_item.delete.failed")
+            )
+            return
+        QMessageBox.information(
+            self, "批量刪除完成", f"已刪除 {count} 筆文件項目。"
+        )
         self._refresh_requests()
 
     def _on_delete_item(self) -> None:
