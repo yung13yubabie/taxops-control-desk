@@ -1,5 +1,43 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-05-26 — Slice 21A 索件批次模板選擇 + 批量刪除, v0.10.0)
+
+### 本輪完成事項
+
+- [已確認] **Breaking API change**: `CreateDocumentRequestInput` 移除 `use_vat_template: bool`，新增 `item_names: tuple[str, ...] = ()`。Service create_request 直接用 `payload.item_names`，不再 hardcode VAT_ITEMS 查表。`VAT_ITEMS` 保留為 module-level 常數供 UI consume。
+- [已確認] **新增 `DocumentItemTemplateDialog`**：建立索件批次時跳 checklist，列出 VAT_ITEMS 的 9 個 checkbox（預設全勾，保留舊行為），含「全選 / 全不選」按鈕、自訂項目 input + list、確定/取消。OK 鍵透過 `accept()` 持久化選擇到 `app_settings.ui.doc_request_template.vat`（JSON `{"checked": [...], "custom": [...]}`，500 字元上限）；下次再開自動還原。
+- [已確認] **DocumentRequestsPage `_on_new_request` 流程**：picker engagement 後（全域）或直接（單案件）跳 template dialog → 選定後才呼叫 `create_request(item_names=...)`。取消對話 = 整個流程中止（不建空 doc_request）。
+- [已確認] **批量刪除文件項目**：item_table 改 `ExtendedSelection`，toolbar 新增「批量刪除項目」按鈕（多筆選取時 enabled）。新 service `delete_items_bulk(item_ids: list[int]) -> int` 逐筆刪除、收集 affected request_ids、每個父 request 只重算狀態一次、單一 audit `doc_request_item.bulk_delete` 紀錄 `{"item_ids": [...], "deleted_count": N}`。
+- [已確認] **新 app_settings key**：新增 `ui.doc_request_template.vat` 到 DEFAULT_SETTINGS（自動進入 ALLOWED_KEYS whitelist）。
+- [已確認] **既有 12 個 `use_vat_template=True` 測試呼叫**全部改為 `item_names=VAT_ITEMS`。
+- [已確認] **新 autouse fixture `_auto_mock_doc_item_template_dialog` in conftest.py**：對 `DocumentItemTemplateDialog.exec` patch 回傳 Accepted，讓 Slice 4/4.5/19A/20A 既有的 `_on_new_request()` 測試不會在 21A 之後因 modal exec 而 hang。21A 自己的 dialog tests 直接呼叫構造器與方法（不走 exec），不受影響。
+
+### 新增/修改檔案
+
+- `src/taxops/services/document_requests.py`：dataclass 改寫、`create_request` 用 `item_names`、新增 `delete_items_bulk()`。
+- `src/taxops/ui/dialogs/document_item_template_dialog.py`（NEW）：完整 checklist 對話。
+- `src/taxops/ui/pages/document_requests_page.py`：新 import、新 `_bulk_delete_items_btn` + handler、`_on_new_request` 改用 dialog、item_table ExtendedSelection、新 `_selected_item_ids` helper。
+- `src/taxops/repositories/app_settings.py`：DEFAULT_SETTINGS 加 `ui.doc_request_template.vat`。
+- `tests/test_slice21a_doc_request_template_and_bulk_delete.py`（NEW，18 tests）。
+- `tests/test_document_requests.py`：12 個 caller 改為 `item_names=VAT_ITEMS`。
+- `tests/conftest.py`：autouse fixture 修 modal-exec hang。
+- `pyproject.toml` + `src/taxops/__init__.py`：版號 0.9.0 → 0.10.0。
+
+### 驗證紀錄
+
+- **925/925 passed** in 930.17s（2026-05-26，含 18 個新 Slice 21A 測試）
+- PyInstaller EXE build + smoke + hygiene
+- `dist/TaxOpsControlDesk-v0.10.0-windows.zip`；v0.9.0 zip 已刪除
+
+### 下一輪注意事項
+
+- Slice 21A 完整閉環，v0.10.0 穩定。
+- **下一輪 Slice 21B（v0.11.0）— 索件管理併入案件管理（master-detail vertical split）**：EngagementsPage 重寫為上下兩段 QSplitter；sidebar 移除 PAGE_DOC_REQUESTS；main_window 不再 instance DocumentRequestsPage；Dashboard 卡片已導 PAGE_ENGAGEMENTS 無需改；Tests 大改動。
+- **再之後 Slice 21C（v0.12.0）— 欄位顯示控制 + 欄寬持久化**：4 表（合併後的案件/索件批次、文件項目、待辦）。
+- **最後 Slice 21D（v0.13.0）— 待辦 parent/child + bulk CRUD 三件套**：migration 0018 self-FK，三個新對話，TasksPage multi-select 與 indented title display。
+
+---
+
 ## Latest Handoff Update (2026-05-25 — Slice 20C 固定開立 UX 重設, v0.9.0)
 
 ### 本輪完成事項

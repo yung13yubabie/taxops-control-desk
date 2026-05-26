@@ -112,6 +112,16 @@
 
 ## RECENTLY COMPLETED
 
+- [已確認] Slice 21A v0.10.0（2026-05-26）— 索件批次模板選擇 + 批量刪除：
+  - **Breaking API**：`CreateDocumentRequestInput.use_vat_template: bool` 移除，改為 `item_names: tuple[str, ...] = ()`；caller 直接傳項目清單，service 不再 hardcode VAT_ITEMS 查表；`VAT_ITEMS` 保留為 module-level 常數供 UI consume。
+  - **新 `DocumentItemTemplateDialog`**：checklist（VAT_ITEMS 9 項預設全勾）+ 全選/全不選按鈕 + 自訂項目 input/list + 持久化到 `app_settings.ui.doc_request_template.vat`（per-tax-type JSON `{"checked": [...], "custom": [...]}`）。
+  - **DocumentRequestsPage `_on_new_request` 流程改寫**：picker engagement → template dialog → create_request(item_names=)；取消對話即中止整流程，不寫入空 doc_request。
+  - **批量刪除文件項目**：item_table ExtendedSelection；新 toolbar 按鈕「批量刪除項目」；新 service `delete_items_bulk(ids) -> int`（per-request 重算狀態一次，audit 一次 `doc_request_item.bulk_delete`）。
+  - **conftest autouse fixture**：`DocumentItemTemplateDialog.exec` mock 修舊 tests 因 modal-exec hang。
+  - `tests/test_slice21a_doc_request_template_and_bulk_delete.py`（NEW，18 tests）；`tests/test_document_requests.py` 12 個 caller 改用 `item_names=VAT_ITEMS`。
+  - pyproject.toml + __init__.py 版本升至 0.10.0；git tag v0.10.0；dist zip `TaxOpsControlDesk-v0.10.0-windows.zip`；GitHub Release v0.10.0 含 EXE artifact。
+  - **925/925 passed**（2026-05-26，含 18 新測試）。
+
 - [已確認] Slice 20C v0.9.0（2026-05-25）— 固定開立 UX 重設：
   - `services/recurring_billing.py`：新增 module-level `parse_bulk_lines(text) -> (lines, errors)` tab 分隔解析、空行跳過、行號錯誤回報；新增 `RecurringBillingService.create_plan_with_lines(plan_inp, lines_inp)` atomic 方法（驗證所有 inputs → 透過 repo 單一 transaction 寫入 → audit 一次紀錄 line_count）。
   - `repositories/recurring_billing.py`：新增 `insert_plan_with_lines(plan_dict, lines_list)` 原子方法，try/commit/except/rollback 保證 plan + lines 一致。
