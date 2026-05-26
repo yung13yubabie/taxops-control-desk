@@ -112,6 +112,18 @@
 
 ## RECENTLY COMPLETED
 
+- [已確認] Slice 21B v0.11.0（2026-05-26）— 索件管理併入案件管理：
+  - **DocumentRequestsPage 加 `embedded` 參數**：True 時隱藏 back_btn / context_label / engagement combo + label，外緣 margin 0；standalone 模式完全保留。
+  - **EngagementsPage master-detail 重寫**：QSplitter(Vertical) 上半案件清單 + 下半嵌入式 `DocumentRequestsPage(embedded=True)`；row 選取 → `load_engagement(id)`；無選取 → `clear_filter` + 全部案件視圖。
+  - **sidebar 移除 PAGE_DOC_REQUESTS**：`NAV_ORDER` 從 12 → 11 items；常數保留供 action_registry contracts 使用。
+  - **main_window 移除 DocumentRequestsPage routing**：移除 import / build branch / `_on_open_doc_requests` / `open_doc_requests.connect` 連線。
+  - **EngagementsPage 移除 `_doc_btn` 與 `open_doc_requests` Signal**（polish — 內嵌不需跨頁按鈕）。
+  - **tests/test_slice4_ui_smoke 兩個 test 移除「管理索件批次」斷言**。
+  - **tests/test_ui_action_contracts 加 `_EMBEDDED_ONLY_PAGES` whitelist**：PAGE_DOC_REQUESTS contracts 可不在 NAV_ORDER 仍合法。
+  - `tests/test_slice21b_merged_engagements.py`（NEW，8 tests）。
+  - pyproject.toml + __init__.py 版本升至 0.11.0；git tag v0.11.0；dist zip + GitHub Release。
+  - **933/933 passed**（2026-05-26，含 8 新測試）。
+
 - [已確認] Slice 21A v0.10.0（2026-05-26）— 索件批次模板選擇 + 批量刪除：
   - **Breaking API**：`CreateDocumentRequestInput.use_vat_template: bool` 移除，改為 `item_names: tuple[str, ...] = ()`；caller 直接傳項目清單，service 不再 hardcode VAT_ITEMS 查表；`VAT_ITEMS` 保留為 module-level 常數供 UI consume。
   - **新 `DocumentItemTemplateDialog`**：checklist（VAT_ITEMS 9 項預設全勾）+ 全選/全不選按鈕 + 自訂項目 input/list + 持久化到 `app_settings.ui.doc_request_template.vat`（per-tax-type JSON `{"checked": [...], "custom": [...]}`）。

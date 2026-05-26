@@ -1,5 +1,38 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-05-26 — Slice 21B 索件管理併入案件管理, v0.11.0)
+
+### 本輪完成事項
+
+- [已確認] **DocumentRequestsPage 新增 `embedded: bool = False` 構造參數**：當 True 時隱藏 `_back_btn`、`_context_label`、`_eng_combo_label`、`_engagement_combo`，外緣 margin 改 0。Standalone 模式（既有 Slice 4/4.5/19A/20A tests 直接構造）UI 完全保留。
+- [已確認] **EngagementsPage 重寫為 master-detail vertical split**：
+  - 上半：原本的客戶 combo + 案件 CRUD 工具列 + 案件列表（保留 Slice 14/19A/20A 已有的 client combo、filter_key 接口、refresh_context 邏輯）。
+  - 下半：嵌入式 `DocumentRequestsPage(container, embedded=True)`，承接索件批次 + 文件項目 + 全部既有 Slice 21A 功能（VAT checklist、批量刪除等）。
+  - 中間 QSplitter(Vertical)，stretch 因子 1:2，使用者可自行拖曳。
+- [已確認] **選取案件即載入嵌入 widget**：`_on_selection_changed` → `_sync_embedded_to_selection`；row 選中 → `load_engagement(id)`；無選取 → `clear_filter()` + `refresh_context()`（全部案件視圖）。
+- [已確認] **移除 sidebar 「索件管理」入口**：`NAV_ORDER` tuple 從 12 → 11 items；`PAGE_DOC_REQUESTS` 常數保留供 `action_registry.actions_for_page` contracts 使用。
+- [已確認] **main_window 不再 instantiate DocumentRequestsPage**：移除 `elif page_id == PAGE_DOC_REQUESTS` 分支、`_on_open_doc_requests` 方法、`DocumentRequestsPage` import、`PAGE_DOC_REQUESTS` import；EngagementsPage 不再有 `open_doc_requests` Signal 與 `_doc_btn` 按鈕（polish — 不需要跨頁導航就不需要按鈕）。
+- [已確認] **既有 test_slice4_ui_smoke 兩個 test 移除「管理索件批次」按鈕斷言**（按鈕已拿掉）。
+- [已確認] **Standalone DocumentRequestsPage 行為完全保留**：Slice 4/4.5/19A/20A/21A 所有測試直接 `DocumentRequestsPage(container)` 構造仍然 work，且 combo / back button 可見。
+
+### 新增/修改檔案
+
+- `src/taxops/ui/pages/document_requests_page.py`：constructor 加 `embedded` flag；hide back_btn / context_label / engagement combo + label when True；margin 改 0。
+- `src/taxops/ui/pages/engagements_page.py`（重寫）：QSplitter(Vertical) master-detail；移除 `open_doc_requests` Signal、`_doc_btn`、`_on_open_doc_requests`；新增 `_doc_requests_widget`、`_sync_embedded_to_selection`、`refresh_context` 同步嵌入 widget。
+- `src/taxops/ui/action_registry.py`：`NAV_ORDER` 移除 `PAGE_DOC_REQUESTS`。
+- `src/taxops/ui/main_window.py`：移除 `DocumentRequestsPage` import + `PAGE_DOC_REQUESTS` import + 對應 build branch + `_on_open_doc_requests` 方法 + `open_doc_requests.connect` 連線。
+- `tests/test_slice21b_merged_engagements.py`（NEW，8 tests）：embedded widget 存在、隱藏 combo/back、selection sync、no-selection global view、nav_order 不含 doc_requests、action_registry contracts 保留、main_window 不路由 PAGE_DOC_REQUESTS。
+- `tests/test_slice4_ui_smoke.py`：移除「管理索件批次」按鈕斷言（按鈕拿掉）。
+- `pyproject.toml` + `src/taxops/__init__.py`：版號 0.10.0 → 0.11.0。
+
+### 下一輪注意事項
+
+- Slice 21B 完整閉環，v0.11.0 穩定。Sidebar 從 12 → 11 items。
+- **下一輪 Slice 21C（v0.12.0）— 欄位顯示控制 + 欄寬持久化**：4 表（案件、索件批次、文件項目、待辦）；right-click header 選單 + persist via app_settings（8 個新 settings key）；核心欄/可選欄 split per Grill #2.5。
+- **再之後 Slice 21D（v0.13.0）— 待辦 parent/child + bulk CRUD 三件套**。
+
+---
+
 ## Latest Handoff Update (2026-05-26 — Slice 21A 索件批次模板選擇 + 批量刪除, v0.10.0)
 
 ### 本輪完成事項
