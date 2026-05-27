@@ -1,5 +1,70 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-05-27 — 固定開立 RWD + 中繼點 for sub-slice roadmap, v0.14.2)
+
+### 本輪完成事項
+
+- [已確認] **固定開立 toolbar 改 FlowLayout**：`RecurringBillingPage._init` 頂部 filter row（客戶 combo + 包含已封存 + 「+ 新增方案」 + 「產生待開立紀錄」）從 QHBoxLayout 改 FlowLayout（reuse v0.14.1 的 `widgets/flow_layout.py`），窄窗口時按鈕自動換行不再裁切。同時把「產生待開立紀錄」按鈕從 insertWidget 改成 addWidget 順序加入，移除原來 stretch 元素（FlowLayout 不需要）。
+- [已確認] **版號**：pyproject.toml + `__init__.py` 0.14.1 → 0.14.2。
+- [已確認] **驗證**：`tests/test_slice18b_ui.py tests/test_slice19d_recurring_billing.py` 26 passed。
+
+### 修改檔案
+
+- `src/taxops/ui/pages/recurring_billing_page.py`：import FlowLayout + filter_row 改 FlowLayout。
+- `pyproject.toml` + `src/taxops/__init__.py`：版本升至 0.14.2。
+
+### 🚧 中繼點：v0.14.3-v0.15.2 留下次 session
+
+下次 session 接續完成的 sub-slice roadmap（已透過 /grill-me 與 user 對齊細節）：
+
+**v0.14.3 — 案件→索件→文件 drill-down 三層架構**
+- 用 `QStackedWidget` 重寫 `EngagementsPage`（取消 Slice 21B 的 vertical splitter master-detail）
+- 3 stack pages：page 0 = engagement list / page 1 = 索件批次（requests-only view of `DocumentRequestsPage`）/ page 2 = 文件項目（items-only view）
+- 上方 breadcrumb 「案件管理 / [案件名] / 索件批次 / [期間] / 文件項目」可點任意層級跳回
+- 需要為 `DocumentRequestsPage` 加 `view_mode='full'|'requests_only'|'items_only'` 參數 + `drill_to_items = Signal(int)` 信號 + `load_request_items(request_id)` 方法
+- /grill-me Q3 已選 A 嚴格三層
+
+**v0.15.0 — Dashboard → QDockWidget 浮動 helper**
+- 拆 `DashboardPage` → 新 `DashboardDockWidget`（QDockWidget）
+- `MainWindow.addDockWidget(Qt.RightDockWidgetArea, self._dashboard_dock)`，使用者可拖到任意 edge / float / 關閉
+- 移除 sidebar dashboard 入口（NAV_ORDER 11→10）
+- **保留** DashboardRepository + DashboardService backend；只重做 UI 表現
+- 8 張卡 → 「名稱: 數字」緊湊清單；點清單項仍透過 `navigate_to(page_id, filter_key)` 切頁 + 套 filter
+- 31 個 dashboard 測試大部分可保留（service/repo 邏輯不變）；UI 測試需重寫 ~8 個
+- /grill-me Q4 = A (dockable) / Q5 = A (保留 backend，重做 UI)
+
+**v0.15.1 — 全刪 ReviewNotes + 新增資料夾管理**
+- migration `0019_drop_review_notes`：drop table `review_notes`
+- 刪 `repositories/review_notes.py` / `services/review_notes.py` / `ui/pages/review_notes_page.py` / `tests/test_review_notes*.py` / dashboard 2 卡（open / high_risk）/ FTS hooks
+- migration `0020_folder_bookmarks`：新表 `folder_bookmarks (id, name, path, category, sort_order, created_at)`
+- 新 `FolderBookmarksRepository` / `FolderBookmarksService` / `FolderBookmarksPage`
+  - UI：清單 + 新增/編輯/刪除/開啟 toolbar
+  - 路徑支援本機（`C:\...`）+ UNC（`\\server\share\folder`）
+  - 開啟 = `QDesktopServices.openUrl(QUrl.fromLocalFile(path))`
+- /grill-me Q6 = B (全刪) / Q7 = A (純 bookmark，不含 file metadata)
+
+**v0.15.2 — 筆記模板 markdown + obsidian-cli**
+- migration `0021_notes`：新表 `notes (id, title, body_markdown, template_key, created_at, updated_at)`
+- 新 `NotesRepository` / `NotesService` / `NotesPage`
+- `NotesPage` 含 QPlainTextEdit markdown 編輯器 + 右側 QTextBrowser preview
+- 預設模板：案件覆核 / 客戶記事 / 稅務提醒 / 月度結算（key→markdown stub）
+- 「在 Obsidian 開啟」按鈕：subprocess 呼叫 `obsidian create name="<title>" content="<body>"` (PATH 中需有 `obsidian` CLI，使用者已安裝 obsidian-cli skill 的 native helper)
+- /grill-me Q8 = A (內嵌編輯器 + obsidian CLI 整合)
+
+**完成 v0.15.2 後**：Codex 全 codebase review → 修 HIGH/MEDIUM → 全套 pytest → EXE build + smoke → ship v0.15.2 含全部 v0.14.3-v0.15.2 變更的 GitHub Release。
+
+### 為何中繼
+
+5 個 sub-slice + Codex review 合計約 6-10 小時工作量 + 大量 token：
+- 每 slice 平均 ~500 LOC + tests + 17min full pytest + 5min EXE build + git ship
+- 加 Codex review 全 codebase
+- 單 session 預估會在 v0.15.0 之間斷掉、留下半套不能 ship 的爛攤子
+- 誠實設中繼點比假裝在進展更有價值（CLAUDE.md 一．「卡關警示」）
+
+User 在 /grill-me Q1 選 A「sub-slice 各自 ship」之原則 — 此次 ship v0.14.2 屬於該 roadmap 的第一步，剩餘 4 個 sub-slice + codex 留下次 session 接續。
+
+---
+
 ## Latest Handoff Update (2026-05-27 — SLOP patch round, v0.14.1)
 
 ### 本輪完成事項（4 點 SLOP 修復）

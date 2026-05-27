@@ -122,6 +122,21 @@
 
 ## RECENTLY COMPLETED
 
+- [已確認] v0.14.2（2026-05-27）— 固定開立 toolbar RWD：
+  - `RecurringBillingPage` 頂部 filter row 從 QHBoxLayout 改 FlowLayout（reuse v0.14.1 widgets/flow_layout.py）
+  - 「+ 新增方案」+「產生待開立紀錄」+ 客戶 combo + 包含已封存 checkbox 全部會在窄窗口換行
+  - 移除原 stretch + insertWidget 雜湊處理
+  - 26/26 tests passed
+  - pyproject.toml + __init__.py 0.14.1 → 0.14.2
+
+- [中繼點] v0.14.3 – v0.15.2 留下次 session（roadmap 已透過 /grill-me 對齊細節）：
+  - v0.14.3 案件→索件→文件 drill-down 三層
+  - v0.15.0 Dashboard → QDockWidget 浮動 helper
+  - v0.15.1 全刪 ReviewNotes + 新增 folder_bookmarks 資料夾管理
+  - v0.15.2 筆記模板 markdown + obsidian-cli 整合
+  - 完成後 Codex 全 codebase review + final ship
+  - 完整 spec 見 .ai/HANDOFF.md 「中繼點」段
+
 - [已確認] SLOP patch round v0.14.1（2026-05-27）— 4 點介面修正：
   - **EXE 多開鎖**：新檔 `src/taxops/ui/single_instance.py` 提供 `SingleInstanceGuard`，使用 `QLocalServer`/`QLocalSocket` 命名通訊；第二個 process 啟動時送 `activate` payload → 顯示中文提示 → exit；第一個實例 raise/activate 主視窗。
   - **索件批次 context banner + 所屬案件 column**：`DocumentRequestsPage` 加高對比 banner（藍底 #DBEAFE / 深藍字 #1E3A8A），global 模式顯示「現在顯示：全部案件（N 筆索件批次）」、engagement 模式顯示「現在顯示：[客戶名] — [案件名]」。`_REQ_COLUMNS` 新增 `engagement_label`（標題「所屬案件」），global 預設顯示、engagement 隱藏。
