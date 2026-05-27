@@ -1,5 +1,31 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-05-28 — 案件 drill-down 三層架構, v0.14.3)
+
+### 本輪完成事項
+
+- [已確認] **DocumentRequestsPage 加 `view_mode` 參數**：'full'（預設，向後相容）/ 'requests_only'（隱藏 item table + item 按鈕，雙擊 req row emit `drill_to_items`）/ 'items_only'（隱藏 req table + req 按鈕，banner 也隱藏；新方法 `load_request_items(request_id)` 直接載入）。
+- [已確認] **新 Signal `drill_to_items = Signal(int)`**：在 requests_only 模式下雙擊 row 時 emit request_id，供父 QStackedWidget 切到 items_only 頁。
+- [已確認] **新方法 `load_request_items(request_id)`**：bypass 選取，直接載入指定 request 的 items；同時 enable `add_item_btn`。
+- [已確認] **EngagementsPage 重寫為 QStackedWidget 容器**：
+  - 三層頁面：page 0 (engagement 主清單) / page 1 (DocumentRequestsPage 'requests_only') / page 2 (DocumentRequestsPage 'items_only')
+  - 上方 breadcrumb：「案件管理 › [案件名] › [期間]」三個 QPushButton 可點任意層跳回
+  - 主清單頁加「進入索件 →」按鈕；row double-click 或按該按鈕 = drill 進入 page 1
+  - page 1 雙擊 request row → drill 進入 page 2
+  - Backward-compat 保留：`_doc_requests_widget` 為 _requests_page 別名、`_table`、`_sync_embedded_to_selection`、`_on_load_and_refresh`、`set_filter`、`clear_filter`、`refresh_context` API 不變
+- [已確認] **版號**：pyproject.toml + `__init__.py` 0.14.2 → 0.14.3。
+- [已確認] **新測試 `tests/test_slice22_drill_down.py`（11 tests）**：QStackedWidget 三頁、breadcrumb 初始狀態、drill engagement → page 1、drill items → page 2、根/案件 breadcrumb 回上層、requests_only/items_only 模式可視性、items_only load_request_items、雙擊 drill_to_items signal、無效 view_mode raise ValueError。
+- [已確認] **回歸**：21B 7 tests + 21A 18 + 20A 15 + 21C 9 + slice4 11 + slice45 9 + 19a + ui_action_contracts + ui_regressions + slice7 + export_security = 138 passed。
+
+### 修改/新增檔案
+
+- `src/taxops/ui/pages/document_requests_page.py`：加 view_mode + signal + load_request_items + _render_items + _on_req_row_double_clicked + _selected_request_id fallback。
+- `src/taxops/ui/pages/engagements_page.py`：完全重寫為 QStackedWidget 三層架構 + breadcrumb（取代 Slice 21B 的 QSplitter 垂直 master-detail）。
+- `tests/test_slice22_drill_down.py`（NEW，11 tests）。
+- `pyproject.toml` + `src/taxops/__init__.py`：版本升至 0.14.3。
+
+---
+
 ## Latest Handoff Update (2026-05-27 — 固定開立 RWD + 中繼點 for sub-slice roadmap, v0.14.2)
 
 ### 本輪完成事項

@@ -122,6 +122,17 @@
 
 ## RECENTLY COMPLETED
 
+- [已確認] v0.14.3（2026-05-28）— 案件→索件→文件 drill-down 三層架構：
+  - `DocumentRequestsPage` 新增 `view_mode='full'|'requests_only'|'items_only'` 參數 + `drill_to_items = Signal(int)` + `load_request_items(request_id)` + `_render_items()` + `_on_req_row_double_clicked()`
+  - `_selected_request_id` 在 items_only 模式下 fallback 到 `_items_only_request_id`，讓 add/edit/delete item handler 仍能正確運作
+  - `EngagementsPage` 完全重寫為 QStackedWidget 三層架構（取代 Slice 21B 的 vertical splitter）：page 0 engagement 主清單 / page 1 DocumentRequestsPage(requests_only) / page 2 DocumentRequestsPage(items_only)
+  - 上方 breadcrumb：「案件管理 › [案件名] › [期間]」三個 QPushButton 可點任意層跳回
+  - 主清單頁加「進入索件 →」按鈕；row double-click 或按該按鈕 drill 進入 page 1；page 1 雙擊 request row drill 進入 page 2
+  - Backward-compat 保留：`_doc_requests_widget`/`_table`/`_sync_embedded_to_selection`/其它 21B API
+  - 新測試 `tests/test_slice22_drill_down.py`（11 tests）
+  - 回歸：21B 7 + 21A 18 + 20A 15 + 21C 9 + slice4 11 + slice45 9 + 19a + ui_contracts + ui_regressions + slice7 + export_security = 138 passed
+  - pyproject.toml + __init__.py 0.14.2 → 0.14.3
+
 - [已確認] v0.14.2（2026-05-27）— 固定開立 toolbar RWD：
   - `RecurringBillingPage` 頂部 filter row 從 QHBoxLayout 改 FlowLayout（reuse v0.14.1 widgets/flow_layout.py）
   - 「+ 新增方案」+「產生待開立紀錄」+ 客戶 combo + 包含已封存 checkbox 全部會在窄窗口換行
