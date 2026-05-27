@@ -32,6 +32,7 @@ from ..dialogs.recurring_billing_dialogs import (
     SkipOccurrenceDialog,
 )
 from ..style import BTN_DANGER_SM, BTN_PRIMARY_SM, BTN_SECONDARY_SM
+from ..widgets.flow_layout import FlowLayout
 
 _log = logging.getLogger(__name__)
 
@@ -414,8 +415,10 @@ class RecurringBillingPage(QWidget):
         title.setObjectName("PageTitle")
         outer.addWidget(title)
 
-        filter_row = QHBoxLayout()
-        filter_row.setSpacing(8)
+        # Filter / action row — FlowLayout so the row wraps onto a second
+        # line on narrow windows instead of clipping the rightmost buttons.
+        filter_widget = QWidget()
+        filter_row = FlowLayout(filter_widget, h_spacing=8, v_spacing=6)
         filter_row.addWidget(QLabel("客戶："))
         self._client_combo = QComboBox()
         self._client_combo.setMinimumWidth(240)
@@ -424,8 +427,10 @@ class RecurringBillingPage(QWidget):
         filter_row.addWidget(self._archived_check)
         self._add_plan_btn = QPushButton("+ 新增方案")
         filter_row.addWidget(self._add_plan_btn)
-        filter_row.addStretch()
-        outer.addLayout(filter_row)
+        self._gen_btn = QPushButton("產生待開立紀錄")
+        self._gen_btn.setToolTip("根據所有有效方案及明細產生本期預期開立紀錄")
+        filter_row.addWidget(self._gen_btn)
+        outer.addWidget(filter_widget)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -441,10 +446,6 @@ class RecurringBillingPage(QWidget):
         self._client_combo.currentIndexChanged.connect(lambda _: self._rebuild_accordion())
         self._archived_check.stateChanged.connect(lambda _: self._rebuild_accordion())
         self._add_plan_btn.clicked.connect(self._on_add_plan_global)
-
-        self._gen_btn = QPushButton("產生待開立紀錄")
-        self._gen_btn.setToolTip("根據所有有效方案及明細產生本期預期開立紀錄")
-        filter_row.insertWidget(filter_row.count() - 1, self._gen_btn)
         self._gen_btn.clicked.connect(self._on_generate_occurrences)
 
     def showEvent(self, event) -> None:  # type: ignore[override]
