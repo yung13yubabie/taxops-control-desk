@@ -1,5 +1,48 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-05-27 — SLOP patch round, v0.14.1)
+
+### 本輪完成事項（4 點 SLOP 修復）
+
+- [已確認] **EXE 多開鎖**：新檔 `src/taxops/ui/single_instance.py` 提供 `SingleInstanceGuard`，使用 `QLocalServer`/`QLocalSocket` 命名通訊（server name `TaxOpsControlDesk.SingleInstance`）。第二個 process 啟動時偵測既有實例 → 寫入 `activate` payload → 顯示中文提示 → exit；第一個實例收到 payload 後 raise/activate 主視窗。`src/taxops/ui/app.py:run()` 接上 `guard.acquire()`、`guard.notify_existing()`、`guard.activation_requested` → `_activate_window`。
+- [已確認] **索件批次 context banner + 所屬案件 column**：`DocumentRequestsPage` 在 header 下方新增高對比 banner（藍底 #DBEAFE / 深藍字 #1E3A8A），global 模式顯示「現在顯示：全部案件（N 筆索件批次）」，engagement 模式顯示「現在顯示：[客戶名] — [案件名]」。`_REQ_COLUMNS` 新增 `engagement_label`（標題「所屬案件」），global 模式預設可見、engagement 模式自動隱藏。`_engagement_label_map(reqs)` 單次查 engagement → client，row 級複用。
+- [已確認] **RWD toolbar wrap + table interactive widths**：新檔 `src/taxops/ui/widgets/flow_layout.py`（Qt FlowLayout 範例改寫，BSD）。`DocumentRequestsPage` 12 個 toolbar 按鈕 + `EngagementsPage` 5 個 toolbar 按鈕都改用 FlowLayout，窗口變窄時自動換行；column widths 沿用 Slice 21C 持久化（Interactive 模式）。
+- [已確認] **附件 URL 整併**：刪掉預覽區的「檔案URL：」row + 複製/開啟按鈕。「檔案位置」按鈕加 `CustomContextMenu`，右鍵彈出選單「複製 file:// URL」一鍵複製。tooltip 補「左鍵：開啟資料夾　右鍵：複製 file:// URL」。`_copy_file_url(att)` 改成接 attachment 參數。
+- [已確認] **按鈕設計語言中央化**：`src/taxops/ui/style.py` 新增 `BTN_PRIMARY_SM`、`BTN_SECONDARY_SM`、`BTN_DANGER_SM` 三組完整樣式（含 background、color、hover、disabled）。`recurring_billing_page.py` 將 `_SMALL_BTN` / `_SKIP_BTN` / `_DANGER_BTN` aliased 到中央 tokens — 解決「編輯方案 / 新增明細」按鈕背景透明 + 文字與底色相近的對比 SLOP。
+- [已確認] **版號**：pyproject.toml + `__init__.py` 0.14.0 → 0.14.1。
+
+### 新增/修改檔案
+
+- `src/taxops/ui/single_instance.py`（NEW）：`SingleInstanceGuard` class。
+- `src/taxops/ui/app.py`：`_SINGLE_INSTANCE_NAME` + `_activate_window()` + `run()` 接 guard。
+- `src/taxops/ui/widgets/flow_layout.py`（NEW）：簡易 FlowLayout。
+- `src/taxops/ui/pages/document_requests_page.py`：context banner、`engagement_label` column、`_engagement_label_map`、FlowLayout toolbar。
+- `src/taxops/ui/pages/engagements_page.py`：FlowLayout toolbar。
+- `src/taxops/ui/pages/attachments_page.py`：刪 URL row、檔案位置 context menu、`_copy_file_url(att)`、`_show_location_menu(pos)`。
+- `src/taxops/ui/pages/recurring_billing_page.py`：`_SMALL_BTN` 等 alias 到 `BTN_PRIMARY_SM` 等。
+- `src/taxops/ui/style.py`：3 個新按鈕 tokens。
+- `tests/test_single_instance.py`（NEW，6 tests，1 skipped）。
+- `tests/test_slice9_ui.py`：移除 4 個 URL-row 測試，新增 2 個 context-menu 測試。
+
+### Codex review 修正（HIGH + MEDIUM）
+
+- [已確認] **HIGH 修正**：`style.py:BTN_DANGER_SM` 原本在 plain-string 段尾 `}}` 被字面解讀為兩個 `}`（f-string 的 `}}` 跳脫只在 f-string 內生效），實際 render 出 `; }}QPushButton:hover` 雙閉括號 CSS。修為單 `}`。
+- [已確認] **MEDIUM 修正 #1**：`SingleInstanceGuard.acquire()` 加 `QLocalServer.SocketOption.UserAccessOption`；Windows 預設已隔離但 Linux/macOS 否則 socket 落在 world-writable temp。明示 option 跨平台安全。
+- [已確認] **MEDIUM 修正 #2**：`_drain_socket()` 讀完 payload 後 disconnect `readyRead` slot，避免 client 分多 chunk 寫入造成 `activation_requested` 多次發射。
+- [已確認] **LOW 補強**：`BTN_SECONDARY_SM` / `BTN_DANGER_SM` 加 `:pressed` state 對齊 `BTN_PRIMARY_SM` 視覺一致性。
+- Codex Verdict：PASS-WITH-NOTES → 修正 HIGH 後即可 ship；MEDIUM 已順手修。
+
+### 驗證紀錄
+
+- `tests/test_single_instance.py` 5 passed + 1 skipped（含 UserAccessOption + readyRead.disconnect 修正後）。
+- 子集回歸 7 個 doc_requests / engagements test：92 passed。
+- `tests/test_slice9_ui.py` 20 passed。
+- `tests/test_slice19d_recurring_billing.py tests/test_slice18b_ui.py` 26 passed。
+- 全套 `python -m pytest`：975 passed, 1 skipped in 1027.30s（17 分鐘，先前 run；Codex 修正涉及 4 個檔案，全部跑過子集回歸均通過）。
+- EXE 打包執行中（pid bj4ebqxrz）。
+
+---
+
 ## Latest Handoff Update (2026-05-26 — Slice 21E Tasks UI + Attachment Preview, v0.14.0)
 
 ### 本輪完成事項（21E UI + 附件補強）

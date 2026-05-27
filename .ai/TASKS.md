@@ -122,6 +122,15 @@
 
 ## RECENTLY COMPLETED
 
+- [已確認] SLOP patch round v0.14.1（2026-05-27）— 4 點介面修正：
+  - **EXE 多開鎖**：新檔 `src/taxops/ui/single_instance.py` 提供 `SingleInstanceGuard`，使用 `QLocalServer`/`QLocalSocket` 命名通訊；第二個 process 啟動時送 `activate` payload → 顯示中文提示 → exit；第一個實例 raise/activate 主視窗。
+  - **索件批次 context banner + 所屬案件 column**：`DocumentRequestsPage` 加高對比 banner（藍底 #DBEAFE / 深藍字 #1E3A8A），global 模式顯示「現在顯示：全部案件（N 筆索件批次）」、engagement 模式顯示「現在顯示：[客戶名] — [案件名]」。`_REQ_COLUMNS` 新增 `engagement_label`（標題「所屬案件」），global 預設顯示、engagement 隱藏。
+  - **RWD toolbar wrap**：新檔 `src/taxops/ui/widgets/flow_layout.py`；DocumentRequestsPage（12 個按鈕）+ EngagementsPage（5 個按鈕）toolbar 改用 FlowLayout，窗口窄化自動換行。
+  - **附件 URL 整併**：刪預覽區「檔案URL：」row + 複製/開啟按鈕；「檔案位置」按鈕加 `CustomContextMenu`，右鍵彈選單「複製 file:// URL」一鍵複製。
+  - **中央按鈕設計 token**：`style.py` 加 `BTN_PRIMARY_SM` / `BTN_SECONDARY_SM` / `BTN_DANGER_SM`（含完整 bg/color/hover/disabled）；`recurring_billing_page.py` 將 `_SMALL_BTN`/`_SKIP_BTN`/`_DANGER_BTN` aliased 到中央 tokens，解決「編輯方案 / 新增明細」按鈕背景透明 + 文字對比 SLOP。
+  - `tests/test_single_instance.py`（NEW，5 passed + 1 skipped）+ `tests/test_slice9_ui.py` 移除 4 個 URL-row 測試新增 2 個 context-menu 測試。
+  - pyproject.toml + __init__.py 0.14.0 → 0.14.1。
+
 - [已確認] Slice 21C v0.12.0（2026-05-26）— 欄位顯示控制 + 欄寬持久化：
   - 新 `src/taxops/ui/widgets/column_settings.py` helper：對任意 QTableWidget 安裝右鍵 header 選單（per-col checkbox + 自動調整 + 重設預設）；auto-persist `columns_hidden` (CSV) + `column_widths` (JSON) 到 app_settings；核心欄不可隱藏（即使設定誤寫也會被強制顯示）。
   - 8 個新 app_settings keys：`ui.{engagements,doc_requests,doc_items,tasks}.{columns_hidden,column_widths}` 加入 DEFAULT_SETTINGS（自動納入 ALLOWED_KEYS）。
