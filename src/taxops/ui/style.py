@@ -15,6 +15,35 @@ _INPUT_BG = "#FFFFFF"
 DANGER_COLOR = "#DC2626"
 DANGER_HOVER_COLOR = "#B91C1C"
 
+# Small toolbar buttons embedded inside per-row widgets (e.g. recurring billing
+# plan/line rows). The global QPushButton style is meant for top-level toolbars
+# and is too tall; these compact variants carry the same colour language so the
+# button label never blends into the parent row's background.
+BTN_PRIMARY_SM = (
+    "QPushButton { background-color: #2563EB; color: #FFFFFF; "
+    "border: none; border-radius: 5px; padding: 4px 10px; "
+    "font-size: 12px; font-weight: 500; min-height: 24px; }"
+    "QPushButton:hover { background-color: #1D4ED8; }"
+    "QPushButton:pressed { background-color: #1E40AF; }"
+    "QPushButton:disabled { background-color: #CBD5E1; color: #94A3B8; }"
+)
+BTN_SECONDARY_SM = (
+    "QPushButton { background-color: #6B7280; color: #FFFFFF; "
+    "border: none; border-radius: 5px; padding: 4px 10px; "
+    "font-size: 12px; font-weight: 500; min-height: 24px; }"
+    "QPushButton:hover { background-color: #4B5563; }"
+    "QPushButton:pressed { background-color: #374151; }"
+    "QPushButton:disabled { background-color: #E5E7EB; color: #9CA3AF; }"
+)
+BTN_DANGER_SM = (
+    f"QPushButton {{ background-color: {DANGER_COLOR}; color: #FFFFFF; "
+    "border: none; border-radius: 5px; padding: 4px 10px; "
+    "font-size: 12px; font-weight: 500; min-height: 24px; }"
+    f"QPushButton:hover {{ background-color: {DANGER_HOVER_COLOR}; }}"
+    "QPushButton:pressed { background-color: #991B1B; }"
+    "QPushButton:disabled { background-color: #FCA5A5; color: #FECACA; }"
+)
+
 APP_STYLESHEET = f"""
 QWidget {{
     font-family: "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif;

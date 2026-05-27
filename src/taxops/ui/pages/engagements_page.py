@@ -40,6 +40,7 @@ from ..dialogs.edit_engagement_dialog import EditEngagementDialog
 from ..dialogs.new_engagement_dialog import NewEngagementDialog
 from ..style import toolbar_icon
 from ..widgets.column_settings import ColumnSettings
+from ..widgets.flow_layout import FlowLayout
 from .document_requests_page import DocumentRequestsPage
 
 _COLUMN_ORDER = (
@@ -103,8 +104,8 @@ class EngagementsPage(QWidget):
         filter_row.addStretch(1)
         master_layout.addLayout(filter_row)
 
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(8)
+        toolbar_widget = QWidget()
+        toolbar = FlowLayout(toolbar_widget, h_spacing=6, v_spacing=6)
         self._new_btn = QPushButton("新增案件")
         self._edit_btn = QPushButton("編輯案件")
         self._status_btn = QPushButton("切換狀態")
@@ -130,8 +131,7 @@ class EngagementsPage(QWidget):
             self._refresh_btn,
         ):
             toolbar.addWidget(btn)
-        toolbar.addStretch(1)
-        master_layout.addLayout(toolbar)
+        master_layout.addWidget(toolbar_widget)
 
         self._empty_label = QLabel("請先選擇客戶，或此客戶尚無案件。")
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)

@@ -391,10 +391,10 @@ def test_location_button_opens_attachment_folder(qapp, monkeypatch, tmp_path):
     conn.close()
 
 
-def test_selected_attachment_shows_file_url(qapp, tmp_path):
+def test_location_button_right_click_copies_file_url(qapp, tmp_path):
     conn, attachments_dir = _make_conn(tmp_path)
     eng_id = _seed(conn)
-    src = tmp_path / "url.pdf"
+    src = tmp_path / "ctx.pdf"
     src.write_bytes(b"PDF content")
     container = _FakeContainer(conn, attachments_dir)
     row = container.attachments.upload_attachment(UploadAttachmentInput(
@@ -406,93 +406,23 @@ def test_selected_attachment_shows_file_url(qapp, tmp_path):
     page._eng_combo.setCurrentIndex(1)
     page._load_attachments()
     page._table.selectRow(0)
-    expected = QUrl.fromLocalFile(str(attachments_dir / row.stored_filename)).toString()
-    assert page._file_url_edit.text() == expected
-    assert page._file_url_edit.text().startswith("file:///")
-    assert page._copy_url_btn.isEnabled()
-    assert page._open_url_btn.isEnabled()
-    conn.close()
-
-
-def test_copy_file_url_writes_clipboard(qapp, tmp_path):
-    conn, attachments_dir = _make_conn(tmp_path)
-    eng_id = _seed(conn)
-    src = tmp_path / "copy.pdf"
-    src.write_bytes(b"PDF content")
-    container = _FakeContainer(conn, attachments_dir)
-    row = container.attachments.upload_attachment(UploadAttachmentInput(
-        engagement_id=eng_id,
-        request_id=None,
-        source_path=src,
-    ))
-    page = AttachmentsPage(container)
-    page._eng_combo.setCurrentIndex(1)
-    page._load_attachments()
-    page._table.selectRow(0)
-    page._copy_file_url()
+    att = page._selected_attachment()
+    assert att is not None
+    page._copy_file_url(att)
     expected = QUrl.fromLocalFile(str(attachments_dir / row.stored_filename)).toString()
     assert QApplication.clipboard().text() == expected
     conn.close()
 
 
-def test_open_file_url_uses_file_url(qapp, monkeypatch, tmp_path):
+def test_location_button_has_context_menu_policy(qapp, tmp_path):
     conn, attachments_dir = _make_conn(tmp_path)
-    eng_id = _seed(conn)
-    src = tmp_path / "open-url.pdf"
-    src.write_bytes(b"PDF content")
+    _seed(conn)
     container = _FakeContainer(conn, attachments_dir)
-    row = container.attachments.upload_attachment(UploadAttachmentInput(
-        engagement_id=eng_id,
-        request_id=None,
-        source_path=src,
-    ))
-    opened: list[QUrl] = []
-    monkeypatch.setattr(
-        "taxops.ui.pages.attachments_page.QDesktopServices.openUrl",
-        lambda url: opened.append(url) or True,
-    )
     page = AttachmentsPage(container)
-    page._eng_combo.setCurrentIndex(1)
-    page._load_attachments()
-    page._table.selectRow(0)
-    page._on_open_file_url()
-    expected = QUrl.fromLocalFile(str(attachments_dir / row.stored_filename)).toString()
-    assert opened
-    assert opened[0].toString() == expected
-    conn.close()
-
-
-def test_loading_empty_attachment_list_clears_stale_file_url(qapp, tmp_path):
-    conn, attachments_dir = _make_conn(tmp_path)
-    eng_id = _seed(conn)
-    client_id = conn.execute("SELECT client_id FROM engagements WHERE id = ?", (eng_id,)).fetchone()[0]
-    conn.execute(
-        "INSERT INTO engagements (client_id, engagement_name, tax_type, period_name, "
-        "status, created_at, updated_at) "
-        "VALUES (?, '空附件案件', 'vat', '202502', 'draft', '2026-01-01T00:00:00', '2026-01-01T00:00:00')",
-        (client_id,),
+    assert (
+        page._location_btn.contextMenuPolicy()
+        == Qt.ContextMenuPolicy.CustomContextMenu
     )
-    conn.commit()
-    src = tmp_path / "stale.pdf"
-    src.write_bytes(b"PDF content")
-    container = _FakeContainer(conn, attachments_dir)
-    container.attachments.upload_attachment(UploadAttachmentInput(
-        engagement_id=eng_id,
-        request_id=None,
-        source_path=src,
-    ))
-    page = AttachmentsPage(container)
-    page._eng_combo.setCurrentIndex(1)
-    page._load_attachments()
-    page._table.selectRow(0)
-    assert page._file_url_edit.text().startswith("file:///")
-
-    page._eng_combo.setCurrentIndex(2)
-    page._load_attachments()
-    assert page._table.rowCount() == 0
-    assert page._file_url_edit.text() == ""
-    assert not page._copy_url_btn.isEnabled()
-    assert not page._open_url_btn.isEnabled()
     conn.close()
 
 

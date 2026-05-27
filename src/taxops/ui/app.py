@@ -57,6 +57,20 @@ def bootstrap(paths: AppPaths | None = None) -> ServiceContainer:
     return build_container(paths, conn)
 
 
+_SINGLE_INSTANCE_NAME = "TaxOpsControlDesk.SingleInstance"
+
+
+def _activate_window(window) -> None:
+    """Bring the existing main window to the foreground."""
+    from PySide6.QtCore import Qt
+
+    state = window.windowState() & ~Qt.WindowState.WindowMinimized
+    window.setWindowState(state | Qt.WindowState.WindowActive)
+    window.show()
+    window.raise_()
+    window.activateWindow()
+
+
 def run() -> int:
     """Entry point used by ``python -m taxops``."""
     _set_windows_app_user_model_id()
@@ -64,16 +78,32 @@ def run() -> int:
     try:
         # Local import so the test/CI process can import bootstrap without
         # requiring Qt to be importable.
-        from PySide6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication, QMessageBox
 
         from .main_window import MainWindow
+        from .single_instance import SingleInstanceGuard
 
         app = QApplication.instance() or QApplication(sys.argv)
         _set_app_icon(app)
         from .style import apply as apply_style
         apply_style(app)
+
+        guard = SingleInstanceGuard(_SINGLE_INSTANCE_NAME)
+        if not guard.acquire():
+            guard.notify_existing()
+            QMessageBox.information(
+                None,
+                "TaxOps Control Desk",
+                "TaxOps Control Desk 已在執行中，已將原視窗切回前景。",
+            )
+            return 0
+
         window = MainWindow(container)
         window.show()
-        return int(app.exec())
+        guard.activation_requested.connect(lambda w=window: _activate_window(w))
+        try:
+            return int(app.exec())
+        finally:
+            guard.release()
     finally:
         container.close()

@@ -49,9 +49,11 @@ from ..dialogs.document_item_template_dialog import DocumentItemTemplateDialog
 from ..dialogs.generate_message_dialog import GenerateMessageDialog
 from ..style import toolbar_icon
 from ..widgets.column_settings import ColumnSettings
+from ..widgets.flow_layout import FlowLayout
 
 _REQ_COLUMNS = (
     "id",
+    "engagement_label",
     "tax_type",
     "period_name",
     "status",
@@ -62,6 +64,7 @@ _REQ_COLUMNS = (
 
 _REQ_HEADERS = {
     "id": "編號",
+    "engagement_label": "所屬案件",
     "tax_type": "稅種",
     "period_name": "期間",
     "status": "狀態",
@@ -118,6 +121,24 @@ class DocumentRequestsPage(QWidget):
             self._back_btn.hide()
             self._context_label.hide()
 
+        # Context banner — visible in both standalone and embedded modes so
+        # the user always knows whose doc requests are on screen.
+        self._context_banner = QLabel("現在顯示：全部案件")
+        self._context_banner.setObjectName("DocRequestsContextBanner")
+        self._context_banner.setStyleSheet(
+            "QLabel#DocRequestsContextBanner {"
+            " background-color: #DBEAFE;"
+            " color: #1E3A8A;"
+            " font-size: 13px;"
+            " font-weight: 600;"
+            " border: 1px solid #93C5FD;"
+            " border-radius: 6px;"
+            " padding: 8px 12px;"
+            "}"
+        )
+        self._context_banner.setWordWrap(True)
+        outer.addWidget(self._context_banner)
+
         # Engagement selector row (hidden in embedded mode — the parent
         # EngagementsPage picks the engagement via its master list).
         filter_row = QHBoxLayout()
@@ -133,9 +154,11 @@ class DocumentRequestsPage(QWidget):
             self._eng_combo_label.hide()
             self._engagement_combo.hide()
 
-        # Toolbar
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(8)
+        # Toolbar — FlowLayout so buttons wrap onto a second row when the
+        # window narrows (RWD); replaces the previous QHBoxLayout that
+        # truncated buttons.
+        toolbar_widget = QWidget()
+        toolbar = FlowLayout(toolbar_widget, h_spacing=6, v_spacing=6)
         self._new_req_btn = QPushButton("新增索件批次")
         self._mark_requested_btn = QPushButton("標記已發出")
         self._request_status_btn = QPushButton("設定進度")
@@ -191,8 +214,7 @@ class DocumentRequestsPage(QWidget):
             self._export_btn,
         ):
             toolbar.addWidget(btn)
-        toolbar.addStretch(1)
-        outer.addLayout(toolbar)
+        outer.addWidget(toolbar_widget)
 
         # Empty state shown when no engagements exist at all
         self._no_engagement_label = QLabel(
@@ -365,6 +387,9 @@ class DocumentRequestsPage(QWidget):
         self._context_label.setText(f"{NAV_LABELS['doc_requests']}(全部)")
         self._no_engagement_label.setVisible(False)
         self._splitter.setVisible(True)
+        # Show 所屬案件 column in global mode (default); banner updated post-load.
+        col_idx = _REQ_COLUMNS.index("engagement_label")
+        self._req_table.setColumnHidden(col_idx, False)
         self._load_all_requests()
 
     def _render_engagement_view(self) -> None:
@@ -385,8 +410,15 @@ class DocumentRequestsPage(QWidget):
             f"{client_part}{eng.engagement_name}({status_to_label(eng.status)})"
         )
         self._context_label.setText(label)
+        client_name = client.client_name if client else "(未知客戶)"
+        self._context_banner.setText(
+            f"現在顯示：{client_name} — {eng.engagement_name}"
+        )
         self._no_engagement_label.setVisible(False)
         self._splitter.setVisible(True)
+        # 所屬案件 column is redundant when filtered to one engagement; hide it.
+        col_idx = _REQ_COLUMNS.index("engagement_label")
+        self._req_table.setColumnHidden(col_idx, True)
         self._refresh_requests()
 
     # ------------------------------------------------------------------
@@ -428,12 +460,14 @@ class DocumentRequestsPage(QWidget):
 
     def _fill_request_table(self, reqs, saved_req_id: int | None) -> None:
         self._req_table.setRowCount(len(reqs))
+        labels = self._engagement_label_map(reqs)
         target_row = -1
         for row_idx, req in enumerate(reqs):
             if saved_req_id is not None and req.id == saved_req_id:
                 target_row = row_idx
             values = {
                 "id": str(req.id),
+                "engagement_label": labels.get(req.engagement_id, ""),
                 "tax_type": status_to_label(req.tax_type),
                 "period_name": req.period_name,
                 "status": status_to_label(req.status),
@@ -445,6 +479,11 @@ class DocumentRequestsPage(QWidget):
                 self._req_table.setItem(
                     row_idx, col_idx, QTableWidgetItem(values[col])
                 )
+        # Banner only updates in global mode (engagement mode set it earlier).
+        if self._engagement_id is None:
+            self._context_banner.setText(
+                f"現在顯示：全部案件（{len(reqs)} 筆索件批次）"
+            )
         if target_row >= 0:
             self._req_table.selectRow(target_row)
             # selectRow may not fire itemSelectionChanged when the same row is
@@ -455,6 +494,28 @@ class DocumentRequestsPage(QWidget):
             self._req_table.clearSelection()
             self._item_table.setRowCount(0)
             self._on_req_selection_changed()
+
+    def _engagement_label_map(self, reqs) -> dict[int, str]:
+        """Build engagement_id -> '客戶名 — 案件名' for the rows we are about to render.
+
+        Single query per unique engagement; client cache shared across rows.
+        """
+        result: dict[int, str] = {}
+        client_cache: dict[int, str] = {}
+        for eng_id in {r.engagement_id for r in reqs}:
+            eng = self._container.engagements.get_engagement(eng_id)
+            if eng is None:
+                result[eng_id] = "(已刪除案件)"
+                continue
+            if eng.client_id not in client_cache:
+                client = self._container.clients.get_client(eng.client_id)
+                client_cache[eng.client_id] = (
+                    client.client_name if client else "(未知客戶)"
+                )
+            result[eng_id] = (
+                f"{client_cache[eng.client_id]} — {eng.engagement_name}"
+            )
+        return result
 
     def _load_items_for_selected(self) -> None:
         req_id = self._selected_request_id()

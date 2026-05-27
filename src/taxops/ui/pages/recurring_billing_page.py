@@ -31,7 +31,7 @@ from ..dialogs.recurring_billing_dialogs import (
     PlanDialog,
     SkipOccurrenceDialog,
 )
-from ..style import DANGER_COLOR
+from ..style import BTN_DANGER_SM, BTN_PRIMARY_SM, BTN_SECONDARY_SM
 
 _log = logging.getLogger(__name__)
 
@@ -46,19 +46,12 @@ _FREQ_LABELS: dict[str, str] = {
 _ALL_CLIENTS = -1
 _WINDOW_DAYS = 90
 
-_SMALL_BTN = (
-    "QPushButton { font-size: 11px; padding: 3px 8px; min-height: 22px; }"
-)
-_SKIP_BTN = (
-    "QPushButton { font-size: 11px; padding: 3px 8px; min-height: 22px; "
-    "background-color: #6B7280; } "
-    "QPushButton:hover { background-color: #4B5563; }"
-)
-_DANGER_BTN = (
-    f"QPushButton {{ font-size: 11px; padding: 3px 8px; min-height: 22px; "
-    f"background-color: {DANGER_COLOR}; }} "
-    "QPushButton:hover { background-color: #B91C1C; }"
-)
+# Per-row toolbar buttons use the centralised design tokens so the label is
+# always legible against the row background (was the source of the SLOP report
+# about 編輯方案 / 新增明細 blending in).
+_SMALL_BTN = BTN_PRIMARY_SM
+_SKIP_BTN = BTN_SECONDARY_SM
+_DANGER_BTN = BTN_DANGER_SM
 _PLAN_TOGGLE = (
     "QPushButton { text-align: left; border: none; background: transparent; "
     "font-size: 13px; font-weight: 600; padding: 4px 8px; color: #0F172A; }"

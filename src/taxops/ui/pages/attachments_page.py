@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QPixmap
+from PySide6.QtGui import QAction, QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QLineEdit,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -176,7 +176,12 @@ class AttachmentsPage(QWidget):
         self._location_btn = QPushButton("檔案位置")
         self._location_btn.setIcon(toolbar_icon("trial"))
         self._location_btn.setEnabled(False)
+        self._location_btn.setToolTip("左鍵：開啟資料夾　右鍵：複製 file:// URL")
         self._location_btn.clicked.connect(self._on_open_location)
+        self._location_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._location_btn.customContextMenuRequested.connect(
+            self._show_location_menu
+        )
         btn_row.addWidget(self._location_btn)
 
         btn_row.addStretch()
@@ -212,23 +217,6 @@ class AttachmentsPage(QWidget):
         header = QLabel("預覽")
         header.setStyleSheet("font-weight: bold;")
         layout.addWidget(header)
-
-        url_row = QHBoxLayout()
-        url_row.setSpacing(6)
-        url_row.addWidget(QLabel("檔案URL："))
-        self._file_url_edit = QLineEdit()
-        self._file_url_edit.setReadOnly(True)
-        self._file_url_edit.setPlaceholderText("選擇附件後顯示 file:/// 路徑")
-        url_row.addWidget(self._file_url_edit, 1)
-        self._copy_url_btn = QPushButton("複製")
-        self._copy_url_btn.setEnabled(False)
-        self._copy_url_btn.clicked.connect(self._copy_file_url)
-        url_row.addWidget(self._copy_url_btn)
-        self._open_url_btn = QPushButton("開啟")
-        self._open_url_btn.setEnabled(False)
-        self._open_url_btn.clicked.connect(self._on_open_file_url)
-        url_row.addWidget(self._open_url_btn)
-        layout.addLayout(url_row)
 
         self._preview_stack = QStackedWidget()
 
@@ -355,18 +343,14 @@ class AttachmentsPage(QWidget):
         self._info_btn.setEnabled(has)
         self._open_btn.setEnabled(has)
         self._location_btn.setEnabled(has)
-        self._copy_url_btn.setEnabled(has)
-        self._open_url_btn.setEnabled(has)
         self._update_preview(self._selected_attachment())
 
     def _update_preview(self, att) -> None:
         if att is None:
-            self._file_url_edit.clear()
             self._preview_stack.setCurrentIndex(_PREVIEW_NONE)
             return
 
         file_path = self._att_file_path(att)
-        self._file_url_edit.setText(self._att_file_url(att))
         ext = att.extension.lower()
 
         if ext == ".pdf" and file_path.exists() and self._preview_pdf_doc is not None:
@@ -503,20 +487,20 @@ class AttachmentsPage(QWidget):
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(file_path)))
 
-    def _copy_file_url(self) -> None:
-        url = self._file_url_edit.text().strip()
-        if url:
-            QApplication.clipboard().setText(url)
-
-    def _on_open_file_url(self) -> None:
+    def _show_location_menu(self, pos) -> None:
         att = self._selected_attachment()
         if att is None:
             return
-        file_path = self._att_file_path(att)
-        if not file_path.exists():
-            QMessageBox.warning(self, "找不到檔案", f"檔案已移動或刪除：{att.original_filename}")
-            return
-        QDesktopServices.openUrl(QUrl(self._att_file_url(att)))
+        menu = QMenu(self._location_btn)
+        copy_url_action = QAction("複製 file:// URL", menu)
+        copy_url_action.triggered.connect(lambda _=False, a=att: self._copy_file_url(a))
+        menu.addAction(copy_url_action)
+        menu.exec(self._location_btn.mapToGlobal(pos))
+
+    def _copy_file_url(self, att) -> None:
+        url = self._att_file_url(att)
+        if url:
+            QApplication.clipboard().setText(url)
 
     def _on_open_location(self) -> None:
         att = self._selected_attachment()
