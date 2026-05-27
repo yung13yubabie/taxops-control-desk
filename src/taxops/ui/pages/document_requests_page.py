@@ -89,18 +89,36 @@ _ALL_ENGAGEMENTS = -1
 
 
 class DocumentRequestsPage(QWidget):
+    """Doc requests page.
+
+    ``view_mode`` controls which half of the splitter is visible (Slice 22):
+
+    * ``"full"`` (default): legacy splitter — request table + item table.
+    * ``"requests_only"``: only request table; item table + item buttons hidden.
+      Double-clicking a request row emits :attr:`drill_to_items` so the parent
+      EngagementsPage can switch its QStackedWidget to the items_only page.
+    * ``"items_only"``: only item table; request table + request-level buttons
+      hidden. Parent calls :meth:`load_request_items` to populate.
+    """
+
     back_to_engagements = Signal()
+    drill_to_items = Signal(int)  # request_id — fires in requests_only mode
 
     def __init__(
         self,
         container: ServiceContainer,
         parent: QWidget | None = None,
         embedded: bool = False,
+        view_mode: str = "full",
     ) -> None:
         super().__init__(parent)
+        if view_mode not in {"full", "requests_only", "items_only"}:
+            raise ValueError(f"invalid view_mode: {view_mode!r}")
         self._container = container
         self._engagement_id: int | None = None
         self._embedded = embedded
+        self._view_mode = view_mode
+        self._items_only_request_id: int | None = None
 
         outer = QVBoxLayout(self)
         margin = 0 if embedded else 24
@@ -266,6 +284,35 @@ class DocumentRequestsPage(QWidget):
         self._splitter.addWidget(item_widget)
 
         outer.addWidget(self._splitter, stretch=1)
+
+        # Slice 22 v0.14.3 — view_mode visibility for drill-down inside the
+        # EngagementsPage QStackedWidget. Default "full" preserves legacy.
+        if self._view_mode == "requests_only":
+            item_widget.hide()
+            for btn in (
+                self._add_item_btn,
+                self._edit_item_btn,
+                self._delete_item_btn,
+                self._bulk_delete_items_btn,
+                self._item_status_btn,
+            ):
+                btn.hide()
+            self._req_table.doubleClicked.connect(self._on_req_row_double_clicked)
+        elif self._view_mode == "items_only":
+            req_widget.hide()
+            self._context_banner.hide()
+            self._eng_combo_label.hide()
+            self._engagement_combo.hide()
+            for btn in (
+                self._new_req_btn,
+                self._mark_requested_btn,
+                self._request_status_btn,
+                self._follow_up_btn,
+                self._delete_req_btn,
+                self._generate_btn,
+                self._export_btn,
+            ):
+                btn.hide()
 
         # Slice 21C: install column settings (hide/show + persist widths)
         self._req_col_settings = ColumnSettings(
@@ -517,6 +564,47 @@ class DocumentRequestsPage(QWidget):
             )
         return result
 
+    def _on_req_row_double_clicked(self, _index) -> None:
+        """In requests_only mode, double-clicking a row drills to items_only
+        page in the parent QStackedWidget via :attr:`drill_to_items`."""
+        req_id = self._selected_request_id()
+        if req_id is not None:
+            self.drill_to_items.emit(req_id)
+
+    def load_request_items(self, request_id: int) -> None:
+        """For items_only mode: load items for the given request_id.
+
+        The request table is hidden in this mode, so we bypass the
+        selection-driven ``_load_items_for_selected`` and load directly.
+        """
+        self._items_only_request_id = request_id
+        # Items_only mode: 「新增文件項目」 is always enabled (request_id
+        # already known); per-item buttons enable on item selection.
+        self._add_item_btn.setEnabled(True)
+        try:
+            items = self._container.doc_requests.list_items(request_id)
+        except Exception as err:
+            self._container.system_log.error(
+                "doc_request_items.list failed", exc=err
+            )
+            self._item_table.setRowCount(0)
+            return
+        self._render_items(items)
+
+    def _render_items(self, items) -> None:
+        self._item_table.setRowCount(len(items))
+        for row_idx, item in enumerate(items):
+            values = {
+                "id": str(item.id),
+                "item_name": item.item_name,
+                "item_status": status_to_label(item.item_status),
+                "notes": item.notes or "",
+            }
+            for col_idx, col in enumerate(_ITEM_COLUMNS):
+                self._item_table.setItem(
+                    row_idx, col_idx, QTableWidgetItem(values[col])
+                )
+
     def _load_items_for_selected(self) -> None:
         req_id = self._selected_request_id()
         if req_id is None:
@@ -573,6 +661,10 @@ class DocumentRequestsPage(QWidget):
         self._bulk_delete_items_btn.setEnabled(multi)
 
     def _selected_request_id(self) -> int | None:
+        # In items_only mode, the request table is hidden — fall back to the
+        # explicitly loaded request_id so add/edit/delete item handlers work.
+        if self._view_mode == "items_only" and self._items_only_request_id is not None:
+            return self._items_only_request_id
         items = self._req_table.selectedItems()
         if not items:
             return None

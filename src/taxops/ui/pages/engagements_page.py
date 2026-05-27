@@ -1,13 +1,17 @@
-"""Engagements page: master-detail vertical split (Slice 21B).
+"""Engagements page: three-layer drill-down (Slice 22 / v0.14.3).
 
-Top half: engagement list with client filter + CRUD toolbar (the historical
-EngagementsPage UI). Bottom half: embedded DocumentRequestsPage in
-``embedded=True`` mode — its back button and engagement combo are hidden
-because the parent page already owns engagement selection.
+Replaces the Slice 21B vertical splitter master-detail with a
+``QStackedWidget`` so the three levels (case → request batch → document
+item) live on their own pages:
 
-Selecting a row in the top table calls ``load_engagement()`` on the bottom
-widget; clearing the selection falls back to the global ("全部案件") view
-of all doc requests across every engagement.
+* Page 0 — engagement list (master)
+* Page 1 — ``DocumentRequestsPage`` in ``view_mode='requests_only'``
+  (only the request-batch table is visible)
+* Page 2 — ``DocumentRequestsPage`` in ``view_mode='items_only'``
+  (only the document-item table is visible)
+
+A breadcrumb above the stack shows the current depth and lets the user
+jump back to any ancestor level.
 """
 
 from __future__ import annotations
@@ -23,7 +27,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
-    QSplitter,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -71,6 +75,11 @@ _CORE_COLS = frozenset({"engagement_name", "status"})
 
 _ALL_CLIENTS = -1
 
+# QStackedWidget page indices.
+_PAGE_LIST = 0
+_PAGE_REQUESTS = 1
+_PAGE_ITEMS = 2
+
 
 class EngagementsPage(QWidget):
     def __init__(
@@ -79,21 +88,75 @@ class EngagementsPage(QWidget):
         super().__init__(parent)
         self._container = container
         self._current_client_id: int = _ALL_CLIENTS
+        self._current_engagement_id: int | None = None
+        self._current_request_id: int | None = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 24, 24, 24)
-        outer.setSpacing(12)
+        outer.setSpacing(10)
 
-        title = QLabel(NAV_LABELS["engagements"])
-        title.setStyleSheet("font-size: 20px; font-weight: 600;")
-        outer.addWidget(title)
+        # Breadcrumb row — three buttons that act as jump targets.
+        breadcrumb_row = QHBoxLayout()
+        breadcrumb_row.setSpacing(4)
+        self._bc_root_btn = QPushButton(NAV_LABELS["engagements"])
+        self._bc_root_btn.setStyleSheet(self._breadcrumb_style(active=True))
+        self._bc_root_btn.clicked.connect(self._show_master)
+        self._bc_sep1 = QLabel(" › ")
+        self._bc_engagement_btn = QPushButton("")
+        self._bc_engagement_btn.setStyleSheet(self._breadcrumb_style())
+        self._bc_engagement_btn.clicked.connect(self._show_requests)
+        self._bc_sep2 = QLabel(" › ")
+        self._bc_request_btn = QPushButton("")
+        self._bc_request_btn.setStyleSheet(self._breadcrumb_style())
+        self._bc_request_btn.clicked.connect(self._show_items)
+        for w in (
+            self._bc_root_btn,
+            self._bc_sep1,
+            self._bc_engagement_btn,
+            self._bc_sep2,
+            self._bc_request_btn,
+        ):
+            breadcrumb_row.addWidget(w)
+        breadcrumb_row.addStretch(1)
+        outer.addLayout(breadcrumb_row)
 
-        self._splitter = QSplitter(Qt.Orientation.Vertical)
+        # QStackedWidget: three drill-down pages.
+        self._stack = QStackedWidget()
+        outer.addWidget(self._stack, stretch=1)
 
-        master = QWidget()
-        master_layout = QVBoxLayout(master)
-        master_layout.setContentsMargins(0, 0, 0, 0)
-        master_layout.setSpacing(8)
+        # Page 0 — master engagement list.
+        self._master_page = self._build_master_page()
+        self._stack.addWidget(self._master_page)
+
+        # Page 1 — requests_only DocumentRequestsPage.
+        self._requests_page = DocumentRequestsPage(
+            container, embedded=True, view_mode="requests_only"
+        )
+        self._requests_page.drill_to_items.connect(self._on_drill_to_items)
+        self._stack.addWidget(self._requests_page)
+
+        # Backward-compatible alias used by 21B-era tests.
+        self._doc_requests_widget = self._requests_page
+
+        # Page 2 — items_only DocumentRequestsPage.
+        self._items_page = DocumentRequestsPage(
+            container, embedded=True, view_mode="items_only"
+        )
+        self._stack.addWidget(self._items_page)
+
+        self._filter_key: str = ""
+        self._show_master()
+        self._on_load_and_refresh()
+
+    # ------------------------------------------------------------------
+    # Master engagement list (page 0)
+    # ------------------------------------------------------------------
+
+    def _build_master_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
         filter_row = QHBoxLayout()
         filter_row.setSpacing(8)
@@ -102,7 +165,7 @@ class EngagementsPage(QWidget):
         self._client_combo.setMinimumWidth(260)
         filter_row.addWidget(self._client_combo)
         filter_row.addStretch(1)
-        master_layout.addLayout(filter_row)
+        layout.addLayout(filter_row)
 
         toolbar_widget = QWidget()
         toolbar = FlowLayout(toolbar_widget, h_spacing=6, v_spacing=6)
@@ -110,33 +173,37 @@ class EngagementsPage(QWidget):
         self._edit_btn = QPushButton("編輯案件")
         self._status_btn = QPushButton("切換狀態")
         self._delete_btn = QPushButton("刪除案件")
+        self._open_btn = QPushButton("進入索件 →")
         self._refresh_btn = QPushButton("重新整理")
 
         self._new_btn.setIcon(toolbar_icon("new"))
         self._edit_btn.setIcon(toolbar_icon("edit"))
         self._status_btn.setIcon(toolbar_icon("edit"))
         self._delete_btn.setIcon(toolbar_icon("delete"))
+        self._open_btn.setIcon(toolbar_icon("export"))
         self._refresh_btn.setIcon(toolbar_icon("refresh"))
 
         self._new_btn.setEnabled(False)
         self._edit_btn.setEnabled(False)
         self._status_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
+        self._open_btn.setEnabled(False)
 
         for btn in (
             self._new_btn,
             self._edit_btn,
             self._status_btn,
             self._delete_btn,
+            self._open_btn,
             self._refresh_btn,
         ):
             toolbar.addWidget(btn)
-        master_layout.addWidget(toolbar_widget)
+        layout.addWidget(toolbar_widget)
 
         self._empty_label = QLabel("請先選擇客戶，或此客戶尚無案件。")
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_label.setStyleSheet("color: #777; padding: 24px;")
-        master_layout.addWidget(self._empty_label)
+        layout.addWidget(self._empty_label)
 
         self._table = QTableWidget(0, len(_COLUMN_ORDER))
         self._table.setHorizontalHeaderLabels(
@@ -150,29 +217,17 @@ class EngagementsPage(QWidget):
         hv.setSectionResizeMode(
             _COLUMN_ORDER.index("engagement_name"), QHeaderView.ResizeMode.Stretch
         )
-        master_layout.addWidget(self._table, stretch=1)
-
-        detail = QWidget()
-        detail_layout = QVBoxLayout(detail)
-        detail_layout.setContentsMargins(0, 8, 0, 0)
-        detail_layout.setSpacing(6)
-        detail_layout.addWidget(QLabel("索件批次（依上方選取的案件顯示；未選時顯示全部）"))
-        self._doc_requests_widget = DocumentRequestsPage(container, embedded=True)
-        detail_layout.addWidget(self._doc_requests_widget, stretch=1)
-
-        self._splitter.addWidget(master)
-        self._splitter.addWidget(detail)
-        self._splitter.setStretchFactor(0, 1)
-        self._splitter.setStretchFactor(1, 2)
-        outer.addWidget(self._splitter, stretch=1)
+        layout.addWidget(self._table, stretch=1)
 
         self._client_combo.currentIndexChanged.connect(self._on_client_changed)
         self._new_btn.clicked.connect(self._on_new_engagement)
         self._edit_btn.clicked.connect(self._on_edit_engagement)
         self._status_btn.clicked.connect(self._on_set_status)
         self._delete_btn.clicked.connect(self._on_delete)
+        self._open_btn.clicked.connect(self._on_open_engagement)
         self._refresh_btn.clicked.connect(self._on_load_and_refresh)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
+        self._table.doubleClicked.connect(self._on_open_engagement)
 
         self._col_settings = ColumnSettings(
             table=self._table,
@@ -180,24 +235,112 @@ class EngagementsPage(QWidget):
             all_cols=_COLUMN_ORDER,
             core_cols=_CORE_COLS,
             headers=_TABLE_HEADERS,
-            settings=container.settings,
+            settings=self._container.settings,
         )
         self._col_settings.install()
+        return page
 
-        self._filter_key: str = ""
-        self._on_load_and_refresh()
+    # ------------------------------------------------------------------
+    # Breadcrumb / page navigation
+    # ------------------------------------------------------------------
+
+    def _breadcrumb_style(self, *, active: bool = False) -> str:
+        color = "#2563EB" if active else "#64748B"
+        weight = "600" if active else "500"
+        return (
+            "QPushButton { background: transparent; border: none; "
+            f"color: {color}; font-size: 13px; font-weight: {weight}; "
+            "padding: 4px 6px; }"
+            "QPushButton:hover { color: #1D4ED8; }"
+            "QPushButton:disabled { color: #94A3B8; }"
+        )
+
+    def _show_master(self) -> None:
+        self._stack.setCurrentIndex(_PAGE_LIST)
+        self._bc_engagement_btn.hide()
+        self._bc_sep1.hide()
+        self._bc_request_btn.hide()
+        self._bc_sep2.hide()
+
+    def _show_requests(self) -> None:
+        if self._current_engagement_id is None:
+            return
+        self._stack.setCurrentIndex(_PAGE_REQUESTS)
+        self._bc_engagement_btn.show()
+        self._bc_sep1.show()
+        self._bc_request_btn.hide()
+        self._bc_sep2.hide()
+
+    def _show_items(self) -> None:
+        if self._current_request_id is None:
+            return
+        self._stack.setCurrentIndex(_PAGE_ITEMS)
+        self._bc_engagement_btn.show()
+        self._bc_sep1.show()
+        self._bc_request_btn.show()
+        self._bc_sep2.show()
+
+    def _on_open_engagement(self, *_args) -> None:
+        eng_id = self._selected_engagement_id()
+        if eng_id is None:
+            return
+        self._drill_to_engagement(eng_id)
+
+    def _drill_to_engagement(self, engagement_id: int) -> None:
+        eng = self._container.engagements.get_engagement(engagement_id)
+        if eng is None:
+            QMessageBox.warning(
+                self, "找不到案件", error_message("engagement.not_found")
+            )
+            self._refresh_engagements()
+            return
+        self._current_engagement_id = engagement_id
+        self._current_request_id = None
+        self._requests_page.load_engagement(engagement_id)
+        self._bc_engagement_btn.setText(eng.engagement_name)
+        self._show_requests()
+
+    def _on_drill_to_items(self, request_id: int) -> None:
+        try:
+            req = self._container.doc_requests.get_request(request_id)
+        except Exception:
+            req = None
+        self._current_request_id = request_id
+        self._items_page.load_request_items(request_id)
+        label = req.period_name if req else f"#{request_id}"
+        self._bc_request_btn.setText(label)
+        self._show_items()
+
+    # ------------------------------------------------------------------
+    # Public API — kept for backward compatibility with 21B tests + main_window
+    # ------------------------------------------------------------------
 
     def set_filter(self, filter_key: str) -> None:
         self._filter_key = filter_key
         self._refresh_engagements()
+        self._show_master()
 
     def clear_filter(self) -> None:
         self._filter_key = ""
         self._current_client_id = _ALL_CLIENTS
+        self._show_master()
 
     def refresh_context(self) -> None:
         self._on_load_and_refresh()
-        self._doc_requests_widget.refresh_context()
+        self._requests_page.refresh_context()
+
+    # Slice 21B alias retained for tests.
+    def _sync_embedded_to_selection(self) -> None:
+        eng_id = self._selected_engagement_id()
+        if eng_id is None:
+            self._requests_page.clear_filter()
+            self._requests_page.refresh_context()
+        else:
+            self._requests_page.load_engagement(eng_id)
+
+    # ------------------------------------------------------------------
+    # Engagement list refresh
+    # ------------------------------------------------------------------
 
     def _on_load_and_refresh(self) -> None:
         saved_id = self._current_client_id
@@ -272,22 +415,21 @@ class EngagementsPage(QWidget):
         self._empty_label.setVisible(not has_rows)
         self._table.setVisible(has_rows)
         self._on_selection_changed()
-        self._sync_embedded_to_selection()
 
     def _on_selection_changed(self) -> None:
         has_sel = bool(self._table.selectedItems())
         self._edit_btn.setEnabled(has_sel)
         self._status_btn.setEnabled(has_sel)
         self._delete_btn.setEnabled(has_sel)
-        self._sync_embedded_to_selection()
-
-    def _sync_embedded_to_selection(self) -> None:
+        self._open_btn.setEnabled(has_sel)
+        # 21B legacy sync — populate the requests page so tests that read
+        # ``_doc_requests_widget._engagement_id`` after selectRow keep passing
+        # without forcing a drill-down navigation.
         eng_id = self._selected_engagement_id()
         if eng_id is None:
-            self._doc_requests_widget.clear_filter()
-            self._doc_requests_widget.refresh_context()
+            self._requests_page.clear_filter()
         else:
-            self._doc_requests_widget.load_engagement(eng_id)
+            self._requests_page.load_engagement(eng_id)
 
     def _selected_engagement_id(self) -> int | None:
         items = self._table.selectedItems()
@@ -296,6 +438,10 @@ class EngagementsPage(QWidget):
         row = self._table.row(items[0])
         id_item = self._table.item(row, 0)
         return int(id_item.text()) if id_item else None
+
+    # ------------------------------------------------------------------
+    # CRUD handlers
+    # ------------------------------------------------------------------
 
     def _on_new_engagement(self) -> None:
         if self._current_client_id is None:
