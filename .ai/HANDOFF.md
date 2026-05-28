@@ -1,5 +1,30 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-05-28 — Dashboard 浮動 QDockWidget, v0.15.0)
+
+### 本輪完成事項
+
+- [已確認] **DashboardPage UI 重設計為 compact rows**：8 張大卡 (QGridLayout + QFrame，每張 120px 高) → 9 條精簡 row（title  …  count  →）QVBoxLayout 堆疊。保留 `_cards` dict、`navigate_to_page = Signal(str, str)` 信號、`refresh_context()`、每 row 仍有 `nav_btn` → 21 個 Slice 14 UI 測試直接相容（只改 1 個 refresh button 用 tooltip assertion）。Backward-compat alias `_DashboardCard = _DashboardRow`。
+- [已確認] **MainWindow 改 QDockWidget host**：`_build_dashboard_dock()` 在 `__init__` 末尾建立 dock，預設右側、可拖到左/右兩邊、可 float、可關閉、minimumWidth=260；persist 顯示/隱藏到 `ui.dashboard_dock_visible` setting。
+- [已確認] **NAV_ORDER 移除 PAGE_DASHBOARD**：11 → 10 個 sidebar 入口；`PAGE_DASHBOARD` 常數保留（dashboard 仍有 4 個 action contracts），透過 `_EMBEDDED_ONLY_PAGES = {PAGE_DOC_REQUESTS, PAGE_DASHBOARD}` whitelist 通過契約檢查。
+- [已確認] **Sidebar header 加 📊 toggle 按鈕**：放在 ◀ 收合按鈕右邊，點擊切換 dashboard dock 顯示/隱藏，tooltip「顯示／隱藏控制台浮動視窗」。
+- [已確認] **dock visibility 持久化**：`ui.dashboard_dock_visible` 加入 DEFAULT_SETTINGS（預設 "1"）；`_on_dashboard_visibility_changed(visible)` 寫回 setting；重啟後恢復狀態。
+- [已確認] **版號**：pyproject.toml + `__init__.py` 0.14.3 → 0.15.0（minor bump：sidebar 布局有 breaking change）。
+- [已確認] **測試**：`tests/test_slice23_dashboard_dock.py`（NEW，10 tests）；Slice 14 dashboard tests 21/21 仍通過（只調 1 test 的 assert）；test_ui_action_contracts whitelist 補 PAGE_DASHBOARD。全套 pytest 996 passed, 1 skipped。
+
+### 修改/新增檔案
+
+- `src/taxops/ui/pages/dashboard_page.py`：8 大 QFrame card → 9 compact `_DashboardRow`，icon-only refresh button，QVBoxLayout + QScrollArea。`_DashboardCard = _DashboardRow` alias。
+- `src/taxops/ui/main_window.py`：import QDockWidget、sidebar header 加 📊 toggle button、`_build_pages` skip PAGE_DASHBOARD、新 `_build_dashboard_dock` / `_toggle_dashboard_dock` / `_on_dashboard_visibility_changed`。
+- `src/taxops/ui/action_registry.py`：NAV_ORDER 移除 PAGE_DASHBOARD（常數保留）。
+- `src/taxops/repositories/app_settings.py`：DEFAULT_SETTINGS 加 `ui.dashboard_dock_visible` 預設 "1"。
+- `tests/test_slice14_dashboard.py`：refresh button assert 從 text 改 tooltip。
+- `tests/test_ui_action_contracts.py`：_EMBEDDED_ONLY_PAGES 加 PAGE_DASHBOARD。
+- `tests/test_slice23_dashboard_dock.py`（NEW，10 tests）。
+- `pyproject.toml` + `src/taxops/__init__.py`：版本升至 0.15.0。
+
+---
+
 ## Latest Handoff Update (2026-05-28 — 案件 drill-down 三層架構, v0.14.3)
 
 ### 本輪完成事項

@@ -122,6 +122,18 @@
 
 ## RECENTLY COMPLETED
 
+- [已確認] v0.15.0（2026-05-28）— Dashboard 從 sidebar 拆為浮動 QDockWidget：
+  - DashboardPage UI 重設計：8 張 QGridLayout 大卡 → 9 條 compact rows（title  …  count  →）QVBoxLayout
+  - 保留 `_cards` dict、`navigate_to_page` signal、`refresh_context()`，21 個 Slice 14 UI 測試直接相容
+  - MainWindow `_build_dashboard_dock()` 在 `__init__` 末尾建 QDockWidget，預設右側、可拖左/右邊、可 float、可關閉
+  - NAV_ORDER 移除 PAGE_DASHBOARD（11→10 個 sidebar 入口），常數保留
+  - sidebar header 加 📊 toggle 按鈕切換 dock 顯示/隱藏
+  - 持久化：`ui.dashboard_dock_visible` 加入 DEFAULT_SETTINGS
+  - test_ui_action_contracts `_EMBEDDED_ONLY_PAGES` 加 PAGE_DASHBOARD
+  - 新測試 `tests/test_slice23_dashboard_dock.py`（10 tests）
+  - 全套 pytest 996 passed, 1 skipped
+  - pyproject.toml + __init__.py 0.14.3 → 0.15.0
+
 - [已確認] v0.14.3（2026-05-28）— 案件→索件→文件 drill-down 三層架構：
   - `DocumentRequestsPage` 新增 `view_mode='full'|'requests_only'|'items_only'` 參數 + `drill_to_items = Signal(int)` + `load_request_items(request_id)` + `_render_items()` + `_on_req_row_double_clicked()`
   - `_selected_request_id` 在 items_only 模式下 fallback 到 `_items_only_request_id`，讓 add/edit/delete item handler 仍能正確運作

@@ -31,6 +31,7 @@
 
 ## Active Work
 
+- [已確認] 2026-05-28 完成 v0.15.0 — Dashboard 拆為浮動 QDockWidget：8 大卡 → 9 compact rows、MainWindow QDockWidget host（預設右側、可拖/float/close）、NAV_ORDER 移除 PAGE_DASHBOARD（11→10）、sidebar header 加 📊 toggle、`ui.dashboard_dock_visible` 持久化。10 新 tests + 全套 996 passed, 1 skipped。pyproject + __init__ 0.14.3 → 0.15.0。
 - [已確認] 2026-05-28 完成 v0.14.3 — 案件→索件→文件 drill-down 三層架構：`DocumentRequestsPage` 加 view_mode + drill_to_items signal + load_request_items；`EngagementsPage` 重寫為 QStackedWidget 三頁 + breadcrumb。11 新 tests + 138 子集回歸 passed。pyproject + __init__ 0.14.2 → 0.14.3。
 - [已確認] 2026-05-27 完成 v0.14.2 — 固定開立 toolbar 改 FlowLayout（RWD）。中繼點：v0.14.3-v0.15.2 (案件 drill-down / Dashboard dock / ReviewNotes→folder_bookmarks / notes+obsidian) + Codex review 留下次 session，roadmap 見 HANDOFF.md。
 - [已確認] 2026-05-27 完成 SLOP patch round v0.14.1：（1）EXE 多開鎖（`SingleInstanceGuard` via `QLocalServer`/`QLocalSocket`，第二個 process 觸發既有實例 raise）；（2）`DocumentRequestsPage` context banner（藍底高對比，global/engagement 模式各自顯示「現在顯示：全部案件（N 筆）」或「現在顯示：[客戶名] — [案件名]」）+ 「所屬案件」column（global 預設顯示、engagement 模式自動隱藏）；（3）RWD：新檔 `widgets/flow_layout.py`，DocumentRequestsPage / EngagementsPage toolbar 改用 FlowLayout，按鈕自動換行；（4）附件 URL 整併：刪預覽區 URL row，「檔案位置」按鈕右鍵選單加「複製 file:// URL」；（5）中央化按鈕設計 token：`style.py` 加 `BTN_PRIMARY_SM` / `BTN_SECONDARY_SM` / `BTN_DANGER_SM`，recurring_billing alias 到中央 tokens 解決「編輯方案 / 新增明細」對比 SLOP。版號 0.14.1。
