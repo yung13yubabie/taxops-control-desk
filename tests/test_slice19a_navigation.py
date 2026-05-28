@@ -112,13 +112,11 @@ def test_engagements_page_clear_filter_resets_filter_key(container):
 
 
 @pytest.mark.usefixtures("qapp")
-def test_review_notes_page_clear_filter_resets_filter_key(container):
-    from taxops.ui.pages.review_notes_page import ReviewNotesPage
-    page = ReviewNotesPage(container)
-    page.set_filter("open")
-    assert page._filter_key == "open"
-    page.clear_filter()
-    assert page._filter_key == ""
+def test_folder_bookmarks_page_instantiates(container):
+    """Slice 24 / v0.15.1 — review_notes deleted; folder_bookmarks took its slot."""
+    from taxops.ui.pages.folder_bookmarks_page import FolderBookmarksPage
+    page = FolderBookmarksPage(container)
+    assert page._table is not None
 
 
 @pytest.mark.usefixtures("qapp")

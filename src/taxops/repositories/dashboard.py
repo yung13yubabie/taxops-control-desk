@@ -42,13 +42,6 @@ class DashboardRepository:
         ).fetchone()
         return row[0] if row else 0
 
-    def count_open_review_notes(self) -> int:
-        row = self._conn.execute(
-            "SELECT COUNT(*) FROM review_notes"
-            " WHERE status IN ('open', 'responded', 'reopened')",
-        ).fetchone()
-        return row[0] if row else 0
-
     def count_missing_item_requests(self) -> int:
         row = self._conn.execute(
             "SELECT COUNT(DISTINCT dr.id)"
@@ -79,15 +72,6 @@ class DashboardRepository:
             "   AND due_date < ?"
             "   AND status != 'closed'",
             (today,),
-        ).fetchone()
-        return row[0] if row else 0
-
-    def count_high_risk_engagements(self) -> int:
-        row = self._conn.execute(
-            "SELECT COUNT(DISTINCT engagement_id)"
-            " FROM review_notes"
-            " WHERE severity = 'critical'"
-            "   AND status = 'open'",
         ).fetchone()
         return row[0] if row else 0
 

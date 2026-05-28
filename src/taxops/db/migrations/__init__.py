@@ -21,6 +21,8 @@ from . import (
     _m0016_rename_amount_cents,
     _m0017_workflow_tasks_client_id,
     _m0018_task_parent,
+    _m0019_drop_review_notes,
+    _m0020_folder_bookmarks,
 )
 
 MIGRATIONS: tuple[tuple[str, str], ...] = (
@@ -42,4 +44,6 @@ MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("0016_rename_amount_cents", _m0016_rename_amount_cents.SQL),
     ("0017_workflow_tasks_client_id", _m0017_workflow_tasks_client_id.SQL),
     ("0018_task_parent", _m0018_task_parent.SQL),
+    ("0019_drop_review_notes", _m0019_drop_review_notes.SQL),
+    ("0020_folder_bookmarks", _m0020_folder_bookmarks.SQL),
 )

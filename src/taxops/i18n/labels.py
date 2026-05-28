@@ -18,7 +18,8 @@ NAV_LABELS: dict[str, str] = dict(
             "registry": "工商 / 稅籍查詢",
             "late_fee": "滯納金試算",
             "attachments": "附件管理",
-            "review_notes": "覆核意見",
+            "review_notes": "覆核意見",  # retained label key for action-contract whitelist
+            "folder_bookmarks": "資料夾管理",
             "recurring_billing": "固定開立",
             "settings": "設定",
         }

@@ -20,11 +20,9 @@ class DashboardCounts:
     tasks_due_today: int
     tasks_overdue: int
     waiting_client: int
-    open_review_notes: int
     missing_item_requests: int
     upcoming_engagements: int
     overdue_engagements: int
-    high_risk_engagements: int
     lease_expiring_soon: int
 
 
@@ -42,10 +40,8 @@ class DashboardService:
             tasks_due_today=self._repo.count_tasks_due_today(today),
             tasks_overdue=self._repo.count_tasks_overdue(today),
             waiting_client=self._repo.count_waiting_client(),
-            open_review_notes=self._repo.count_open_review_notes(),
             missing_item_requests=self._repo.count_missing_item_requests(),
             upcoming_engagements=self._repo.count_upcoming_engagements(today, until),
             overdue_engagements=self._repo.count_overdue_engagements(today),
-            high_risk_engagements=self._repo.count_high_risk_engagements(),
             lease_expiring_soon=self._repo.count_lease_expiring_soon(today, until_lease),
         )

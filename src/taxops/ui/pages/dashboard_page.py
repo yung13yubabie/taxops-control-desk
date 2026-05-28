@@ -29,7 +29,6 @@ from ...services.container import ServiceContainer
 from ..action_registry import (
     PAGE_CLIENTS,
     PAGE_ENGAGEMENTS,
-    PAGE_REVIEW_NOTES,
     PAGE_TASKS,
     FilterKey,
 )
@@ -42,11 +41,9 @@ _CARD_DEFS: tuple[tuple[str, str, str, str, str], ...] = (
     ("tasks_due_today", "我的今日待辦", PAGE_TASKS, "前往待辦事項", FilterKey.DUE_TODAY),
     ("tasks_overdue", "我的逾期待辦", PAGE_TASKS, "前往待辦事項", FilterKey.OVERDUE),
     ("waiting_client", "等客戶回覆", PAGE_ENGAGEMENTS, "前往案件管理", ""),
-    ("open_review_notes", "未關閉覆核意見", PAGE_REVIEW_NOTES, "前往覆核意見", FilterKey.OPEN),
     ("missing_item_requests", "缺件案件", PAGE_ENGAGEMENTS, "前往案件管理", ""),
     ("upcoming_engagements", "即將申報案件（7天內）", PAGE_ENGAGEMENTS, "前往案件管理", FilterKey.UPCOMING),
     ("overdue_engagements", "逾期繳款風險", PAGE_ENGAGEMENTS, "前往案件管理", FilterKey.OVERDUE),
-    ("high_risk_engagements", "高風險案件", PAGE_REVIEW_NOTES, "前往覆核意見", FilterKey.HIGH_RISK),
     ("lease_expiring_soon", "租約即將到期（30天內）", PAGE_CLIENTS, "前往客戶清單", FilterKey.LEASE_EXPIRING),
 )
 
@@ -178,10 +175,8 @@ class DashboardPage(QWidget):
         self._cards["tasks_due_today"].set_count(counts.tasks_due_today)
         self._cards["tasks_overdue"].set_count(counts.tasks_overdue)
         self._cards["waiting_client"].set_count(counts.waiting_client)
-        self._cards["open_review_notes"].set_count(counts.open_review_notes)
         self._cards["missing_item_requests"].set_count(counts.missing_item_requests)
         self._cards["upcoming_engagements"].set_count(counts.upcoming_engagements)
         self._cards["overdue_engagements"].set_count(counts.overdue_engagements)
-        self._cards["high_risk_engagements"].set_count(counts.high_risk_engagements)
         self._cards["lease_expiring_soon"].set_count(counts.lease_expiring_soon)
         self._status_lbl.setText("")

@@ -23,14 +23,15 @@ PAGE_TEMPLATES = "templates"
 PAGE_REGISTRY = "registry"
 PAGE_LATE_FEE = "late_fee"
 PAGE_ATTACHMENTS = "attachments"
-PAGE_REVIEW_NOTES = "review_notes"
+PAGE_REVIEW_NOTES = "review_notes"  # retained constant; page deleted in v0.15.1
+PAGE_FOLDER_BOOKMARKS = "folder_bookmarks"
 PAGE_SETTINGS = "settings"
 PAGE_RECURRING_BILLING = "recurring_billing"
 
 NAV_ORDER: tuple[str, ...] = (
-    # Slice 23 v0.15.0: PAGE_DASHBOARD is no longer in the sidebar — it lives
-    # in a dockable QDockWidget on the right edge. The constant stays for
-    # existing action contracts.
+    # Slice 23 v0.15.0: PAGE_DASHBOARD moved to a QDockWidget.
+    # Slice 24 v0.15.1: PAGE_REVIEW_NOTES retired; PAGE_FOLDER_BOOKMARKS
+    # replaces it in the same slot.
     PAGE_CLIENTS,
     PAGE_ENGAGEMENTS,
     PAGE_TASKS,
@@ -38,7 +39,7 @@ NAV_ORDER: tuple[str, ...] = (
     PAGE_REGISTRY,
     PAGE_LATE_FEE,
     PAGE_ATTACHMENTS,
-    PAGE_REVIEW_NOTES,
+    PAGE_FOLDER_BOOKMARKS,
     PAGE_RECURRING_BILLING,
     PAGE_SETTINGS,
 )
@@ -731,41 +732,53 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
         test_marker="test_late_fee_calculate",
         enabled=True,
     ),
-    # Review notes page (slice 8 — enabled)
+    # Folder bookmarks page (Slice 24 / v0.15.1 — replaces review_notes)
     UIActionContract(
-        button_label="新增覆核意見",
-        page=PAGE_REVIEW_NOTES,
-        handler="ReviewNotesPage._on_new",
-        service="ReviewNotesService.create",
-        repository="ReviewNotesRepository.insert",
-        success_text="覆核意見已新增",
-        failure_text="新增覆核意見失敗，請稍後再試",
-        audit_action="review_note.create",
-        test_marker="test_create_review_note",
+        button_label="新增資料夾",
+        page=PAGE_FOLDER_BOOKMARKS,
+        handler="FolderBookmarksPage._on_new",
+        service="FolderBookmarksService.create_bookmark",
+        repository="FolderBookmarksRepository.insert",
+        success_text="資料夾已新增",
+        failure_text="新增資料夾失敗，請稍後再試",
+        audit_action="folder_bookmark.create",
+        test_marker="test_create_folder_bookmark",
         enabled=True,
     ),
     UIActionContract(
-        button_label="回覆",
-        page=PAGE_REVIEW_NOTES,
-        handler="ReviewNotesPage._on_respond",
-        service="ReviewNotesService.update_status",
-        repository="ReviewNotesRepository.update_status",
-        success_text="已回覆覆核意見",
-        failure_text="操作失敗，請稍後再試",
-        audit_action="review_note.status_change",
-        test_marker="test_respond_review_note",
+        button_label="編輯資料夾",
+        page=PAGE_FOLDER_BOOKMARKS,
+        handler="FolderBookmarksPage._on_edit",
+        service="FolderBookmarksService.update_bookmark",
+        repository="FolderBookmarksRepository.update",
+        success_text="資料夾已更新",
+        failure_text="更新資料夾失敗，請稍後再試",
+        audit_action="folder_bookmark.update",
+        test_marker="test_update_folder_bookmark",
         enabled=True,
     ),
     UIActionContract(
-        button_label="豁免",
-        page=PAGE_REVIEW_NOTES,
-        handler="ReviewNotesPage._on_waive",
-        service="ReviewNotesService.update_status",
-        repository="ReviewNotesRepository.update_status",
-        success_text="已豁免覆核意見",
-        failure_text="操作失敗，請稍後再試",
-        audit_action="review_note.status_change",
-        test_marker="test_waive_review_note",
+        button_label="刪除資料夾",
+        page=PAGE_FOLDER_BOOKMARKS,
+        handler="FolderBookmarksPage._on_delete",
+        service="FolderBookmarksService.delete_bookmark",
+        repository="FolderBookmarksRepository.soft_delete",
+        success_text="資料夾已刪除",
+        failure_text="刪除資料夾失敗，請稍後再試",
+        audit_action="folder_bookmark.delete",
+        test_marker="test_delete_folder_bookmark",
+        enabled=True,
+    ),
+    UIActionContract(
+        button_label="開啟資料夾",
+        page=PAGE_FOLDER_BOOKMARKS,
+        handler="FolderBookmarksPage._on_open",
+        service=None,
+        repository=None,
+        success_text="",
+        failure_text="開啟資料夾失敗，請確認路徑是否仍存在",
+        audit_action=None,
+        test_marker="test_open_folder_bookmark",
         enabled=True,
     ),
     # Attachments page (slice 9 — enabled)

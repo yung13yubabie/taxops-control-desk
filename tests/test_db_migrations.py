@@ -21,7 +21,7 @@ EXPECTED_TABLES = {
     "workflow_tasks",
     "message_templates",
     "generated_messages",
-    "review_notes",
+    "folder_bookmarks",
     "late_fee_records",
     "attachments",
     "attachment_versions",
@@ -51,14 +51,14 @@ def test_migrations_record_applied_version(db_conn: sqlite3.Connection) -> None:
         "SELECT version FROM schema_migrations ORDER BY version"
     ).fetchall()
     versions = [row["version"] for row in rows]
-    assert versions == ["0001_initial", "0002_tax_cache", "0003_soft_delete", "0004_engagements", "0005_workflow_tasks", "0006_message_templates", "0007_generated_messages", "0008_review_notes", "0009_late_fee", "0010_attachments", "0011_backup", "0012_fts5", "0013_client_lease", "0014_nullable_engagement", "0015_recurring_billing", "0016_rename_amount_cents", "0017_workflow_tasks_client_id", "0018_task_parent"]
+    assert versions == ["0001_initial", "0002_tax_cache", "0003_soft_delete", "0004_engagements", "0005_workflow_tasks", "0006_message_templates", "0007_generated_messages", "0008_review_notes", "0009_late_fee", "0010_attachments", "0011_backup", "0012_fts5", "0013_client_lease", "0014_nullable_engagement", "0015_recurring_billing", "0016_rename_amount_cents", "0017_workflow_tasks_client_id", "0018_task_parent", "0019_drop_review_notes", "0020_folder_bookmarks"]
 
 
 def test_migrations_are_idempotent(db_conn: sqlite3.Connection) -> None:
     second_pass = apply_migrations(db_conn)
     assert second_pass == []
     rows = db_conn.execute("SELECT COUNT(*) AS c FROM schema_migrations").fetchone()
-    assert rows["c"] == 18
+    assert rows["c"] == 20
 
 
 def test_clients_has_deleted_at_column(db_conn: sqlite3.Connection) -> None:

@@ -98,17 +98,7 @@ def _seed_doc_item(conn, request_id: int, *, item_status: str = "missing") -> No
     conn.commit()
 
 
-def _seed_review_note(conn, engagement_id: int, *, severity: str = "major", status: str = "open") -> int:
-    conn.execute(
-        "INSERT INTO review_notes(engagement_id, severity, comment, status,"
-        " created_at, updated_at)"
-        " VALUES (?, ?, '測試覆核', ?, datetime('now'), datetime('now'))",
-        (engagement_id, severity, status),
-    )
-    conn.commit()
-    return conn.execute(
-        "SELECT id FROM review_notes ORDER BY id DESC LIMIT 1"
-    ).fetchone()[0]
+# Slice 24 v0.15.1: review_notes feature retired entirely. Helper deleted.
 
 
 # ---------------------------------------------------------------------------
@@ -125,11 +115,9 @@ class TestDashboardRepository:
         assert repo.count_tasks_due_today(today) == 0
         assert repo.count_tasks_overdue(today) == 0
         assert repo.count_waiting_client() == 0
-        assert repo.count_open_review_notes() == 0
         assert repo.count_missing_item_requests() == 0
         assert repo.count_upcoming_engagements(today, "2026-05-24") == 0
         assert repo.count_overdue_engagements(today) == 0
-        assert repo.count_high_risk_engagements() == 0
 
     def test_tasks_due_today_counts(self):
         from taxops.repositories.dashboard import DashboardRepository
@@ -188,20 +176,6 @@ class TestDashboardRepository:
         _seed_task(conn, eng_id, due_date="2026-05-20", status="todo")
         repo = DashboardRepository(conn)
         assert repo.count_waiting_client() == 1
-
-    def test_open_review_notes_counts_open_responded_reopened(self):
-        from taxops.repositories.dashboard import DashboardRepository
-
-        container = _fresh_container()
-        conn = container.conn
-        client_id = _seed_client(conn)
-        eng_id = _seed_engagement(conn, client_id)
-        _seed_review_note(conn, eng_id, status="open")
-        _seed_review_note(conn, eng_id, status="responded")
-        _seed_review_note(conn, eng_id, status="reopened")
-        _seed_review_note(conn, eng_id, status="resolved")  # should NOT count
-        repo = DashboardRepository(conn)
-        assert repo.count_open_review_notes() == 3
 
     def test_missing_item_requests_distinct_by_request(self):
         from taxops.repositories.dashboard import DashboardRepository
@@ -272,22 +246,6 @@ class TestDashboardRepository:
         repo = DashboardRepository(conn)
         assert repo.count_overdue_engagements("2026-05-17") == 1
 
-    def test_high_risk_engagements_distinct_by_engagement(self):
-        from taxops.repositories.dashboard import DashboardRepository
-
-        container = _fresh_container()
-        conn = container.conn
-        client_id = _seed_client(conn)
-        eng1 = _seed_engagement(conn, client_id)
-        eng2 = _seed_engagement(conn, client_id)
-        _seed_review_note(conn, eng1, severity="critical", status="open")
-        _seed_review_note(conn, eng1, severity="critical", status="open")  # same eng → still 1
-        _seed_review_note(conn, eng2, severity="major", status="open")     # not critical
-        _seed_review_note(conn, eng2, severity="critical", status="resolved")  # resolved
-        repo = DashboardRepository(conn)
-        assert repo.count_high_risk_engagements() == 1
-
-
 # ---------------------------------------------------------------------------
 # DashboardService tests
 # ---------------------------------------------------------------------------
@@ -302,11 +260,9 @@ class TestDashboardService:
         assert counts.tasks_due_today == 0
         assert counts.tasks_overdue == 0
         assert counts.waiting_client == 0
-        assert counts.open_review_notes == 0
         assert counts.missing_item_requests == 0
         assert counts.upcoming_engagements == 0
         assert counts.overdue_engagements == 0
-        assert counts.high_risk_engagements == 0
         assert counts.lease_expiring_soon == 0
 
     def test_get_counts_no_hardcode_guarantee(self):
@@ -317,11 +273,9 @@ class TestDashboardService:
             counts.tasks_due_today,
             counts.tasks_overdue,
             counts.waiting_client,
-            counts.open_review_notes,
             counts.missing_item_requests,
             counts.upcoming_engagements,
             counts.overdue_engagements,
-            counts.high_risk_engagements,
             counts.lease_expiring_soon,
         ]:
             assert val == 0, f"Expected 0 from empty DB, got {val}"
@@ -362,7 +316,7 @@ class TestDashboardPageUI:
         container = _fresh_container()
         from taxops.ui.pages.dashboard_page import DashboardPage, _CARD_DEFS
         page = DashboardPage(container)
-        assert len(page._cards) == 9
+        assert len(page._cards) == 7
         assert len(page._cards) == len(_CARD_DEFS)
 
     def test_empty_db_cards_show_zero(self):
@@ -415,17 +369,6 @@ class TestDashboardPageUI:
         page.navigate_to_page.connect(lambda p, f: emitted.append((p, f)))
         page._cards["waiting_client"].nav_btn.click()
         assert emitted == [(PAGE_ENGAGEMENTS, "")]
-
-    def test_navigate_signal_high_risk_goes_to_review_notes_high_risk(self):
-        _make_app()
-        container = _fresh_container()
-        from taxops.ui.pages.dashboard_page import DashboardPage
-        from taxops.ui.action_registry import PAGE_REVIEW_NOTES, FilterKey
-        page = DashboardPage(container)
-        emitted: list[tuple[str, str]] = []
-        page.navigate_to_page.connect(lambda p, f: emitted.append((p, f)))
-        page._cards["high_risk_engagements"].nav_btn.click()
-        assert emitted == [(PAGE_REVIEW_NOTES, FilterKey.HIGH_RISK)]
 
     def test_refresh_updates_count_after_seed(self):
         _make_app()

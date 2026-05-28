@@ -69,7 +69,8 @@ def test_dock_visibility_persists_via_settings(container):
 def test_dashboard_page_uses_compact_rows(container):
     from taxops.ui.pages.dashboard_page import DashboardPage, _DashboardRow
     page = DashboardPage(container)
-    assert len(page._cards) == 9
+    # Slice 24 v0.15.1: 9 → 7 after removing open_review_notes + high_risk_engagements
+    assert len(page._cards) == 7
     for card in page._cards.values():
         assert isinstance(card, _DashboardRow)
 

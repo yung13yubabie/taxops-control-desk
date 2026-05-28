@@ -23,10 +23,10 @@ from .action_registry import (
     PAGE_CLIENTS,
     PAGE_DASHBOARD,
     PAGE_ENGAGEMENTS,
+    PAGE_FOLDER_BOOKMARKS,
     PAGE_LATE_FEE,
     PAGE_RECURRING_BILLING,
     PAGE_REGISTRY,
-    PAGE_REVIEW_NOTES,
     PAGE_SETTINGS,
     PAGE_TASKS,
     PAGE_TEMPLATES,
@@ -35,9 +35,9 @@ from .pages.attachments_page import AttachmentsPage
 from .pages.clients_page import ClientsPage
 from .pages.dashboard_page import DashboardPage
 from .pages.engagements_page import EngagementsPage
+from .pages.folder_bookmarks_page import FolderBookmarksPage
 from .pages.late_fee_page import LateFeePage
 from .pages.placeholder_page import PlaceholderPage
-from .pages.review_notes_page import ReviewNotesPage
 from .pages.settings_page import SettingsPage
 from .pages.tasks_page import TasksPage
 from .pages.recurring_billing_page import RecurringBillingPage
@@ -136,8 +136,8 @@ class MainWindow(QMainWindow):
                 page = TemplatesPage(self._container)
             elif page_id == PAGE_LATE_FEE:
                 page = LateFeePage(self._container)
-            elif page_id == PAGE_REVIEW_NOTES:
-                page = ReviewNotesPage(self._container)
+            elif page_id == PAGE_FOLDER_BOOKMARKS:
+                page = FolderBookmarksPage(self._container)
             elif page_id == PAGE_ATTACHMENTS:
                 page = AttachmentsPage(self._container)
             elif page_id == PAGE_RECURRING_BILLING:

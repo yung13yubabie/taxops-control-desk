@@ -23,7 +23,7 @@ from ..repositories.registry_matches import RegistryMatchRepository
 from ..repositories.system_logs import SystemLogRepository
 from ..repositories.generated_messages import GeneratedMessagesRepository
 from ..repositories.late_fee import LateFeeRepository
-from ..repositories.review_notes import ReviewNotesRepository
+from ..repositories.folder_bookmarks import FolderBookmarksRepository
 from ..repositories.backup import BackupRepository
 from ..repositories.dashboard import DashboardRepository
 from ..repositories.search import SearchRepository
@@ -50,7 +50,7 @@ from .export import ExportService
 from .search import SearchService
 from .generated_messages import GeneratedMessagesService
 from .late_fee import LateFeeService
-from .review_notes import ReviewNotesService
+from .folder_bookmarks import FolderBookmarksService
 from .recurring_billing import RecurringBillingService
 from .tasks import TasksService
 from .templates import TemplatesService
@@ -75,7 +75,7 @@ class ServiceContainer:
     tasks: TasksService
     templates: TemplatesService
     gen_messages: GeneratedMessagesService
-    review_notes: ReviewNotesService
+    folder_bookmarks: FolderBookmarksService
     late_fee: LateFeeService
     attachments: AttachmentsService
     export: ExportService
@@ -129,10 +129,9 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         audit=audit_service,
     )
 
-    review_notes_repo = ReviewNotesRepository(conn)
-    review_notes_service = ReviewNotesService(
-        repo=review_notes_repo,
-        engagements_repo=engagements_repo,
+    folder_bookmarks_repo = FolderBookmarksRepository(conn)
+    folder_bookmarks_service = FolderBookmarksService(
+        repo=folder_bookmarks_repo,
         audit=audit_service,
     )
     late_fee_repo = LateFeeRepository(conn)
@@ -209,7 +208,7 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         tasks=tasks_service,
         templates=templates_service,
         gen_messages=gen_messages_service,
-        review_notes=review_notes_service,
+        folder_bookmarks=folder_bookmarks_service,
         late_fee=late_fee_service,
         attachments=attachments_service,
         export=export_service,
