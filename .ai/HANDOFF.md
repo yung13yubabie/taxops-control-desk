@@ -1,5 +1,52 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-05-28 — 全刪 ReviewNotes + 新增資料夾管理, v0.15.1)
+
+### 本輪完成事項
+
+- [已確認] **Migration 0019_drop_review_notes**：DROP TABLE review_notes + 兩個索引；既有 review_notes 資料於 migration 套用時清空（per /grill-me Q6 B「全刪除」明確選擇）。
+- [已確認] **Migration 0020_folder_bookmarks**：新表 `folder_bookmarks(id, name, path, category, sort_order, created_at, updated_at, deleted_at)` + `idx_folder_bookmarks_category` + `idx_folder_bookmarks_sort(sort_order, id)`。
+- [已確認] **新 backend**：`repositories/folder_bookmarks.py`（FolderBookmarkRow + list_all / list_by_category / get / insert / update / soft_delete / list_categories）+ `services/folder_bookmarks.py`（CreateBookmarkInput / UpdateBookmarkInput / FolderBookmarkValidationError + CRUD with audit）。
+- [已確認] **新 UI 頁 `ui/pages/folder_bookmarks_page.py`**：清單 + 新增/編輯/刪除/開啟/重新整理 toolbar；新增/編輯彈 _BookmarkDialog（name + path + category + 瀏覽按鈕 + UNC 提示）；開啟用 `QDesktopServices.openUrl(QUrl.fromLocalFile(path))` 支援本機路徑與 UNC（`\\server\share\…`）；雙擊 row = 開啟資料夾。
+- [已確認] **删 review_notes 完整**：
+  - 刪檔：`repositories/review_notes.py`、`services/review_notes.py`、`ui/pages/review_notes_page.py`、`tests/test_review_notes.py`、`tests/test_slice8_ui.py`
+  - container 移除 ReviewNotesService/Repo，加 FolderBookmarksService/Repo
+  - dashboard：`DashboardCounts` 移除 `open_review_notes` + `high_risk_engagements` 兩欄；`DashboardRepository` 移除 2 個 count 方法；`DashboardPage._CARD_DEFS` 9 → 7
+  - i18n：移除 9 個 `review_note.*` 錯誤碼；新增 8 個 `folder_bookmark.*` 錯誤碼；`NAV_LABELS["review_notes"]` 保留（whitelist）+ 新增 `NAV_LABELS["folder_bookmarks"] = "資料夾管理"`
+  - `action_registry`：`PAGE_REVIEW_NOTES` 常數保留但移出 NAV_ORDER；新增 `PAGE_FOLDER_BOOKMARKS`，NAV_ORDER 同槽位替換；3 個 review_notes contracts → 4 個 folder_bookmarks contracts
+  - main_window：import 替換、_build_pages 分支替換
+- [已確認] **版號**：pyproject.toml + `__init__.py` 0.15.0 → 0.15.1。
+- [已確認] **測試**：
+  - 新 `tests/test_slice24_folder_bookmarks.py`（17 tests，含 service CRUD + UNC 路徑 + path injection guard + audit log + UI + main_window 路由 + migration drop/create 驗證 + label 驗證）
+  - 更新 `tests/test_slice14_dashboard.py`（移除 _seed_review_note + 2 個 review-notes-specific tests + empty-db 2 個 assert + DashboardCounts 2 欄 + card count 9→7 + delete `test_navigate_signal_high_risk...`）
+  - 更新 `tests/test_db_migrations.py`（EXPECTED_TABLES swap review_notes → folder_bookmarks、versions 19/20 加入、count 18→20）
+  - 更新 `tests/test_slice19a_navigation.py`（review_notes page test → folder_bookmarks instantiation test）
+  - 更新 `tests/test_slice23_dashboard_dock.py`（card count 9→7）
+  - 全套 pytest 執行中
+
+### 修改/新增檔案
+
+- `src/taxops/db/migrations/_m0019_drop_review_notes.py`（NEW）
+- `src/taxops/db/migrations/_m0020_folder_bookmarks.py`（NEW）
+- `src/taxops/db/migrations/__init__.py`：register 0019 + 0020
+- `src/taxops/repositories/folder_bookmarks.py`（NEW）
+- `src/taxops/services/folder_bookmarks.py`（NEW）
+- `src/taxops/ui/pages/folder_bookmarks_page.py`（NEW）
+- `src/taxops/services/container.py`：swap review_notes → folder_bookmarks
+- `src/taxops/services/dashboard.py`：DashboardCounts 9→7 欄
+- `src/taxops/repositories/dashboard.py`：drop 2 review-notes-related methods
+- `src/taxops/ui/pages/dashboard_page.py`：_CARD_DEFS 9→7
+- `src/taxops/ui/action_registry.py`：PAGE_FOLDER_BOOKMARKS + NAV_ORDER swap + 4 個 folder_bookmarks contracts
+- `src/taxops/ui/main_window.py`：import swap + page branch swap
+- `src/taxops/i18n/labels.py`：加 `folder_bookmarks` label
+- `src/taxops/i18n/errors.py`：9 個 review_note error → 8 個 folder_bookmark error
+- `tests/test_slice24_folder_bookmarks.py`（NEW，17 tests）
+- `tests/test_slice14_dashboard.py`、`tests/test_db_migrations.py`、`tests/test_slice19a_navigation.py`、`tests/test_slice23_dashboard_dock.py`：cascade updates
+- 刪 5 個檔案：`repositories/review_notes.py`、`services/review_notes.py`、`ui/pages/review_notes_page.py`、`tests/test_review_notes.py`、`tests/test_slice8_ui.py`
+- `pyproject.toml` + `src/taxops/__init__.py`：版本升至 0.15.1
+
+---
+
 ## Latest Handoff Update (2026-05-28 — Dashboard 浮動 QDockWidget, v0.15.0)
 
 ### 本輪完成事項

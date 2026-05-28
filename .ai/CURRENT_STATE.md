@@ -31,6 +31,7 @@
 
 ## Active Work
 
+- [已確認] 2026-05-28 完成 v0.15.1 — 全刪 ReviewNotes（migrations 0019 drop table + 刪 repository/service/page/tests/dashboard 2 卡）+ 新增 folder_bookmarks（migration 0020 + repository/service/page，支援本機+UNC 路徑、QDesktopServices.openUrl 開啟）。17 新 tests + cascade updates。pyproject + __init__ 0.15.0 → 0.15.1。
 - [已確認] 2026-05-28 完成 v0.15.0 — Dashboard 拆為浮動 QDockWidget：8 大卡 → 9 compact rows、MainWindow QDockWidget host（預設右側、可拖/float/close）、NAV_ORDER 移除 PAGE_DASHBOARD（11→10）、sidebar header 加 📊 toggle、`ui.dashboard_dock_visible` 持久化。10 新 tests + 全套 996 passed, 1 skipped。pyproject + __init__ 0.14.3 → 0.15.0。
 - [已確認] 2026-05-28 完成 v0.14.3 — 案件→索件→文件 drill-down 三層架構：`DocumentRequestsPage` 加 view_mode + drill_to_items signal + load_request_items；`EngagementsPage` 重寫為 QStackedWidget 三頁 + breadcrumb。11 新 tests + 138 子集回歸 passed。pyproject + __init__ 0.14.2 → 0.14.3。
 - [已確認] 2026-05-27 完成 v0.14.2 — 固定開立 toolbar 改 FlowLayout（RWD）。中繼點：v0.14.3-v0.15.2 (案件 drill-down / Dashboard dock / ReviewNotes→folder_bookmarks / notes+obsidian) + Codex review 留下次 session，roadmap 見 HANDOFF.md。

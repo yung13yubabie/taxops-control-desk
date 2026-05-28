@@ -122,6 +122,16 @@
 
 ## RECENTLY COMPLETED
 
+- [已確認] v0.15.1（2026-05-28）— 全刪 ReviewNotes + 新增資料夾管理：
+  - Migration 0019_drop_review_notes：DROP TABLE review_notes + 2 indexes
+  - Migration 0020_folder_bookmarks：CREATE folder_bookmarks(id, name, path, category, sort_order, ts, deleted_at) + 2 indexes
+  - 新 `repositories/folder_bookmarks.py` + `services/folder_bookmarks.py`（CreateBookmarkInput / UpdateBookmarkInput / FolderBookmarkValidationError + audit）
+  - 新 `ui/pages/folder_bookmarks_page.py` + 內嵌 `_BookmarkDialog`（含瀏覽按鈕 + UNC 提示）；開啟 = `QDesktopServices.openUrl(QUrl.fromLocalFile(path))` 支援本機 + UNC
+  - 刪 5 個檔案：`repositories/services/ui/pages` 各 1 個 review_notes + 2 個 tests
+  - container/dashboard/action_registry/main_window/i18n labels+errors 全 cascade
+  - 新 `tests/test_slice24_folder_bookmarks.py`（17 tests），舊 `test_slice14_dashboard.py`/`test_db_migrations.py`/`test_slice19a_navigation.py`/`test_slice23_dashboard_dock.py` 更新
+  - pyproject + __init__ 0.15.0 → 0.15.1
+
 - [已確認] v0.15.0（2026-05-28）— Dashboard 從 sidebar 拆為浮動 QDockWidget：
   - DashboardPage UI 重設計：8 張 QGridLayout 大卡 → 9 條 compact rows（title  …  count  →）QVBoxLayout
   - 保留 `_cards` dict、`navigate_to_page` signal、`refresh_context()`，21 個 Slice 14 UI 測試直接相容
