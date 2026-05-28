@@ -18,6 +18,8 @@ DEFAULT_SETTINGS: tuple[tuple[str, str], ...] = (
         "https://data.gcis.nat.gov.tw/resources/swagger/swagger.json",
     ),
     ("ui.sidebar_collapsed", "0"),
+    # Slice 23 v0.15.0: dashboard dock visibility ("1" shown, "0" hidden).
+    ("ui.dashboard_dock_visible", "1"),
     ("ui.doc_request_template.vat", ""),
     # Slice 21C: column visibility (CSV of hidden col keys) + width
     # presets (JSON {col_key: pixels}) per major table.

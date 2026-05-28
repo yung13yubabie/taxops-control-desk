@@ -381,7 +381,9 @@ class TestDashboardPageUI:
         container = _fresh_container()
         from taxops.ui.pages.dashboard_page import DashboardPage
         page = DashboardPage(container)
-        assert page._refresh_btn.text() == "重新整理"
+        # Slice 23 v0.15.0: dock layout uses an icon-only refresh button to
+        # stay compact. Tooltip still carries the human-readable label.
+        assert page._refresh_btn.toolTip() == "重新整理"
         assert page._refresh_btn.isEnabled()
 
     def test_all_nav_buttons_enabled(self):

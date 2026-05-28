@@ -1,7 +1,13 @@
-"""控制台頁 — 顯示 8 張即時統計卡片，資料來自 SQLite 真實查詢。
+"""控制台 dock — 9 個即時統計，資料來自 SQLite。
 
-所有卡片數字均不可 hardcode：空資料庫下所有數字應為 0。
-卡片按鈕導向對應頁面並套用篩選；filter_key="" 表示不套用篩選。
+Slice 23 / v0.15.0 redesign: the page is no longer one of the sidebar
+QStackedWidget pages. ``MainWindow`` hosts it inside a ``QDockWidget`` on
+the right side; the user can drag the dock to any window edge, float it
+out, or close it. The 8 large cards from Slice 14 collapse into compact
+``title: count →`` rows so the dock keeps a narrow footprint.
+
+Backend data (DashboardService / DashboardRepository) is unchanged —
+this file only restyles the presentation.
 """
 
 from __future__ import annotations
@@ -11,7 +17,6 @@ import logging
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -46,30 +51,41 @@ _CARD_DEFS: tuple[tuple[str, str, str, str, str], ...] = (
 )
 
 
-class _DashboardCard(QFrame):
+class _DashboardRow(QFrame):
+    """One compact row: ``title  …  count  →`` button.
+
+    Renders inside the dashboard dock list. Clicking ``nav_btn`` emits the
+    parent ``navigate_to_page`` signal.
+    """
+
     def __init__(self, title: str, nav_label: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setObjectName("DashboardCard")
-        self.setMinimumHeight(120)
+        self.setObjectName("DashboardRow")
+        self.setFrameShape(QFrame.Shape.NoFrame)
 
-        layout = QVBoxLayout(self)
-        layout.setSpacing(6)
-        layout.setContentsMargins(16, 14, 16, 14)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(8)
 
         title_lbl = QLabel(title)
         title_lbl.setTextFormat(Qt.TextFormat.PlainText)
-        title_lbl.setStyleSheet("font-size: 13px; color: #64748B;")
-        layout.addWidget(title_lbl)
+        title_lbl.setStyleSheet("font-size: 13px; color: #334155;")
+        layout.addWidget(title_lbl, stretch=1)
 
         self._count_lbl = QLabel("—")
         self._count_lbl.setTextFormat(Qt.TextFormat.PlainText)
-        self._count_lbl.setStyleSheet("font-size: 32px; font-weight: 700; color: #1E293B;")
+        self._count_lbl.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._count_lbl.setMinimumWidth(36)
+        self._count_lbl.setStyleSheet(
+            "font-size: 15px; font-weight: 700; color: #2563EB;"
+        )
         layout.addWidget(self._count_lbl)
 
-        layout.addStretch()
-
-        self._nav_btn = QPushButton(nav_label)
+        self._nav_btn = QPushButton("→")
+        self._nav_btn.setToolTip(nav_label)
+        self._nav_btn.setFixedSize(28, 24)
         layout.addWidget(self._nav_btn)
 
     def set_count(self, n: int) -> None:
@@ -83,8 +99,17 @@ class _DashboardCard(QFrame):
         return self._nav_btn
 
 
+# Backward-compat alias for code/tests that still reference _DashboardCard.
+_DashboardCard = _DashboardRow
+
+
 class DashboardPage(QWidget):
-    """Controls desk dashboard showing live counts across all modules."""
+    """Compact dashboard widget intended to live inside a QDockWidget.
+
+    Backward-compat: keeps the ``navigate_to_page(page_id, filter_key)``
+    Signal so existing wiring in ``MainWindow.navigate_to`` and Slice 14 UI
+    tests keep working.
+    """
 
     navigate_to_page = Signal(str, str)  # (page_id, filter_key)
 
@@ -93,51 +118,53 @@ class DashboardPage(QWidget):
         self._container = container
 
         outer = QVBoxLayout(self)
-        outer.setSpacing(16)
-        outer.setContentsMargins(24, 24, 24, 24)
+        outer.setSpacing(8)
+        outer.setContentsMargins(8, 8, 8, 8)
 
         header = QHBoxLayout()
         title = QLabel("控制台")
         title.setTextFormat(Qt.TextFormat.PlainText)
-        title.setStyleSheet("font-size: 20px; font-weight: 700;")
+        title.setStyleSheet("font-size: 14px; font-weight: 700; color: #1E293B;")
         header.addWidget(title)
         header.addStretch()
-        self._refresh_btn = QPushButton("重新整理")
+        self._refresh_btn = QPushButton("⟳")
+        self._refresh_btn.setToolTip("重新整理")
         self._refresh_btn.setIcon(toolbar_icon("refresh"))
+        self._refresh_btn.setFixedSize(28, 24)
         self._refresh_btn.clicked.connect(self._on_refresh)
         header.addWidget(self._refresh_btn)
         outer.addLayout(header)
 
         self._status_lbl = QLabel("")
         self._status_lbl.setTextFormat(Qt.TextFormat.PlainText)
-        self._status_lbl.setStyleSheet("color: #64748B; font-size: 13px;")
+        self._status_lbl.setStyleSheet("color: #64748B; font-size: 12px;")
         outer.addWidget(self._status_lbl)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        grid_widget = QWidget()
-        self._grid = QGridLayout(grid_widget)
-        self._grid.setSpacing(12)
-        self._grid.setColumnStretch(0, 1)
-        self._grid.setColumnStretch(1, 1)
-        scroll.setWidget(grid_widget)
-        outer.addWidget(scroll, stretch=1)
+        rows_widget = QWidget()
+        rows_layout = QVBoxLayout(rows_widget)
+        rows_layout.setSpacing(2)
+        rows_layout.setContentsMargins(0, 0, 0, 0)
 
-        self._cards: dict[str, _DashboardCard] = {}
-        for i, (field, title_text, target_page, nav_label, fkey) in enumerate(_CARD_DEFS):
-            card = _DashboardCard(title_text, nav_label)
-            card.connect_nav(
+        self._cards: dict[str, _DashboardRow] = {}
+        for field, title_text, target_page, nav_label, fkey in _CARD_DEFS:
+            row = _DashboardRow(title_text, nav_label)
+            row.connect_nav(
                 lambda _checked=False, p=target_page, f=fkey: self.navigate_to_page.emit(p, f)
             )
-            self._cards[field] = card
-            row, col = divmod(i, 2)
-            self._grid.addWidget(card, row, col)
+            self._cards[field] = row
+            rows_layout.addWidget(row)
+        rows_layout.addStretch()
+
+        scroll.setWidget(rows_widget)
+        outer.addWidget(scroll, stretch=1)
 
         self._on_refresh()
 
     def refresh_context(self) -> None:
-        """Reload dashboard counts when the page becomes active."""
+        """Reload dashboard counts (called when dock becomes active)."""
         self._on_refresh()
 
     def _on_refresh(self) -> None:

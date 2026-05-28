@@ -28,7 +28,9 @@ PAGE_SETTINGS = "settings"
 PAGE_RECURRING_BILLING = "recurring_billing"
 
 NAV_ORDER: tuple[str, ...] = (
-    PAGE_DASHBOARD,
+    # Slice 23 v0.15.0: PAGE_DASHBOARD is no longer in the sidebar — it lives
+    # in a dockable QDockWidget on the right edge. The constant stays for
+    # existing action contracts.
     PAGE_CLIENTS,
     PAGE_ENGAGEMENTS,
     PAGE_TASKS,
