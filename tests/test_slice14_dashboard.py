@@ -3,7 +3,7 @@
 Covers:
 - DashboardRepository: all 8 count methods, empty DB, boundary dates
 - DashboardService: get_counts with injectable today, no-hardcode guarantee
-- DashboardPage UI: instantiates, shows "0" for empty DB, navigate buttons exist
+- DashboardPage UI: instantiates, mirrors sidebar module order, navigate buttons exist
 - Action registry: PAGE_DASHBOARD contracts
 """
 
@@ -311,24 +311,25 @@ class TestDashboardPageUI:
         page = DashboardPage(container)
         assert page is not None
 
-    def test_all_cards_present(self):
+    def test_all_sidebar_modules_present(self):
         _make_app()
         container = _fresh_container()
+        from taxops.ui.action_registry import NAV_ORDER
         from taxops.ui.pages.dashboard_page import DashboardPage, _CARD_DEFS
         page = DashboardPage(container)
-        assert len(page._cards) == 7
+        assert tuple(page._cards) == NAV_ORDER
         assert len(page._cards) == len(_CARD_DEFS)
 
-    def test_empty_db_cards_show_zero(self):
-        """After init, empty DB → all cards show '0', not any hardcoded positive number."""
+    def test_empty_db_real_metric_summaries_show_zero(self):
+        """Metric summaries are derived from the empty DB, not hardcoded positive numbers."""
         _make_app()
         container = _fresh_container()
+        from taxops.ui.action_registry import PAGE_CLIENTS, PAGE_ENGAGEMENTS, PAGE_TASKS
         from taxops.ui.pages.dashboard_page import DashboardPage
         page = DashboardPage(container)
-        for field, card in page._cards.items():
-            assert card._count_lbl.text() == "0", (
-                f"Card {field!r} showed {card._count_lbl.text()!r}, expected '0'"
-            )
+        assert page._cards[PAGE_CLIENTS]._summary_lbl.text() == "租約到期 0"
+        assert page._cards[PAGE_ENGAGEMENTS]._summary_lbl.text() == "即將 0 / 逾期 0"
+        assert page._cards[PAGE_TASKS]._summary_lbl.text() == "今日 0 / 逾期 0"
 
     def test_refresh_button_exists_and_enabled(self):
         _make_app()
@@ -348,7 +349,7 @@ class TestDashboardPageUI:
         for field, card in page._cards.items():
             assert card.nav_btn.isEnabled(), f"nav_btn for card {field!r} should be enabled"
 
-    def test_navigate_signal_emitted_for_tasks(self):
+    def test_navigate_signal_emitted_for_tasks_without_filter(self):
         _make_app()
         container = _fresh_container()
         from taxops.ui.pages.dashboard_page import DashboardPage
@@ -356,8 +357,8 @@ class TestDashboardPageUI:
         page = DashboardPage(container)
         emitted: list[tuple[str, str]] = []
         page.navigate_to_page.connect(lambda p, f: emitted.append((p, f)))
-        page._cards["tasks_due_today"].nav_btn.click()
-        assert emitted == [(PAGE_TASKS, "due_today")]
+        page._cards[PAGE_TASKS].nav_btn.click()
+        assert emitted == [(PAGE_TASKS, "")]
 
     def test_navigate_signal_emitted_for_engagements(self):
         _make_app()
@@ -367,7 +368,7 @@ class TestDashboardPageUI:
         page = DashboardPage(container)
         emitted: list[tuple[str, str]] = []
         page.navigate_to_page.connect(lambda p, f: emitted.append((p, f)))
-        page._cards["waiting_client"].nav_btn.click()
+        page._cards[PAGE_ENGAGEMENTS].nav_btn.click()
         assert emitted == [(PAGE_ENGAGEMENTS, "")]
 
     def test_refresh_updates_count_after_seed(self):
@@ -383,7 +384,7 @@ class TestDashboardPageUI:
 
         page = DashboardPage(container)
         page._on_refresh()
-        assert page._cards["tasks_due_today"]._count_lbl.text() == "1"
+        assert page._cards["tasks"]._summary_lbl.text() == "今日 1 / 逾期 0"
 
     def test_status_label_empty_on_success(self):
         _make_app()
@@ -417,7 +418,7 @@ class TestDashboardActionContracts:
 
     def test_all_nav_contracts_present_and_enabled(self):
         from taxops.ui.action_registry import ACTION_REGISTRY, PAGE_DASHBOARD
-        nav_labels = {"前往待辦事項", "前往覆核意見", "前往案件管理"}
+        nav_labels = {"前往客戶管理", "前往待辦事項", "前往案件管理", "前往資料夾管理"}
         for label in nav_labels:
             contracts = [
                 c for c in ACTION_REGISTRY

@@ -43,6 +43,54 @@ def test_convert_to_child_links_two_tasks(container, two_clients):
     assert updated.parent_task_id == parent.id
 
 
+def test_create_child_task_inherits_parent_context(container, two_clients):
+    from taxops.services.tasks import CreateTaskInput
+    c1, _ = two_clients
+    parent = container.tasks.create_task(CreateTaskInput(
+        engagement_id=None,
+        client_id=c1.id,
+        title="父待辦",
+        assignee="Alice",
+        priority="high",
+        next_step="補附件",
+    ))
+
+    child = container.tasks.create_child_task(parent.id, "補附件")
+
+    assert child.parent_task_id == parent.id
+    assert child.client_id == c1.id
+    assert child.engagement_id is None
+    assert child.assignee == "Alice"
+    assert child.priority == "high"
+    assert child.title == "補附件"
+
+
+def test_create_child_task_rejects_child_as_parent(container, two_clients):
+    from taxops.services.tasks import CreateTaskInput, TaskValidationError
+    c1, _ = two_clients
+    parent = container.tasks.create_task(CreateTaskInput(
+        engagement_id=None, client_id=c1.id, title="父",
+    ))
+    child = container.tasks.create_child_task(parent.id, "子")
+
+    with pytest.raises(TaskValidationError) as ei:
+        container.tasks.create_child_task(child.id, "孫")
+    assert ei.value.code == "task.parent.depth_exceeded"
+
+
+def test_create_child_task_records_audit(container, two_clients):
+    from taxops.services.tasks import CreateTaskInput
+    c1, *_ = two_clients
+    parent = container.tasks.create_task(CreateTaskInput(
+        engagement_id=None, client_id=c1.id, title="父",
+    ))
+    container.tasks.create_child_task(parent.id, "下一步")
+    row = container.conn.execute(
+        "SELECT id FROM audit_logs WHERE action='task.create_child'"
+    ).fetchone()
+    assert row is not None
+
+
 def test_convert_to_child_rejects_grandchild(container, two_clients):
     from taxops.services.tasks import CreateTaskInput, TaskValidationError
     c1, _ = two_clients

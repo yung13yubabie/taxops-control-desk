@@ -14,6 +14,7 @@ NAV_LABELS: dict[str, str] = dict(
             "engagements": "案件管理",
             "doc_requests": "索件管理",
             "tasks": "待辦事項",
+            "work_records": "工作紀錄",
             "templates": "訊息模板",
             "registry": "工商 / 稅籍查詢",
             "late_fee": "滯納金試算",

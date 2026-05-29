@@ -68,9 +68,9 @@ def test_dock_visibility_persists_via_settings(container):
 @pytest.mark.usefixtures("qapp")
 def test_dashboard_page_uses_compact_rows(container):
     from taxops.ui.pages.dashboard_page import DashboardPage, _DashboardRow
+    from taxops.ui.action_registry import NAV_ORDER
     page = DashboardPage(container)
-    # Slice 24 v0.15.1: 9 → 7 after removing open_review_notes + high_risk_engagements
-    assert len(page._cards) == 7
+    assert tuple(page._cards) == NAV_ORDER
     for card in page._cards.values():
         assert isinstance(card, _DashboardRow)
 
@@ -81,9 +81,10 @@ def test_dashboard_page_navigate_to_page_signal_still_emits(container):
     page = DashboardPage(container)
     emitted: list[tuple[str, str]] = []
     page.navigate_to_page.connect(lambda p, f: emitted.append((p, f)))
-    page._cards["tasks_due_today"].nav_btn.click()
+    page._cards["tasks"].nav_btn.click()
     assert len(emitted) == 1
     assert emitted[0][0] == "tasks"
+    assert emitted[0][1] == ""
 
 
 @pytest.mark.usefixtures("qapp")

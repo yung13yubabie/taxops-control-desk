@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -58,6 +59,7 @@ class TasksPage(QWidget):
         super().__init__(parent)
         self._container = container
         self._tasks: list = []
+        self._task_by_id: dict[int, object] = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 24, 20)
@@ -94,6 +96,8 @@ class TasksPage(QWidget):
         self._bulk_edit_btn.setEnabled(False)
         self._bulk_delete_btn = QPushButton("批量刪除")
         self._bulk_delete_btn.setEnabled(False)
+        self._next_step_btn = QPushButton("新增下一步")
+        self._next_step_btn.setEnabled(False)
         self._make_child_btn = QPushButton("設為子待辦")
         self._make_child_btn.setEnabled(False)
         self._refresh_btn = QPushButton("重新整理")
@@ -104,6 +108,7 @@ class TasksPage(QWidget):
         self._bulk_new_btn.setIcon(toolbar_icon("new"))
         self._bulk_edit_btn.setIcon(toolbar_icon("edit"))
         self._bulk_delete_btn.setIcon(toolbar_icon("delete"))
+        self._next_step_btn.setIcon(toolbar_icon("new"))
         self._make_child_btn.setIcon(toolbar_icon("edit"))
         self._refresh_btn.setIcon(toolbar_icon("refresh"))
         toolbar.addWidget(self._new_btn)
@@ -113,10 +118,13 @@ class TasksPage(QWidget):
         toolbar.addWidget(self._delete_btn)
         toolbar.addWidget(self._bulk_edit_btn)
         toolbar.addWidget(self._bulk_delete_btn)
+        toolbar.addWidget(self._next_step_btn)
         toolbar.addWidget(self._make_child_btn)
         toolbar.addStretch()
         toolbar.addWidget(self._refresh_btn)
         outer.addLayout(toolbar)
+
+        content_splitter = QSplitter(Qt.Orientation.Horizontal)
 
         self._table = QTableWidget(0, len(_COLUMN_ORDER))
         self._table.setHorizontalHeaderLabels([_TABLE_HEADERS[c] for c in _COLUMN_ORDER])
@@ -128,7 +136,34 @@ class TasksPage(QWidget):
         )
         self._table.verticalHeader().setVisible(False)
         self._table.setAlternatingRowColors(True)
-        outer.addWidget(self._table)
+        self._table.setMinimumWidth(360)
+        self._table.setMaximumWidth(560)
+        content_splitter.addWidget(self._table)
+
+        detail_panel = QWidget()
+        detail_layout = QVBoxLayout(detail_panel)
+        detail_layout.setContentsMargins(16, 8, 0, 0)
+        detail_layout.setSpacing(8)
+        self._detail_title = QLabel("尚未選取待辦")
+        self._detail_title.setStyleSheet("font-size: 20px; font-weight: 700;")
+        self._detail_context = QLabel("請從左側選取一筆待辦。")
+        self._detail_context.setWordWrap(True)
+        self._detail_context.setStyleSheet("color: #475569;")
+        self._detail_meta = QLabel("")
+        self._detail_meta.setWordWrap(True)
+        self._detail_meta.setStyleSheet("color: #334155;")
+        self._detail_next_step = QLabel("")
+        self._detail_next_step.setWordWrap(True)
+        self._detail_next_step.setStyleSheet("color: #64748B;")
+        detail_layout.addWidget(self._detail_title)
+        detail_layout.addWidget(self._detail_context)
+        detail_layout.addWidget(self._detail_meta)
+        detail_layout.addWidget(self._detail_next_step)
+        detail_layout.addStretch(1)
+        content_splitter.addWidget(detail_panel)
+        content_splitter.setStretchFactor(0, 0)
+        content_splitter.setStretchFactor(1, 1)
+        outer.addWidget(content_splitter)
 
         self._empty_label = QLabel("目前沒有待辦事項")
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -150,6 +185,7 @@ class TasksPage(QWidget):
         self._delete_btn.clicked.connect(self._on_delete_task)
         self._bulk_edit_btn.clicked.connect(self._on_bulk_edit_tasks)
         self._bulk_delete_btn.clicked.connect(self._on_bulk_delete_tasks)
+        self._next_step_btn.clicked.connect(self._on_create_next_step_task)
         self._make_child_btn.clicked.connect(self._on_make_child_task)
         self._refresh_btn.clicked.connect(self._refresh)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
@@ -165,6 +201,8 @@ class TasksPage(QWidget):
             settings=container.settings,
         )
         self._col_settings.install()
+        for col in ("id", "priority", "assignee", "due_date", "updated_at"):
+            self._table.setColumnHidden(_COLUMN_ORDER.index(col), True)
 
         self._filter_key: str = ""
         self._load_clients()
@@ -267,6 +305,7 @@ class TasksPage(QWidget):
                 else:
                     tasks = self._container.tasks.list_all()
             self._tasks = self._ordered_tasks_for_display(tasks)
+            self._task_by_id = {task.id: task for task in self._tasks}
             load_error = False
         except Exception as err:
             self._container.system_log.warn(
@@ -274,6 +313,7 @@ class TasksPage(QWidget):
                 detail={"exc": type(err).__name__, "msg": str(err)},
             )
             self._tasks = []
+            self._task_by_id = {}
             load_error = True
 
         self._table.setRowCount(len(self._tasks))
@@ -359,7 +399,47 @@ class TasksPage(QWidget):
         self._delete_btn.setEnabled(single)
         self._bulk_edit_btn.setEnabled(bool(selected_ids))
         self._bulk_delete_btn.setEnabled(bool(selected_ids))
+        self._next_step_btn.setEnabled(single)
         self._make_child_btn.setEnabled(single)
+        self._update_task_detail(selected_ids[0] if single else None)
+
+    def _show_no_task_detail(self) -> None:
+        self._detail_title.setText("尚未選取待辦")
+        self._detail_context.setText("請從左側選取一筆待辦。")
+        self._detail_meta.setText("")
+        self._detail_next_step.setText("")
+
+    def _update_task_detail(self, task_id: int | None) -> None:
+        if task_id is None:
+            self._show_no_task_detail()
+            return
+        task = self._task_by_id.get(task_id)
+        if task is None:
+            self._show_no_task_detail()
+            return
+        context = self._task_context_label(task)
+        self._detail_title.setText(task.title)
+        self._detail_context.setText(context)
+        due = task.due_date or "未設定"
+        assignee = task.assignee or "未設定"
+        parent = f"　父待辦：#{task.parent_task_id}" if task.parent_task_id else ""
+        self._detail_meta.setText(
+            f"狀態：{status_to_label(task.status)}　優先級：{PRIORITY_LABELS.get(task.priority, task.priority)}\n"
+            f"負責人：{assignee}　到期日：{due}{parent}"
+        )
+        self._detail_next_step.setText(
+            f"下一步：{task.next_step}" if task.next_step else ""
+        )
+
+    def _task_context_label(self, task) -> str:
+        parts: list[str] = []
+        if task.client_id is not None:
+            client = self._container.clients.get_client(task.client_id)
+            parts.append(f"客戶：{client.client_name if client else '(未知客戶)'}")
+        if task.engagement_id is not None:
+            eng = self._container.engagements.get_engagement(task.engagement_id)
+            parts.append(f"案件：{eng.engagement_name if eng else '(未知案件)'}")
+        return "　".join(parts) if parts else "全域待辦"
 
     # ------------------------------------------------------------------
     # Action handlers
@@ -473,6 +553,34 @@ class TasksPage(QWidget):
             return
         except Exception:
             QMessageBox.warning(self, "設定失敗", error_message("system.unexpected"))
+            return
+        self._refresh()
+
+    def _on_create_next_step_task(self) -> None:
+        parent_id = self._selected_task_id()
+        if parent_id is None:
+            return
+        parent = self._container.tasks.get_task(parent_id)
+        if parent is None:
+            QMessageBox.warning(self, "新增下一步失敗", error_message("task.not_found"))
+            self._refresh()
+            return
+        default_title = parent.next_step or ""
+        title, ok = QInputDialog.getText(
+            self,
+            "新增下一步",
+            "下一步待辦標題：",
+            text=default_title,
+        )
+        if not ok:
+            return
+        try:
+            self._container.tasks.create_child_task(parent_id, title)
+        except TaskValidationError as err:
+            QMessageBox.warning(self, "新增下一步失敗", error_message(err.code))
+            return
+        except Exception:
+            QMessageBox.warning(self, "新增下一步失敗", error_message("system.unexpected"))
             return
         self._refresh()
 

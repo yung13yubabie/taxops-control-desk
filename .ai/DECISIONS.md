@@ -2,6 +2,166 @@
 
 > [已確認] 2026-05-09 交接整理註記：本輪只補充每項長期決策的「不應再重複討論、待驗證風險、證據來源」欄位；沒有新增暫定方案為正式決策。
 
+## 2026-05-28 - [已確認] Dashboard Is A Sidebar Summary, Not A Separate Workflow
+
+### Decision
+
+控制台是側邊欄模組的精簡摘要版。控制台 rows 必須與 `NAV_ORDER` 對齊；點擊控制台 row 等同點擊側邊欄同一模組，不得暗中套用不同 filter 或走另一套頁面狀態。
+
+### Rationale
+
+使用者明確指出控制台項目與側邊欄代表同一種入口，但點擊後呈現兩條線，造成使用者理解成本與狀態不一致。
+
+### Impact
+
+- Dashboard row navigation emit `(page_id, "")`。
+- 空 filter 導航必須清除目標頁既有 filter，與 sidebar 導航一致。
+- Dashboard 可顯示摘要數字，但不得讓摘要卡片變成另一套 workflow。
+
+## 2026-05-28 - [已確認] Five-Slice Delivery Roadmap For Next UI/Workflow Work
+
+### Decision
+
+接下來採 5 個可交付 slice：
+
+1. v0.16.0 Dashboard/Sidebar 一致化。
+2. v0.17.0 案件 + 索件 UX 重構。
+3. v0.18.0 待辦 UX + 下一步子待辦。
+4. v0.19.0 工作紀錄：流程 + 錯誤回顧。
+5. v0.20.0 工作紀錄：畫布筆記。
+
+### Rationale
+
+此順序先解決目前最高痛點（導航一致性、案件/索件、待辦），再進入資料模型較大的工作紀錄與畫布筆記，降低技術風險與單次變更負擔。
+
+### Impact
+
+每個 slice 需各自完成實作、測試、code simplification、code review、`.ai` 更新；完整交付前仍需 full suite、EXE smoke 與人工 Windows UI 驗收。
+
+## 2026-05-28 - [已確認] Work Records Context Linking Rules
+
+### Decision
+
+「工作紀錄」模組的流程、筆記、錯誤回顧共用 context linking：
+
+- 可綁 `client_id`。
+- 可綁 `engagement_id`。
+- 可全域（兩者皆空）。
+- 若綁案件，系統自動推導客戶，不允許手動選到不一致的客戶。
+- 允許改綁。
+- 軟刪客戶/案件時保留關聯，UI 顯示已封存/已刪除；同時儲存 `context_snapshot` 供未來永久刪除或解除綁定後保留可讀脈絡。
+
+### Rationale
+
+使用者需要筆記、流程、錯誤回顧能在客戶/案件頁反向調閱；自動推導客戶可避免 dirty data。
+
+### Impact
+
+後續工作紀錄資料表與共用 Context Selector UI 必須遵守此規則。
+
+## 2026-05-28 - [已確認] Workflow Templates And Runs Are Separate
+
+### Decision
+
+流程分頁需分成流程範本與執行中流程：
+
+- Template 保存 SOP 結構、stages、items、version。
+- Run 是從 template 建立的執行快照，可綁客戶/案件/全域。
+- Run items 保存 checked 狀態、完成時間、備註與本地修改。
+- Run 可臨時新增/修改/刪除步驟。
+- 使用者可將目前 Run 整包覆蓋回原範本（template version +1），或另存為新範本；不做主管審核、不做 diff。
+
+### Rationale
+
+範本與執行狀態混在一起會造成版本與執行中案件混亂。單人本機模式下，直接覆蓋或另存最符合效率需求。
+
+### Impact
+
+v0.19.0 實作時需建立 template/run/stage/item 層次，並確保既有 run 不受 template 後續修改自動影響。
+
+## 2026-05-28 - [已確認] Canvas-First Notes Instead Of Markdown Or QTextEdit Notes
+
+### Decision
+
+筆記分頁不做 Markdown，也不採標準 QTextEdit Word-like 文件。第一版採 QGraphicsScene 畫布導向編輯器：
+
+- 工作區可縮放/平移。
+- 畫布中放置固定 A4 page frames。
+- 資料庫存 scene JSON。
+- 圖片實體存 `note_assets/` 本機資料夾，不存 SQLite blob。
+- PDF 以 A4 page frames 逐頁 render。
+- 第一版物件：`text_box`（受控 HTML 富文本）、`image`、`freehand`、`shape`（空心紅框 / 黃色螢光筆矩形）。
+- 預設 8px grid snap。
+
+### Rationale
+
+使用者實際需求是自由排版、貼圖、手繪標記、直接輸出 PDF 報告；Markdown 或純 QTextEdit 無法提供足夠直覺的報告編輯體驗。
+
+### Impact
+
+v0.20.0 需把筆記視為畫布場景與資產管理問題，而非文字文件問題。
+
+## 2026-05-28 - [已確認] Error Reviews Close The Loop By Appending Guard Steps To Workflow Templates
+
+### Decision
+
+錯誤回顧第一版支援關聯流程範本，並可把防呆步驟追加到指定 stage 最後。追加後範本 version +1，錯誤回顧記錄 created template item id。
+
+### Rationale
+
+錯誤回顧的目標是把踩雷經驗轉成 SOP 防呆制度。第一版只做最快閉環，不做複雜 diff 或任意位置插入。
+
+### Impact
+
+v0.19.0 需實作錯誤回顧與流程範本的關聯，以及「追加防呆步驟」操作與測試。
+
+## 2026-05-28 - [已確認] Engagements And Tasks Use Master-Detail Instead Of Wide Tables
+
+### Decision
+
+案件管理與待辦事項改為左側雙行清單 + 右側詳情/操作面板，不再以寬表格作為主要資訊架構。
+
+### Rationale
+
+使用者明確指出現有欄位排列太 RWD、上下文不足，尤其看不出項目屬於哪個客戶。雙行清單可顯示客戶/案件/狀態與關鍵次要資訊，右側詳情承載操作。
+
+### Impact
+
+v0.17.0 和 v0.18.0 需重構 UI，但保留既有服務與資料安全規則。右鍵欄位設定不再是這兩頁的核心互動。
+
+## 2026-05-28 - [已確認] Document Requests Need A request_name Field
+
+### Decision
+
+索件批次新增正式欄位 `request_name`，不可再以 `period_name` 硬當使用者可讀名稱。新增索件批次時自動生成預設名稱，且可編輯。
+
+### Rationale
+
+`period_name` 是稅務期間，不是批次名稱。缺少 `request_name` 導致案件管理中的索件批次不可辨識。
+
+### Impact
+
+v0.17.0 需新增 migration、repository/service/input/UI/tests，並在索件批次清單顯示名稱、狀態、缺件數/總項目、截止日、催件次數。
+
+## 2026-05-28 - [已確認] Task Next Step Creates A Context-Inheriting Child Task
+
+### Decision
+
+待辦的「下一步」不再只是純文字欄位。第一版新增「新增下一步」操作，從目前待辦建立子待辦：
+
+- 自動繼承 `client_id`。
+- 自動繼承 `engagement_id`。
+- 設定 `parent_task_id = current_task.id`。
+- 新待辦可追蹤、完成、逾期並出現在待辦列表。
+
+### Rationale
+
+純文字 `next_step` 無法追蹤與完成，也不會進入控制台或逾期邏輯。子待辦更符合工作流管理。
+
+### Impact
+
+v0.18.0 需新增 UI 與 service helper，並測試上下文繼承與 parent/child 限制。
+
 ## 2026-05-10 - [已確認] 放棄 Slice 2.5-B：客戶列表不顯示地址與財政部比對欄位
 
 ### Decision

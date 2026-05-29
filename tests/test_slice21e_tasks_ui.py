@@ -81,6 +81,7 @@ def test_tasks_page_has_slice21e_buttons(qapp, container):
     assert page._bulk_new_btn.text() == "批量新增"
     assert page._bulk_edit_btn.text() == "批量編輯"
     assert page._bulk_delete_btn.text() == "批量刪除"
+    assert page._next_step_btn.text() == "新增下一步"
     assert page._make_child_btn.text() == "設為子待辦"
 
 
@@ -98,7 +99,25 @@ def test_multi_selection_enables_bulk_buttons(qapp, container, clients):
     assert page._bulk_edit_btn.isEnabled()
     assert page._bulk_delete_btn.isEnabled()
     assert not page._complete_btn.isEnabled()
+    assert not page._next_step_btn.isEnabled()
     assert not page._make_child_btn.isEnabled()
+
+
+def test_single_selection_updates_detail_panel_and_enables_next_step(qapp, container, clients):
+    c1, _ = clients
+    task = container.tasks.create_task(CreateTaskInput(
+        engagement_id=None,
+        client_id=c1.id,
+        title="整理資料",
+        next_step="聯絡客戶",
+    ))
+    page = TasksPage(container)
+    page._refresh()
+    page._table.selectRow(0)
+    assert page._next_step_btn.isEnabled()
+    assert page._detail_title.text() == task.title
+    assert "客戶一" in page._detail_context.text()
+    assert "聯絡客戶" in page._detail_next_step.text()
 
 
 def test_bulk_create_button_writes_db_and_audit(qapp, monkeypatch, container, clients):
@@ -203,9 +222,38 @@ def test_make_child_button_uses_parent_dialog_and_indents_child(qapp, monkeypatc
     assert any(t.startswith("　└ ") for t in titles)
 
 
+def test_next_step_button_creates_context_inheriting_child(qapp, monkeypatch, container, clients):
+    c1, _ = clients
+    parent = container.tasks.create_task(CreateTaskInput(
+        engagement_id=None,
+        client_id=c1.id,
+        title="父",
+        assignee="Bob",
+        priority="urgent",
+        next_step="打電話確認",
+    ))
+    monkeypatch.setattr(
+        "taxops.ui.pages.tasks_page.QInputDialog.getText",
+        lambda *args, **kwargs: ("打電話確認", True),
+    )
+    page = TasksPage(container)
+    page._refresh()
+    page._table.selectRow(0)
+    page._on_create_next_step_task()
+
+    rows = container.tasks.list_by_client(c1.id)
+    child = next(t for t in rows if t.id != parent.id)
+    assert child.parent_task_id == parent.id
+    assert child.client_id == parent.client_id
+    assert child.engagement_id == parent.engagement_id
+    assert child.assignee == parent.assignee
+    assert child.priority == parent.priority
+
+
 def test_task_action_registry_includes_slice21e_contracts():
     labels = {c.button_label: c for c in actions_for_page(PAGE_TASKS)}
     assert labels["批量新增"].service == "TasksService.create_tasks_bulk"
     assert labels["批量編輯"].audit_action == "task.bulk_update"
     assert labels["批量刪除"].service == "TasksService.delete_tasks_bulk"
     assert labels["設為子待辦"].repository == "TasksRepository.update_parent"
+    assert labels["新增下一步"].service == "TasksService.create_child_task"

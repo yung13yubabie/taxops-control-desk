@@ -15,6 +15,7 @@ from ..core.clock import now_iso
 class DocumentRequestRow:
     id: int
     engagement_id: int
+    request_name: str
     tax_type: str
     period_name: str
     status: str
@@ -40,9 +41,11 @@ class DocumentRequestItemRow:
 
 def _row_to_request(row: sqlite3.Row) -> DocumentRequestRow:
     keys = row.keys()
+    request_name = row["request_name"] if "request_name" in keys else None
     return DocumentRequestRow(
         id=row["id"],
         engagement_id=row["engagement_id"],
+        request_name=request_name or f"{row['period_name']} {row['tax_type']} request",
         tax_type=row["tax_type"],
         period_name=row["period_name"],
         status=row["status"],
@@ -78,6 +81,7 @@ class DocumentRequestsRepository:
         self,
         *,
         engagement_id: int,
+        request_name: str,
         tax_type: str,
         period_name: str,
         status: str = "not_requested",
@@ -87,10 +91,20 @@ class DocumentRequestsRepository:
         ts = now_iso()
         cur = self._conn.execute(
             "INSERT INTO document_requests("
-            "engagement_id, tax_type, period_name, status,"
+            "engagement_id, request_name, tax_type, period_name, status,"
             " due_date, requested_at, follow_up_count, notes, created_at, updated_at"
-            ") VALUES (?, ?, ?, ?, ?, NULL, 0, ?, ?, ?)",
-            (engagement_id, tax_type, period_name, status, due_date, notes, ts, ts),
+            ") VALUES (?, ?, ?, ?, ?, ?, NULL, 0, ?, ?, ?)",
+            (
+                engagement_id,
+                request_name,
+                tax_type,
+                period_name,
+                status,
+                due_date,
+                notes,
+                ts,
+                ts,
+            ),
         )
         self._conn.commit()
         new_id = cur.lastrowid
@@ -122,6 +136,24 @@ class DocumentRequestsRepository:
             (engagement_id,),
         ).fetchall()
         return [_row_to_request(r) for r in rows]
+
+    def update_request_metadata(
+        self,
+        request_id: int,
+        *,
+        request_name: str,
+        due_date: str | None = None,
+        notes: str | None = None,
+    ) -> DocumentRequestRow | None:
+        ts = now_iso()
+        self._conn.execute(
+            "UPDATE document_requests"
+            " SET request_name = ?, due_date = ?, notes = ?, updated_at = ?"
+            " WHERE id = ? AND deleted_at IS NULL",
+            (request_name, due_date, notes, ts, request_id),
+        )
+        self._conn.commit()
+        return self.get_request(request_id)
 
     def update_request_status(
         self,
@@ -253,6 +285,7 @@ class DocumentRequestsRepository:
         self,
         *,
         engagement_id: int,
+        request_name: str,
         tax_type: str,
         period_name: str,
         status: str = "not_requested",
@@ -268,10 +301,20 @@ class DocumentRequestsRepository:
         try:
             cur = self._conn.execute(
                 "INSERT INTO document_requests("
-                "engagement_id, tax_type, period_name, status,"
+                "engagement_id, request_name, tax_type, period_name, status,"
                 " due_date, requested_at, follow_up_count, notes, created_at, updated_at"
-                ") VALUES (?, ?, ?, ?, ?, NULL, 0, ?, ?, ?)",
-                (engagement_id, tax_type, period_name, status, due_date, notes, ts, ts),
+                ") VALUES (?, ?, ?, ?, ?, ?, NULL, 0, ?, ?, ?)",
+                (
+                    engagement_id,
+                    request_name,
+                    tax_type,
+                    period_name,
+                    status,
+                    due_date,
+                    notes,
+                    ts,
+                    ts,
+                ),
             )
             request_id = cur.lastrowid
             item_ids: list[int] = []

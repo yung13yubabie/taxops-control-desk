@@ -23,6 +23,9 @@ from . import (
     _m0018_task_parent,
     _m0019_drop_review_notes,
     _m0020_folder_bookmarks,
+    _m0021_document_request_name,
+    _m0022_work_records,
+    _m0023_canvas_notes,
 )
 
 MIGRATIONS: tuple[tuple[str, str], ...] = (
@@ -46,4 +49,7 @@ MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("0018_task_parent", _m0018_task_parent.SQL),
     ("0019_drop_review_notes", _m0019_drop_review_notes.SQL),
     ("0020_folder_bookmarks", _m0020_folder_bookmarks.SQL),
+    ("0021_document_request_name", _m0021_document_request_name.SQL),
+    ("0022_work_records", _m0022_work_records.SQL),
+    ("0023_canvas_notes", _m0023_canvas_notes.SQL),
 )

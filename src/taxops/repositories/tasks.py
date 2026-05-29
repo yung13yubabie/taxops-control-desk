@@ -63,6 +63,7 @@ class TasksRepository:
         engagement_id: int | None,
         title: str,
         client_id: int | None = None,
+        parent_task_id: int | None = None,
         assignee: str | None = None,
         due_date: str | None = None,
         priority: str = "normal",
@@ -73,10 +74,10 @@ class TasksRepository:
         ts = now_iso()
         cur = self._conn.execute(
             "INSERT INTO workflow_tasks("
-            "engagement_id, client_id, title, assignee, due_date, priority, status,"
+            "engagement_id, client_id, parent_task_id, title, assignee, due_date, priority, status,"
             " next_step, notes, created_at, updated_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (engagement_id, client_id, title, assignee, due_date, priority, status,
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (engagement_id, client_id, parent_task_id, title, assignee, due_date, priority, status,
              next_step, notes, ts, ts),
         )
         self._conn.commit()

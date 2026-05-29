@@ -25,11 +25,13 @@ from ..repositories.generated_messages import GeneratedMessagesRepository
 from ..repositories.late_fee import LateFeeRepository
 from ..repositories.folder_bookmarks import FolderBookmarksRepository
 from ..repositories.backup import BackupRepository
+from ..repositories.canvas_notes import CanvasNotesRepository
 from ..repositories.dashboard import DashboardRepository
 from ..repositories.search import SearchRepository
 from ..repositories.recurring_billing import RecurringBillingRepository
 from ..repositories.tasks import TasksRepository
 from ..repositories.templates import TemplatesRepository
+from ..repositories.work_records import WorkRecordsRepository
 from ..repositories.tax_registry import (
     TaxCacheMetadataRepository,
     TaxRegistryRepository,
@@ -45,6 +47,7 @@ from .settings import SettingsService
 from .system_log import SystemLogService
 from .attachments import AttachmentsService
 from .backup import BackupService
+from .canvas_notes import CanvasNotesService
 from .dashboard import DashboardService
 from .export import ExportService
 from .search import SearchService
@@ -54,6 +57,7 @@ from .folder_bookmarks import FolderBookmarksService
 from .recurring_billing import RecurringBillingService
 from .tasks import TasksService
 from .templates import TemplatesService
+from .work_records import WorkRecordsService
 
 
 @dataclass
@@ -83,6 +87,8 @@ class ServiceContainer:
     dashboard: DashboardService
     search: SearchService
     recurring_billing: RecurringBillingService
+    work_records: WorkRecordsService
+    canvas_notes: CanvasNotesService
 
     def close(self) -> None:
         """Close the owned SQLite connection.
@@ -105,6 +111,8 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
     engagements_repo = EngagementsRepository(conn)
     doc_requests_repo = DocumentRequestsRepository(conn)
     tasks_repo = TasksRepository(conn)
+    work_records_repo = WorkRecordsRepository(conn)
+    canvas_notes_repo = CanvasNotesRepository(conn)
 
     settings_repo.seed_defaults()
 
@@ -117,6 +125,12 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
     engagements_service = EngagementsService(engagements_repo, audit_service, search_repo)
     doc_requests_service = DocumentRequestsService(doc_requests_repo, audit_service)
     tasks_service = TasksService(tasks_repo, audit_service)
+    work_records_service = WorkRecordsService(work_records_repo, audit_service)
+    canvas_notes_service = CanvasNotesService(
+        canvas_notes_repo,
+        audit_service,
+        paths.data_root / "note_assets",
+    )
     templates_repo = TemplatesRepository(conn)
     templates_service = TemplatesService(templates_repo, audit_service)
     gen_messages_repo = GeneratedMessagesRepository(conn)
@@ -216,4 +230,6 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         dashboard=dashboard_service,
         search=search_service,
         recurring_billing=recurring_billing_service,
+        work_records=work_records_service,
+        canvas_notes=canvas_notes_service,
     )

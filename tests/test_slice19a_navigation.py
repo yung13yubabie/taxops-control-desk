@@ -223,3 +223,21 @@ def test_main_window_sidebar_nav_clears_tasks_filter(container, two_clients):
     tasks_row = NAV_ORDER.index(PAGE_TASKS)
     win._nav.setCurrentRow(tasks_row)
     assert tasks_page._filter_key == ""
+
+
+@pytest.mark.usefixtures("qapp")
+def test_main_window_dashboard_nav_without_filter_clears_current_page_filter(container, two_clients):
+    from taxops.ui.main_window import MainWindow
+    from taxops.ui.action_registry import PAGE_TASKS
+
+    win = MainWindow(container)
+    win.navigate_to(PAGE_TASKS, filter_key="overdue")
+    tasks_idx = win._page_indices[PAGE_TASKS]
+    tasks_page = win._stack.widget(tasks_idx)
+    assert tasks_page._filter_key == "overdue"
+
+    # Slice 25 / v0.16.0: dashboard rows mirror sidebar entries and emit no
+    # hidden filter. Clicking the same page again must therefore behave like
+    # the sidebar and clear any prior dashboard-specific filter.
+    win.navigate_to(PAGE_TASKS)
+    assert tasks_page._filter_key == ""

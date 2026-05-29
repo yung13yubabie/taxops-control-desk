@@ -230,6 +230,40 @@ class TasksService:
         )
         return row
 
+    def create_child_task(self, parent_task_id: int, title: str) -> TaskRow:
+        parent = self._repo.get(parent_task_id)
+        if parent is None:
+            raise TaskValidationError("task.parent.not_found")
+        if parent.parent_task_id is not None:
+            raise TaskValidationError("task.parent.depth_exceeded")
+        clean_title = sanitize_user_text(title, max_length=200)
+        if not clean_title:
+            raise TaskValidationError("task.title.required")
+        row = self._repo.insert(
+            engagement_id=parent.engagement_id,
+            client_id=parent.client_id,
+            parent_task_id=parent.id,
+            title=clean_title,
+            assignee=parent.assignee,
+            due_date=None,
+            priority=parent.priority,
+            status="todo",
+            next_step=None,
+            notes=None,
+        )
+        self._audit.record(
+            action="task.create_child",
+            target_type="task",
+            target_id=str(row.id),
+            detail={
+                "parent_task_id": parent.id,
+                "client_id": parent.client_id,
+                "engagement_id": parent.engagement_id,
+                "title": row.title,
+            },
+        )
+        return row
+
     def create_tasks_bulk(
         self,
         client_ids: list[int],

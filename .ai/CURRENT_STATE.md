@@ -1,5 +1,117 @@
 # CURRENT_STATE
 
+## 2026-05-29 Current Release State
+
+- v0.20.0 is release-ready in the current worktree.
+- Version is `0.20.0` in `pyproject.toml` and `src/taxops/__init__.py`.
+- The packaged desktop app has been rebuilt at `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`.
+- The v0.20.0 release zip exists at `dist/TaxOpsControlDesk-v0.20.0-windows.zip`.
+- Release verification completed:
+  - `git diff --check` => passed.
+  - `python -m pytest tests/test_slice28_canvas_notes.py tests/test_slice27_work_records.py tests/test_db_migrations.py tests/test_ui_action_contracts.py -q --tb=short` => 30 passed.
+  - `python -m pytest -q` => 1008 passed, 1 skipped.
+  - `python -m build_tools.package_windows` => built `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`.
+  - `python -m build_tools.smoke_test_exe` => automated EXE smoke passed.
+  - `python -m pytest tests/test_packaging_tools.py -q --tb=short` => 6 passed.
+- Packaging warning still observed during PyInstaller build: `RequestsDependencyWarning` about urllib3/chardet/charset_normalizer compatibility. Build and smoke still passed.
+- Real Windows manual UI acceptance across screen sizes/DPI remains unverified.
+
+## 2026-05-28 Current Verified State
+
+- v0.20.0 Work Records A4 canvas notes is implemented.
+- Work Records now includes usable `流程`, `筆記`, and `錯誤回顧` tabs.
+- Notes use an A4 page-based `QGraphicsScene` canvas:
+  - Fixed A4 page frame on a pannable/zoomable workspace.
+  - `text_box`, `image`, `freehand`, and `shape` objects are stored as scene JSON.
+  - Text boxes store controlled sanitized HTML.
+  - Shapes support red outline rectangles and yellow highlight rectangles.
+  - 8px grid snap is enabled for movable text and shape objects.
+  - Images are copied to local `note_assets/` under the app data root, not stored in SQLite.
+  - PDF export renders A4 pages with `QPdfWriter`.
+- Version is currently `0.20.0` in `pyproject.toml` and `src/taxops/__init__.py`.
+- v0.20.0 verified:
+  - `python -m pytest tests/test_slice28_canvas_notes.py tests/test_slice27_work_records.py tests/test_db_migrations.py tests/test_ui_action_contracts.py tests/test_slice14_dashboard.py tests/test_slice23_dashboard_dock.py tests/test_slice19a_navigation.py -q --tb=short` => 82 passed.
+  - After security/simplification fixes: `python -m pytest tests/test_slice28_canvas_notes.py tests/test_slice27_work_records.py tests/test_db_migrations.py tests/test_ui_action_contracts.py -q --tb=short` => 30 passed.
+  - `python -m pytest -q` => 1008 passed, 1 skipped.
+  - `python -m build_tools.package_windows` => built `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`.
+  - `python -m build_tools.smoke_test_exe` => automated EXE smoke passed.
+  - `python -m pytest tests/test_packaging_tools.py -q --tb=short` => 6 passed.
+- Packaging warning still observed during PyInstaller build: `RequestsDependencyWarning` about urllib3/chardet/charset_normalizer compatibility. Build and smoke still passed.
+- Real Windows manual UI acceptance across screen sizes/DPI remains unverified.
+
+## 2026-05-28 Current Verified State
+
+- v0.19.0 Work Records workflow/error review is implemented.
+- Sidebar/Dashboard now include the new `work_records` module as `工作紀錄`.
+- Work Records first version includes three tabs: `流程`, `筆記`, and `錯誤回顧`.
+- The `筆記` tab is a v0.20.0 placeholder only; the A4 QGraphicsScene canvas editor is not implemented yet.
+- Workflow Templates and Workflow Runs are separate:
+  - Templates store staged checklist JSON and version.
+  - Runs snapshot a template and can be edited independently.
+  - A Run can overwrite its original template or be saved as a new template.
+- Structured Error Reviews support severity, phenomenon, root cause, short/long guards, and can append a guard step to a selected workflow template stage, bumping the template version.
+- Version is currently `0.19.0` in `pyproject.toml` and `src/taxops/__init__.py`.
+- v0.19.0 verified:
+  - `python -m pytest tests/test_slice27_work_records.py tests/test_db_migrations.py tests/test_ui_action_contracts.py tests/test_slice14_dashboard.py tests/test_slice23_dashboard_dock.py tests/test_slice19a_navigation.py -q --tb=short` => 74 passed.
+  - `python -m pytest -q` => 999 passed, 1 skipped.
+  - `python -m build_tools.package_windows` => built `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`.
+  - `python -m build_tools.smoke_test_exe` => automated EXE smoke passed.
+  - `python -m pytest tests/test_packaging_tools.py -q --tb=short` => 6 passed.
+- Packaging warning still observed during PyInstaller build: `RequestsDependencyWarning` about urllib3/chardet/charset_normalizer compatibility. Build and smoke still passed.
+- Real Windows manual UI acceptance across screen sizes/DPI remains unverified.
+- Active roadmap now continues with v0.20.0 Work Records A4 canvas notes.
+
+## 2026-05-28 Current Verified State
+
+- v0.18.0 Tasks UX + context-inheriting next-step child task is implemented.
+- Tasks UI now follows the left list plus right detail panel pattern, while preserving existing table APIs used by tests.
+- A new `新增下一步` action creates a new child task from the selected parent task instead of storing a plain text next-step note only.
+- `TasksService.create_child_task(parent_task_id, title)` inherits `client_id`, `engagement_id`, assignee, and priority from the parent task, enforces the existing two-level hierarchy cap, and records `task.create_child`.
+- Version is currently `0.18.0` in `pyproject.toml` and `src/taxops/__init__.py`.
+- v0.18.0 verified:
+  - `python -m pytest tests/test_tasks.py tests/test_slice20b_tasks_client.py tests/test_slice21d_tasks_parent_bulk.py tests/test_slice21e_tasks_ui.py tests/test_slice5_ui.py tests/test_ui_action_contracts.py -q --tb=short` => 109 passed.
+  - `python -m pytest -q` => 991 passed, 1 skipped.
+  - `python -m build_tools.package_windows` => built `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`.
+  - `python -m build_tools.smoke_test_exe` => automated EXE smoke passed.
+  - `python -m pytest tests/test_packaging_tools.py -q --tb=short` => 6 passed.
+- Packaging warning still observed during PyInstaller build: `RequestsDependencyWarning` about urllib3/chardet/charset_normalizer compatibility. Build and smoke still passed.
+- Real Windows manual UI acceptance across screen sizes/DPI remains unverified.
+- Active roadmap now continues with v0.19.0 workflow/error review and v0.20.0 A4 canvas notes.
+
+## 2026-05-28 v0.17.0 Verified State
+
+- v0.17.0 Cases + Document Requests UX is implemented.
+- `document_requests.request_name` is added through migration `0021_document_request_name`, with legacy backfill and default name generation on create.
+- Document request batches now support update/edit through `DocumentRequestsService.update_request()` and `DocumentRequestsRepository.update_request_metadata()`.
+- Document Requests UI now surfaces batch names directly, includes an edit-batch action, and uses a left request list plus right detail/item panel.
+- Cases UI now includes client context in the left list and a right detail panel for the selected case.
+- Version was `0.17.0` in `pyproject.toml` and `src/taxops/__init__.py`.
+- v0.17.0 verified:
+  - `python -m pytest -q` => 986 passed, 1 skipped.
+  - `python -m build_tools.package_windows` => built `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`.
+  - `python -m build_tools.smoke_test_exe` => automated EXE smoke passed.
+  - `python -m pytest tests/test_packaging_tools.py -q --tb=short` => 6 passed.
+- Packaging warning still observed during PyInstaller build: `RequestsDependencyWarning` about urllib3/chardet/charset_normalizer compatibility. Build and smoke still passed.
+- Real Windows manual UI acceptance across screen sizes/DPI remains unverified.
+- Roadmap continued with v0.18.0 Tasks UX + context-inheriting child task next step, v0.19.0 workflow/error review, and v0.20.0 A4 canvas notes.
+
+## 2026-05-28 v0.16.0 Verified State
+
+- v0.16.0 Dashboard/Sidebar consistency is implemented.
+- Dashboard rows now mirror sidebar `NAV_ORDER` and navigate with `(page_id, "")`, so Dashboard and sidebar entry points land on the same page state.
+- `MainWindow.navigate_to(page_id, filter_key="")` clears stale page filters when navigating without a filter, including same-page navigation.
+- Dashboard action contracts now cover the same sidebar modules and no longer expose the removed ReviewNotes route.
+- Version is currently `0.16.0` in `pyproject.toml` and `src/taxops/__init__.py`.
+- Verified:
+  - `python -m pytest tests/test_slice14_dashboard.py tests/test_slice23_dashboard_dock.py tests/test_slice19a_navigation.py tests/test_ui_action_contracts.py tests/test_date_field.py -q --tb=short` => 101 passed.
+  - `python -m pytest -q` => 977 passed, 1 skipped.
+  - `python -m build_tools.package_windows` => built `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`.
+  - `python -m build_tools.smoke_test_exe` => automated EXE smoke passed.
+  - `python -m pytest tests/test_packaging_tools.py -q --tb=short` => 6 passed.
+- Packaging warning observed during PyInstaller build: `RequestsDependencyWarning` about urllib3/chardet/charset_normalizer compatibility. Build and smoke still passed; keep this visible for dependency cleanup.
+- Real Windows manual UI acceptance across screen sizes/DPI remains unverified.
+- Active roadmap remains v0.17.0 Cases/Document Requests, v0.18.0 Tasks, v0.19.0 workflow/error review, and v0.20.0 A4 canvas notes.
+
 ## 2026-05-11 Verified Current State
 
 - [已確認] Slice 3 HTTP download 已完成補救修正：下載服務改為 `.part` 原子寫入、500 MB 上限、失敗清理 partial file。
@@ -31,6 +143,8 @@
 
 ## Active Work
 
+- [已確認] 2026-05-28 完成 v0.16.0 Dashboard/Sidebar 一致化：控制台改為 `NAV_ORDER` 的精簡摘要版，列項與側邊欄相同；控制台點擊不再帶隱性 filter，等同側邊欄導航至同一頁。`MainWindow.navigate_to(page_id, filter_key="")` 已補強為空 filter 時清除頁面既有 filter，避免控制台與側邊欄出現兩條路徑。已驗證 targeted suite：`python -m pytest tests/test_slice14_dashboard.py tests/test_slice23_dashboard_dock.py tests/test_slice19a_navigation.py tests/test_ui_action_contracts.py tests/test_date_field.py -q --tb=short` => 101 passed。尚未執行 full suite / EXE build。
+- [已確認] 2026-05-28 確認後續 5-slice roadmap：v0.16.0 Dashboard/Sidebar 一致化；v0.17.0 案件 + 索件 UX 重構與 `request_name`；v0.18.0 待辦 UX + 下一步子待辦；v0.19.0 工作紀錄的流程 + 錯誤回顧；v0.20.0 工作紀錄的畫布筆記。每個 slice 完成後需做 targeted tests、code simplification、code review、`.ai` 更新；完整交付前仍需 full suite、EXE smoke 與人工 UI 驗收。
 - [已確認] 2026-05-28 完成 v0.15.1 — 全刪 ReviewNotes（migrations 0019 drop table + 刪 repository/service/page/tests/dashboard 2 卡）+ 新增 folder_bookmarks（migration 0020 + repository/service/page，支援本機+UNC 路徑、QDesktopServices.openUrl 開啟）。17 新 tests + cascade updates。pyproject + __init__ 0.15.0 → 0.15.1。
 - [已確認] 2026-05-28 完成 v0.15.0 — Dashboard 拆為浮動 QDockWidget：8 大卡 → 9 compact rows、MainWindow QDockWidget host（預設右側、可拖/float/close）、NAV_ORDER 移除 PAGE_DASHBOARD（11→10）、sidebar header 加 📊 toggle、`ui.dashboard_dock_visible` 持久化。10 新 tests + 全套 996 passed, 1 skipped。pyproject + __init__ 0.14.3 → 0.15.0。
 - [已確認] 2026-05-28 完成 v0.14.3 — 案件→索件→文件 drill-down 三層架構：`DocumentRequestsPage` 加 view_mode + drill_to_items signal + load_request_items；`EngagementsPage` 重寫為 QStackedWidget 三頁 + breadcrumb。11 新 tests + 138 子集回歸 passed。pyproject + __init__ 0.14.2 → 0.14.3。

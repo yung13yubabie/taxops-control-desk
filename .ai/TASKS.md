@@ -1,5 +1,101 @@
 # TASKS
 
+## 2026-05-29 Current Task State
+
+### TODO
+
+- Run real Windows manual UI acceptance across 1366x768, 1920x1080, and 100%/125%/150% scaling.
+
+### DOING
+
+- No active implementation slice is currently in progress.
+
+### BLOCKED
+
+- No implementation blocker is currently recorded.
+- Manual Windows UI acceptance is still pending but does not block the v0.20.0 code/package release.
+
+### DONE
+
+- v0.20.0 release closeout:
+  - Ran code review/simplification verification gates.
+  - `git diff --check` passed.
+  - Targeted v0.20/v0.19/migration/action contract tests passed: 30 passed.
+  - Full suite passed: 1008 passed, 1 skipped.
+  - Rebuilt Windows one-dir EXE at `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`.
+  - Automated EXE smoke passed.
+  - Created `dist/TaxOpsControlDesk-v0.20.0-windows.zip`.
+  - Packaging tools tests passed: 6 passed.
+
+## 2026-05-28 Current Task State
+
+### TODO
+
+- Run real Windows manual UI acceptance across 1366x768, 1920x1080, and 100%/125%/150% scaling.
+
+### DOING
+
+- No active implementation slice is currently in progress.
+
+### BLOCKED
+
+- No implementation blocker is currently recorded.
+- Manual Windows UI acceptance is still pending but does not block code progress.
+
+### DONE
+
+- v0.20.0 Work Records A4 canvas notes:
+  - Added migration `0023_canvas_notes`.
+  - Added `CanvasNotesRepository` and `CanvasNotesService`.
+  - Added A4 QGraphicsScene canvas UI under Work Records `筆記`.
+  - Implemented JSON scene persistence for `text_box`, `image`, `freehand`, and `shape`.
+  - Implemented controlled HTML sanitization for text boxes.
+  - Implemented local `note_assets/` image storage.
+  - Implemented red outline rectangle and yellow highlight rectangle shapes.
+  - Implemented 8px grid snap for movable text and shape objects.
+  - Implemented PDF export with `QPdfWriter`.
+  - Version is `0.20.0`.
+  - Targeted tests passed: 82 passed; post-review targeted tests passed: 30 passed.
+  - Full suite passed: 1008 passed, 1 skipped.
+  - Windows one-dir EXE build passed.
+  - Automated EXE smoke passed.
+  - Packaging tools tests passed: 6 passed.
+- v0.19.0 Work Records workflow/error review:
+  - Added migration `0022_work_records` with `workflow_templates_v2`, `workflow_runs`, and `error_reviews`.
+  - Added `WorkRecordsRepository` and `WorkRecordsService`.
+  - Added `工作紀錄` sidebar/Dashboard module.
+  - Added Work Records page with `流程`, `筆記`, and `錯誤回顧` tabs.
+  - Implemented workflow template/run separation, run step toggling, overwrite-back-to-template, and save-run-as-template.
+  - Implemented structured error reviews that append guard steps to workflow templates and bump template version.
+  - Version is `0.19.0`.
+  - Targeted tests passed: 74 passed.
+  - Full suite passed: 999 passed, 1 skipped.
+  - Windows one-dir EXE build passed.
+  - Automated EXE smoke passed.
+  - Packaging tools tests passed: 6 passed.
+- v0.18.0 Tasks UX + context-inheriting next-step child task:
+  - Tasks UI now uses left list plus right detail panel.
+  - Added `新增下一步` action.
+  - Added `TasksService.create_child_task()` to create a child task that inherits parent `client_id`, `engagement_id`, assignee, and priority.
+  - Existing `設為子待辦` remains for converting an existing task into a child task.
+  - Version is `0.18.0`.
+  - Targeted tests passed: 109 passed.
+  - Full suite passed: 991 passed, 1 skipped.
+  - Windows one-dir EXE build passed.
+  - Automated EXE smoke passed.
+  - Packaging tools tests passed: 6 passed.
+- v0.17.0 Cases + Document Requests UX and `request_name`:
+  - Added migration `0021_document_request_name`.
+  - Added default request name generation and request metadata update CRUD.
+  - Document Requests UI shows batch names, supports editing batch names, and uses left request list plus right detail/item panel.
+  - Cases UI shows client context and uses left case list plus right detail panel.
+  - Version is `0.17.0`.
+  - Full suite passed: 986 passed, 1 skipped.
+  - Windows one-dir EXE build passed.
+  - Automated EXE smoke passed.
+  - Packaging tools tests passed: 6 passed.
+- v0.16.0 Dashboard/Sidebar consistency: Dashboard rows mirror sidebar `NAV_ORDER`, row clicks emit `(page_id, "")`, same-page empty-filter navigation clears stale filters, action contracts match sidebar modules, version is `0.16.0`, targeted tests passed, full suite passed, EXE build/smoke passed.
+
 ## 2026-05-11 Task Update
 
 ### TODO
@@ -38,6 +134,27 @@
 > [已確認] 2026-05-10 Slice 3 HTTP download 完成：下載按鈕啟用、URL allowlist + 兩段確認 + audit trail + DownloadError。pytest 175/175 passed。
 
 ## TODO
+
+- [待實作] v0.17.0：案件管理 + 索件 UX 重構。
+  - 已決策：案件管理告別傳統寬表格，改為左側雙行清單 + 右側詳情/操作面板。
+  - 已決策：新增 `document_requests.request_name`，索件批次支援預設名稱生成與完整 CRUD。
+  - 驗收方式：案件列表每列清楚顯示客戶/案件/狀態與期間/稅種/截止日/負責人；右側詳情可新增/編輯/刪除案件與索件批次；索件批次顯示名稱、狀態、缺件數/總項目、截止日、催件次數；測試覆蓋 migration/service/UI/action contracts。
+
+- [待實作] v0.18.0：待辦事項 UX + 下一步子待辦。
+  - 已決策：待辦事項改為左側雙行清單 + 右側詳情/操作面板。
+  - 已決策：「新增下一步」不是純文字，而是自動繼承 client_id / engagement_id 並建立 parent_task_id = 目前待辦 id 的子待辦。
+  - 驗收方式：待辦列清楚顯示客戶/案件/標題/狀態與到期日/優先級/負責人/下一步；右側詳情可建立下一步子待辦並顯示子待辦清單；測試覆蓋 context inheritance、父子關係與 UI。
+
+- [待實作] v0.19.0：工作紀錄模組 — 流程 + 錯誤回顧。
+  - 已決策：新增單一 sidebar 模組「工作紀錄」，內含「流程 / 筆記 / 錯誤回顧」三個分頁；v0.19.0 先做流程與錯誤回顧。
+  - 流程：Template / Run 分離；Run 可臨時改步驟；可整包覆蓋回原範本或另存為新範本；stage 可摺疊；checklist 勾選後有刪除線；進度百分比自動計算。
+  - 錯誤回顧：結構化欄位（失誤現象、Root Cause、短期/長期防呆、Severity）；可關聯流程範本；可追加防呆步驟到指定 stage 最後並讓範本 version +1。
+  - Context linking：流程/筆記/錯誤回顧共用 client_id / engagement_id / global 規則；綁案件時自動推導客戶；允許改綁；軟刪保留關聯並顯示已封存/已刪除；儲存 context_snapshot。
+
+- [待實作] v0.20.0：工作紀錄模組 — 畫布筆記。
+  - 已決策：不做 Markdown，也不做 QTextEdit 類 Word；採 QGraphicsScene 畫布導向編輯器。
+  - 體驗為可縮放/平移的無限工作區，但內容放在固定 A4 page frames；資料與 PDF 輸出以 A4 區塊為準。
+  - 第一版物件：text_box（受控 HTML 富文本）、image（note_assets 本機檔案）、freehand、shape（空心紅框 / 黃色螢光筆矩形）；預設 8px grid snap；PDF 由畫布逐頁 render。
 
 - [技術債] DB mutation + audit 非原子性：各 service 的 mutation 流程是「repository.commit() 後再 audit.record()」，兩步驟不在同一 SQLite transaction。若 audit 寫入失敗（如磁碟滿、connection 中斷），會留下「資料已改但 audit 缺失」的不一致狀態。橫跨所有 slice（clients / engagements / doc_requests / tasks）。
   - 修法方向：在 repository 層提供 transaction context manager，讓 service 把 repo 操作 + audit INSERT 包在同一個 `with conn:` 中。
@@ -121,6 +238,15 @@
 - 無進行中項目。
 
 ## RECENTLY COMPLETED
+
+- [已確認] v0.16.0（2026-05-28）— Dashboard/Sidebar 一致化。
+  - 控制台改為側邊欄 `NAV_ORDER` 的精簡摘要版，rows 與 sidebar 模組相同。
+  - 控制台 row 點擊 emit `(page_id, "")`，不再帶 `due_today` / `overdue` / `upcoming` 等隱性 filter。
+  - `MainWindow.navigate_to(page_id, filter_key="")` 在目標頁已開啟時會先呼叫 `clear_filter()`，確保 Dashboard 空 filter 導航與 sidebar 導航一致。
+  - Dashboard action contracts 補齊所有 sidebar 模組入口，移除已退役 ReviewNotes 導航合約。
+  - pyproject.toml + `src/taxops/__init__.py` 0.15.1 → 0.16.0。
+  - 驗證：`python -m pytest tests/test_slice14_dashboard.py tests/test_slice23_dashboard_dock.py tests/test_slice19a_navigation.py tests/test_ui_action_contracts.py tests/test_date_field.py -q --tb=short` => 101 passed。
+  - 尚未驗證：full pytest、EXE build/smoke、真實 Windows UI。
 
 - [已確認] v0.15.1（2026-05-28）— 全刪 ReviewNotes + 新增資料夾管理：
   - Migration 0019_drop_review_notes：DROP TABLE review_notes + 2 indexes

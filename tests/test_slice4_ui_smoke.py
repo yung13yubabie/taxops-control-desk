@@ -33,12 +33,12 @@ def _fresh_container():
     return build_container(paths, conn)
 
 
-def _seed_client(container):
+def _seed_client(container, code="SMOKE001", name="煙霧測試公司"):
     conn = container.conn
     cur = conn.execute(
         "INSERT INTO clients(client_code, client_name, created_at, updated_at)"
         " VALUES (?, ?, datetime('now'), datetime('now'))",
-        ("SMOKE001", "煙霧測試公司"),
+        (code, name),
     )
     conn.commit()
     return cur.lastrowid
@@ -106,6 +106,33 @@ def test_engagements_page_toolbar_disabled_with_no_selection() -> None:
         )
         assert btn is not None, f"button '{label}' not found"
         assert not btn.isEnabled(), f"'{label}' must be disabled with no row selected"
+    container.close()
+
+
+def test_engagements_page_left_list_shows_client_and_detail_panel() -> None:
+    _make_app()
+    container = _fresh_container()
+    client_id = _seed_client(container, code="CL-DTL", name="明細客戶")
+    from taxops.services.engagements import CreateEngagementInput
+    from taxops.ui.pages.engagements_page import EngagementsPage, _COLUMN_ORDER
+
+    eng = container.engagements.create_engagement(
+        CreateEngagementInput(
+            client_id=client_id,
+            engagement_name="營所稅申報",
+            tax_type="vat",
+            period_name="2026",
+        )
+    )
+
+    page = EngagementsPage(container)
+    client_col = _COLUMN_ORDER.index("client_label")
+    assert page._table.item(0, client_col).text() == "明細客戶"
+
+    page._table.selectRow(0)
+    assert page._detail_title.text() == eng.engagement_name
+    assert "明細客戶" in page._detail_client.text()
+    assert "2026" in page._detail_meta.text()
     container.close()
 
 
@@ -178,6 +205,7 @@ def test_document_requests_page_has_required_buttons() -> None:
     page = DocumentRequestsPage(container)
     btn_texts = {b.text() for b in page.findChildren(QPushButton)}
     assert "新增索件批次" in btn_texts
+    assert "編輯批次" in btn_texts
     assert "標記已發出" in btn_texts
     assert "催件 +1" in btn_texts
     assert "刪除批次" in btn_texts
@@ -197,7 +225,7 @@ def test_document_requests_page_buttons_disabled_before_load() -> None:
     from taxops.ui.pages.document_requests_page import DocumentRequestsPage
 
     page = DocumentRequestsPage(container)
-    for label in ("標記已發出", "催件 +1", "刪除批次"):
+    for label in ("編輯批次", "標記已發出", "催件 +1", "刪除批次"):
         btn = next(
             (b for b in page.findChildren(QPushButton) if b.text() == label), None
         )
@@ -284,14 +312,67 @@ def test_document_requests_page_new_request_handler_creates_db_record() -> None:
     page._on_new_request()
 
     rows = container.conn.execute(
-        "SELECT id FROM document_requests WHERE engagement_id = ?", (eng.id,)
+        "SELECT id, request_name FROM document_requests WHERE engagement_id = ?",
+        (eng.id,),
     ).fetchall()
     assert len(rows) == 1, "one document_request should be created"
+    assert rows[0]["request_name"] == "2024Q1 vat request"
 
     audit = container.conn.execute(
         "SELECT action FROM audit_logs WHERE action = 'doc_request.create'"
     ).fetchone()
     assert audit is not None, "audit_logs must have doc_request.create entry"
+    container.close()
+
+
+def test_document_requests_page_shows_and_edits_request_name(monkeypatch) -> None:
+    _make_app()
+    container = _fresh_container()
+    client_id = _seed_client(container)
+    from taxops.services.engagements import CreateEngagementInput
+    from taxops.services.document_requests import CreateDocumentRequestInput
+    from taxops.ui.pages.document_requests_page import (
+        DocumentRequestsPage,
+        _REQ_COLUMNS,
+    )
+
+    eng = container.engagements.create_engagement(
+        CreateEngagementInput(
+            client_id=client_id,
+            engagement_name="EditRequestName 2024Q1",
+            tax_type="vat",
+            period_name="2024Q1",
+        )
+    )
+    req, _ = container.doc_requests.create_request(
+        CreateDocumentRequestInput(
+            engagement_id=eng.id,
+            tax_type="vat",
+            period_name="2024Q1",
+            request_name="第一批資料",
+        )
+    )
+    page = DocumentRequestsPage(container)
+    page.load_engagement(eng.id)
+
+    name_col = _REQ_COLUMNS.index("request_name")
+    assert page._req_table.item(0, name_col).text().startswith("第一批資料")
+
+    page._req_table.selectRow(0)
+    monkeypatch.setattr(
+        "taxops.ui.pages.document_requests_page.QInputDialog.getText",
+        lambda *args, **kwargs: ("第二批資料", True),
+    )
+    page._on_edit_request()
+
+    updated = container.doc_requests.get_request(req.id)
+    assert updated.request_name == "第二批資料"
+    assert page._req_table.item(0, name_col).text().startswith("第二批資料")
+    assert page._request_detail_title.text() == "第二批資料"
+    audit = container.conn.execute(
+        "SELECT action FROM audit_logs WHERE action = 'doc_request.update'"
+    ).fetchone()
+    assert audit is not None
     container.close()
 
 

@@ -1,13 +1,10 @@
-"""控制台 dock — 9 個即時統計，資料來自 SQLite。
+"""控制台 dock — sidebar modules as a compact live summary.
 
-Slice 23 / v0.15.0 redesign: the page is no longer one of the sidebar
-QStackedWidget pages. ``MainWindow`` hosts it inside a ``QDockWidget`` on
-the right side; the user can drag the dock to any window edge, float it
-out, or close it. The 8 large cards from Slice 14 collapse into compact
-``title: count →`` rows so the dock keeps a narrow footprint.
-
-Backend data (DashboardService / DashboardRepository) is unchanged —
-this file only restyles the presentation.
+Slice 25 / v0.16.0: the dashboard is no longer a separate workflow with
+its own hidden routing rules. It mirrors ``NAV_ORDER`` as a compact module
+summary. Clicking a row emits the same page id as the sidebar and no
+implicit filter, so dashboard navigation and sidebar navigation land in
+the same place.
 """
 
 from __future__ import annotations
@@ -25,31 +22,68 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...i18n import NAV_LABELS
 from ...services.container import ServiceContainer
+from ...services.dashboard import DashboardCounts
 from ..action_registry import (
+    NAV_ORDER,
+    PAGE_ATTACHMENTS,
     PAGE_CLIENTS,
     PAGE_ENGAGEMENTS,
+    PAGE_FOLDER_BOOKMARKS,
+    PAGE_LATE_FEE,
+    PAGE_RECURRING_BILLING,
+    PAGE_REGISTRY,
+    PAGE_SETTINGS,
     PAGE_TASKS,
-    FilterKey,
+    PAGE_TEMPLATES,
+    PAGE_WORK_RECORDS,
 )
 from ..style import toolbar_icon
 
 _log = logging.getLogger(__name__)
 
-# (field_name, display_title, target_page_id, nav_btn_label, filter_key)
-_CARD_DEFS: tuple[tuple[str, str, str, str, str], ...] = (
-    ("tasks_due_today", "我的今日待辦", PAGE_TASKS, "前往待辦事項", FilterKey.DUE_TODAY),
-    ("tasks_overdue", "我的逾期待辦", PAGE_TASKS, "前往待辦事項", FilterKey.OVERDUE),
-    ("waiting_client", "等客戶回覆", PAGE_ENGAGEMENTS, "前往案件管理", ""),
-    ("missing_item_requests", "缺件案件", PAGE_ENGAGEMENTS, "前往案件管理", ""),
-    ("upcoming_engagements", "即將申報案件（7天內）", PAGE_ENGAGEMENTS, "前往案件管理", FilterKey.UPCOMING),
-    ("overdue_engagements", "逾期繳款風險", PAGE_ENGAGEMENTS, "前往案件管理", FilterKey.OVERDUE),
-    ("lease_expiring_soon", "租約即將到期（30天內）", PAGE_CLIENTS, "前往客戶清單", FilterKey.LEASE_EXPIRING),
-)
+_MODULE_ORDER: tuple[str, ...] = NAV_ORDER
+
+
+def _summary_for(page_id: str, counts: DashboardCounts) -> str:
+    if page_id == PAGE_CLIENTS:
+        return f"租約到期 {counts.lease_expiring_soon}"
+    if page_id == PAGE_ENGAGEMENTS:
+        return f"即將 {counts.upcoming_engagements} / 逾期 {counts.overdue_engagements}"
+    if page_id == PAGE_TASKS:
+        return f"今日 {counts.tasks_due_today} / 逾期 {counts.tasks_overdue}"
+    if page_id == PAGE_WORK_RECORDS:
+        return "流程 / 筆記 / 錯誤回顧"
+    if page_id == PAGE_TEMPLATES:
+        return "模板"
+    if page_id == PAGE_REGISTRY:
+        return "本地查詢"
+    if page_id == PAGE_LATE_FEE:
+        return "試算"
+    if page_id == PAGE_ATTACHMENTS:
+        return "附件"
+    if page_id == PAGE_FOLDER_BOOKMARKS:
+        return "資料夾"
+    if page_id == PAGE_RECURRING_BILLING:
+        return "固定開立"
+    if page_id == PAGE_SETTINGS:
+        return "設定"
+    return "開啟"
+
+
+# Backward-compatible exported name for existing tests. Entries are page ids,
+# exactly matching the sidebar order.
+_CARD_DEFS: tuple[str, ...] = _MODULE_ORDER
+
+
+_MODULE_TOOLTIPS: dict[str, str] = {
+    page_id: f"開啟{NAV_LABELS.get(page_id, page_id)}" for page_id in _MODULE_ORDER
+}
 
 
 class _DashboardRow(QFrame):
-    """One compact row: ``title  …  count  →`` button.
+    """One compact module row: ``module  …  summary  →`` button.
 
     Renders inside the dashboard dock list. Clicking ``nav_btn`` emits the
     parent ``navigate_to_page`` signal.
@@ -69,24 +103,28 @@ class _DashboardRow(QFrame):
         title_lbl.setStyleSheet("font-size: 13px; color: #334155;")
         layout.addWidget(title_lbl, stretch=1)
 
-        self._count_lbl = QLabel("—")
-        self._count_lbl.setTextFormat(Qt.TextFormat.PlainText)
-        self._count_lbl.setAlignment(
+        self._summary_lbl = QLabel("—")
+        self._summary_lbl.setTextFormat(Qt.TextFormat.PlainText)
+        self._summary_lbl.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
-        self._count_lbl.setMinimumWidth(36)
-        self._count_lbl.setStyleSheet(
-            "font-size: 15px; font-weight: 700; color: #2563EB;"
+        self._summary_lbl.setMinimumWidth(82)
+        self._summary_lbl.setStyleSheet(
+            "font-size: 13px; font-weight: 700; color: #2563EB;"
         )
-        layout.addWidget(self._count_lbl)
+        layout.addWidget(self._summary_lbl)
 
         self._nav_btn = QPushButton("→")
         self._nav_btn.setToolTip(nav_label)
         self._nav_btn.setFixedSize(28, 24)
         layout.addWidget(self._nav_btn)
 
+    def set_summary(self, text: str) -> None:
+        self._summary_lbl.setText(text)
+        self._summary_lbl.setToolTip(text)
+
     def set_count(self, n: int) -> None:
-        self._count_lbl.setText(str(n))
+        self.set_summary(str(n))
 
     def connect_nav(self, callback: object) -> None:
         self._nav_btn.clicked.connect(callback)
@@ -146,12 +184,14 @@ class DashboardPage(QWidget):
         rows_layout.setContentsMargins(0, 0, 0, 0)
 
         self._cards: dict[str, _DashboardRow] = {}
-        for field, title_text, target_page, nav_label, fkey in _CARD_DEFS:
+        for page_id in _MODULE_ORDER:
+            title_text = NAV_LABELS.get(page_id, page_id)
+            nav_label = _MODULE_TOOLTIPS[page_id]
             row = _DashboardRow(title_text, nav_label)
             row.connect_nav(
-                lambda _checked=False, p=target_page, f=fkey: self.navigate_to_page.emit(p, f)
+                lambda _checked=False, p=page_id: self.navigate_to_page.emit(p, "")
             )
-            self._cards[field] = row
+            self._cards[page_id] = row
             rows_layout.addWidget(row)
         rows_layout.addStretch()
 
@@ -172,11 +212,6 @@ class DashboardPage(QWidget):
             self._status_lbl.setText("載入失敗，請稍後再試。")
             return
 
-        self._cards["tasks_due_today"].set_count(counts.tasks_due_today)
-        self._cards["tasks_overdue"].set_count(counts.tasks_overdue)
-        self._cards["waiting_client"].set_count(counts.waiting_client)
-        self._cards["missing_item_requests"].set_count(counts.missing_item_requests)
-        self._cards["upcoming_engagements"].set_count(counts.upcoming_engagements)
-        self._cards["overdue_engagements"].set_count(counts.overdue_engagements)
-        self._cards["lease_expiring_soon"].set_count(counts.lease_expiring_soon)
+        for page_id, row in self._cards.items():
+            row.set_summary(_summary_for(page_id, counts))
         self._status_lbl.setText("")

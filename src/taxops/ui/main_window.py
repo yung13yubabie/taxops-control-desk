@@ -30,6 +30,7 @@ from .action_registry import (
     PAGE_SETTINGS,
     PAGE_TASKS,
     PAGE_TEMPLATES,
+    PAGE_WORK_RECORDS,
 )
 from .pages.attachments_page import AttachmentsPage
 from .pages.clients_page import ClientsPage
@@ -40,6 +41,7 @@ from .pages.late_fee_page import LateFeePage
 from .pages.placeholder_page import PlaceholderPage
 from .pages.settings_page import SettingsPage
 from .pages.tasks_page import TasksPage
+from .pages.work_records_page import WorkRecordsPage
 from .pages.recurring_billing_page import RecurringBillingPage
 from .pages.registry_page import RegistryPage
 from .pages.templates_page import TemplatesPage
@@ -132,6 +134,8 @@ class MainWindow(QMainWindow):
                 page = eng_page
             elif page_id == PAGE_TASKS:
                 page = TasksPage(self._container)
+            elif page_id == PAGE_WORK_RECORDS:
+                page = WorkRecordsPage(self._container)
             elif page_id == PAGE_TEMPLATES:
                 page = TemplatesPage(self._container)
             elif page_id == PAGE_LATE_FEE:
@@ -158,6 +162,10 @@ class MainWindow(QMainWindow):
             if nav_idx >= 0 and self._nav.currentRow() != nav_idx:
                 self._nav.setCurrentRow(nav_idx)
             else:
+                if not filter_key:
+                    page = self._stack.widget(idx)
+                    if hasattr(page, "clear_filter"):
+                        page.clear_filter()
                 self._activate_page(idx)
             if filter_key:
                 page = self._stack.widget(idx)

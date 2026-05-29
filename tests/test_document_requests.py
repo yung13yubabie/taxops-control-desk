@@ -14,6 +14,7 @@ from taxops.services.document_requests import (
     CreateDocumentRequestInput,
     DocumentRequestValidationError,
     DocumentRequestsService,
+    UpdateDocumentRequestInput,
     VAT_ITEMS,
 )
 from taxops.services.engagements import CreateEngagementInput, EngagementsService
@@ -75,8 +76,21 @@ def test_create_request_returns_row(svc, engagement_id):
     req, items = svc.create_request(_req_input(engagement_id))
     assert req.id > 0
     assert req.engagement_id == engagement_id
+    assert req.request_name == "2024Q1 vat request"
     assert req.status == "not_requested"
     assert items == []
+
+
+def test_create_request_accepts_custom_request_name(svc, engagement_id):
+    req, _ = svc.create_request(
+        _req_input(engagement_id, request_name="A公司第一批補件")
+    )
+    assert req.request_name == "A公司第一批補件"
+
+
+def test_create_request_blank_request_name_uses_default(svc, engagement_id):
+    req, _ = svc.create_request(_req_input(engagement_id, request_name="   "))
+    assert req.request_name == "2024Q1 vat request"
 
 
 def test_create_request_vat_template(svc, engagement_id):
@@ -96,6 +110,47 @@ def test_create_request_records_audit(svc, engagement_id, conn):
     svc.create_request(_req_input(engagement_id))
     rows = conn.execute(
         "SELECT action FROM audit_logs WHERE action = 'doc_request.create'"
+    ).fetchall()
+    assert len(rows) == 1
+
+
+def test_update_request_changes_request_name_due_date_and_notes(svc, engagement_id):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    updated = svc.update_request(
+        req.id,
+        UpdateDocumentRequestInput(
+            request_name="第二批資料",
+            due_date="2026-06-30",
+            notes="先補扣繳資料",
+        ),
+    )
+    assert updated.request_name == "第二批資料"
+    assert updated.due_date == "2026-06-30"
+    assert updated.notes == "先補扣繳資料"
+
+
+def test_update_request_blank_name_rejected(svc, engagement_id):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    with pytest.raises(DocumentRequestValidationError) as exc_info:
+        svc.update_request(req.id, UpdateDocumentRequestInput(request_name=" "))
+    assert exc_info.value.code == "doc_request.name.required"
+
+
+def test_update_request_invalid_due_date_rejected(svc, engagement_id):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    with pytest.raises(DocumentRequestValidationError) as exc_info:
+        svc.update_request(
+            req.id,
+            UpdateDocumentRequestInput(request_name="第二批資料", due_date="bad"),
+        )
+    assert exc_info.value.code == "doc_request.due_date.invalid"
+
+
+def test_update_request_records_audit(svc, engagement_id, conn):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    svc.update_request(req.id, UpdateDocumentRequestInput(request_name="第二批資料"))
+    rows = conn.execute(
+        "SELECT action FROM audit_logs WHERE action = 'doc_request.update'"
     ).fetchall()
     assert len(rows) == 1
 
@@ -258,6 +313,7 @@ def test_create_request_vat_template_is_atomic(conn, engagement_id):
     with pytest.raises(RuntimeError, match="simulated 2nd item insert failure"):
         repo.insert_request_with_items(
             engagement_id=engagement_id,
+            request_name="atomic request",
             tax_type="vat",
             period_name="2024Q1",
             item_names=VAT_ITEMS,  # 9 items; proxy fails on item [1]

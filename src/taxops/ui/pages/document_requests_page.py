@@ -40,6 +40,7 @@ from ...services.container import ServiceContainer
 from ...services.document_requests import (
     CreateDocumentRequestInput,
     DocumentRequestValidationError,
+    UpdateDocumentRequestInput,
     VALID_ITEM_STATUSES,
     VALID_REQUEST_STATUSES,
 )
@@ -54,6 +55,7 @@ from ..widgets.flow_layout import FlowLayout
 _REQ_COLUMNS = (
     "id",
     "engagement_label",
+    "request_name",
     "tax_type",
     "period_name",
     "status",
@@ -65,6 +67,7 @@ _REQ_COLUMNS = (
 _REQ_HEADERS = {
     "id": "編號",
     "engagement_label": "所屬案件",
+    "request_name": "批次名稱",
     "tax_type": "稅種",
     "period_name": "期間",
     "status": "狀態",
@@ -82,7 +85,7 @@ _ITEM_HEADERS = {
 }
 
 # Slice 21C: required cols per table (cannot be hidden via context menu).
-_REQ_CORE_COLS = frozenset({"period_name", "status"})
+_REQ_CORE_COLS = frozenset({"request_name", "status"})
 _ITEM_CORE_COLS = frozenset({"item_name", "item_status"})
 
 _ALL_ENGAGEMENTS = -1
@@ -178,6 +181,7 @@ class DocumentRequestsPage(QWidget):
         toolbar_widget = QWidget()
         toolbar = FlowLayout(toolbar_widget, h_spacing=6, v_spacing=6)
         self._new_req_btn = QPushButton("新增索件批次")
+        self._edit_req_btn = QPushButton("編輯批次")
         self._mark_requested_btn = QPushButton("標記已發出")
         self._request_status_btn = QPushButton("設定進度")
         self._follow_up_btn = QPushButton("催件 +1")
@@ -192,6 +196,7 @@ class DocumentRequestsPage(QWidget):
 
         self._back_btn.setIcon(toolbar_icon("back"))
         self._new_req_btn.setIcon(toolbar_icon("new"))
+        self._edit_req_btn.setIcon(toolbar_icon("edit"))
         self._mark_requested_btn.setIcon(toolbar_icon("complete"))
         self._request_status_btn.setIcon(toolbar_icon("edit"))
         self._follow_up_btn.setIcon(toolbar_icon("trial"))
@@ -206,6 +211,7 @@ class DocumentRequestsPage(QWidget):
 
         self._new_req_btn.setEnabled(True)
         self._export_btn.setEnabled(True)
+        self._edit_req_btn.setEnabled(False)
         self._mark_requested_btn.setEnabled(False)
         self._request_status_btn.setEnabled(False)
         self._follow_up_btn.setEnabled(False)
@@ -219,6 +225,7 @@ class DocumentRequestsPage(QWidget):
 
         for btn in (
             self._new_req_btn,
+            self._edit_req_btn,
             self._mark_requested_btn,
             self._request_status_btn,
             self._follow_up_btn,
@@ -243,8 +250,8 @@ class DocumentRequestsPage(QWidget):
         self._no_engagement_label.setVisible(False)
         outer.addWidget(self._no_engagement_label)
 
-        # Splitter: request list (top) + item list (bottom)
-        self._splitter = QSplitter(Qt.Orientation.Vertical)
+        # Splitter: left request list + right detail/actions area.
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
 
         req_widget = QWidget()
         req_layout = QVBoxLayout(req_widget)
@@ -257,9 +264,11 @@ class DocumentRequestsPage(QWidget):
         self._req_table.verticalHeader().setVisible(False)
         self._req_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._req_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._req_table.setMinimumWidth(320)
+        self._req_table.setMaximumWidth(520)
         rh = self._req_table.horizontalHeader()
         rh.setSectionResizeMode(
-            _REQ_COLUMNS.index("period_name"), QHeaderView.ResizeMode.Stretch
+            _REQ_COLUMNS.index("request_name"), QHeaderView.ResizeMode.Stretch
         )
         req_layout.addWidget(self._req_table)
         self._splitter.addWidget(req_widget)
@@ -267,6 +276,17 @@ class DocumentRequestsPage(QWidget):
         item_widget = QWidget()
         item_layout = QVBoxLayout(item_widget)
         item_layout.setContentsMargins(0, 4, 0, 0)
+        self._request_detail_title = QLabel("尚未選取索件批次")
+        self._request_detail_title.setStyleSheet("font-size: 18px; font-weight: 700;")
+        self._request_detail_meta = QLabel("請從左側選取一筆批次。")
+        self._request_detail_meta.setWordWrap(True)
+        self._request_detail_meta.setStyleSheet("color: #475569;")
+        self._request_detail_status = QLabel("")
+        self._request_detail_status.setWordWrap(True)
+        self._request_detail_status.setStyleSheet("color: #334155;")
+        item_layout.addWidget(self._request_detail_title)
+        item_layout.addWidget(self._request_detail_meta)
+        item_layout.addWidget(self._request_detail_status)
         item_layout.addWidget(QLabel("文件項目"))
         self._item_table = QTableWidget(0, len(_ITEM_COLUMNS))
         self._item_table.setHorizontalHeaderLabels(
@@ -284,6 +304,7 @@ class DocumentRequestsPage(QWidget):
         self._splitter.addWidget(item_widget)
 
         outer.addWidget(self._splitter, stretch=1)
+        self._request_rows_by_id: dict[int, object] = {}
 
         # Slice 22 v0.14.3 — view_mode visibility for drill-down inside the
         # EngagementsPage QStackedWidget. Default "full" preserves legacy.
@@ -305,6 +326,7 @@ class DocumentRequestsPage(QWidget):
             self._engagement_combo.hide()
             for btn in (
                 self._new_req_btn,
+                self._edit_req_btn,
                 self._mark_requested_btn,
                 self._request_status_btn,
                 self._follow_up_btn,
@@ -324,6 +346,15 @@ class DocumentRequestsPage(QWidget):
             settings=container.settings,
         )
         self._req_col_settings.install()
+        for col in (
+            "id",
+            "tax_type",
+            "period_name",
+            "follow_up_count",
+            "requested_at",
+            "due_date",
+        ):
+            self._req_table.setColumnHidden(_REQ_COLUMNS.index(col), True)
         self._item_col_settings = ColumnSettings(
             table=self._item_table,
             table_id="doc_items",
@@ -339,6 +370,7 @@ class DocumentRequestsPage(QWidget):
             self._on_engagement_combo_changed
         )
         self._new_req_btn.clicked.connect(self._on_new_request)
+        self._edit_req_btn.clicked.connect(self._on_edit_request)
         self._mark_requested_btn.clicked.connect(self._on_mark_requested)
         self._request_status_btn.clicked.connect(self._on_set_request_status)
         self._follow_up_btn.clicked.connect(self._on_follow_up)
@@ -507,6 +539,7 @@ class DocumentRequestsPage(QWidget):
 
     def _fill_request_table(self, reqs, saved_req_id: int | None) -> None:
         self._req_table.setRowCount(len(reqs))
+        self._request_rows_by_id = {req.id: req for req in reqs}
         labels = self._engagement_label_map(reqs)
         target_row = -1
         for row_idx, req in enumerate(reqs):
@@ -515,6 +548,7 @@ class DocumentRequestsPage(QWidget):
             values = {
                 "id": str(req.id),
                 "engagement_label": labels.get(req.engagement_id, ""),
+                "request_name": f"{req.request_name}\n{req.period_name} · {status_to_label(req.tax_type)}",
                 "tax_type": status_to_label(req.tax_type),
                 "period_name": req.period_name,
                 "status": status_to_label(req.status),
@@ -526,6 +560,7 @@ class DocumentRequestsPage(QWidget):
                 self._req_table.setItem(
                     row_idx, col_idx, QTableWidgetItem(values[col])
                 )
+            self._req_table.setRowHeight(row_idx, 52)
         # Banner only updates in global mode (engagement mode set it earlier).
         if self._engagement_id is None:
             self._context_banner.setText(
@@ -536,10 +571,12 @@ class DocumentRequestsPage(QWidget):
             # selectRow may not fire itemSelectionChanged when the same row is
             # already selected (no-op), so force an item reload to keep the
             # item table in sync with the request's current items.
+            self._update_request_detail(saved_req_id)
             self._load_items_for_selected()
         else:
             self._req_table.clearSelection()
             self._item_table.setRowCount(0)
+            self._show_no_request_detail()
             self._on_req_selection_changed()
 
     def _engagement_label_map(self, reqs) -> dict[int, str]:
@@ -637,6 +674,7 @@ class DocumentRequestsPage(QWidget):
 
     def _on_req_selection_changed(self) -> None:
         has_sel = bool(self._req_table.selectedItems())
+        self._edit_req_btn.setEnabled(has_sel)
         self._mark_requested_btn.setEnabled(has_sel)
         self._request_status_btn.setEnabled(has_sel)
         self._follow_up_btn.setEnabled(has_sel)
@@ -644,9 +682,11 @@ class DocumentRequestsPage(QWidget):
         self._add_item_btn.setEnabled(has_sel)
         self._generate_btn.setEnabled(has_sel)
         if has_sel:
+            self._update_request_detail(self._selected_request_id())
             self._load_items_for_selected()
         else:
             self._item_table.setRowCount(0)
+            self._show_no_request_detail()
             self._item_status_btn.setEnabled(False)
             self._edit_item_btn.setEnabled(False)
             self._delete_item_btn.setEnabled(False)
@@ -671,6 +711,30 @@ class DocumentRequestsPage(QWidget):
         row = self._req_table.row(items[0])
         id_item = self._req_table.item(row, 0)
         return int(id_item.text()) if id_item else None
+
+    def _show_no_request_detail(self) -> None:
+        self._request_detail_title.setText("尚未選取索件批次")
+        self._request_detail_meta.setText("請從左側選取一筆批次。")
+        self._request_detail_status.setText("")
+
+    def _update_request_detail(self, request_id: int | None) -> None:
+        if request_id is None:
+            self._show_no_request_detail()
+            return
+        req = self._request_rows_by_id.get(request_id)
+        if req is None:
+            self._show_no_request_detail()
+            return
+        engagement_label = self._engagement_label_map([req]).get(req.engagement_id, "")
+        self._request_detail_title.setText(req.request_name)
+        self._request_detail_meta.setText(
+            f"{engagement_label}\n期間：{req.period_name}　稅種：{status_to_label(req.tax_type)}"
+        )
+        due = req.due_date or "未設定"
+        requested = req.requested_at or "尚未發出"
+        self._request_detail_status.setText(
+            f"狀態：{status_to_label(req.status)}　催件：{req.follow_up_count}　發出：{requested}　截止：{due}"
+        )
 
     def _selected_item_id(self) -> int | None:
         items = self._item_table.selectedItems()
@@ -791,6 +855,43 @@ class DocumentRequestsPage(QWidget):
             self.load_engagement(eng_id)
         else:
             self._refresh_requests()
+
+    def _on_edit_request(self) -> None:
+        req_id = self._selected_request_id()
+        if req_id is None:
+            return
+        existing = self._container.doc_requests.get_request(req_id)
+        if existing is None:
+            QMessageBox.warning(self, "找不到索件批次", error_message("doc_request.not_found"))
+            self._refresh_requests()
+            return
+        new_name, ok = QInputDialog.getText(
+            self,
+            "編輯批次名稱",
+            "批次名稱",
+            text=existing.request_name,
+        )
+        if not ok:
+            return
+        try:
+            self._container.doc_requests.update_request(
+                req_id,
+                UpdateDocumentRequestInput(
+                    request_name=new_name,
+                    due_date=existing.due_date,
+                    notes=existing.notes,
+                ),
+            )
+        except DocumentRequestValidationError as exc:
+            QMessageBox.warning(self, "編輯批次失敗", error_message(exc.code))
+            return
+        except Exception as err:
+            self._container.system_log.error("doc_request.update failed", exc=err)
+            QMessageBox.warning(
+                self, "編輯批次失敗", error_message("system.unexpected")
+            )
+            return
+        self._refresh_requests()
 
     def _on_mark_requested(self) -> None:
         req_id = self._selected_request_id()
