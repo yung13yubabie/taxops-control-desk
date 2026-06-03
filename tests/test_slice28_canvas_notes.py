@@ -10,6 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtGui import QColor, QImage
+from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsTextItem
 from PySide6.QtWidgets import QApplication, QInputDialog
 
 from taxops.services.canvas_notes import (
@@ -107,6 +108,31 @@ def test_export_canvas_note_pdf_writes_file(qapp, container, tmp_path) -> None:
     assert output.stat().st_size > 0
 
 
+def test_export_canvas_note_pdf_rejects_unsafe_db_asset_path(container, tmp_path) -> None:
+    note = container.canvas_notes.create_note(CreateCanvasNoteInput(title="DB 注入圖片"))
+    scene = json.loads(note.scene_json)
+    scene["objects"].append(
+        {
+            "id": "img",
+            "type": "image",
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 100,
+            "asset_path": "../outside.png",
+        }
+    )
+    container.canvas_notes._repo.update(
+        note.id,
+        title=note.title,
+        scene_json=json.dumps(scene),
+    )
+
+    with pytest.raises(CanvasNoteValidationError) as ei:
+        container.canvas_notes.export_pdf(note.id, tmp_path / "blocked.pdf")
+    assert ei.value.code == "canvas_note.asset.path_invalid"
+
+
 def test_import_image_rejects_non_image(container, tmp_path) -> None:
     source = tmp_path / "bad.txt"
     source.write_text("no", encoding="utf-8")
@@ -160,6 +186,51 @@ def test_work_records_canvas_note_ui_creates_and_saves_scene(qapp, container, mo
     shapes = {obj.get("shape") for obj in scene["objects"] if obj["type"] == "shape"}
     assert "text_box" in types
     assert shapes == {"red_box", "yellow_highlight"}
+
+
+def test_work_records_canvas_note_ui_sanitizes_unsafe_db_scene(qapp, container) -> None:
+    scene = {
+        "version": 1,
+        "grid_size": 8,
+        "pages": [{"id": "page_1", "x": 0, "y": 0, "width": A4_WIDTH, "height": A4_HEIGHT}],
+        "objects": [
+            {
+                "id": "unsafe_text",
+                "type": "text_box",
+                "x": 16,
+                "y": 16,
+                "width": 200,
+                "height": 80,
+                "html": '<p>保留<script>alert(1)</script><span style="background-image:url(x); color:red">紅字</span></p>',
+            },
+            {
+                "id": "unsafe_image",
+                "type": "image",
+                "x": 0,
+                "y": 0,
+                "width": 100,
+                "height": 100,
+                "asset_path": "../outside.png",
+            },
+        ],
+    }
+    page = WorkRecordsPage(container)
+    page._load_scene(json.dumps(scene))
+
+    text_items = [
+        item for item in page._note_scene.items()
+        if isinstance(item, QGraphicsTextItem)
+    ]
+    image_items = [
+        item for item in page._note_scene.items()
+        if isinstance(item, QGraphicsPixmapItem)
+    ]
+    assert len(text_items) == 1
+    html = text_items[0].toHtml()
+    assert "alert(1)" not in html
+    assert "background-image" not in html
+    assert "紅字" in html
+    assert image_items == []
 
 
 def test_canvas_note_action_registry_contracts() -> None:

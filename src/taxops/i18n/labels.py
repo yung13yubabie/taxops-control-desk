@@ -9,7 +9,6 @@ DISABLED_TOOLTIP = "此功能尚未開放"
 NAV_LABELS: dict[str, str] = dict(
     MappingProxyType(
         {
-            "dashboard": "首頁儀表板",
             "clients": "客戶管理",
             "engagements": "案件管理",
             "doc_requests": "索件管理",

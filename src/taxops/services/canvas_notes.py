@@ -145,7 +145,7 @@ def _normalized_scene_json(scene_json: str) -> str:
         if kind == "text_box":
             clean["html"] = sanitize_controlled_html(str(clean.get("html") or ""))
         if kind == "image":
-            clean["asset_path"] = _safe_asset_path(str(clean.get("asset_path") or ""))
+            clean["asset_path"] = safe_asset_path(str(clean.get("asset_path") or ""))
         if kind == "shape" and clean.get("shape") not in VALID_SHAPES:
             continue
         normalized_objects.append(clean)
@@ -154,7 +154,7 @@ def _normalized_scene_json(scene_json: str) -> str:
     return json.dumps(scene, ensure_ascii=False, separators=(",", ":"))
 
 
-def _safe_asset_path(raw: str) -> str:
+def safe_asset_path(raw: str) -> str:
     path = Path(raw)
     if path.is_absolute() or ".." in path.parts or not raw:
         raise CanvasNoteValidationError("canvas_note.asset.path_invalid")
@@ -234,7 +234,7 @@ class CanvasNotesService:
         note = self._repo.get(note_id)
         if note is None:
             raise CanvasNoteValidationError("canvas_note.not_found")
-        scene = _load_scene(note.scene_json)
+        scene = _load_scene(_normalized_scene_json(note.scene_json))
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
         _render_scene_to_pdf(scene, output, self._note_assets_dir)
@@ -277,7 +277,7 @@ def _paint_object(painter: QPainter, obj: dict, page_rect: QRectF, assets_dir: P
     if kind == "text_box":
         doc = QTextDocument()
         doc.setDefaultFont(QFont("Microsoft JhengHei", 10))
-        doc.setHtml(str(obj.get("html") or ""))
+        doc.setHtml(sanitize_controlled_html(str(obj.get("html") or "")))
         doc.setTextWidth(width)
         painter.save()
         painter.translate(x, y)
@@ -285,7 +285,7 @@ def _paint_object(painter: QPainter, obj: dict, page_rect: QRectF, assets_dir: P
         painter.restore()
     elif kind == "image":
         try:
-            asset_path = _safe_asset_path(str(obj.get("asset_path") or ""))
+            asset_path = safe_asset_path(str(obj.get("asset_path") or ""))
         except CanvasNoteValidationError:
             return
         pix = QPixmap(str(assets_dir / asset_path))

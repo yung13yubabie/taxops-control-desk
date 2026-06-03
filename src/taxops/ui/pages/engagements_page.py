@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
-    QSplitter,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -74,6 +73,9 @@ _TABLE_HEADERS = {
 
 # Slice 21C: cols the user cannot hide via header context menu.
 _CORE_COLS = frozenset({"client_label", "engagement_name", "status"})
+
+# Fixed status-column width so the case name can never crush the status cell.
+_STATUS_COL_WIDTH = 110
 
 
 _ALL_CLIENTS = -1
@@ -210,8 +212,6 @@ class EngagementsPage(QWidget):
         self._empty_label.setStyleSheet("color: #777; padding: 24px;")
         layout.addWidget(self._empty_label)
 
-        content_splitter = QSplitter(Qt.Orientation.Horizontal)
-
         self._table = QTableWidget(0, len(_COLUMN_ORDER))
         self._table.setHorizontalHeaderLabels(
             [_TABLE_HEADERS[c] for c in _COLUMN_ORDER]
@@ -219,39 +219,15 @@ class EngagementsPage(QWidget):
         self._table.verticalHeader().setVisible(False)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._table.setMinimumWidth(340)
-        self._table.setMaximumWidth(560)
         hv = self._table.horizontalHeader()
         hv.setStretchLastSection(False)
         hv.setSectionResizeMode(
             _COLUMN_ORDER.index("engagement_name"), QHeaderView.ResizeMode.Stretch
         )
-        content_splitter.addWidget(self._table)
-
-        detail_panel = QWidget()
-        detail_layout = QVBoxLayout(detail_panel)
-        detail_layout.setContentsMargins(16, 8, 0, 0)
-        detail_layout.setSpacing(8)
-        self._detail_title = QLabel("尚未選取案件")
-        self._detail_title.setStyleSheet("font-size: 20px; font-weight: 700;")
-        self._detail_client = QLabel("請從左側選取一筆案件。")
-        self._detail_client.setWordWrap(True)
-        self._detail_client.setStyleSheet("color: #475569;")
-        self._detail_meta = QLabel("")
-        self._detail_meta.setWordWrap(True)
-        self._detail_meta.setStyleSheet("color: #334155;")
-        self._detail_notes = QLabel("")
-        self._detail_notes.setWordWrap(True)
-        self._detail_notes.setStyleSheet("color: #64748B;")
-        detail_layout.addWidget(self._detail_title)
-        detail_layout.addWidget(self._detail_client)
-        detail_layout.addWidget(self._detail_meta)
-        detail_layout.addWidget(self._detail_notes)
-        detail_layout.addStretch(1)
-        content_splitter.addWidget(detail_panel)
-        content_splitter.setStretchFactor(0, 0)
-        content_splitter.setStretchFactor(1, 1)
-        layout.addWidget(content_splitter, stretch=1)
+        status_idx = _COLUMN_ORDER.index("status")
+        hv.setSectionResizeMode(status_idx, QHeaderView.ResizeMode.Fixed)
+        self._table.setColumnWidth(status_idx, _STATUS_COL_WIDTH)
+        layout.addWidget(self._table, stretch=1)
 
         self._client_combo.currentIndexChanged.connect(self._on_client_changed)
         self._new_btn.clicked.connect(self._on_new_engagement)
@@ -272,7 +248,7 @@ class EngagementsPage(QWidget):
             settings=self._container.settings,
         )
         self._col_settings.install()
-        for col in ("id", "tax_type", "period_name", "owner", "due_date", "updated_at"):
+        for col in ("id", "tax_type", "period_name", "owner", "updated_at"):
             self._table.setColumnHidden(_COLUMN_ORDER.index(col), True)
         return page
 
@@ -469,7 +445,6 @@ class EngagementsPage(QWidget):
         # ``_doc_requests_widget._engagement_id`` after selectRow keep passing
         # without forcing a drill-down navigation.
         eng_id = self._selected_engagement_id()
-        self._update_engagement_detail(eng_id)
         if eng_id is None:
             self._requests_page.clear_filter()
         else:
@@ -482,31 +457,6 @@ class EngagementsPage(QWidget):
         row = self._table.row(items[0])
         id_item = self._table.item(row, 0)
         return int(id_item.text()) if id_item else None
-
-    def _show_no_engagement_detail(self) -> None:
-        self._detail_title.setText("尚未選取案件")
-        self._detail_client.setText("請從左側選取一筆案件。")
-        self._detail_meta.setText("")
-        self._detail_notes.setText("")
-
-    def _update_engagement_detail(self, engagement_id: int | None) -> None:
-        if engagement_id is None:
-            self._show_no_engagement_detail()
-            return
-        eng = self._engagement_rows_by_id.get(engagement_id)
-        if eng is None:
-            self._show_no_engagement_detail()
-            return
-        client_label = self._engagement_client_labels.get(engagement_id, "(未知客戶)")
-        self._detail_title.setText(eng.engagement_name)
-        self._detail_client.setText(f"客戶：{client_label}")
-        due = eng.due_date or "未設定"
-        owner = eng.owner or "未設定"
-        self._detail_meta.setText(
-            f"期間：{eng.period_name}　稅種：{status_to_label(eng.tax_type)}　狀態：{status_to_label(eng.status)}\n"
-            f"負責人：{owner}　截止日：{due}"
-        )
-        self._detail_notes.setText(eng.notes or "")
 
     # ------------------------------------------------------------------
     # CRUD handlers

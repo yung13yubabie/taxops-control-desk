@@ -158,6 +158,30 @@ class WorkRecordsRepository:
         self._conn.commit()
         return self.get_template(template_id)
 
+    def update_template_context(
+        self,
+        template_id: int,
+        *,
+        context_snapshot: str | None,
+    ) -> WorkflowTemplateRow | None:
+        ts = now_iso()
+        self._conn.execute(
+            "UPDATE workflow_templates_v2 SET context_snapshot = ?, updated_at = ?"
+            " WHERE id = ? AND deleted_at IS NULL",
+            (context_snapshot, ts, template_id),
+        )
+        self._conn.commit()
+        return self.get_template(template_id)
+
+    def soft_delete_template(self, template_id: int) -> None:
+        ts = now_iso()
+        self._conn.execute(
+            "UPDATE workflow_templates_v2 SET deleted_at = ?, updated_at = ?"
+            " WHERE id = ? AND deleted_at IS NULL",
+            (ts, ts, template_id),
+        )
+        self._conn.commit()
+
     def insert_run(
         self,
         *,
@@ -202,6 +226,15 @@ class WorkRecordsRepository:
         )
         self._conn.commit()
         return self.get_run(run_id)
+
+    def soft_delete_run(self, run_id: int) -> None:
+        ts = now_iso()
+        self._conn.execute(
+            "UPDATE workflow_runs SET deleted_at = ?, updated_at = ?"
+            " WHERE id = ? AND deleted_at IS NULL",
+            (ts, ts, run_id),
+        )
+        self._conn.commit()
 
     def insert_error_review(
         self,

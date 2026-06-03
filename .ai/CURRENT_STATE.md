@@ -1,5 +1,95 @@
 # CURRENT_STATE
 
+## 2026-06-02 Current Development State - v0.21.1 Codex Fixes
+
+- v0.21.1 code fixes are implemented in the current worktree, not committed.
+- Fixed late-fee service-layer validation:
+  - `LateFeeService.calculate_and_save()` now rejects invalid `period_code`.
+  - Partial period fields (`period_year` without `period_code`, or `period_code` without `period_year`) are rejected before any DB write.
+  - Regression tests verify invalid/partial period payloads write zero `late_fee_records`.
+- Fixed direct `date.today()` SLOP in UI/service-facing pages:
+  - `LateFeePage` default year now uses project `today_iso()`.
+  - `RecurringBillingPage` accordion date window now uses project `today_iso()`.
+  - Static scan over `src/taxops/ui/pages` and `src/taxops/services` found no remaining `date.today()` / `datetime.date.today()` usages.
+- Completed Work Records workflow UX correction:
+  - Main Work Records surface no longer exposes a `QTabWidget`; hidden notes/error widgets remain only for existing canvas/error handlers and tests.
+  - Workflow detail is now a `QTreeWidget` with stage -> step rows and done/undone status.
+  - The workflow step button now toggles the selected run step, not the first step.
+  - Workflow images are copied into app data `workflow_assets/images/`; DB context stores only safe relative path plus width/height metadata.
+  - Clipboard screenshot paste saves a PNG asset and records the same relative-path metadata.
+- Verification:
+  - `python -m pytest tests/test_late_fee.py tests/test_late_fee_page.py tests/test_db_migrations.py -q --tb=short` => 61 passed.
+  - `python -m pytest tests/test_slice18b_ui.py -q --tb=short` => 21 passed.
+  - `python -m pytest tests/test_slice27_work_records.py -q --tb=short` => 10 passed.
+  - `python -m pytest tests/test_slice28_canvas_notes.py -q --tb=short` => 11 passed.
+  - `python -m pytest tests/test_ui_action_contracts.py tests/test_slice4_ui_smoke.py tests/test_slice5_ui.py tests/test_slice21e_tasks_ui.py tests/test_ui_layout_stability.py -q --tb=short` => 55 passed.
+  - `python -m compileall -q src tests` => passed.
+  - Full `python -m pytest -q` => **1004 passed, 1 skipped**.
+- Release packaging:
+  - Version is `0.21.1` in `pyproject.toml` and `src/taxops/__init__.py`.
+  - `python -m build_tools.package_windows` rebuilt `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`.
+  - `python -m build_tools.smoke_test_exe` passed; EXE stayed alive and created temp SQLite.
+  - `dist/TaxOpsControlDesk-v0.21.1-windows.zip` was created with Python `zipfile` and passed `ZipFile.testzip()`.
+  - Older v0.21.0 zip was removed from `dist/`.
+  - Resource hygiene after packaging found no TaxOps / pytest / PyInstaller process residue.
+- Remaining acceptance:
+  - Real Windows manual UI acceptance across DPI/screen sizes remains pending.
+
+## 2026-06-02 Current Development State
+
+- v0.21.0 仍在進行中（未 commit）。
+- 本輪完成三模組 UIUX SLOP 修正；模組 3（工作紀錄）尚未動工。
+- 新增 migration `0025_late_fee_period_breakdown`（late_fee_records 加 5 欄）。
+- 跨模組 targeted 驗證：138 passed（test_slice4/21b/22/21e/20b/ui_layout/late_fee/late_fee_page/date_field/slice27/db_migrations）。
+- Full `python -m pytest -q` → **998 passed, 1 skipped**（2026-06-02 乾淨全套，含 21 個本輪新測試）。
+
+## 2026-05-29 Current Development State
+
+- v0.21.0 is in progress in the current worktree.
+- Version is `0.21.0` in `pyproject.toml` and `src/taxops/__init__.py`.
+- Dashboard/control-panel UI has been removed: no dashboard/sidebar-dashboard toggle, no `QDockWidget`, no dashboard page/service/repository, no `PAGE_DASHBOARD` action contracts, and no `ui.dashboard_dock_visible` default setting. The normal sidebar collapse/expand toggle remains.
+- Tasks bulk-create now selects the newly created tasks after refresh so batch delete/edit actions are immediately available.
+- Work Records workflow UX is being simplified:
+  - Workflow templates can be added, edited, deleted, and assigned a preview image from the workflow tab.
+  - Workflow editing uses a modal dialog where stage titles are plain lines and steps are `-` lines.
+  - The workflow tab now has a left templates/runs list and a right detail/preview panel.
+- Work Records notes now give the canvas most of the width; the note ID column is hidden.
+- Work Records canvas notes now defensively sanitize stored HTML and validate image asset paths again at UI/PDF render time, so direct SQL/old-data scene JSON cannot bypass the service-layer sanitizer.
+- Error review creation now reselects and scrolls to the newly created review row.
+- Message Templates now include payment follow-up support:
+  - New template type `payment_follow_up`.
+  - New built-in template `欠款催繳通知` via migration `0024_payment_follow_up_template`.
+  - New variables: `payment_records`, `outstanding_amount`, `overdue_amount`, `payment_due_date`.
+  - Payment variables are derived from existing client-scoped recurring billing occurrences; debts remain client-led, not single-case-led.
+- Official registry data source check:
+  - Context Hub had no strong match for Taiwan GCIS docs.
+  - Official sources confirm MOF `BGMOPEN1.zip` is a tax-registration cache source, while nationwide company/business registration and business-item data should use MOEA/GCIS open-data APIs.
+  - GCIS Swagger exposes `公司行號營業項目代碼表`, `公司登記基本資料-應用三`, and `商業登記基本資料` endpoints; this should be modeled separately from the existing BGMOPEN1 importer.
+- Verified so far:
+  - `python -m compileall -q src tests` => passed after the 2026-05-31 security review.
+  - `python -m pytest tests/test_slice14_dashboard.py tests/test_slice23_dashboard_dock.py tests/test_ui_action_contracts.py -q` => 14 passed.
+  - `python -m pytest tests/test_templates.py tests/test_generated_messages.py tests/test_db_migrations.py -q` => 64 passed.
+  - `python -m pytest tests/test_slice19a_navigation.py -q` => 14 passed.
+  - `python -m pytest tests/test_slice21e_tasks_ui.py tests/test_slice27_work_records.py tests/test_slice28_canvas_notes.py -q` => 26 passed.
+- Full suite rerun on 2026-05-31: `python -m pytest -q` => 977 passed, 1 skipped.
+- Additional grouped verification passed:
+  - 158 registry/recurring/packaging/cache tests passed.
+  - 48 attachment/audit/backup tests passed.
+  - 59 client/date tests passed.
+  - 48 registry/slice UI tests passed.
+  - 51 slice20 tests passed.
+  - 26 slice21A/B tests passed.
+  - 39 slice21C/D/22 tests passed.
+  - 5 non-real-import settings smoke tests passed; the 2 real BGMOPEN1 import smoke tests were not rerun because the single file exceeded the timeout while importing the large real ZIP.
+  - 58 slice24/26/3 tests passed.
+  - 87 slice4/5/6/7/9 UI tests passed.
+  - 53 status/tasks/text/ui-regression tests passed.
+- Windows package rebuild for v0.21.0 succeeded at `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`.
+- `python -m build_tools.smoke_test_exe` => automated EXE smoke passed.
+- Release zip exists at `dist/TaxOpsControlDesk-v0.21.0-windows.zip`.
+- Offscreen UI geometry audit covered all 11 pages at 1366x768 and 1920x1080; no visible widget clipping was detected. Headless screenshots rendered CJK as square glyphs because the offscreen environment lacked the UI font, so this is not a substitute for manual Windows font/DPI acceptance.
+- Manual UI acceptance is not yet rerun for v0.21.0.
+
 ## 2026-05-29 Current Release State
 
 - v0.20.0 is release-ready in the current worktree.

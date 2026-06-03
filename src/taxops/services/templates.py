@@ -14,6 +14,7 @@ from .audit import AuditService
 VALID_TEMPLATE_TYPES = frozenset({
     "initial_request",
     "follow_up",
+    "payment_follow_up",
     "custom",
 })
 
@@ -29,6 +30,10 @@ ALLOWED_VARIABLES = frozenset({
     "contact_person",
     "engagement_name",
     "notes",
+    "payment_records",
+    "outstanding_amount",
+    "overdue_amount",
+    "payment_due_date",
 })
 
 VARIABLE_LABELS: dict[str, str] = {
@@ -43,6 +48,10 @@ VARIABLE_LABELS: dict[str, str] = {
     "contact_person": "聯絡人",
     "engagement_name": "案件名稱",
     "notes": "備註",
+    "payment_records": "款項紀錄",
+    "outstanding_amount": "未收款總額",
+    "overdue_amount": "逾期未收款",
+    "payment_due_date": "最早應收日",
 }
 
 _LABEL_TO_VARIABLE = {label: key for key, label in VARIABLE_LABELS.items()}

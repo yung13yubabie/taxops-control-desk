@@ -145,7 +145,7 @@ class ClientsPage(QWidget):
         self._empty_label = QLabel("尚無客戶資料。請按「新增客戶」建立第一筆資料。")
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_label.setStyleSheet("color: #777; padding: 24px;")
-        outer.addWidget(self._empty_label)
+        outer.addWidget(self._empty_label, stretch=1)
 
         # Table with sortable headers
         self._table = QTableWidget(0, len(_COLUMN_ORDER))
@@ -236,7 +236,7 @@ class ClientsPage(QWidget):
     # ------------------------------------------------------------------
 
     def _on_search(self) -> None:
-        self._filter_key = ""  # manual search overrides dashboard filter
+        self._filter_key = ""  # manual search overrides external filters
         self._page = 0
         self.on_refresh()
 

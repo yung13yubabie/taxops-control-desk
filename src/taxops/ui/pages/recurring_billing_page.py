@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...core.clock import today_iso as project_today_iso
 from ...i18n import error_message
 from ...repositories.recurring_billing import LineRow, OccurrenceRow, PlanRow
 from ...services.container import ServiceContainer
@@ -526,7 +527,7 @@ class RecurringBillingPage(QWidget):
         include_archived = self._archived_check.isChecked()
         client_id_filter = None if selected_client == _ALL_CLIENTS else selected_client
 
-        today = datetime.date.today()
+        today = datetime.date.fromisoformat(project_today_iso())
         past_cutoff = (today - datetime.timedelta(days=_WINDOW_DAYS)).isoformat()
         future_cutoff = (today + datetime.timedelta(days=_WINDOW_DAYS)).isoformat()
         today_iso = today.isoformat()

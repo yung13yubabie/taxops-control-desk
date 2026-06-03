@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import json
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QInputDialog
+from PySide6.QtGui import QColor, QImage, QPixmap
+from PySide6.QtWidgets import QApplication, QInputDialog, QTabWidget, QTreeWidget
 
 from taxops.services.work_records import (
     CreateErrorReviewInput,
@@ -130,20 +132,21 @@ def test_error_review_rejects_invalid_severity(container) -> None:
     assert ei.value.code == "work_record.error.severity.invalid"
 
 
-def test_work_records_page_has_three_tabs_and_writes_db(qapp, container, monkeypatch) -> None:
+def test_work_records_page_single_workflow_surface_and_writes_db(qapp, container, monkeypatch) -> None:
     page = WorkRecordsPage(container)
 
-    assert [page._tabs.tabText(i) for i in range(page._tabs.count())] == [
-        "流程",
-        "筆記",
-        "錯誤回顧",
-    ]
+    assert not page.findChildren(QTabWidget)
+    assert isinstance(page._workflow_detail, QTreeWidget)
 
     page._on_create_standard_template()
     page._templates_table.selectRow(0)
     page._on_instantiate_run()
     page._runs_table.selectRow(0)
-    page._on_toggle_first_run_step()
+    page._update_workflow_detail()
+    second_stage = page._workflow_detail.topLevelItem(2)
+    selected_step = second_stage.child(0)
+    page._workflow_detail.setCurrentItem(selected_step)
+    page._on_toggle_selected_run_step()
     monkeypatch.setattr(
         QInputDialog,
         "getText",
@@ -153,6 +156,46 @@ def test_work_records_page_has_three_tabs_and_writes_db(qapp, container, monkeyp
 
     assert page._templates_table.rowCount() == 2
     assert page._runs_table.rowCount() == 1
+    run = container.work_records.list_runs()[0]
+    stages = container.work_records.stages_for_row(run)
+    assert stages[0]["items"][0]["done"] is False
+    assert stages[1]["items"][0]["done"] is True
+
+
+def test_work_records_template_image_import_stores_relative_asset(container, tmp_path) -> None:
+    template = container.work_records.create_standard_company_setup_template()
+    source = tmp_path / "source.png"
+    image = QImage(32, 24, QImage.Format.Format_ARGB32)
+    image.fill(QColor("red"))
+    assert image.save(str(source))
+
+    updated = container.work_records.set_template_image_path(template.id, str(source))
+    snapshot = json.loads(updated.context_snapshot)
+
+    assert snapshot["image_path"].startswith("images/")
+    assert not os.path.isabs(snapshot["image_path"])
+    assert snapshot["image_width"] == 32
+    assert snapshot["image_height"] == 24
+    assert (container.work_records.workflow_assets_dir / snapshot["image_path"]).is_file()
+    assert str(source) not in updated.context_snapshot
+
+
+def test_work_records_paste_screenshot_stores_relative_asset(qapp, container) -> None:
+    template = container.work_records.create_standard_company_setup_template()
+    page = WorkRecordsPage(container)
+    page._templates_table.selectRow(0)
+    image = QImage(20, 16, QImage.Format.Format_ARGB32)
+    image.fill(QColor("blue"))
+    QApplication.clipboard().setPixmap(QPixmap.fromImage(image))
+
+    page._on_paste_template_image()
+
+    updated = next(t for t in container.work_records.list_templates() if t.id == template.id)
+    snapshot = json.loads(updated.context_snapshot)
+    assert snapshot["image_path"].startswith("images/")
+    assert snapshot["image_width"] == 20
+    assert snapshot["image_height"] == 16
+    assert (container.work_records.workflow_assets_dir / snapshot["image_path"]).is_file()
 
 
 def test_work_records_action_registry_contracts() -> None:
@@ -161,8 +204,13 @@ def test_work_records_action_registry_contracts() -> None:
     assert labels["建立標準公司設立流程"].service == (
         "WorkRecordsService.create_standard_company_setup_template"
     )
+    assert labels["新增流程"].service == "WorkRecordsService.create_template"
+    assert labels["編輯流程"].service == "WorkRecordsService.update_template"
+    assert labels["刪除流程"].repository == "WorkRecordsRepository.soft_delete_template"
+    assert labels["匯入流程圖片"].repository == "WorkRecordsRepository.update_template_context"
+    assert labels["貼上截圖"].service == "WorkRecordsService.set_template_image_asset"
     assert labels["建立執行清單"].repository == "WorkRecordsRepository.insert_run"
-    assert labels["勾選第一步"].audit_action == "work_record.workflow_run.step_update"
+    assert labels["完成/取消完成選取步驟"].audit_action == "work_record.workflow_run.step_update"
     assert labels["覆蓋回原範本"].service == "WorkRecordsService.overwrite_template_from_run"
     assert labels["另存為新範本"].repository == "WorkRecordsRepository.insert_template"
     assert labels["新增錯誤回顧並追加防呆"].audit_action == "work_record.error_review.create"

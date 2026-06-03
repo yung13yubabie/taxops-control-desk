@@ -26,7 +26,6 @@ from ..repositories.late_fee import LateFeeRepository
 from ..repositories.folder_bookmarks import FolderBookmarksRepository
 from ..repositories.backup import BackupRepository
 from ..repositories.canvas_notes import CanvasNotesRepository
-from ..repositories.dashboard import DashboardRepository
 from ..repositories.search import SearchRepository
 from ..repositories.recurring_billing import RecurringBillingRepository
 from ..repositories.tasks import TasksRepository
@@ -48,7 +47,6 @@ from .system_log import SystemLogService
 from .attachments import AttachmentsService
 from .backup import BackupService
 from .canvas_notes import CanvasNotesService
-from .dashboard import DashboardService
 from .export import ExportService
 from .search import SearchService
 from .generated_messages import GeneratedMessagesService
@@ -84,7 +82,6 @@ class ServiceContainer:
     attachments: AttachmentsService
     export: ExportService
     backup: BackupService
-    dashboard: DashboardService
     search: SearchService
     recurring_billing: RecurringBillingService
     work_records: WorkRecordsService
@@ -125,7 +122,11 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
     engagements_service = EngagementsService(engagements_repo, audit_service, search_repo)
     doc_requests_service = DocumentRequestsService(doc_requests_repo, audit_service)
     tasks_service = TasksService(tasks_repo, audit_service)
-    work_records_service = WorkRecordsService(work_records_repo, audit_service)
+    work_records_service = WorkRecordsService(
+        work_records_repo,
+        audit_service,
+        paths.data_root / "workflow_assets",
+    )
     canvas_notes_service = CanvasNotesService(
         canvas_notes_repo,
         audit_service,
@@ -133,6 +134,11 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
     )
     templates_repo = TemplatesRepository(conn)
     templates_service = TemplatesService(templates_repo, audit_service)
+    recurring_billing_repo = RecurringBillingRepository(conn)
+    recurring_billing_service = RecurringBillingService(
+        repo=recurring_billing_repo,
+        audit=audit_service,
+    )
     gen_messages_repo = GeneratedMessagesRepository(conn)
     gen_messages_service = GeneratedMessagesService(
         repo=gen_messages_repo,
@@ -141,6 +147,7 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         clients_repo=clients_repo,
         templates_svc=templates_service,
         audit=audit_service,
+        recurring_billing_repo=recurring_billing_repo,
     )
 
     folder_bookmarks_repo = FolderBookmarksRepository(conn)
@@ -175,15 +182,6 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         clients_repo=clients_repo,
         engagements_repo=engagements_repo,
     )
-    dashboard_repo = DashboardRepository(conn)
-    dashboard_service = DashboardService(dashboard_repo)
-
-    recurring_billing_repo = RecurringBillingRepository(conn)
-    recurring_billing_service = RecurringBillingService(
-        repo=recurring_billing_repo,
-        audit=audit_service,
-    )
-
     tax_cache_importer = TaxRegistryImporter(
         registry_repo=tax_registry_repo,
         metadata_repo=tax_cache_metadata_repo,
@@ -227,7 +225,6 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         attachments=attachments_service,
         export=export_service,
         backup=backup_service,
-        dashboard=dashboard_service,
         search=search_service,
         recurring_billing=recurring_billing_service,
         work_records=work_records_service,

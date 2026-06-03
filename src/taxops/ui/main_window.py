@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDockWidget,
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
@@ -21,7 +20,6 @@ from .action_registry import (
     NAV_ORDER,
     PAGE_ATTACHMENTS,
     PAGE_CLIENTS,
-    PAGE_DASHBOARD,
     PAGE_ENGAGEMENTS,
     PAGE_FOLDER_BOOKMARKS,
     PAGE_LATE_FEE,
@@ -34,7 +32,6 @@ from .action_registry import (
 )
 from .pages.attachments_page import AttachmentsPage
 from .pages.clients_page import ClientsPage
-from .pages.dashboard_page import DashboardPage
 from .pages.engagements_page import EngagementsPage
 from .pages.folder_bookmarks_page import FolderBookmarksPage
 from .pages.late_fee_page import LateFeePage
@@ -70,7 +67,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_layout.setSpacing(0)
 
-        # Sidebar header — collapse toggle + dashboard dock toggle.
+        # Sidebar header: collapse toggle only.
         header_row = QHBoxLayout()
         header_row.setContentsMargins(0, 0, 0, 0)
         header_row.setSpacing(2)
@@ -79,12 +76,6 @@ class MainWindow(QMainWindow):
         self._collapse_btn.setFixedHeight(28)
         self._collapse_btn.setToolTip("收合側邊欄")
         header_row.addWidget(self._collapse_btn, stretch=1)
-        self._dock_toggle_btn = QPushButton("📊")
-        self._dock_toggle_btn.setObjectName("DashboardDockToggle")
-        self._dock_toggle_btn.setFixedSize(28, 28)
-        self._dock_toggle_btn.setToolTip("顯示／隱藏控制台浮動視窗")
-        self._dock_toggle_btn.clicked.connect(self._toggle_dashboard_dock)
-        header_row.addWidget(self._dock_toggle_btn)
         sidebar_layout.addLayout(header_row)
 
         self._nav = QListWidget()
@@ -114,15 +105,8 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
 
-        # Slice 23 / v0.15.0 — Dashboard lives in a dockable side panel.
-        self._build_dashboard_dock()
-
     def _build_pages(self) -> None:
         for page_id in NAV_ORDER:
-            # Slice 23: PAGE_DASHBOARD is no longer in NAV_ORDER, but defensive
-            # guard kept in case other branches keep it.
-            if page_id == PAGE_DASHBOARD:
-                continue
             label = NAV_LABELS.get(page_id, page_id)
             self._nav.addItem(QListWidgetItem(label))
             page: QWidget
@@ -232,59 +216,3 @@ class MainWindow(QMainWindow):
                     "sidebar expand setting save failed",
                     detail={"exc": type(err).__name__, "msg": str(err)},
                 )
-
-    # ------------------------------------------------------------------
-    # Dashboard dock (Slice 23 / v0.15.0)
-    # ------------------------------------------------------------------
-
-    def _build_dashboard_dock(self) -> None:
-        """Mount DashboardPage inside a dockable side panel.
-
-        Default location: right edge. The user can drag it to any edge,
-        float it out, or close it via the QDockWidget title bar; visibility
-        persists via ``ui.dashboard_dock_visible``.
-        """
-        self._dashboard_page = DashboardPage(self._container)
-        self._dashboard_page.navigate_to_page.connect(self.navigate_to)
-        self._dashboard_dock = QDockWidget("控制台", self)
-        self._dashboard_dock.setObjectName("DashboardDock")
-        self._dashboard_dock.setWidget(self._dashboard_page)
-        self._dashboard_dock.setFeatures(
-            QDockWidget.DockWidgetFeature.DockWidgetMovable
-            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
-            | QDockWidget.DockWidgetFeature.DockWidgetClosable
-        )
-        self._dashboard_dock.setAllowedAreas(
-            Qt.DockWidgetArea.LeftDockWidgetArea
-            | Qt.DockWidgetArea.RightDockWidgetArea
-        )
-        self._dashboard_dock.setMinimumWidth(260)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._dashboard_dock)
-
-        visible = self._container.settings.get("ui.dashboard_dock_visible")
-        if visible == "0":
-            self._dashboard_dock.hide()
-
-        self._dashboard_dock.visibilityChanged.connect(self._on_dashboard_visibility_changed)
-
-    def _toggle_dashboard_dock(self) -> None:
-        if self._dashboard_dock is None:
-            return
-        new_visible = not self._dashboard_dock.isVisible()
-        self._dashboard_dock.setVisible(new_visible)
-
-    def _on_dashboard_visibility_changed(self, visible: bool) -> None:
-        try:
-            self._container.settings.set_setting(
-                "ui.dashboard_dock_visible", "1" if visible else "0"
-            )
-        except Exception as err:
-            self._container.system_log.warn(
-                "dashboard dock visibility save failed",
-                detail={"exc": type(err).__name__, "msg": str(err)},
-            )
-        if visible:
-            try:
-                self._dashboard_page.refresh_context()
-            except Exception:
-                pass

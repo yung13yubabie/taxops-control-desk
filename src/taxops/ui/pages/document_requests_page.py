@@ -88,6 +88,9 @@ _ITEM_HEADERS = {
 _REQ_CORE_COLS = frozenset({"request_name", "status"})
 _ITEM_CORE_COLS = frozenset({"item_name", "item_status"})
 
+# Fixed status-column width so the batch name can never crush the status cell.
+_REQ_STATUS_COL_WIDTH = 110
+
 _ALL_ENGAGEMENTS = -1
 
 
@@ -264,12 +267,13 @@ class DocumentRequestsPage(QWidget):
         self._req_table.verticalHeader().setVisible(False)
         self._req_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._req_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._req_table.setMinimumWidth(320)
-        self._req_table.setMaximumWidth(520)
         rh = self._req_table.horizontalHeader()
         rh.setSectionResizeMode(
             _REQ_COLUMNS.index("request_name"), QHeaderView.ResizeMode.Stretch
         )
+        req_status_idx = _REQ_COLUMNS.index("status")
+        rh.setSectionResizeMode(req_status_idx, QHeaderView.ResizeMode.Fixed)
+        self._req_table.setColumnWidth(req_status_idx, _REQ_STATUS_COL_WIDTH)
         req_layout.addWidget(self._req_table)
         self._splitter.addWidget(req_widget)
 

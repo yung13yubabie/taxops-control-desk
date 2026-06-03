@@ -11,6 +11,7 @@ from taxops.repositories.clients import ClientsRepository
 from taxops.repositories.document_requests import DocumentRequestsRepository
 from taxops.repositories.engagements import EngagementsRepository
 from taxops.repositories.generated_messages import GeneratedMessagesRepository
+from taxops.repositories.recurring_billing import RecurringBillingRepository
 from taxops.repositories.templates import TemplatesRepository
 from taxops.services.audit import AuditService
 from taxops.services.generated_messages import (
@@ -50,6 +51,7 @@ def gen_svc(conn, audit, templates_svc):
         clients_repo=ClientsRepository(conn),
         templates_svc=templates_svc,
         audit=audit,
+        recurring_billing_repo=RecurringBillingRepository(conn),
     )
 
 
@@ -122,7 +124,8 @@ def test_build_variables_returns_all_keys(conn, gen_svc):
     expected_keys = {
         "client_name", "tax_id", "contact_person", "period_name",
         "tax_type_name", "engagement_name", "missing_items", "invalid_items",
-        "incomplete_items", "due_date", "notes",
+        "incomplete_items", "due_date", "notes", "payment_records",
+        "outstanding_amount", "overdue_amount", "payment_due_date",
     }
     assert set(variables.keys()) == expected_keys
 
@@ -146,7 +149,7 @@ def test_build_variables_item_groups(conn, gen_svc):
 def test_build_variables_future_fields_absent(conn, gen_svc):
     _, req_id = _seed_request(conn)
     v = gen_svc.build_variables(req_id)
-    for field in ("payment_due_date", "office_owner", "reviewer", "last_followed_up_at"):
+    for field in ("office_owner", "reviewer", "last_followed_up_at"):
         assert field not in v, f"future field '{field}' should not be in variables"
 
 

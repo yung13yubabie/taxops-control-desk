@@ -2,7 +2,49 @@
 
 > [已確認] 2026-05-09 交接整理註記：本輪只補充每項長期決策的「不應再重複討論、待驗證風險、證據來源」欄位；沒有新增暫定方案為正式決策。
 
-## 2026-05-28 - [已確認] Dashboard Is A Sidebar Summary, Not A Separate Workflow
+## 2026-05-29 - Remove Dashboard/Control Panel
+
+### Decision
+
+The dashboard/control-panel feature is removed from the app UI and service wiring. Sidebar navigation is now the only primary module entry path.
+
+### Rationale
+
+The control panel duplicated the sidebar and created two perceived paths into the same modules. Removing it lowers UI ambiguity and maintenance surface.
+
+### Impact
+
+Do not reintroduce `PAGE_DASHBOARD`, `DashboardPage`, `DashboardService`, `DashboardRepository`, a dashboard dock, or `ui.dashboard_dock_visible` without a new explicit product decision.
+
+## 2026-05-29 - Payment Follow-Up Belongs To Client Context
+
+### Decision
+
+Payment/debt follow-up data is treated as client-led receivables context, with optional case/document links later. Message templates can render payment variables from client-scoped recurring billing occurrences.
+
+### Rationale
+
+Debt can span multiple cases, so putting it only under case management would fragment the receivable view and create wrong collection messages.
+
+### Impact
+
+First implementation adds `payment_follow_up` templates and variables derived from client recurring-billing data. Future richer ledgers should still keep the client as the primary owner and expose filtered views inside cases.
+
+## 2026-05-29 - GCIS Data Must Be Separate From MOF Tax Cache
+
+### Decision
+
+MOF `BGMOPEN1.zip` remains the tax-registration cache source. Nationwide company/business registration and business-item data should be modeled as a separate MOEA/GCIS integration.
+
+### Rationale
+
+Official GCIS Swagger exposes company/business registration and business-item APIs that are different in fields, query shape, and data semantics from BGMOPEN1.
+
+### Impact
+
+Do not extend the current BGMOPEN1 importer by mixing GCIS rows into `tax_registry_cache`. Add a separate schema/importer when full company/business registration data is implemented.
+
+## 2026-05-28 - [已被 2026-05-29 決策取代] Dashboard Is A Sidebar Summary, Not A Separate Workflow
 
 ### Decision
 

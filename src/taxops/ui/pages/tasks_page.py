@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
-    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -33,10 +32,20 @@ from ..dialogs.task_bulk_dialogs import (
 from ..style import DANGER_COLOR, toolbar_icon
 from ..widgets.column_settings import ColumnSettings
 
-_COLUMN_ORDER = ("id", "title", "priority", "status", "assignee", "due_date", "updated_at")
+_COLUMN_ORDER = (
+    "id",
+    "client_label",
+    "title",
+    "priority",
+    "status",
+    "assignee",
+    "due_date",
+    "updated_at",
+)
 
 _TABLE_HEADERS = {
     "id": "編號",
+    "client_label": "客戶",
     "title": "標題",
     "priority": "優先級",
     "status": "狀態",
@@ -46,7 +55,10 @@ _TABLE_HEADERS = {
 }
 
 # Slice 21C: cols user cannot hide via header context menu.
-_CORE_COLS = frozenset({"title", "status"})
+_CORE_COLS = frozenset({"client_label", "title", "status"})
+
+# Fixed status-column width so the title can never crush the status cell.
+_STATUS_COL_WIDTH = 110
 
 _ALL_CLIENTS = -1
 _ALL_ENGAGEMENTS = -1
@@ -124,59 +136,34 @@ class TasksPage(QWidget):
         toolbar.addWidget(self._refresh_btn)
         outer.addLayout(toolbar)
 
-        content_splitter = QSplitter(Qt.Orientation.Horizontal)
-
         self._table = QTableWidget(0, len(_COLUMN_ORDER))
         self._table.setHorizontalHeaderLabels([_TABLE_HEADERS[c] for c in _COLUMN_ORDER])
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._table.horizontalHeader().setSectionResizeMode(
+        header = self._table.horizontalHeader()
+        header.setSectionResizeMode(
             _COLUMN_ORDER.index("title"), QHeaderView.ResizeMode.Stretch
         )
+        status_idx = _COLUMN_ORDER.index("status")
+        header.setSectionResizeMode(status_idx, QHeaderView.ResizeMode.Fixed)
+        self._table.setColumnWidth(status_idx, _STATUS_COL_WIDTH)
         self._table.verticalHeader().setVisible(False)
         self._table.setAlternatingRowColors(True)
-        self._table.setMinimumWidth(360)
-        self._table.setMaximumWidth(560)
-        content_splitter.addWidget(self._table)
-
-        detail_panel = QWidget()
-        detail_layout = QVBoxLayout(detail_panel)
-        detail_layout.setContentsMargins(16, 8, 0, 0)
-        detail_layout.setSpacing(8)
-        self._detail_title = QLabel("尚未選取待辦")
-        self._detail_title.setStyleSheet("font-size: 20px; font-weight: 700;")
-        self._detail_context = QLabel("請從左側選取一筆待辦。")
-        self._detail_context.setWordWrap(True)
-        self._detail_context.setStyleSheet("color: #475569;")
-        self._detail_meta = QLabel("")
-        self._detail_meta.setWordWrap(True)
-        self._detail_meta.setStyleSheet("color: #334155;")
-        self._detail_next_step = QLabel("")
-        self._detail_next_step.setWordWrap(True)
-        self._detail_next_step.setStyleSheet("color: #64748B;")
-        detail_layout.addWidget(self._detail_title)
-        detail_layout.addWidget(self._detail_context)
-        detail_layout.addWidget(self._detail_meta)
-        detail_layout.addWidget(self._detail_next_step)
-        detail_layout.addStretch(1)
-        content_splitter.addWidget(detail_panel)
-        content_splitter.setStretchFactor(0, 0)
-        content_splitter.setStretchFactor(1, 1)
-        outer.addWidget(content_splitter)
+        outer.addWidget(self._table, stretch=1)
 
         self._empty_label = QLabel("目前沒有待辦事項")
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_label.setObjectName("EmptyState")
         self._empty_label.hide()
-        outer.addWidget(self._empty_label)
+        outer.addWidget(self._empty_label, stretch=1)
 
         self._error_label = QLabel("載入待辦事項失敗，請重新整理或重新啟動程式")
         self._error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._error_label.setObjectName("ErrorState")
         self._error_label.setStyleSheet(f"color: {DANGER_COLOR};")
         self._error_label.hide()
-        outer.addWidget(self._error_label)
+        outer.addWidget(self._error_label, stretch=1)
 
         self._new_btn.clicked.connect(self._on_new_task)
         self._bulk_new_btn.clicked.connect(self._on_bulk_new_tasks)
@@ -201,7 +188,7 @@ class TasksPage(QWidget):
             settings=container.settings,
         )
         self._col_settings.install()
-        for col in ("id", "priority", "assignee", "due_date", "updated_at"):
+        for col in ("id", "priority", "assignee", "updated_at"):
             self._table.setColumnHidden(_COLUMN_ORDER.index(col), True)
 
         self._filter_key: str = ""
@@ -210,7 +197,7 @@ class TasksPage(QWidget):
         self._refresh()
 
     # ------------------------------------------------------------------
-    # Public filter API (called by MainWindow on dashboard navigation)
+    # Public filter API (called by MainWindow deep links)
 
     def set_filter(self, filter_key: str) -> None:
         self._filter_key = filter_key
@@ -317,12 +304,17 @@ class TasksPage(QWidget):
             load_error = True
 
         self._table.setRowCount(len(self._tasks))
+        client_cache: dict[int, str] = {}
+        eng_client_cache: dict[int, int | None] = {}
         for row_idx, task in enumerate(self._tasks):
             title = task.title
             if getattr(task, "parent_task_id", None) is not None:
                 title = f"　└ {title}"
             values = {
                 "id": str(task.id),
+                "client_label": self._client_label_for_task(
+                    task, client_cache, eng_client_cache
+                ),
                 "title": title,
                 "priority": PRIORITY_LABELS.get(task.priority, task.priority),
                 "status": status_to_label(task.status),
@@ -390,6 +382,28 @@ class TasksPage(QWidget):
                 continue
         return ids
 
+    def _select_task_ids(self, task_ids: list[int]) -> None:
+        if not task_ids:
+            return
+        wanted = set(task_ids)
+        self._table.clearSelection()
+        first_row: int | None = None
+        for row in range(self._table.rowCount()):
+            item = self._table.item(row, _COLUMN_ORDER.index("id"))
+            if item is None:
+                continue
+            try:
+                task_id = int(item.text())
+            except ValueError:
+                continue
+            if task_id in wanted:
+                self._table.selectRow(row)
+                if first_row is None:
+                    first_row = row
+        if first_row is not None:
+            self._table.setCurrentCell(first_row, _COLUMN_ORDER.index("title"))
+        self._on_selection_changed()
+
     def _on_selection_changed(self) -> None:
         selected_ids = self._selected_task_ids()
         single = len(selected_ids) == 1
@@ -401,45 +415,35 @@ class TasksPage(QWidget):
         self._bulk_delete_btn.setEnabled(bool(selected_ids))
         self._next_step_btn.setEnabled(single)
         self._make_child_btn.setEnabled(single)
-        self._update_task_detail(selected_ids[0] if single else None)
 
-    def _show_no_task_detail(self) -> None:
-        self._detail_title.setText("尚未選取待辦")
-        self._detail_context.setText("請從左側選取一筆待辦。")
-        self._detail_meta.setText("")
-        self._detail_next_step.setText("")
+    def _client_label_for_task(
+        self,
+        task,
+        client_cache: dict[int, str],
+        eng_client_cache: dict[int, int | None],
+    ) -> str:
+        """Resolve the client name shown directly in the list.
 
-    def _update_task_detail(self, task_id: int | None) -> None:
-        if task_id is None:
-            self._show_no_task_detail()
-            return
-        task = self._task_by_id.get(task_id)
-        if task is None:
-            self._show_no_task_detail()
-            return
-        context = self._task_context_label(task)
-        self._detail_title.setText(task.title)
-        self._detail_context.setText(context)
-        due = task.due_date or "未設定"
-        assignee = task.assignee or "未設定"
-        parent = f"　父待辦：#{task.parent_task_id}" if task.parent_task_id else ""
-        self._detail_meta.setText(
-            f"狀態：{status_to_label(task.status)}　優先級：{PRIORITY_LABELS.get(task.priority, task.priority)}\n"
-            f"負責人：{assignee}　到期日：{due}{parent}"
-        )
-        self._detail_next_step.setText(
-            f"下一步：{task.next_step}" if task.next_step else ""
-        )
-
-    def _task_context_label(self, task) -> str:
-        parts: list[str] = []
-        if task.client_id is not None:
-            client = self._container.clients.get_client(task.client_id)
-            parts.append(f"客戶：{client.client_name if client else '(未知客戶)'}")
-        if task.engagement_id is not None:
-            eng = self._container.engagements.get_engagement(task.engagement_id)
-            parts.append(f"案件：{eng.engagement_name if eng else '(未知案件)'}")
-        return "　".join(parts) if parts else "全域待辦"
+        Prefer the task's own ``client_id`` (backfilled in Slice 20B); fall back to
+        the owning engagement's client. The caches keep this O(unique clients) per
+        refresh rather than one query per row.
+        """
+        client_id = task.client_id
+        if client_id is None and task.engagement_id is not None:
+            if task.engagement_id in eng_client_cache:
+                client_id = eng_client_cache[task.engagement_id]
+            else:
+                eng = self._container.engagements.get_engagement(task.engagement_id)
+                client_id = eng.client_id if eng else None
+                eng_client_cache[task.engagement_id] = client_id
+        if client_id is None:
+            return "（全域）"
+        if client_id in client_cache:
+            return client_cache[client_id]
+        client = self._container.clients.get_client(client_id)
+        name = client.client_name if client else "（未知客戶）"
+        client_cache[client_id] = name
+        return name
 
     # ------------------------------------------------------------------
     # Action handlers
@@ -478,6 +482,7 @@ class TasksPage(QWidget):
         if not created:
             QMessageBox.information(self, "未建立待辦", "沒有建立任何待辦，請確認客戶仍存在。")
         self._refresh()
+        self._select_task_ids([task.id for task in created])
 
     def _on_bulk_edit_tasks(self) -> None:
         task_ids = self._selected_task_ids()

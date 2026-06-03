@@ -22,6 +22,11 @@ class LateFeeRow:
     tax_type: str
     needs_manual_review: bool
     calc_at: str
+    period_year: int | None = None
+    period_code: str | None = None
+    last_payment_date: str | None = None
+    actual_payment_date: str | None = None
+    penalty_breakdown_json: str | None = None
 
 
 def _row(r: sqlite3.Row) -> LateFeeRow:
@@ -35,6 +40,11 @@ def _row(r: sqlite3.Row) -> LateFeeRow:
         tax_type=r["tax_type"],
         needs_manual_review=bool(r["needs_manual_review"]),
         calc_at=r["calc_at"],
+        period_year=r["period_year"],
+        period_code=r["period_code"],
+        last_payment_date=r["last_payment_date"],
+        actual_payment_date=r["actual_payment_date"],
+        penalty_breakdown_json=r["penalty_breakdown_json"],
     )
 
 
@@ -51,14 +61,21 @@ class LateFeeRepository:
         penalty_amount: float,
         tax_type: str,
         needs_manual_review: bool,
+        period_year: int | None = None,
+        period_code: str | None = None,
+        last_payment_date: str | None = None,
+        actual_payment_date: str | None = None,
+        penalty_breakdown_json: str | None = None,
     ) -> LateFeeRow:
         now = _now()
         cur = self._conn.execute(
             """
             INSERT INTO late_fee_records
                 (request_id, overdue_days, penalty_percent, base_amount,
-                 penalty_amount, tax_type, needs_manual_review, calc_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 penalty_amount, tax_type, needs_manual_review, calc_at,
+                 period_year, period_code, last_payment_date,
+                 actual_payment_date, penalty_breakdown_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 request_id,
@@ -69,6 +86,11 @@ class LateFeeRepository:
                 tax_type,
                 int(needs_manual_review),
                 now,
+                period_year,
+                period_code,
+                last_payment_date,
+                actual_payment_date,
+                penalty_breakdown_json,
             ),
         )
         self._conn.commit()

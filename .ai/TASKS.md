@@ -1,5 +1,102 @@
 # TASKS
 
+## 2026-06-02 Current Task State - v0.21.1 Codex Fixes
+
+### TODO
+
+- Run real Windows manual UI acceptance across 1366x768, 1920x1080, and 100%/125%/150% scaling.
+- Design a separate GCIS company/business-registration data model and importer if full nationwide company/business-item data is required.
+
+### DOING
+
+- No active implementation slice is currently in progress.
+
+### BLOCKED
+
+- No implementation blocker is currently recorded.
+
+### DONE
+
+- Fixed late-fee period validation at the service layer:
+  - Invalid `period_code` is rejected by `LateFeeService.calculate_and_save()`.
+  - Partial period fields are rejected before DB write.
+  - Added regression coverage proving no `late_fee_records` row is written on invalid period input.
+- Replaced remaining direct `date.today()` usage in UI/service-facing pages with project clock usage:
+  - `LateFeePage` default year now follows `today_iso()`.
+  - `RecurringBillingPage` date windows now follow `today_iso()`.
+- Completed Work Records workflow UX correction:
+  - Removed exposed `QTabWidget` from the main Work Records page.
+  - Replaced read-only workflow text detail with a `QTreeWidget` stage/step tree.
+  - Replaced first-step toggle behavior with selected-step toggle behavior.
+  - Added workflow image import-copy into `workflow_assets/`.
+  - Added clipboard screenshot paste into `workflow_assets/`.
+  - DB context now stores relative image path plus width/height metadata, not external absolute paths.
+- Updated action registry contracts for Work Records:
+  - `匯入流程圖片`
+  - `貼上截圖`
+  - `完成/取消完成選取步驟`
+- Verification:
+  - Targeted tests passed: late fee 61, recurring billing UI 21, work records 10, canvas notes 11, action/UI/layout 55.
+  - `python -m compileall -q src tests` passed.
+  - Full `python -m pytest -q` => **1004 passed, 1 skipped**.
+- Release packaging:
+  - Version bumped to `0.21.1`.
+  - Rebuilt Windows one-dir EXE at `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`.
+  - Automated EXE smoke passed.
+  - Created `dist/TaxOpsControlDesk-v0.21.1-windows.zip`; old v0.21.0 zip removed.
+  - Packaging resource hygiene found no TaxOps / pytest / PyInstaller residue.
+
+## 2026-06-02 Current Task State
+
+### TODO
+
+- Run real Windows manual UI acceptance across 1366x768, 1920x1080, and 100%/125%/150% scaling.
+- Design a separate GCIS company/business-registration data model and importer if full nationwide company/business-item data is required.
+- [已確認] Full `python -m pytest -q` → **998 passed, 1 skipped**（2026-06-02）。
+
+### DOING
+
+- v0.21.0 UIUX SLOP 修正：**模組 3（工作紀錄）尚未動工**：
+  - `work_records_page.py`：移除 `QTabWidget`，直接顯示流程；notes/error widget 保留但不暴露。
+  - 流程 detail：QTextEdit → QTreeWidget（stage→step，☑/☐）；`_toggle_first_btn` → 「完成/取消完成選取步驟」（runs-only）。
+  - 圖片：`set_template_image_path()` 改為 import-copy 到 `workflow_assets/`；加「貼上截圖」（clipboard）；防路徑穿越。
+  - Action registry 按鈕改名 + 更新 `tests/test_slice27_work_records.py` tab-list/contract 斷言。
+
+### BLOCKED
+
+- No implementation blocker is currently recorded.
+- Full GCIS import is intentionally not implemented in this slice because it needs a separate schema from the existing MOF BGMOPEN1 tax-cache importer.
+
+### DONE
+
+- 2026-06-02 UIUX SLOP 修正三模組（cross-module 138 passed）：
+  - 模組 1：EngagementsPage + DocumentRequestsPage 移除 detail panel，去 maxWidth 上限，status 欄固定 110px，顯示截止日。
+  - 模組 2：TasksPage 移除 detail panel/splitter，新增 client_label 欄（core col），status 欄固定 110px。
+  - 模組 4：migration 0025，late_fee_records 加 5 欄，期別半鎖定 + 日期區間排程表 + 人工確認警示 + 歷史欄位。
+- Removed dashboard page/service/repository, main-window dock/toggle, dashboard action contracts, dashboard nav label, and dashboard dock setting default.
+- Added regression tests confirming dashboard removal.
+- Updated task bulk-create flow to select newly created rows after refresh.
+- Added Work Records workflow template add/edit/delete/image actions and modal stage/step editor.
+- Updated Work Records notes split layout to prioritize the A4 canvas.
+- Updated error review creation to select and scroll to the newly created row.
+- Added `payment_follow_up` template type, payment variables, built-in `欠款催繳通知`, and migration `0024_payment_follow_up_template`.
+- Confirmed official source split: MOF `BGMOPEN1.zip` for tax registry; MOEA/GCIS APIs for company/business registration and business items.
+- 2026-05-31 security/review pass:
+  - Added render-time hardening for Work Records canvas notes: UI load sanitizes stored HTML and rejects unsafe image asset paths; PDF export normalizes scene JSON before rendering.
+  - Corrected `.ai` wording so "dashboard/control-panel removed" does not imply the normal sidebar collapse toggle was removed.
+  - Offscreen UI geometry audit covered all 11 pages at 1366x768 and 1920x1080 with no visible widget clipping detected.
+- Targeted verification passed:
+  - compileall passed.
+  - dashboard/action-contract targeted tests: 14 passed.
+  - templates/generated-messages/migrations targeted tests: 64 passed.
+  - navigation targeted tests: 14 passed.
+  - tasks/work-records/canvas targeted tests: 26 passed.
+- Full `python -m pytest -q` rerun on 2026-05-31: 977 passed, 1 skipped.
+- Additional grouped verification passed across the remaining suite. The only tests not successfully rerun this turn are the two real `tmp/BGMOPEN1.zip` settings smoke imports, because that file-level run exceeded the timeout while importing the large real ZIP.
+- Rebuilt Windows one-dir EXE at `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`.
+- Automated EXE smoke passed.
+- Created `dist/TaxOpsControlDesk-v0.21.0-windows.zip`.
+
 ## 2026-05-29 Current Task State
 
 ### TODO

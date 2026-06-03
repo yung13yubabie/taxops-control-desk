@@ -137,7 +137,7 @@ class TemplatesPage(QWidget):
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 1)
-        outer.addWidget(splitter)
+        outer.addWidget(splitter, stretch=1)
 
         self._new_btn.clicked.connect(self._on_new_template)
         self._edit_btn.clicked.connect(self._on_edit_template)

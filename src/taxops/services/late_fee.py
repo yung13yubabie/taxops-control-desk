@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 from dataclasses import dataclass
 
@@ -42,6 +43,71 @@ def calculate_overdue_days(last_payment_date: str, actual_payment_date: str) -> 
     return (paid_day - last_day).days
 
 
+# 營業稅每 2 月為 1 期，於次期開始 15 日內申報繳納（財政部規則）。
+PERIOD_CODES: tuple[str, ...] = ("1-2", "3-4", "5-6", "7-8", "9-10", "11-12")
+
+# period_code -> (申報月, 年份位移). 11-12 期於次年 1/15 截止。
+_PERIOD_DUE: dict[str, tuple[int, int]] = {
+    "1-2": (3, 0),
+    "3-4": (5, 0),
+    "5-6": (7, 0),
+    "7-8": (9, 0),
+    "9-10": (11, 0),
+    "11-12": (1, 1),
+}
+
+_MAX_PENALTY_PERCENT = 10
+
+
+def last_payment_date_for_period(year: int, period_code: str) -> str:
+    """Return the statutory last payment date (ISO) for a 營業稅 period.
+
+    1-2 -> year/3/15, 3-4 -> year/5/15, ..., 11-12 -> (year+1)/1/15.
+    """
+    try:
+        month, year_offset = _PERIOD_DUE[period_code]
+    except KeyError as err:
+        raise LateFeeValidationError("late_fee.period.invalid") from err
+    return datetime.date(year + year_offset, month, 15).isoformat()
+
+
+def build_penalty_schedule(last_payment_date: str) -> list[dict]:
+    """Return penalty-rate bands as concrete date ranges after the last payment date.
+
+    Band ``p`` (0..9) covers overdue days ``3p+1`` .. ``3p+3``; the final band (10%)
+    covers day 31 onward (open-ended, ``end_day``/``end_date`` = ``None``). This mirrors
+    :func:`calculate_penalty_percent` exactly: <=3 days 0%, then +1% per 3-day unit,
+    capped at 10%.
+    """
+    try:
+        last_day = datetime.date.fromisoformat(last_payment_date)
+    except (ValueError, TypeError) as err:
+        raise LateFeeValidationError("late_fee.date.invalid") from err
+    bands: list[dict] = []
+    for percent in range(0, _MAX_PENALTY_PERCENT):  # 0% .. 9%
+        start_day = 3 * percent + 1
+        end_day = 3 * percent + 3
+        bands.append(
+            {
+                "percent": percent,
+                "start_day": start_day,
+                "end_day": end_day,
+                "start_date": (last_day + datetime.timedelta(days=start_day)).isoformat(),
+                "end_date": (last_day + datetime.timedelta(days=end_day)).isoformat(),
+            }
+        )
+    bands.append(
+        {
+            "percent": _MAX_PENALTY_PERCENT,
+            "start_day": 31,
+            "end_day": None,
+            "start_date": (last_day + datetime.timedelta(days=31)).isoformat(),
+            "end_date": None,
+        }
+    )
+    return bands
+
+
 class LateFeeValidationError(Exception):
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -55,6 +121,8 @@ class CalculateLateFeeInput:
     base_amount: float
     last_payment_date: str | None = None
     actual_payment_date: str | None = None
+    period_year: int | None = None
+    period_code: str | None = None
 
 
 class LateFeeService:
@@ -69,6 +137,13 @@ class LateFeeService:
         self._audit = audit
 
     def calculate_and_save(self, payload: CalculateLateFeeInput) -> LateFeeRow:
+        has_period_year = payload.period_year is not None
+        has_period_code = payload.period_code is not None
+        if has_period_year != has_period_code:
+            raise LateFeeValidationError("late_fee.period.invalid")
+        if has_period_code and payload.period_code not in PERIOD_CODES:
+            raise LateFeeValidationError("late_fee.period.invalid")
+
         has_last = bool(payload.last_payment_date)
         has_actual = bool(payload.actual_payment_date)
         if has_last != has_actual:
@@ -98,6 +173,13 @@ class LateFeeService:
             penalty_percent = calculate_penalty_percent(overdue_days)
             penalty_amount = round(payload.base_amount * penalty_percent / 100, 2)
 
+        breakdown_json: str | None = None
+        if has_last and payload.last_payment_date is not None:
+            breakdown_json = json.dumps(
+                build_penalty_schedule(payload.last_payment_date),
+                ensure_ascii=False,
+            )
+
         row = self._repo.insert(
             request_id=payload.request_id,
             overdue_days=overdue_days,
@@ -106,6 +188,11 @@ class LateFeeService:
             penalty_amount=penalty_amount,
             tax_type=tax_type,
             needs_manual_review=needs_manual_review,
+            period_year=payload.period_year,
+            period_code=payload.period_code,
+            last_payment_date=payload.last_payment_date,
+            actual_payment_date=payload.actual_payment_date,
+            penalty_breakdown_json=breakdown_json,
         )
         self._audit.record(
             action="late_fee.calculate",
@@ -114,6 +201,8 @@ class LateFeeService:
             detail={
                 "request_id": payload.request_id,
                 "overdue_days": overdue_days,
+                "period_year": payload.period_year,
+                "period_code": payload.period_code,
                 "last_payment_date": payload.last_payment_date,
                 "actual_payment_date": payload.actual_payment_date,
                 "penalty_percent": penalty_percent,

@@ -14,7 +14,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 # Page identifiers — must match keys in ``taxops.i18n.labels.NAV_LABELS``.
-PAGE_DASHBOARD = "dashboard"
 PAGE_CLIENTS = "clients"
 PAGE_ENGAGEMENTS = "engagements"
 PAGE_DOC_REQUESTS = "doc_requests"
@@ -30,7 +29,6 @@ PAGE_SETTINGS = "settings"
 PAGE_RECURRING_BILLING = "recurring_billing"
 
 NAV_ORDER: tuple[str, ...] = (
-    # Slice 23 v0.15.0: PAGE_DASHBOARD moved to a QDockWidget.
     # Slice 24 v0.15.1: PAGE_REVIEW_NOTES retired; PAGE_FOLDER_BOOKMARKS
     # replaces it in the same slot.
     PAGE_CLIENTS,
@@ -87,46 +85,7 @@ def _disabled(label: str, page: str) -> "UIActionContract":
     )
 
 
-def _dashboard_nav(label: str, marker: str) -> "UIActionContract":
-    return UIActionContract(
-        button_label=label,
-        page=PAGE_DASHBOARD,
-        handler="DashboardPage.navigate_to_page",
-        service=None,
-        repository=None,
-        success_text="",
-        failure_text="",
-        audit_action=None,
-        test_marker=marker,
-        enabled=True,
-    )
-
-
 ACTION_REGISTRY: tuple[UIActionContract, ...] = (
-    # Dashboard page
-    UIActionContract(
-        button_label="重新整理",
-        page=PAGE_DASHBOARD,
-        handler="DashboardPage._on_refresh",
-        service="DashboardService.get_counts",
-        repository="DashboardRepository",
-        success_text="",
-        failure_text="載入失敗，請稍後再試",
-        audit_action=None,
-        test_marker="test_dashboard_refresh",
-        enabled=True,
-    ),
-    _dashboard_nav("前往客戶管理", "test_dashboard_nav_clients"),
-    _dashboard_nav("前往案件管理", "test_dashboard_nav_engagements"),
-    _dashboard_nav("前往待辦事項", "test_dashboard_nav_tasks"),
-    _dashboard_nav("前往工作紀錄", "test_dashboard_nav_work_records"),
-    _dashboard_nav("前往訊息模板", "test_dashboard_nav_templates"),
-    _dashboard_nav("前往工商稅籍查詢", "test_dashboard_nav_registry"),
-    _dashboard_nav("前往滯納金試算", "test_dashboard_nav_late_fee"),
-    _dashboard_nav("前往附件管理", "test_dashboard_nav_attachments"),
-    _dashboard_nav("前往資料夾管理", "test_dashboard_nav_folder_bookmarks"),
-    _dashboard_nav("前往固定開立", "test_dashboard_nav_recurring_billing"),
-    _dashboard_nav("前往設定", "test_dashboard_nav_settings"),
     # Clients page (enabled)
     UIActionContract(
         button_label="新增客戶",
@@ -688,6 +647,66 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
     ),
     # Work Records page (v0.19.0: workflow templates/runs and error reviews)
     UIActionContract(
+        button_label="新增流程",
+        page=PAGE_WORK_RECORDS,
+        handler="WorkRecordsPage._on_create_template",
+        service="WorkRecordsService.create_template",
+        repository="WorkRecordsRepository.insert_template",
+        success_text="流程範本已建立",
+        failure_text="新增流程失敗，請檢查名稱與步驟",
+        audit_action="work_record.workflow_template.create",
+        test_marker="test_work_records_create_template",
+        enabled=True,
+    ),
+    UIActionContract(
+        button_label="編輯流程",
+        page=PAGE_WORK_RECORDS,
+        handler="WorkRecordsPage._on_edit_template",
+        service="WorkRecordsService.update_template",
+        repository="WorkRecordsRepository.update_template_stages",
+        success_text="流程範本已更新",
+        failure_text="編輯流程失敗，請先選取流程範本",
+        audit_action="work_record.workflow_template.update",
+        test_marker="test_work_records_edit_template",
+        enabled=True,
+    ),
+    UIActionContract(
+        button_label="刪除流程",
+        page=PAGE_WORK_RECORDS,
+        handler="WorkRecordsPage._on_delete_template",
+        service="WorkRecordsService.delete_template",
+        repository="WorkRecordsRepository.soft_delete_template",
+        success_text="流程範本已刪除",
+        failure_text="刪除流程失敗，請先選取流程範本",
+        audit_action="work_record.workflow_template.delete",
+        test_marker="test_work_records_delete_template",
+        enabled=True,
+    ),
+    UIActionContract(
+        button_label="匯入流程圖片",
+        page=PAGE_WORK_RECORDS,
+        handler="WorkRecordsPage._on_set_template_image",
+        service="WorkRecordsService.set_template_image_path",
+        repository="WorkRecordsRepository.update_template_context",
+        success_text="流程圖片已更新",
+        failure_text="圖片更新失敗，請先選取流程範本",
+        audit_action="work_record.workflow_template.image_update",
+        test_marker="test_work_records_set_template_image",
+        enabled=True,
+    ),
+    UIActionContract(
+        button_label="貼上截圖",
+        page=PAGE_WORK_RECORDS,
+        handler="WorkRecordsPage._on_paste_template_image",
+        service="WorkRecordsService.set_template_image_asset",
+        repository="WorkRecordsRepository.update_template_context",
+        success_text="流程截圖已保存",
+        failure_text="貼上流程截圖失敗，請確認剪貼簿有圖片",
+        audit_action="work_record.workflow_template.image_update",
+        test_marker="test_work_records_paste_template_image",
+        enabled=True,
+    ),
+    UIActionContract(
         button_label="建立標準公司設立流程",
         page=PAGE_WORK_RECORDS,
         handler="WorkRecordsPage._on_create_standard_template",
@@ -712,9 +731,9 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
         enabled=True,
     ),
     UIActionContract(
-        button_label="勾選第一步",
+        button_label="完成/取消完成選取步驟",
         page=PAGE_WORK_RECORDS,
-        handler="WorkRecordsPage._on_toggle_first_run_step",
+        handler="WorkRecordsPage._on_toggle_selected_run_step",
         service="WorkRecordsService.set_run_step_done",
         repository="WorkRecordsRepository.update_run_stages",
         success_text="執行清單已更新",

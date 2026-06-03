@@ -109,7 +109,7 @@ def test_engagements_page_toolbar_disabled_with_no_selection() -> None:
     container.close()
 
 
-def test_engagements_page_left_list_shows_client_and_detail_panel() -> None:
+def test_engagements_page_left_list_shows_client_columns() -> None:
     _make_app()
     container = _fresh_container()
     client_id = _seed_client(container, code="CL-DTL", name="明細客戶")
@@ -127,12 +127,15 @@ def test_engagements_page_left_list_shows_client_and_detail_panel() -> None:
 
     page = EngagementsPage(container)
     client_col = _COLUMN_ORDER.index("client_label")
+    status_col = _COLUMN_ORDER.index("status")
+    name_col = _COLUMN_ORDER.index("engagement_name")
     assert page._table.item(0, client_col).text() == "明細客戶"
-
-    page._table.selectRow(0)
-    assert page._detail_title.text() == eng.engagement_name
-    assert "明細客戶" in page._detail_client.text()
-    assert "2026" in page._detail_meta.text()
+    # client + status are core, always-visible columns (no right-side detail panel)
+    assert not page._table.isColumnHidden(client_col)
+    assert not page._table.isColumnHidden(status_col)
+    assert eng.engagement_name in page._table.item(0, name_col).text()
+    # table is no longer capped at 520/560
+    assert page._table.maximumWidth() > 1000
     container.close()
 
 

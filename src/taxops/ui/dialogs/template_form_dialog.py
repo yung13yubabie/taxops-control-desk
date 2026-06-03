@@ -34,6 +34,7 @@ from ...services.templates import (
 _TYPE_CHOICES = [
     ("initial_request", TEMPLATE_TYPE_LABELS["initial_request"]),
     ("follow_up", TEMPLATE_TYPE_LABELS["follow_up"]),
+    ("payment_follow_up", TEMPLATE_TYPE_LABELS["payment_follow_up"]),
     ("custom", TEMPLATE_TYPE_LABELS["custom"]),
 ]
 

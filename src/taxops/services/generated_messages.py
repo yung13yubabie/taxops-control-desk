@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..core.clock import today_iso
 from ..i18n.status_labels import status_to_label
 from ..repositories.clients import ClientsRepository
 from ..repositories.document_requests import DocumentRequestsRepository
@@ -12,6 +13,7 @@ from ..repositories.generated_messages import (
     GeneratedMessageRow,
     GeneratedMessagesRepository,
 )
+from ..repositories.recurring_billing import RecurringBillingRepository
 from .audit import AuditService
 from .templates import TemplateValidationError, TemplatesService
 
@@ -37,6 +39,7 @@ class GeneratedMessagesService:
         clients_repo: ClientsRepository,
         templates_svc: TemplatesService,
         audit: AuditService,
+        recurring_billing_repo: RecurringBillingRepository | None = None,
     ) -> None:
         self._repo = repo
         self._doc_requests_repo = doc_requests_repo
@@ -44,6 +47,7 @@ class GeneratedMessagesService:
         self._clients_repo = clients_repo
         self._templates_svc = templates_svc
         self._audit = audit
+        self._recurring_billing_repo = recurring_billing_repo
 
     def build_variables(self, request_id: int) -> dict[str, str]:
         """Assemble all ALLOWED_VARIABLES for a given document request."""
@@ -67,6 +71,8 @@ class GeneratedMessagesService:
         def _fmt(names: list[str]) -> str:
             return "\n".join(f"- {n}" for n in names)
 
+        payment_vars = self._build_payment_variables(client.id)
+
         return {
             "client_name": client.client_name,
             "tax_id": client.tax_id or "",
@@ -79,6 +85,48 @@ class GeneratedMessagesService:
             "incomplete_items": _fmt(incomplete),
             "due_date": request.due_date or "",
             "notes": request.notes or "",
+            **payment_vars,
+        }
+
+    def _build_payment_variables(self, client_id: int) -> dict[str, str]:
+        if self._recurring_billing_repo is None:
+            return {
+                "payment_records": "",
+                "outstanding_amount": "0",
+                "overdue_amount": "0",
+                "payment_due_date": "",
+            }
+        rows: list[tuple[str, str, str, int]] = []
+        total = 0
+        for plan in self._recurring_billing_repo.list_plans(client_id=client_id):
+            occurrences = self._recurring_billing_repo.list_occurrences(
+                plan_id=plan.id,
+                status="pending",
+                before_date=today_iso(),
+            )
+            for occurrence in occurrences:
+                line = self._recurring_billing_repo.get_line(occurrence.line_id)
+                if line is None or not line.active:
+                    continue
+                amount = int(line.amount)
+                total += amount
+                rows.append((
+                    occurrence.expected_issue_date,
+                    plan.plan_name,
+                    line.description or line.bill_to_name,
+                    amount,
+                ))
+        payment_records = "\n".join(
+            f"- {due}｜{plan_name}｜{desc}｜NT${amount:,}"
+            for due, plan_name, desc, amount in rows
+        )
+        earliest = rows[0][0] if rows else ""
+        amount_text = str(total)
+        return {
+            "payment_records": payment_records,
+            "outstanding_amount": amount_text,
+            "overdue_amount": amount_text,
+            "payment_due_date": earliest,
         }
 
     def generate(self, payload: GenerateMessageInput) -> GeneratedMessageRow:

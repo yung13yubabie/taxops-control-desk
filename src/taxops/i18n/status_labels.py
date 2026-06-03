@@ -67,6 +67,7 @@ STATUS_LABELS: dict[str, str] = dict(
 TEMPLATE_TYPE_LABELS: dict[str, str] = {
     "initial_request": "首次索件",
     "follow_up": "催件通知",
+    "payment_follow_up": "欠款催繳",
     "custom": "自訂",
 }
 
@@ -104,4 +105,3 @@ def status_to_label(value: str | None) -> str:
     if not value:
         return UNKNOWN_STATUS_TEXT
     return STATUS_LABELS.get(value, UNKNOWN_STATUS_TEXT)
-

@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
+from pathlib import Path
 from uuid import uuid4
+
+from PySide6.QtGui import QImageReader
 
 from ..core.text import sanitize_user_text
 from ..repositories.work_records import (
@@ -16,6 +20,7 @@ from ..repositories.work_records import (
 from .audit import AuditService
 
 VALID_SEVERITIES = frozenset({"low", "medium", "high"})
+IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg"})
 
 
 class WorkRecordValidationError(Exception):
@@ -90,10 +95,32 @@ def _require_row(row, code: str):
     return row
 
 
+def _load_context_snapshot(raw: str | None) -> dict:
+    if not raw:
+        return {}
+    try:
+        loaded = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
 class WorkRecordsService:
-    def __init__(self, repo: WorkRecordsRepository, audit: AuditService) -> None:
+    def __init__(
+        self,
+        repo: WorkRecordsRepository,
+        audit: AuditService,
+        workflow_assets_dir: Path | None = None,
+    ) -> None:
         self._repo = repo
         self._audit = audit
+        self._workflow_assets_dir = workflow_assets_dir
+
+    @property
+    def workflow_assets_dir(self) -> Path:
+        if self._workflow_assets_dir is None:
+            raise WorkRecordValidationError("work_record.asset.storage_unavailable")
+        return self._workflow_assets_dir
 
     def create_template(self, payload: CreateWorkflowTemplateInput) -> WorkflowTemplateRow:
         name = sanitize_user_text(payload.name, max_length=200)
@@ -114,6 +141,144 @@ class WorkRecordsService:
             detail={"name": row.name},
         )
         return row
+
+    def update_template(
+        self,
+        template_id: int,
+        payload: CreateWorkflowTemplateInput,
+    ) -> WorkflowTemplateRow:
+        existing = self._repo.get_template(template_id)
+        if existing is None:
+            raise WorkRecordValidationError("work_record.template.not_found")
+        name = sanitize_user_text(payload.name, max_length=200)
+        if not name:
+            raise WorkRecordValidationError("work_record.template.name.required")
+        stages = self._normalize_stage_inputs(payload.stages)
+        updated = _require_row(
+            self._repo.update_template_stages(
+                template_id,
+                name=name,
+                stages_json=_dumps_stages(stages),
+                bump_version=True,
+            ),
+            "work_record.template.not_found",
+        )
+        self._audit.record(
+            action="work_record.workflow_template.update",
+            target_type="workflow_template",
+            target_id=str(updated.id),
+            detail={"name": updated.name, "previous_version": existing.version},
+        )
+        return updated
+
+    def set_template_image_path(
+        self,
+        template_id: int,
+        image_path: str | None,
+    ) -> WorkflowTemplateRow:
+        if not image_path:
+            return self.set_template_image_asset(template_id, None)
+        rel_path, width, height = self.import_workflow_image_asset(Path(image_path))
+        return self.set_template_image_asset(
+            template_id,
+            rel_path,
+            width=width,
+            height=height,
+        )
+
+    def import_workflow_image_asset(self, source_path: Path) -> tuple[str, int, int]:
+        source = Path(source_path)
+        ext = source.suffix.lower()
+        if ext not in IMAGE_EXTENSIONS:
+            raise WorkRecordValidationError("work_record.asset.extension_invalid")
+        if not source.is_file():
+            raise WorkRecordValidationError("work_record.asset.not_found")
+        reader = QImageReader(str(source))
+        if not reader.canRead():
+            raise WorkRecordValidationError("work_record.asset.image_invalid")
+        size = reader.size()
+        rel = Path("images") / f"{uuid4().hex}{ext}"
+        dest = self.workflow_assets_dir / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, dest)
+        return rel.as_posix(), max(size.width(), 0), max(size.height(), 0)
+
+    def set_template_image_asset(
+        self,
+        template_id: int,
+        rel_path: str | None,
+        *,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> WorkflowTemplateRow:
+        template = self._repo.get_template(template_id)
+        if template is None:
+            raise WorkRecordValidationError("work_record.template.not_found")
+        snapshot = _load_context_snapshot(template.context_snapshot)
+        clean_path = sanitize_user_text(rel_path, max_length=1000) if rel_path else ""
+        if clean_path:
+            asset_path = self._safe_workflow_asset_path(clean_path)
+            reader = QImageReader(str(asset_path))
+            if not reader.canRead():
+                raise WorkRecordValidationError("work_record.asset.image_invalid")
+            size = reader.size()
+            snapshot["image_path"] = clean_path
+            snapshot["image_width"] = int(width or size.width())
+            snapshot["image_height"] = int(height or size.height())
+        else:
+            snapshot.pop("image_path", None)
+            snapshot.pop("image_width", None)
+            snapshot.pop("image_height", None)
+        updated = _require_row(
+            self._repo.update_template_context(
+                template_id,
+                context_snapshot=json.dumps(snapshot, ensure_ascii=False) if snapshot else None,
+            ),
+            "work_record.template.not_found",
+        )
+        self._audit.record(
+            action="work_record.workflow_template.image_update",
+            target_type="workflow_template",
+            target_id=str(updated.id),
+            detail={"has_image": bool(clean_path)},
+        )
+        return updated
+
+    def _safe_workflow_asset_path(self, rel_path: str) -> Path:
+        rel = Path(rel_path)
+        if rel.is_absolute() or ".." in rel.parts:
+            raise WorkRecordValidationError("work_record.asset.path_invalid")
+        target = (self.workflow_assets_dir / rel).resolve()
+        root = self.workflow_assets_dir.resolve()
+        if root not in target.parents:
+            raise WorkRecordValidationError("work_record.asset.path_invalid")
+        if not target.is_file():
+            raise WorkRecordValidationError("work_record.asset.not_found")
+        return target
+
+    def delete_template(self, template_id: int) -> None:
+        existing = self._repo.get_template(template_id)
+        if existing is None:
+            raise WorkRecordValidationError("work_record.template.not_found")
+        self._repo.soft_delete_template(template_id)
+        self._audit.record(
+            action="work_record.workflow_template.delete",
+            target_type="workflow_template",
+            target_id=str(template_id),
+            detail={"name": existing.name},
+        )
+
+    def delete_run(self, run_id: int) -> None:
+        existing = self._repo.get_run(run_id)
+        if existing is None:
+            raise WorkRecordValidationError("work_record.run.not_found")
+        self._repo.soft_delete_run(run_id)
+        self._audit.record(
+            action="work_record.workflow_run.delete",
+            target_type="workflow_run",
+            target_id=str(run_id),
+            detail={"name": existing.name},
+        )
 
     def create_standard_company_setup_template(self) -> WorkflowTemplateRow:
         return self.create_template(

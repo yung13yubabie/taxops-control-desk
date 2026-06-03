@@ -26,6 +26,8 @@ from . import (
     _m0021_document_request_name,
     _m0022_work_records,
     _m0023_canvas_notes,
+    _m0024_payment_follow_up_template,
+    _m0025_late_fee_period_breakdown,
 )
 
 MIGRATIONS: tuple[tuple[str, str], ...] = (
@@ -52,4 +54,6 @@ MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("0021_document_request_name", _m0021_document_request_name.SQL),
     ("0022_work_records", _m0022_work_records.SQL),
     ("0023_canvas_notes", _m0023_canvas_notes.SQL),
+    ("0024_payment_follow_up_template", _m0024_payment_follow_up_template.SQL),
+    ("0025_late_fee_period_breakdown", _m0025_late_fee_period_breakdown.SQL),
 )

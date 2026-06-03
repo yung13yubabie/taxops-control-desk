@@ -64,6 +64,7 @@ def test_builtin_templates_seeded(conn):
     ids = {r["id"] for r in rows}
     assert 1 in ids
     assert 2 in ids
+    assert 3 in ids
 
 
 # ── create ────────────────────────────────────────────────────────────────────
@@ -136,7 +137,7 @@ def test_get_template_missing_returns_none(svc):
 def test_list_all_includes_builtins(svc):
     rows = svc.list_all()
     builtin_ids = {r.id for r in rows if r.is_builtin}
-    assert {1, 2}.issubset(builtin_ids)
+    assert {1, 2, 3}.issubset(builtin_ids)
 
 
 def test_list_all_includes_custom(svc):
@@ -311,13 +312,16 @@ def test_render_template_missing_variable_fails(svc):
 
 
 def test_create_template_extended_allowed_variables(svc):
-    body = "{{ tax_id }} {{ contact_person }} {{ engagement_name }} {{ notes }}"
+    body = (
+        "{{ tax_id }} {{ contact_person }} {{ engagement_name }} {{ notes }} "
+        "{{ payment_records }} {{ outstanding_amount }} {{ overdue_amount }} {{ payment_due_date }}"
+    )
     tmpl = svc.create_template(CreateTemplateInput(name="Extended", body=body))
     assert tmpl.id > 0
 
 
 def test_create_template_future_fields_rejected(svc):
-    for field in ("payment_due_date", "office_owner", "reviewer", "last_followed_up_at"):
+    for field in ("office_owner", "reviewer", "last_followed_up_at"):
         with pytest.raises(TemplateValidationError) as exc:
             svc.create_template(CreateTemplateInput(name=f"Bad-{field}", body=f"{{{{ {field} }}}}"))
         assert exc.value.code == "template.unknown_variable", f"expected rejection for {field}"

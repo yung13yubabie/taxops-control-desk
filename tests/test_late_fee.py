@@ -14,8 +14,10 @@ from taxops.services.late_fee import (
     CalculateLateFeeInput,
     LateFeeService,
     LateFeeValidationError,
+    build_penalty_schedule,
     calculate_overdue_days,
     calculate_penalty_percent,
+    last_payment_date_for_period,
 )
 
 
@@ -297,3 +299,136 @@ def test_actual_before_last_payment_date_raises_range_invalid(conn, svc):
         )
     assert exc.value.code == "late_fee.date.range_invalid"
     assert len(svc.list_by_request(req_id)) == 0
+
+
+# ── period code + penalty schedule + persistence (v0.21 SLOP) ───────────────────
+
+@pytest.mark.parametrize("year,code,expected", [
+    (2026, "1-2", "2026-03-15"),
+    (2026, "3-4", "2026-05-15"),
+    (2026, "5-6", "2026-07-15"),
+    (2026, "7-8", "2026-09-15"),
+    (2026, "9-10", "2026-11-15"),
+    (2026, "11-12", "2027-01-15"),
+    (2025, "5-6", "2025-07-15"),
+])
+def test_last_payment_date_for_period(year, code, expected):
+    assert last_payment_date_for_period(year, code) == expected
+
+
+def test_last_payment_date_for_period_invalid_code_raises():
+    with pytest.raises(LateFeeValidationError) as exc:
+        last_payment_date_for_period(2026, "13-14")
+    assert exc.value.code == "late_fee.period.invalid"
+
+
+def test_build_penalty_schedule_date_ranges():
+    bands = build_penalty_schedule("2026-03-15")
+    assert len(bands) == 11
+    # 0% covers days 1-3 after the last payment date.
+    assert bands[0]["percent"] == 0
+    assert bands[0]["start_date"] == "2026-03-16"
+    assert bands[0]["end_date"] == "2026-03-18"
+    # 1% covers days 4-6.
+    assert bands[1]["percent"] == 1
+    assert bands[1]["start_date"] == "2026-03-19"
+    assert bands[1]["end_date"] == "2026-03-21"
+    # 9% covers days 28-30.
+    assert bands[9]["percent"] == 9
+    assert bands[9]["start_date"] == "2026-04-12"
+    assert bands[9]["end_date"] == "2026-04-14"
+    # 10% is open-ended from day 31.
+    assert bands[10]["percent"] == 10
+    assert bands[10]["start_date"] == "2026-04-15"
+    assert bands[10]["end_date"] is None
+
+
+def test_build_penalty_schedule_rejects_bad_date():
+    with pytest.raises(LateFeeValidationError) as exc:
+        build_penalty_schedule("2026/03/15")
+    assert exc.value.code == "late_fee.date.invalid"
+
+
+def test_calculate_and_save_persists_period_and_breakdown(conn, svc):
+    import json
+
+    req_id = _seed_request(conn, "vat")
+    row = svc.calculate_and_save(CalculateLateFeeInput(
+        request_id=req_id,
+        overdue_days=0,
+        base_amount=10000.0,
+        last_payment_date="2026-03-15",
+        actual_payment_date="2026-03-20",  # 5 days late -> 1%
+        period_year=2026,
+        period_code="1-2",
+    ))
+    assert row.overdue_days == 5
+    assert row.penalty_percent == 1.0
+    assert row.period_year == 2026
+    assert row.period_code == "1-2"
+    assert row.last_payment_date == "2026-03-15"
+    assert row.actual_payment_date == "2026-03-20"
+    assert row.penalty_breakdown_json is not None
+    bands = json.loads(row.penalty_breakdown_json)
+    assert bands[1]["percent"] == 1
+    reloaded = svc.list_by_request(req_id)[0]
+    assert reloaded.period_code == "1-2"
+    assert reloaded.last_payment_date == "2026-03-15"
+
+
+def test_calculate_and_save_rejects_invalid_period_code(conn, svc):
+    req_id = _seed_request(conn, "vat")
+    with pytest.raises(LateFeeValidationError) as exc:
+        svc.calculate_and_save(
+            CalculateLateFeeInput(
+                request_id=req_id,
+                overdue_days=0,
+                base_amount=10000.0,
+                last_payment_date="2026-03-15",
+                actual_payment_date="2026-03-20",
+                period_year=2026,
+                period_code="13-14",
+            )
+        )
+    assert exc.value.code == "late_fee.period.invalid"
+    count = conn.execute("SELECT COUNT(*) FROM late_fee_records").fetchone()[0]
+    assert count == 0
+
+
+@pytest.mark.parametrize(
+    ("period_year", "period_code"),
+    [
+        (2026, None),
+        (None, "1-2"),
+    ],
+)
+def test_calculate_and_save_rejects_partial_period_fields(
+    conn, svc, period_year, period_code
+):
+    req_id = _seed_request(conn, "vat")
+    with pytest.raises(LateFeeValidationError) as exc:
+        svc.calculate_and_save(
+            CalculateLateFeeInput(
+                request_id=req_id,
+                overdue_days=0,
+                base_amount=10000.0,
+                last_payment_date="2026-03-15",
+                actual_payment_date="2026-03-20",
+                period_year=period_year,
+                period_code=period_code,
+            )
+        )
+    assert exc.value.code == "late_fee.period.invalid"
+    count = conn.execute("SELECT COUNT(*) FROM late_fee_records").fetchone()[0]
+    assert count == 0
+
+
+def test_late_fee_records_has_period_columns(conn):
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(late_fee_records)")}
+    assert {
+        "period_year",
+        "period_code",
+        "last_payment_date",
+        "actual_payment_date",
+        "penalty_breakdown_json",
+    }.issubset(cols)

@@ -103,9 +103,9 @@ def test_multi_selection_enables_bulk_buttons(qapp, container, clients):
     assert not page._make_child_btn.isEnabled()
 
 
-def test_single_selection_updates_detail_panel_and_enables_next_step(qapp, container, clients):
+def test_single_selection_enables_next_step_and_shows_client(qapp, container, clients):
     c1, _ = clients
-    task = container.tasks.create_task(CreateTaskInput(
+    container.tasks.create_task(CreateTaskInput(
         engagement_id=None,
         client_id=c1.id,
         title="整理資料",
@@ -115,9 +115,11 @@ def test_single_selection_updates_detail_panel_and_enables_next_step(qapp, conta
     page._refresh()
     page._table.selectRow(0)
     assert page._next_step_btn.isEnabled()
-    assert page._detail_title.text() == task.title
-    assert "客戶一" in page._detail_context.text()
-    assert "聯絡客戶" in page._detail_next_step.text()
+    # The client name is now shown directly in the list (no detail panel).
+    from taxops.ui.pages.tasks_page import _COLUMN_ORDER
+
+    client_col = _COLUMN_ORDER.index("client_label")
+    assert page._table.item(0, client_col).text() == "客戶一"
 
 
 def test_bulk_create_button_writes_db_and_audit(qapp, monkeypatch, container, clients):
@@ -218,7 +220,10 @@ def test_make_child_button_uses_parent_dialog_and_indents_child(qapp, monkeypatc
     page._on_make_child_task()
     assert container.tasks.get_task(child.id).parent_task_id == parent.id
     page._refresh()
-    titles = [page._table.item(r, 1).text() for r in range(page._table.rowCount())]
+    from taxops.ui.pages.tasks_page import _COLUMN_ORDER
+
+    title_col = _COLUMN_ORDER.index("title")
+    titles = [page._table.item(r, title_col).text() for r in range(page._table.rowCount())]
     assert any(t.startswith("　└ ") for t in titles)
 
 

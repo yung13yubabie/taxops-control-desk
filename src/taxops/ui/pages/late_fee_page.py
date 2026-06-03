@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import datetime
+
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -13,27 +16,45 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from ...core.clock import today_iso
 from ...i18n import error_message
 from ...i18n.status_labels import status_to_label
 from ...services.container import ServiceContainer
 from ..style import toolbar_icon
 from ..widgets.date_field import DateField
 from ...services.late_fee import (
+    PERIOD_CODES,
     CalculateLateFeeInput,
     LateFeeValidationError,
+    build_penalty_schedule,
     calculate_overdue_days,
     calculate_penalty_percent,
+    last_payment_date_for_period,
 )
 
-_HISTORY_COLUMNS = ("id", "overdue_days", "penalty_percent", "base_amount", "penalty_amount", "calc_at")
+_HISTORY_COLUMNS = (
+    "id",
+    "period_code",
+    "last_payment_date",
+    "actual_payment_date",
+    "overdue_days",
+    "penalty_percent",
+    "base_amount",
+    "penalty_amount",
+    "calc_at",
+)
 _HISTORY_HEADERS = {
     "id": "編號",
+    "period_code": "期別",
+    "last_payment_date": "最後繳款日",
+    "actual_payment_date": "實際繳款日",
     "overdue_days": "逾期天數",
     "penalty_percent": "滯納金率(%)",
     "base_amount": "稅額",
@@ -85,9 +106,28 @@ class LateFeePage(QWidget):
         form_layout = QFormLayout(form_box)
         form_layout.setSpacing(10)
 
+        self._year_spin = QSpinBox()
+        self._year_spin.setRange(2000, 2100)
+        self._year_spin.setValue(datetime.date.fromisoformat(today_iso()).year)
+        form_layout.addRow("年份：", self._year_spin)
+
+        self._period_combo = QComboBox()
+        self._period_combo.addItem("（不指定期別）", "")
+        for code in PERIOD_CODES:
+            self._period_combo.addItem(f"{code} 月", code)
+        form_layout.addRow("期別：", self._period_combo)
+
         self._last_payment_date = DateField(required=False)
         self._actual_payment_date = DateField(required=False)
         form_layout.addRow("最後繳款日：", self._last_payment_date)
+
+        self._unlock_check = QCheckBox("自行輸入最後繳款日（解除期別自動帶入）")
+        form_layout.addRow("", self._unlock_check)
+        self._manual_date_hint = QLabel("")
+        self._manual_date_hint.setWordWrap(True)
+        self._manual_date_hint.setStyleSheet("color: #B45309; font-size: 12px;")
+        form_layout.addRow("", self._manual_date_hint)
+
         form_layout.addRow("實際繳款日：", self._actual_payment_date)
 
         self._base_spin = QDoubleSpinBox()
@@ -108,6 +148,24 @@ class LateFeePage(QWidget):
         self._result_label.setWordWrap(True)
         outer.addWidget(self._result_label)
 
+        # -- Penalty-rate date-range schedule --
+        sched_label = QLabel("滯納金率日期區間")
+        sched_label.setObjectName("SectionTitle")
+        outer.addWidget(sched_label)
+        self._schedule_table = QTableWidget(0, 3)
+        self._schedule_table.setHorizontalHeaderLabels(["滯納金率", "起始日", "結束日"])
+        self._schedule_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
+        self._schedule_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._schedule_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self._schedule_table.setMaximumHeight(240)
+        outer.addWidget(self._schedule_table)
+        self._schedule_note = QLabel("")
+        self._schedule_note.setWordWrap(True)
+        self._schedule_note.setStyleSheet("color: #B45309;")
+        outer.addWidget(self._schedule_note)
+
         # -- History table --
         history_label = QLabel("試算記錄")
         history_label.setObjectName("SectionTitle")
@@ -125,7 +183,13 @@ class LateFeePage(QWidget):
         self._manual_check.toggled.connect(self._on_mode_changed)
         self._eng_combo.currentIndexChanged.connect(self._on_engagement_changed)
         self._req_combo.currentIndexChanged.connect(self._load_history)
+        self._year_spin.valueChanged.connect(self._on_period_inputs_changed)
+        self._period_combo.currentIndexChanged.connect(self._on_period_inputs_changed)
+        self._unlock_check.toggled.connect(self._on_unlock_toggled)
+        self._last_payment_date.value_changed.connect(self._refresh_schedule_display)
+        self._actual_payment_date.value_changed.connect(self._refresh_schedule_display)
         self._load_engagements()
+        self._apply_period_lock()
 
     def _on_mode_changed(self, manual: bool) -> None:
         self._filter_widget.setVisible(not manual)
@@ -200,6 +264,9 @@ class LateFeePage(QWidget):
             self._table.insertRow(row)
             vals = {
                 "id": str(rec.id),
+                "period_code": rec.period_code or "",
+                "last_payment_date": rec.last_payment_date or "",
+                "actual_payment_date": rec.actual_payment_date or "",
                 "overdue_days": str(rec.overdue_days),
                 "penalty_percent": f"{rec.penalty_percent:.1f}%",
                 "base_amount": f"{rec.base_amount:,.2f}",
@@ -208,6 +275,79 @@ class LateFeePage(QWidget):
             }
             for col, key in enumerate(_HISTORY_COLUMNS):
                 self._table.setItem(row, col, QTableWidgetItem(vals[key]))
+
+    # ------------------------------------------------------------------
+    # Period half-lock + penalty-rate schedule
+    # ------------------------------------------------------------------
+
+    def _compute_period_last_payment(self) -> str | None:
+        code = self._period_combo.currentData()
+        if not code:
+            return None
+        try:
+            return last_payment_date_for_period(self._year_spin.value(), code)
+        except LateFeeValidationError:
+            return None
+
+    def _on_period_inputs_changed(self, *_args) -> None:
+        self._apply_period_lock()
+
+    def _on_unlock_toggled(self, *_args) -> None:
+        self._apply_period_lock()
+
+    def _apply_period_lock(self) -> None:
+        """Half-lock: period auto-fills 最後繳款日 unless the user unlocks it."""
+        has_period = bool(self._period_combo.currentData())
+        self._unlock_check.setEnabled(has_period)
+        locked = has_period and not self._unlock_check.isChecked()
+        self._last_payment_date.setEnabled(not locked)
+        if locked:
+            iso = self._compute_period_last_payment()
+            if iso:
+                self._last_payment_date.set_value(iso)
+            self._manual_date_hint.setText(
+                "最後繳款日已依期別自動帶入；勾選「自行輸入最後繳款日」可手動調整。"
+            )
+        elif has_period and self._unlock_check.isChecked():
+            self._manual_date_hint.setText("已手動調整最後繳款日。")
+        else:
+            self._manual_date_hint.setText("")
+        self._refresh_schedule_display()
+
+    def _refresh_schedule_display(self, *_args) -> None:
+        self._schedule_table.setRowCount(0)
+        self._schedule_note.setText("")
+        last = self._last_payment_date.value()
+        if not last:
+            return
+        try:
+            bands = build_penalty_schedule(last)
+        except LateFeeValidationError:
+            return
+        overdue: int | None = None
+        actual = self._actual_payment_date.value()
+        if actual:
+            try:
+                overdue = calculate_overdue_days(last, actual)
+            except LateFeeValidationError:
+                overdue = None
+        hit_percent = (
+            calculate_penalty_percent(overdue)
+            if overdue is not None and overdue >= 1
+            else None
+        )
+        self._schedule_table.setRowCount(len(bands))
+        for row, band in enumerate(bands):
+            end = band["end_date"] or "（之後）"
+            for col, text in enumerate((f"{band['percent']}%", band["start_date"], end)):
+                cell = QTableWidgetItem(text)
+                if hit_percent is not None and float(band["percent"]) == hit_percent:
+                    cell.setBackground(QColor("#FEF3C7"))
+                self._schedule_table.setItem(row, col, cell)
+        if overdue is not None and overdue > 30:
+            self._schedule_note.setText(
+                "[!] 已逾 30 日，可能涉及滯納利息／移送執行；本工具目前僅計算滯納金，需人工確認。"
+            )
 
     def _on_calculate(self) -> None:
         try:
@@ -240,6 +380,8 @@ class LateFeePage(QWidget):
             QMessageBox.warning(self, "提示", "請先選擇索件批次，或切換為手動試算模式")
             return
 
+        period_code = self._period_combo.currentData() or None
+        period_year = self._year_spin.value() if period_code else None
         try:
             row = self._container.late_fee.calculate_and_save(
                 CalculateLateFeeInput(
@@ -248,6 +390,8 @@ class LateFeePage(QWidget):
                     base_amount=base_amount,
                     last_payment_date=last_payment_date,
                     actual_payment_date=actual_payment_date,
+                    period_year=period_year,
+                    period_code=period_code,
                 )
             )
         except LateFeeValidationError as err:

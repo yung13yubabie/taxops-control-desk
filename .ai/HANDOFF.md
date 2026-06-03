@@ -1,5 +1,266 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-06-02 - v0.21.1 Codex Fixes)
+
+### Completed
+
+- Fixed late-fee period validation at the service layer.
+  - `LateFeeService.calculate_and_save()` rejects invalid `period_code`.
+  - Partial period fields are rejected before any DB write.
+  - Added tests for invalid period code and partial period field pairs.
+- Fixed remaining direct `date.today()` SLOP in UI/service-facing pages.
+  - `LateFeePage` default year uses project `today_iso()`.
+  - `RecurringBillingPage` accordion date window uses project `today_iso()`.
+  - Static scan found no remaining `date.today()` / `datetime.date.today()` in `src/taxops/ui/pages` or `src/taxops/services`.
+- Completed Work Records module 3 UX correction.
+  - Main Work Records page no longer exposes `QTabWidget`.
+  - Hidden notes/error widgets remain available for canvas/error handlers and existing tests.
+  - Workflow detail is now a `QTreeWidget` stage -> step tree.
+  - The workflow step button toggles the selected run step, not the first step.
+  - Workflow image import now copies images into app data `workflow_assets/images/`.
+  - Clipboard screenshot paste saves a PNG asset into `workflow_assets/images/`.
+  - DB context stores safe relative image path plus width/height metadata; external absolute paths are not stored.
+- Updated action registry for Work Records:
+  - `匯入流程圖片`
+  - `貼上截圖`
+  - `完成/取消完成選取步驟`
+
+### Modified Files
+
+- `.ai/CURRENT_STATE.md`
+- `.ai/TASKS.md`
+- `.ai/HANDOFF.md`
+- `.ai/待改說明.md`
+- `src/taxops/services/late_fee.py`
+- `src/taxops/ui/pages/late_fee_page.py`
+- `src/taxops/ui/pages/recurring_billing_page.py`
+- `src/taxops/services/work_records.py`
+- `src/taxops/services/container.py`
+- `src/taxops/i18n/errors.py`
+- `src/taxops/ui/pages/work_records_page.py`
+- `src/taxops/ui/action_registry.py`
+- `tests/test_late_fee.py`
+- `tests/test_late_fee_page.py`
+- `tests/test_slice27_work_records.py`
+
+### Verification
+
+- `python -m pytest tests/test_late_fee.py tests/test_late_fee_page.py tests/test_db_migrations.py -q --tb=short` => 61 passed.
+- `python -m pytest tests/test_slice18b_ui.py -q --tb=short` => 21 passed.
+- `python -m pytest tests/test_slice27_work_records.py -q --tb=short` => 10 passed.
+- `python -m pytest tests/test_slice28_canvas_notes.py -q --tb=short` => 11 passed.
+- `python -m pytest tests/test_ui_action_contracts.py tests/test_slice4_ui_smoke.py tests/test_slice5_ui.py tests/test_slice21e_tasks_ui.py tests/test_ui_layout_stability.py -q --tb=short` => 55 passed.
+- `python -m compileall -q src tests` => passed.
+- Full `python -m pytest -q` => **1004 passed, 1 skipped**.
+- `python -m build_tools.package_windows` => rebuilt `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`.
+- `python -m build_tools.smoke_test_exe` => automated EXE smoke passed.
+- `dist/TaxOpsControlDesk-v0.21.1-windows.zip` created via Python `zipfile`; `ZipFile.testzip()` passed.
+- Packaging resource hygiene found no TaxOps / pytest / PyInstaller residue.
+
+### Remaining
+
+- Manual Windows UI acceptance across real screen sizes and DPI remains pending.
+
+### Read Next
+
+1. `.ai/CURRENT_STATE.md`
+2. `.ai/TASKS.md`
+3. `src/taxops/ui/pages/work_records_page.py`
+4. `src/taxops/services/work_records.py`
+5. `tests/test_slice27_work_records.py`
+
+---
+
+## Latest Handoff Update (2026-06-02 - v0.21.0 UIUX SLOP 修正：案件/代辦/滯納金三模組完成)
+
+### Completed
+
+- **模組 1 — 案件管理 / 索件批次版面修正（engagements_page.py + document_requests_page.py）**
+  - `EngagementsPage` 移除右側 detail panel（`_detail_title/client/meta/notes`）及 `QSplitter`；表格為主，佔全寬。
+  - 移除 `_table.setMaximumWidth(560)` 上限；表格可自由伸展。
+  - `status` 欄改為 `QHeaderView.Fixed`，寬度固定 110px，不再被案件名稱壓縮。
+  - 截止日 (`due_date`) 改為預設可見欄位。
+  - `DocumentRequestsPage._req_table` 移除 `setMaximumWidth(520)`；`status` 欄同樣固定 110px。
+  - Drill-down（案件列表 → 索件批次 → 文件項目）邏輯完整保留，breadcrumb + QStackedWidget 不動。
+  - 新增常數 `_STATUS_COL_WIDTH = 110`（engagements）與 `_REQ_STATUS_COL_WIDTH = 110`（doc_requests）。
+  - 更新 `tests/test_slice4_ui_smoke.py`：移除 detail-panel 斷言，改驗證表格欄位與無 maxWidth 上限。
+  - 目標測試驗證：`test_slice4_ui_smoke + slice21b + slice22 + slice19a + slice20a + slice21c` → **79 passed**。
+
+- **模組 2 — 代辦事項版面修正（tasks_page.py）**
+  - 移除右側 detail panel（`_detail_title/context/meta/next_step`）及 `QSplitter`（`_content_splitter`）；表格為主，佔全寬。
+  - 移除 `_table.setMaximumWidth(560)` 上限。
+  - 新增 `client_label` 欄位到 `_COLUMN_ORDER`（插在 `id` 之後）；加入 `_CORE_COLS`（必顯示）。
+  - 客戶名稱由 `_client_label_for_task()` 在每次 refresh 時批次解析，避免 N+1：優先用 `task.client_id`，fallback 到 engagement→client。
+  - `status` 欄固定 `_STATUS_COL_WIDTH = 110`；`due_date` 改為預設可見。
+  - 更新 `tests/test_slice21e_tasks_ui.py`：detail-panel 斷言改為驗證 `client_label` 欄內容。
+  - 修正 `tests/test_slice5_ui.py` 與 `tests/test_slice21e_tasks_ui.py`（共 2 處）：硬編欄位索引 1 改為 `_COLUMN_ORDER.index("title")`（因新欄位位移）。
+  - 更新 `tests/test_ui_layout_stability.py`：移除 `_content_splitter` 斷言，改驗證表格可見性 + 無 maxWidth + `client_label` 欄 + 狀態寬度；新增版面測試。
+  - 目標測試驗證：`test_slice21e + slice20b + ui_layout_stability + slice5` → **45 passed**。
+
+- **模組 4 — 滯納金試算：期別半鎖定 + 日期區間 + 持久化**
+  - 新增 migration **0025** (`_m0025_late_fee_period_breakdown.py`)：`late_fee_records` 加 5 個 NULL 欄位 `period_year, period_code, last_payment_date, actual_payment_date, penalty_breakdown_json`。
+  - `repositories/late_fee.py`：`LateFeeRow` 加 5 個 `| None = None` 欄位；`insert()` 加對應可選參數。
+  - `services/late_fee.py`：
+    - 新增 `PERIOD_CODES`（1-2 … 11-12）常數與 `last_payment_date_for_period(year, code)`（11-12 → 次年 1/15）。
+    - 新增 `build_penalty_schedule(last_payment_date)` → 11 個日期區間（0%×3日 … 9%×3日 … 10% 開放結尾）。
+    - 新增錯誤碼 `late_fee.period.invalid`。
+    - `CalculateLateFeeInput` 加 `period_year / period_code`。
+    - `calculate_and_save()` 自動計算 breakdown_json 並持久化全部 5 個新欄位。
+  - `ui/pages/late_fee_page.py`：
+    - 表單加年份 `QSpinBox` + 期別 `QComboBox`（含「不指定」選項）。
+    - 半鎖定：`_unlock_check`（自行輸入最後繳款日）；未解鎖時 `_last_payment_date` disabled + 由期別自動帶入；解鎖後顯示「已手動調整」；重鎖後還原。
+    - 新增滯納金率日期區間表（11 列）：實際日期區間，命中區間背景 `#FEF3C7`；逾 30 日顯示人工確認警示。
+    - 歷史表新增 `period_code / last_payment_date / actual_payment_date` 欄位。
+  - 新增 `tests/test_late_fee_page.py`（6 個 UI smoke）。
+  - 擴充 `tests/test_late_fee.py`（加 8 個：期別/排程/持久化/欄位）。
+  - 更新 `tests/test_db_migrations.py`（版本清單加 0025、count 24→25）。
+  - 目標測試驗證：`test_late_fee + test_late_fee_page + test_date_field + test_db_migrations` → **97 passed**。
+
+- **跨模組聯合驗證（138 passed）**
+  - `test_late_fee + test_late_fee_page + test_date_field + test_slice21e + test_slice20b + test_ui_layout_stability + test_slice4_ui_smoke + test_slice21b + test_slice22 + test_slice27_work_records + test_db_migrations` → **138 passed**（`test_slice27` 通過，work_records 本輪未動工）。
+
+### Modified Files
+
+- `src/taxops/db/migrations/_m0025_late_fee_period_breakdown.py` *(NEW)*
+- `src/taxops/db/migrations/__init__.py`
+- `src/taxops/repositories/late_fee.py`
+- `src/taxops/services/late_fee.py`
+- `src/taxops/i18n/errors.py`
+- `src/taxops/ui/pages/late_fee_page.py`
+- `src/taxops/ui/pages/tasks_page.py`
+- `src/taxops/ui/pages/engagements_page.py`
+- `src/taxops/ui/pages/document_requests_page.py`
+- `tests/test_late_fee.py`
+- `tests/test_late_fee_page.py` *(NEW)*
+- `tests/test_db_migrations.py`
+- `tests/test_slice4_ui_smoke.py`
+- `tests/test_slice5_ui.py`
+- `tests/test_slice21e_tasks_ui.py`
+- `tests/test_ui_layout_stability.py`
+
+### Verification
+
+- Module 4 targeted → **97 passed**
+- Module 2 targeted → **45 passed**
+- Module 1 targeted → **79 passed**
+- Cross-module targeted → **138 passed**
+- Full `python -m pytest -q` → **998 passed, 1 skipped**（2026-06-02，含本輪 21 個新測試）。
+
+### Remaining
+
+- **模組 3（工作紀錄）尚未動工**，為本次四模組任務中唯一未完成項目。需改動：
+  - `work_records_page.py`：移除 `QTabWidget`，直接顯示流程內容；`notes`/`error` widget 保留（canvas 測試需要）但不暴露。
+  - 流程 detail：`QTextEdit`（唯讀）→ `QTreeWidget`（stage→step，☑/☐）；`_toggle_first_btn` → 「完成/取消完成選取步驟」（runs-only，使用 `set_run_step_done(run_id, stage_id, item_id, done)`）。
+  - 圖片：`set_template_image_path()` 改為 import-copy 到 `workflow_assets/` 下安全相對路徑（防路徑穿越），加「貼上截圖」（`QApplication.clipboard().image()`）；尺寸 `{width, height}` 持久化於 `context_snapshot`。
+  - Action registry 按鈕改名：「新增流程模板」「由模板建立執行流程」「完成/取消完成選取步驟」「套用執行流程回模板」。
+  - 更新 `tests/test_slice27_work_records.py`：tab-list 斷言（`page._tabs.count() == 3`）→ 改為「無 QTabWidget / tabs 不可見」；action contract label 改名斷言。
+  - `tests/test_slice28_canvas_notes.py` 保留原樣（canvas 方法仍需存在）。
+- 人工 Windows UI 驗收（1366×768 / 1920×1080 / 125%/150%）仍未完成。
+
+### Recommended Next Step
+
+1. 在終端機確認 `python -m pytest -q` 全套通過。
+2. 開新 session，從 `work_records_page.py` + `tests/test_slice27_work_records.py` 讀起，實作模組 3。
+
+### Read Next
+
+1. `.ai/CURRENT_STATE.md`
+2. `.ai/TASKS.md`
+3. `src/taxops/ui/pages/work_records_page.py`（模組 3 起點）
+4. `tests/test_slice27_work_records.py`（tab-list + contract label 斷言位置）
+5. `tests/test_slice28_canvas_notes.py`（canvas UI 方法需保留）
+
+---
+
+## Latest Handoff Update (2026-05-29 - v0.21.0 UX/data correction in progress)
+
+### Completed
+
+- Removed the dashboard/control panel from UI, action registry, services, repositories, settings defaults, and smoke checklist.
+- Fixed task bulk-create UX by selecting newly created tasks after refresh, making bulk delete/edit immediately available.
+- Reworked Work Records workflow first-pass UX:
+  - Added add/edit/delete template actions.
+  - Added modal workflow template editor using stage lines and `-` step lines.
+  - Added right-side workflow detail preview and optional template image preview.
+- Rebalanced Work Records notes so the canvas has most of the width and the ID column is hidden.
+- Fixed error review creation visibility by selecting and scrolling to the new review row.
+- Added payment follow-up template support:
+  - `payment_follow_up` template type.
+  - Built-in `欠款催繳通知` template via migration `0024_payment_follow_up_template`.
+  - Variables `payment_records`, `outstanding_amount`, `overdue_amount`, `payment_due_date`.
+  - Variables derive from client-scoped recurring billing occurrences.
+- Verified official source split:
+  - MOF `BGMOPEN1.zip` is the current tax-cache source.
+  - MOEA/GCIS Swagger is the correct source for company/business registration and business-item data.
+- 2026-05-31 Codex review/hardening:
+  - Added render-time defense for canvas notes. `WorkRecordsPage` now sanitizes stored text-box HTML and rejects unsafe image asset paths when loading scene JSON, protecting against direct SQL/old-data bypasses.
+  - `CanvasNotesService.export_pdf()` now normalizes scene JSON before rendering, and PDF text rendering sanitizes HTML again as defense in depth.
+  - Corrected `.ai/CURRENT_STATE.md` wording: the removed toggle is the dashboard/control-panel toggle, not the normal sidebar collapse/expand toggle.
+
+### Modified Files
+
+- `.ai/CURRENT_STATE.md`
+- `.ai/TASKS.md`
+- `.ai/DECISIONS.md`
+- `.ai/HANDOFF.md`
+- `pyproject.toml`
+- `src/taxops/__init__.py`
+- `src/taxops/db/migrations/__init__.py`
+- `src/taxops/db/migrations/_m0024_payment_follow_up_template.py`
+- `src/taxops/repositories/work_records.py`
+- `src/taxops/services/generated_messages.py`
+- `src/taxops/services/templates.py`
+- `src/taxops/services/work_records.py`
+- `src/taxops/ui/main_window.py`
+- `src/taxops/ui/action_registry.py`
+- `src/taxops/ui/pages/tasks_page.py`
+- `src/taxops/ui/pages/work_records_page.py`
+- Dashboard page/service/repository files were deleted.
+- Targeted tests were updated for dashboard removal, v0.21 migration, and payment variables.
+
+### Verification
+
+- `python -m compileall -q src tests/test_slice14_dashboard.py tests/test_slice23_dashboard_dock.py tests/test_slice27_work_records.py tests/test_templates.py tests/test_generated_messages.py` => passed.
+- `python -m pytest tests/test_slice14_dashboard.py tests/test_slice23_dashboard_dock.py tests/test_ui_action_contracts.py -q` => 14 passed.
+- `python -m pytest tests/test_templates.py tests/test_generated_messages.py tests/test_db_migrations.py -q` => 64 passed.
+- `python -m pytest tests/test_slice19a_navigation.py -q` => 14 passed.
+- `python -m pytest tests/test_slice21e_tasks_ui.py tests/test_slice27_work_records.py tests/test_slice28_canvas_notes.py -q` => 26 passed.
+- `python -m pytest -q` => 977 passed, 1 skipped (2026-05-31 rerun).
+- Grouped verification for the rest of the suite passed, except the two real BGMOPEN1 import settings smoke tests:
+  - 158 passed.
+  - 48 passed.
+  - 59 passed.
+  - 48 passed.
+  - 51 passed.
+  - 26 passed.
+  - 39 passed.
+  - 5 passed, 2 deselected for non-real-import settings smoke.
+  - 58 passed.
+  - 87 passed.
+  - 53 passed.
+- `python -m build_tools.package_windows` => built `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`.
+- `python -m build_tools.smoke_test_exe` => automated smoke passed.
+- `dist/TaxOpsControlDesk-v0.21.0-windows.zip` was created.
+- Offscreen UI geometry audit covered all 11 pages at 1366x768 and 1920x1080; no visible widget clipping detected. Headless CJK glyphs rendered as squares because the offscreen environment lacks the real UI font, so manual Windows DPI/font acceptance is still required.
+
+### Remaining
+
+- Manual UI acceptance remains pending.
+- Full GCIS company/business registration import is not implemented; it should be a separate schema/importer, not an extension of the existing BGMOPEN1 tax-cache importer.
+
+### Recommended Next Step
+
+Run full suite, then rebuild/package if v0.21.0 should be released. For full Taiwan company/business data, start a separate GCIS integration slice with schema design first.
+
+### Read Next
+
+1. `.ai/spec-kit.md`
+2. `.ai/CURRENT_STATE.md`
+3. `.ai/TASKS.md`
+4. `.ai/DECISIONS.md`
+
+---
+
 ## Latest Handoff Update (2026-05-29 - v0.20.0 release closeout)
 
 ### Completed

@@ -129,7 +129,10 @@ def test_table_shows_task_after_service_create(page, container, eng_id):
     )
     page._refresh()
     assert page._table.rowCount() == 1
-    assert page._table.item(0, 1).text() == "顯示測試"
+    from taxops.ui.pages.tasks_page import _COLUMN_ORDER
+
+    title_col = _COLUMN_ORDER.index("title")
+    assert page._table.item(0, title_col).text() == "顯示測試"
 
 
 def test_empty_state_hidden_when_tasks_exist(page, container, eng_id):
