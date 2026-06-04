@@ -138,6 +138,7 @@ class RegistryPage(QWidget):
             clients = self._container.clients.list_clients(limit=500, offset=0)
         except Exception:
             _log.warning("failed to load clients into registry page combo")
+            self._client_combo.addItem("（客戶資料載入失敗，請重新整理）", None)
             return
         for c in clients:
             self._client_combo.addItem(f"{c.client_code}  {c.client_name}", c.id)

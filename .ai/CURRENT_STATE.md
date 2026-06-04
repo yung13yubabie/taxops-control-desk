@@ -1,5 +1,32 @@
 # CURRENT_STATE
 
+## 2026-06-05 Current Development State - v0.24.0 UI Slop Follow-up
+
+- v0.24.0 UI Slop follow-up is implemented in the current worktree, not committed.
+- Completed S1-S4 handoff items that were still actionable:
+  - S1 design tokens are in `src/taxops/ui/style.py`; recurring billing / late fee hardcoded status colors were replaced with tokens.
+  - S2 added a reusable `EmptyState` widget and CTA wiring for clients, engagements, tasks, templates, document requests, and work-record workflow templates.
+  - S3 added `src/taxops/ui/widgets/table_builder.py` and safely applied it to TasksPage + TemplatesPage first.
+  - S4 split the Work Records workflow-template dialog into `src/taxops/ui/dialogs/work_records_dialogs.py`; `DocumentItemTemplateDialog` was already split before this pass.
+- Slice 15 regression remains fixed: `GenerateMessageDialog._on_copy()` persists `generated_messages`, writes audit through the service, and copies authoritative DB `row.body`.
+- Verification:
+  - `python -m compileall -q src tests` => passed.
+  - Targeted UI/data tests => 47 passed + 125 passed.
+  - Full `python -m pytest -q` => **1013 passed, 1 skipped**.
+- Remaining acceptance: real Windows manual UI acceptance across 1366x768, 1920x1080, DPI 100%/125%/150%.
+
+---
+
+## 2026-06-04 Current Development State - v0.23.0 Bug Audit Fix Wave + UI Slop Review
+
+- v0.23.0 bug-audit fixes are implemented in the current worktree, not committed.
+- `.ai/BUG_AUDIT_2026-06-04.md` remains the source issue list, but `.ai/TASKS.md` and `.ai/HANDOFF.md` now mark C1/H1-H21 style fixes as completed or triaged.
+- v0.24.0 UI Slop work was later completed in the 2026-06-05 follow-up above.
+- Codex review found and fixed a Slice 15 regression: `GenerateMessageDialog._on_copy()` now persists `generated_messages`, writes audit via service, and copies authoritative DB `row.body` instead of stale preview text.
+- Verification for the latest worktree completed in the 2026-06-05 follow-up above.
+
+---
+
 ## 2026-06-04 Current Development State - v0.22.0 DB Atomic Audit Fix
 
 - v0.22.0 DB atomicity fix is implemented in the current worktree, not committed.

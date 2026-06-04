@@ -125,6 +125,7 @@ class GenerateMessageDialog(QDialog):
             self._save_btn.setEnabled(False)
             self._copy_btn.setEnabled(False)
         except Exception:
+            _log.warning("template preview failed for template_id=%r", template_id, exc_info=True)
             self._preview.setPlainText("[預覽失敗：內部錯誤]")
             self._save_btn.setEnabled(False)
             self._copy_btn.setEnabled(False)
@@ -144,9 +145,11 @@ class GenerateMessageDialog(QDialog):
         return None
 
     def _on_copy(self) -> None:
-        body = self._preview.toPlainText()
-        if body:
-            QApplication.clipboard().setText(body)
+        self._copy_btn.setEnabled(False)
+        row = self._generate()
+        if row is not None:
+            QApplication.clipboard().setText(row.body)
+        self._copy_btn.setEnabled(True)
 
     def _on_save(self) -> None:
         self._save_btn.setEnabled(False)

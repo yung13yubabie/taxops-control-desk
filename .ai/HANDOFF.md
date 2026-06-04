@@ -1,5 +1,284 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-06-05 - v0.24.0 完成，全套通過)
+
+### 狀態
+- **版本**：pyproject.toml + `__init__.py` 已更新為 **0.24.0**
+- **全套測試**：`python -m pytest -q` → **1013 passed, 1 skipped**（2026-06-05 確認）
+- **工作樹狀態**：所有修改尚未 git commit（自 v0.22.0 起累積所有 working dir 修改）
+- **下一個目標**：真機 Windows UI acceptance（1366x768 / 1920x1080 / DPI 100%/125%/150%），通過後打包 v0.24.0 EXE
+
+### v0.24.0 本輪完成項目
+
+**S1（設計系統 Token）— 已確認完成**
+- `style.py`：STATUS_PENDING/CONFIRMED/SKIPPED/OVERDUE 色系 + WARNING/INFO + SPACING + TEXT/BORDER alias 全部齊備
+- `recurring_billing_page.py`：`_STATUS_COLOR` dict 已改用 style.py token
+- `late_fee_page.py`：`#B45309`/`#FEF3C7` 已改用 `STATUS_PENDING_FG`/`STATUS_PENDING_BG`
+
+**S2（Empty State + CTA）— 已確認完成**
+- 新增 `src/taxops/ui/widgets/empty_state.py`
+- 6 個頁面皆有 EmptyState widget + action_button 連線：clients/engagements/tasks/templates/document_requests/work_records
+
+**S3（重複代碼提取）— 已確認完成**
+- 新增 `src/taxops/ui/widgets/table_builder.py`（`build_standard_table` 函數）
+- TasksPage + TemplatesPage 已套用
+
+**S4（大檔案拆分）— 已確認完成**
+- 新增 `src/taxops/ui/dialogs/work_records_dialogs.py`（`WorkflowTemplateDialog`）
+- `document_item_template_dialog.py` 已在前輪拆出，本輪確認
+
+**本 session 追加修復（2026-06-05）**
+- M3：`bulk_import_wizard.py` setMinimumSize 高度 600 → 500，resize 640 → 560
+- M4：`document_requests_page.py` `_splitter.setStretchFactor(0,1)/(1,2)`
+- registry_page.py：`_load_clients()` except 加「客戶資料載入失敗」下拉選項，不再靜默
+- `document_requests_page.py`：context banner 硬碼色改用 `INFO_BG`/`INFO_FG` token
+- `work_records_page.py`：workflow image border/color 改用 `BORDER_COLOR`/`TEXT_MUTED`
+
+**v0.23.0 所有 Bug Audit 修復（C1 + H1-H21 + M16-M22 + M24）— 已確認完成**
+
+### 剩餘待辦
+- **真機 Windows UI 驗收**（必須在宣布 release 前完成）
+- M2: container.py 服務登記（低優先，現行架構可用）
+- M23: 滯納金 needs_manual_review migration（需規劃）
+- Keyboard tab order（QDialog setTabOrder）— 低優先
+
+### git 操作提醒
+執行以下指令 commit 並建立 v0.24.0：
+```
+cd C:\Users\LIN\taxops-control-desk
+git add -u
+git add src/taxops/ui/widgets/empty_state.py src/taxops/ui/widgets/table_builder.py
+git add src/taxops/ui/dialogs/work_records_dialogs.py .ai/BUG_AUDIT_2026-06-04.md
+git commit -m "feat: v0.24.0 UI slop fixes + bug audit complete"
+```
+
+---
+
+## Latest Handoff Update (2026-06-04 - v0.23.0 完成 + UI Slop 審計完成，v0.24.0 待修)
+
+### 狀態
+- **v0.23.0 全套測試**：`python -m pytest -q` → **1012 passed, 1 skipped**（確認）
+- **版本**：pyproject.toml + `__init__.py` 已更新為 0.23.0
+- **下一個目標**：v0.24.0 UI Slop 修復（已有完整審計報告）
+
+### UI Slop 審計結果（2026-06-04 完成）
+
+深度 7 維度審計，平均品質分 **4.6/10**，主要問題：
+
+**維度 1 — 視覺統一性（5/10）**
+- `style.py` 缺少：狀態色系（pending/confirmed/skipped）、警告色、Spacing token
+- hardcoded 顏色散落：`recurring_billing_page.py`（`#F59E0B`, `#16A34A`, `#6B7280`, `#9CA3AF`）、`late_fee_page.py`（`#B45309`, `#FEF3C7`）
+- 按鈕樣式有 3 套獨立定義，未統一
+
+**維度 2 — 互動狀態缺漏（4/10）**
+- `work_records_page.py`、`document_requests_page.py` 無 empty state
+- 現有 4 個頁面的 empty state 只有文字，無 CTA 按鈕
+- `document_requests_page.py:511-542` 載入無 loading 指示
+
+**維度 3 — 鍵盤導覽（6/10）**
+- QDialog 子類無 `setTabOrder`
+- 工具列有 2 個按鈕缺 tooltip（work_records_page）
+
+**維度 4 — 複雜度（5/10）**
+- `work_records_page.py` **1230 行**（最大風險）
+- `document_requests_page.py` **1187 行**
+- `settings_page.py` 840 行
+- `_parse_stage_text()` 8 層巢狀
+
+**維度 5 — 重複代碼（3/10）**
+- QTableWidget 初始化模式重複 **9 次**（所有 page）
+- 異常處理 `try/except + QMessageBox` 模式重複 **15+ 次**
+- Empty state label `"color: #777; padding: 24px;"` 重複 4 次
+
+**維度 6 — Happy Path 偏置（5/10）**
+- `registry_page.py:137` except 只 log，UI 無反饋
+
+**維度 7 — Hardcoded 值（4/10）**
+- setMinimumWidth 有 9 種不同值（180～540），無常數
+- 中文字串未走 i18n：clients/engagements/tasks/templates empty state 文字
+
+### 下一個 Session 的工作任務（依優先級）
+
+**S1：style.py 擴充設計系統 Token**（低風險，高影響）
+在 `style.py` 的 `DANGER_HOVER_COLOR` 後加入：
+```python
+STATUS_PENDING_BG    = "#FEF3C7"   # amber-100
+STATUS_PENDING_FG    = "#B45309"   # amber-700
+STATUS_CONFIRMED_BG  = "#DCFCE7"   # green-100
+STATUS_CONFIRMED_FG  = "#16A34A"   # green-600
+STATUS_SKIPPED_BG    = "#F1F5F9"   # slate-100
+STATUS_SKIPPED_FG    = "#6B7280"   # gray-500
+STATUS_OVERDUE_BG    = "#FEE2E2"   # red-100
+STATUS_OVERDUE_FG    = "#DC2626"   # red-600
+STATUS_ARCHIVED_FG   = "#9CA3AF"   # gray-400
+WARNING_BG  = "#FEF9C3"
+WARNING_FG  = "#B45309"
+INFO_BG     = "#DBEAFE"
+INFO_FG     = "#1E3A8A"
+SPACING_XS=4; SPACING_SM=8; SPACING_MD=12; SPACING_LG=16; SPACING_XL=24
+TEXT_MUTED = _TEXT_MUTED
+TEXT_MAIN  = _TEXT
+BORDER_COLOR = _BORDER
+```
+然後更新：
+- `recurring_billing_page.py` 的 `_STATUS_COLOR` dict（~line 112）
+- `late_fee_page.py` 的 `#B45309`、`#FEF3C7` 色碼（~line 128, 166, 345）
+
+**S2：補 Empty State + CTA**（低風險，直接可感知）
+- `work_records_page.py`：在「工作紀錄」流程清單空時加 empty state + 「新增範本」CTA
+- `document_requests_page.py`：索件清單空時加 empty state + 「新增索件批次」CTA
+- `clients_page.py:146`、`engagements_page.py:217`、`tasks_page.py:158`、`templates_page.py:112`：在現有文字 label 下加對應的快速新增按鈕
+
+**S3：建立 `table_builder.py` + 提取重複**（中風險）
+新建 `src/taxops/ui/widgets/table_builder.py`：
+```python
+def build_standard_table(
+    columns: tuple[str, ...],
+    headers: dict[str, str],
+    stretch_col: str | None = None,
+    fixed_cols: dict[str, int] | None = None,
+) -> QTableWidget:
+    ...
+```
+先在 2-3 個頁面試用，確認測試通過再全面替換。
+
+**S4：大檔案拆分**（高風險，需謹慎）
+- `work_records_page.py` 把 `CreateWorkflowDialog`、`EditStageDialog` 等 dialog 類別移到 `src/taxops/ui/dialogs/work_records_dialogs.py`
+- `document_requests_page.py` 把 `DocumentItemTemplateDialog` 移到獨立 dialog 檔案
+
+### 下一個 Session 的啟動指令
+
+```
+請接手 C:\Users\LIN\taxops-control-desk
+先讀：.ai/HANDOFF.md .ai/TASKS.md
+目前版本：v0.23.0，1012 passed, 1 skipped（已確認）
+目標：v0.24.0 UI Slop 修復
+按照 HANDOFF.md 的 S1→S2→S3→S4 順序執行，每批修完跑 python -m pytest -q 確認不退步
+```
+
+### Read Next
+1. `src/taxops/ui/style.py` — S1 起點
+2. `src/taxops/ui/pages/recurring_billing_page.py` — S1 色碼替換
+3. `src/taxops/ui/pages/late_fee_page.py` — S1 色碼替換
+4. `src/taxops/ui/pages/clients_page.py`、`tasks_page.py` — S2 empty state
+
+---
+
+## Latest Handoff Update (2026-06-04 - v0.23.0 Bug Audit Fix Wave 完成)
+
+### Completed
+
+全部 BUG_AUDIT_2026-06-04.md 第一至五批修復完畢，共修 C1 + 20 HIGH（部分）+ MEDIUM 項目：
+
+**第一批（CRITICAL + 資料完整性）**
+- C1: `settings_page.py` 加 `closeEvent`，worker 執行中時 quit/wait(3000) 再關窗
+- H3: `recurring_billing.py` `generate_occurrences` 插入迴圈包 `with self._conn:`
+- H4: `backup.py` migration 失敗後 `raise BackupError("backup.restore_migrate_failed")`
+- H5: `backup.py` safety snapshot insert 移入 `with self._conn:`
+- H13: `settings_page.py` `_on_finished` 改 `try/finally` 確保 `worker.deleteLater()`
+
+**第二批（功能性 bug）**
+- H1: `engagements_page.py` 補 `back_to_engagements` Signal connect（返回按鈕修復）
+- H2: `action_registry.py` `_on_open_doc_requests` → `_on_open_engagement`
+- H6: `recurring_billing.py` 加 `client_exists()` 前置檢查
+- H7-H12: tasks/clients_bulk/registry_download/attachments/generate_message_dialog/engagements 補靜默失敗 log
+
+**第三批（RWD/版面）**
+- H14: `mismatch_review_dialog.py` setMinimumSize `(1050,500)` → `(780,480)`
+- H15: `tasks_page.py` toolbar 改 FlowLayout
+- H16: `clients_page.py` toolbar 改 FlowLayout
+- H17/H18: `work_records_page.py` splitter setSizes 縮小
+- H19: `work_records_page.py` 圖片預覽改父視窗比例尺寸
+
+**第四批（安全/JSON驗證）**
+- H20: `canvas_notes.py` `safe_asset_path()` 加 resolve() 邊界驗證
+- H21: 移除 PDF 渲染和 UI 載入時的二次 HTML 消毒
+- M16-M19: canvas_notes JSON 大小上限 + page/freehand 型別驗證
+
+**第五批（MEDIUM）**
+- M21: `clients.py` LIKE fallback 補 short_name / contact_name
+- M22: `recurring_billing.py` cancel_occurrence 加 confirmed 狀態前置檢查
+- M24: `pyproject.toml` 依賴加版本 pin
+
+### Version
+- pyproject.toml + `__init__.py`: 0.22.0 → **0.23.0**
+
+### Verification
+- Full `python -m pytest -q` → 待確認（在背景跑）
+- 各批次針對性測試均已通過（70 + 131 + 36 + 24 + 43 passed）
+
+### Modified Files (主要)
+- `src/taxops/ui/pages/settings_page.py`
+- `src/taxops/services/recurring_billing.py`
+- `src/taxops/services/backup.py`
+- `src/taxops/repositories/recurring_billing.py`
+- `src/taxops/ui/pages/engagements_page.py`
+- `src/taxops/ui/action_registry.py`
+- `src/taxops/services/tasks.py`
+- `src/taxops/services/clients_bulk.py`
+- `src/taxops/services/registry_download.py`
+- `src/taxops/ui/pages/attachments_page.py`
+- `src/taxops/ui/dialogs/generate_message_dialog.py`
+- `src/taxops/ui/dialogs/mismatch_review_dialog.py`
+- `src/taxops/ui/pages/tasks_page.py`
+- `src/taxops/ui/pages/clients_page.py`
+- `src/taxops/ui/pages/work_records_page.py`
+- `src/taxops/services/canvas_notes.py`
+- `src/taxops/repositories/clients.py`
+- `src/taxops/i18n/errors.py`
+- `pyproject.toml`
+- `src/taxops/__init__.py`
+
+### Remaining
+- Manual Windows UI acceptance across 1366x768, 1920x1080, DPI 100%/125%/150%
+- M3/M4/M2/M23（低優先，見 TASKS.md）
+- GCIS 線上查詢仍未實作
+
+### Read Next
+1. `.ai/BUG_AUDIT_2026-06-04.md` — 完整清單（LOW 項目尚未處理）
+2. `.ai/TASKS.md`
+
+---
+
+## Latest Handoff Update (2026-06-04 - Bug Audit Wave 完成，v0.23.0 待修)
+
+### Context
+
+6 個平行 subagent 深度掃描完畢，產出完整 bug audit 報告。**尚未動任何程式碼**，下一個 session 負責修復。
+
+### 完整問題清單
+
+見 `.ai/BUG_AUDIT_2026-06-04.md`：
+- **1 CRITICAL**：settings_page.py 關窗時 QThread 未 quit/wait，可能 crash
+- **20 HIGH**：功能 bug（返回按鈕失效）+ 資料完整性（generate_occurrences 無交易）+ 靜默失敗（9個）+ RWD（6個）+ 安全（2個）
+- **24 MEDIUM**：各種邊界行為缺口
+- **LOW**：可忽略或排 backlog
+
+### 下一個 session 的啟動指令
+
+```
+請接手 C:\Users\LIN\taxops-control-desk
+先讀：.ai/BUG_AUDIT_2026-06-04.md .ai/TASKS.md .ai/HANDOFF.md
+按照 BUG_AUDIT 的「推薦修復順序」，從第一批開始修復（C1 + H3 + H4 + H5 + H13），
+修完後跑 python -m pytest -q 確認不退步，再繼續第二批。
+```
+
+### 修復基準
+
+- 測試基線：**1012 passed, 1 skipped**（v0.22.0）
+- 目標版本：**v0.23.0**（修完第一批 + 第二批後發版）
+- 每批修完需跑 `python -m pytest -q` 確認
+
+### Read Next
+
+1. `.ai/BUG_AUDIT_2026-06-04.md` — 完整問題清單與修法
+2. `.ai/TASKS.md` — 優先順序 TODO 清單
+3. `src/taxops/ui/pages/settings_page.py` — C1 / H13 修法起點
+4. `src/taxops/services/recurring_billing.py` — H3 / H6 修法起點
+5. `src/taxops/services/backup.py` — H4 / H5 修法起點
+
+---
+
 ## Latest Handoff Update (2026-06-04 - v0.22.0 DB Atomic Audit Fix)
 
 ### Completed

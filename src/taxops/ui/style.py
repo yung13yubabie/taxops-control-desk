@@ -15,6 +15,36 @@ _INPUT_BG = "#FFFFFF"
 DANGER_COLOR = "#DC2626"
 DANGER_HOVER_COLOR = "#B91C1C"
 
+# ── Status colour tokens ────────────────────────────────────────────
+# Used by recurring billing occurrences, engagement status, task status
+STATUS_PENDING_BG    = "#FEF3C7"   # amber-100
+STATUS_PENDING_FG    = "#B45309"   # amber-700
+STATUS_CONFIRMED_BG  = "#DCFCE7"   # green-100
+STATUS_CONFIRMED_FG  = "#16A34A"   # green-600
+STATUS_SKIPPED_BG    = "#F1F5F9"   # slate-100
+STATUS_SKIPPED_FG    = "#6B7280"   # gray-500
+STATUS_OVERDUE_BG    = "#FEE2E2"   # red-100
+STATUS_OVERDUE_FG    = "#DC2626"   # red-600
+STATUS_ARCHIVED_FG   = "#9CA3AF"   # gray-400
+
+# ── Warning / info colour tokens ────────────────────────────────────
+WARNING_BG  = "#FEF9C3"   # yellow-100
+WARNING_FG  = "#B45309"   # amber-700
+INFO_BG     = "#DBEAFE"   # blue-100
+INFO_FG     = "#1E3A8A"   # blue-900
+
+# ── Spacing constants (px) ───────────────────────────────────────────
+SPACING_XS  = 4
+SPACING_SM  = 8
+SPACING_MD  = 12
+SPACING_LG  = 16
+SPACING_XL  = 24
+
+# ── Text muted (exported for inline use) ────────────────────────────
+TEXT_MUTED   = _TEXT_MUTED   # "#64748B" — alias for external use
+TEXT_MAIN    = _TEXT         # "#0F172A" — alias for external use
+BORDER_COLOR = _BORDER       # "#E2E8F0" — alias for external use
+
 # Small toolbar buttons embedded inside per-row widgets (e.g. recurring billing
 # plan/line rows). The global QPushButton style is meant for top-level toolbars
 # and is too tall; these compact variants carry the same colour language so the

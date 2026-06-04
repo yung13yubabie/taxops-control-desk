@@ -1,19 +1,108 @@
 # TASKS
 
-## 2026-06-04 Current Task State - v0.22.0 DB Atomic Audit Fix
+## 2026-06-04 Current Task State - v0.23.0 Bug Audit Fix Wave（已完成）
 
-### TODO
+> 完整問題清單見 `.ai/BUG_AUDIT_2026-06-04.md`。
+
+### CODEX REVIEW ADDENDUM — Slice 15 Regression Fixed
+
+- [DONE] `GenerateMessageDialog._on_copy()` no longer copies stale preview text only.
+- [DONE] Copy now calls `GeneratedMessagesService.generate()`, persists `generated_messages`, writes `gen_message.create` audit, and copies authoritative DB `row.body`.
+- [DONE] Added regression test: `test_dialog_copy_persists_audits_and_uses_db_body`.
+- [DONE] Latest full-suite verification: `python -m pytest -q` => **1013 passed, 1 skipped**.
+
+### DONE — 第一批（CRITICAL + 資料完整性）✅
+
+- [C1] settings_page.py 加 closeEvent，確保 worker quit/wait 後再關窗（防 crash）
+- [H3] recurring_billing.py generate_occurrences 加 `with self._conn:` 包裹整個插入迴圈
+- [H4] backup.py restore_backup migration 失敗後 re-raise BackupError（不繼續宣告完成）
+- [H5] backup.py restore 前 safety snapshot insert 移入 `with self._conn:` 內
+- [H13] settings_page.py _on_finished 改 try/finally 確保 worker.deleteLater() 必定執行
+
+## 2026-06-04 Current Task State - v0.24.0 UI Slop 修復
+
+> 審計基準：7 維度審計，平均 4.6/10。完整報告見 HANDOFF.md。
+> 測試基線：**1012 passed, 1 skipped**（v0.23.0）
+
+### DONE — S1（設計系統 Token）低風險，最優先
+
+- [DONE] style.py 加 STATUS_PENDING/CONFIRMED/SKIPPED/OVERDUE 色系 + WARNING/INFO + SPACING + TEXT/BORDER alias
+- [DONE] recurring_billing_page.py 的 `_STATUS_COLOR` dict 改用 style.py token
+- [DONE] late_fee_page.py 的 `#B45309`、`#FEF3C7` 改用 style.py token
+
+### DONE — S2（Empty State + CTA）低風險
+
+- [DONE] 新增 `src/taxops/ui/widgets/empty_state.py`。
+- [DONE] work_records_page.py 流程清單空時加 empty state + 「新增範本」CTA
+- [DONE] document_requests_page.py 索件清單空時加 empty state + 「新增索件批次」CTA
+- [DONE] clients_page/engagements_page/tasks_page/templates_page 現有 empty label 下加快速新增按鈕
+
+### DONE — S3（重複代碼提取）中風險
+
+- [DONE] 新建 `src/taxops/ui/widgets/table_builder.py`（封裝 QTableWidget 標準初始化）
+- [DONE] 已試用於 TasksPage + TemplatesPage；後續若要全面替換，需分頁小步做 regression。
+
+### DONE — S4（大檔案拆分）高風險
+
+- [DONE] work_records_page.py 把 workflow template dialog 移到 `ui/dialogs/work_records_dialogs.py`
+- [DONE] document_requests_page.py 的 `DocumentItemTemplateDialog` 已在本輪前拆到 `ui/dialogs/document_item_template_dialog.py`，本輪確認不重做。
+
+### DONE — v0.24.0 追加修復（2026-06-05）
+
+- [M3] bulk_import_wizard.py setMinimumSize 高度 600 → 500；resize 640 → 560
+- [M4] document_requests_page.py `_splitter.setStretchFactor(0,1)` / `(1,2)`
+- registry_page.py `_load_clients()` except 加 "客戶資料載入失敗" 提示項目
+- document_requests_page.py context banner hardcoded `#DBEAFE`/`#1E3A8A` → `INFO_BG`/`INFO_FG`
+- work_records_page.py workflow image border/color → `BORDER_COLOR`/`TEXT_MUTED`
+- 版本：0.23.0 → **0.24.0**；全套 `python -m pytest -q` → **1013 passed, 1 skipped**
+
+### TODO — 持續待驗
 
 - Run real Windows manual UI acceptance across 1366x768, 1920x1080, and 100%/125%/150% scaling.
 - Design a separate GCIS company/business-registration data model and importer if full nationwide company/business-item data is required.
-- Continue /ui-ux-pro-max redesign analysis (interrupted at grill-me Q1 answer).
-- Continue /debugging-and-error-recovery and /systematic-debugging deep scan.
+- [M2]  container.py 加入 clients_bulk / registry_download 服務（Low priority — 現行架構可用）
+- [M23] 滯納金 needs_manual_review：新增 migration + confirm_manual_review() 方法（需規劃）
 
 ### DOING
 
 - No active implementation slice is currently in progress.
 
-### DONE (2026-06-04)
+### DONE (2026-06-04) — v0.23.0 Bug Audit Fix Wave
+
+**第一批（CRITICAL + 資料完整性）**
+- [C1] settings_page.py 加 closeEvent（QThread 關窗 crash 防護）
+- [H3] recurring_billing.py generate_occurrences 加 `with self._conn:` 交易包裹
+- [H4] backup.py restore_backup migration 失敗後 re-raise BackupError
+- [H5] backup.py restore 前 safety snapshot insert 移入 `with self._conn:`
+- [H13] settings_page.py _on_finished 改 try/finally 確保 worker.deleteLater()
+
+**第二批（功能性 bug）**
+- [H1] engagements_page.py 補 `back_to_engagements` Signal connect（返回按鈕修復）
+- [H2] action_registry.py 修正 `_on_open_doc_requests` → `_on_open_engagement`
+- [H6] recurring_billing.py create_plan_with_lines 加 client_id 存在性檢查
+- [H7-H12] tasks/clients_bulk/registry_download/attachments/generate_message_dialog/engagements 補靜默失敗 log
+
+**第三批（RWD/版面）**
+- [H14] mismatch_review_dialog.py setMinimumSize(1050, 500) → (780, 480)
+- [H15] tasks_page.py toolbar 改 FlowLayout
+- [H16] clients_page.py toolbar 改 FlowLayout
+- [H17/H18] work_records_page.py splitter setSizes 修正
+- [H19] work_records_page.py 圖片預覽改相對尺寸
+
+**第四批（安全/JSON驗證）**
+- [H20] canvas_notes.py safe_asset_path() 加 resolve() 路徑穿越防護
+- [H21] 移除 PDF 渲染和 UI 載入時的二次 HTML 消毒
+- [M16-M19] canvas_notes.py JSON 大小上限 + page/freehand 型別驗證
+
+**第五批（MEDIUM）**
+- [M21] clients.py search_clients LIKE fallback 補 short_name / contact_name
+- [M22] recurring_billing.py cancel_occurrence 加 confirmed 狀態前置檢查
+- [M24] pyproject.toml 依賴加版本 pin
+
+- Full `python -m pytest -q` → **待確認 v0.23.0 最終結果**
+- Version bumped to 0.22.0（v0.23.0 完成後請更新）
+
+### DONE (2026-06-04) — v0.22.0
 
 - Fixed DB mutation + audit non-atomicity (major technical debt):
   - Removed `conn.commit()` from 13 repository mutation files.

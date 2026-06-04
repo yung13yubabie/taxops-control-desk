@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
+
+_log = logging.getLogger(__name__)
 
 from ..core.text import sanitize_user_text
 from ..repositories.clients import ClientsRepository
@@ -338,6 +341,7 @@ def import_validated(
             errors.append((vrow.row_number, exc.code))
             skipped += 1
         except Exception:
+            _log.error("bulk_import: unexpected error row=%d", vrow.row_number, exc_info=True)
             errors.append((vrow.row_number, "system.unexpected"))
             skipped += 1
 

@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -26,6 +25,8 @@ from ...services.container import ServiceContainer
 from ...services.templates import TemplateValidationError, TemplatesService
 from ..dialogs.template_form_dialog import TemplateFormDialog
 from ..style import DANGER_COLOR, toolbar_icon
+from ..widgets.empty_state import EmptyState
+from ..widgets.table_builder import build_standard_table
 
 _COLUMN_ORDER = ("id", "name", "template_type", "is_builtin", "updated_at")
 
@@ -98,22 +99,21 @@ class TemplatesPage(QWidget):
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
 
-        self._table = QTableWidget(0, len(_COLUMN_ORDER))
-        self._table.setHorizontalHeaderLabels([_TABLE_HEADERS[c] for c in _COLUMN_ORDER])
-        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._table.horizontalHeader().setSectionResizeMode(
-            _COLUMN_ORDER.index("name"), QHeaderView.ResizeMode.Stretch
+        self._table = build_standard_table(
+            _COLUMN_ORDER,
+            _TABLE_HEADERS,
+            stretch_col="name",
         )
-        self._table.verticalHeader().setVisible(False)
-        self._table.setAlternatingRowColors(True)
         left_layout.addWidget(self._table)
 
-        self._empty_label = QLabel("目前沒有模板")
-        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_label.setObjectName("EmptyState")
-        self._empty_label.hide()
-        left_layout.addWidget(self._empty_label)
+        self._empty_state = EmptyState(
+            "目前沒有模板",
+            detail="新增模板後可用客戶或案件資料套版產生訊息。",
+            action_text="新增模板",
+        )
+        self._empty_label = self._empty_state.title_label
+        self._empty_state.hide()
+        left_layout.addWidget(self._empty_state)
 
         self._error_label = QLabel("載入模板失敗，請重新整理或重新啟動程式")
         self._error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -140,6 +140,8 @@ class TemplatesPage(QWidget):
         outer.addWidget(splitter, stretch=1)
 
         self._new_btn.clicked.connect(self._on_new_template)
+        if self._empty_state.action_button is not None:
+            self._empty_state.action_button.clicked.connect(self._on_new_template)
         self._edit_btn.clicked.connect(self._on_edit_template)
         self._delete_btn.clicked.connect(self._on_delete_template)
         self._trial_btn.clicked.connect(self._on_trial_template)
@@ -182,10 +184,10 @@ class TemplatesPage(QWidget):
         if not load_error:
             has_rows = len(templates) > 0
             self._table.setVisible(has_rows)
-            self._empty_label.setVisible(not has_rows)
+            self._empty_state.setVisible(not has_rows)
         else:
             self._table.setVisible(False)
-            self._empty_label.setVisible(False)
+            self._empty_state.setVisible(False)
         self._on_selection_changed()
 
     def _selected_template_id(self) -> int | None:

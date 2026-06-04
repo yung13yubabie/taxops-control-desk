@@ -32,6 +32,8 @@ from ..dialogs.bulk_import_wizard import BulkImportWizard
 from ..dialogs.edit_client_dialog import EditClientDialog
 from ..dialogs.new_client_dialog import NewClientDialog
 from ..style import toolbar_icon
+from ..widgets.empty_state import EmptyState
+from ..widgets.flow_layout import FlowLayout
 
 _PAGE_SIZE = 50
 
@@ -104,8 +106,6 @@ class ClientsPage(QWidget):
         outer.addLayout(search_row)
 
         # Action toolbar
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(8)
         self._new_btn = QPushButton(BUTTON_LABELS["clients.new"])
         self._edit_btn = QPushButton("編輯客戶")
         self._delete_btn = QPushButton("刪除客戶")
@@ -128,6 +128,8 @@ class ClientsPage(QWidget):
         self._restore_btn.setEnabled(False)
         self._purge_btn.setEnabled(False)
 
+        toolbar_widget = QWidget()
+        toolbar = FlowLayout(toolbar_widget, h_spacing=6, v_spacing=6)
         for btn in (
             self._new_btn,
             self._edit_btn,
@@ -139,14 +141,15 @@ class ClientsPage(QWidget):
             self._refresh_btn,
         ):
             toolbar.addWidget(btn)
-        toolbar.addStretch(1)
-        outer.addLayout(toolbar)
+        outer.addWidget(toolbar_widget)
 
-        # Empty state label
-        self._empty_label = QLabel("尚無客戶資料。請按「新增客戶」建立第一筆資料。")
-        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_label.setStyleSheet("color: #777; padding: 24px;")
-        outer.addWidget(self._empty_label, stretch=1)
+        self._empty_state = EmptyState(
+            "尚無客戶資料",
+            detail="建立第一筆客戶後，案件、待辦與訊息模板才有可選來源。",
+            action_text="新增客戶",
+        )
+        self._empty_label = self._empty_state.title_label
+        outer.addWidget(self._empty_state, stretch=1)
 
         # Table with sortable headers
         self._table = QTableWidget(0, len(_COLUMN_ORDER))
@@ -186,6 +189,8 @@ class ClientsPage(QWidget):
 
         # Connect signals
         self._new_btn.clicked.connect(self.on_new_client)
+        if self._empty_state.action_button is not None:
+            self._empty_state.action_button.clicked.connect(self.on_new_client)
         self._edit_btn.clicked.connect(self.on_edit_client)
         self._delete_btn.clicked.connect(self.on_delete_client)
         self._restore_btn.clicked.connect(self.on_restore_client)
@@ -512,7 +517,7 @@ class ClientsPage(QWidget):
                     item.setData(Qt.ItemDataRole.UserRole, is_deleted)
                 self._table.setItem(row_idx, col_idx, item)
 
-        self._empty_label.setVisible(self._total == 0)
+        self._empty_state.setVisible(self._total == 0)
         self._table.setVisible(self._total > 0)
         self._update_pagination_controls()
         self._apply_column_visibility()

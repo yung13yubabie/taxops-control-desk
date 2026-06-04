@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QPixmap
@@ -378,7 +381,7 @@ class AttachmentsPage(QWidget):
                 self._preview_stack.setCurrentIndex(_PREVIEW_TEXT)
                 return
             except OSError:
-                pass
+                _log.warning("preview: failed to read %s", file_path, exc_info=True)
 
         size_kb = f"{att.file_size / 1024:.1f} KB"
         self._preview_meta.setText(

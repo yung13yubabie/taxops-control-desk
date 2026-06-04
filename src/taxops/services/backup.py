@@ -98,12 +98,13 @@ class BackupService:
             with sqlite3.connect(str(before_path)) as dest_conn:
                 self._conn.backup(dest_conn)
             before_size = before_path.stat().st_size
-            self._repo.insert(
-                filename=before_filename,
-                backup_path=str(before_path),
-                file_size=before_size,
-                notes="before_restore",
-            )
+            with self._conn:
+                self._repo.insert(
+                    filename=before_filename,
+                    backup_path=str(before_path),
+                    file_size=before_size,
+                    notes="before_restore",
+                )
         except BackupError:
             raise
         except Exception as exc:
@@ -120,7 +121,8 @@ class BackupService:
         try:
             apply_migrations(self._conn)
         except Exception:
-            _log.error("backup.restore: apply_migrations failed — restart recommended", exc_info=True)
+            _log.error("backup.restore: apply_migrations failed", exc_info=True)
+            raise BackupError("backup.restore_migrate_failed")
 
         with self._conn:
             self._audit.record(

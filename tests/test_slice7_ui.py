@@ -201,3 +201,26 @@ def test_dialog_save_records_audit(qapp, conn, container):
     ).fetchone()
     assert row is not None
     assert row["action"] == "gen_message.create"
+
+
+def test_dialog_copy_persists_audits_and_uses_db_body(qapp, conn, container):
+    _, req_id = _seed(conn)
+    dlg = GenerateMessageDialog(
+        gen_svc=container.gen_messages,
+        templates_svc=container.templates,
+        request_id=req_id,
+    )
+    dlg._template_combo.setCurrentIndex(1)
+    dlg._preview.setPlainText("stale preview text")
+
+    dlg._on_copy()
+
+    msgs = container.gen_messages.list_by_request(req_id)
+    assert len(msgs) == 1
+    assert QApplication.clipboard().text() == msgs[0].body
+    assert QApplication.clipboard().text() != "stale preview text"
+
+    row = conn.execute(
+        "SELECT action FROM audit_logs WHERE action = 'gen_message.create' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert row is not None

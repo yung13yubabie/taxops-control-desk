@@ -27,7 +27,7 @@ from typing import Callable, Any
 _log = logging.getLogger(__name__)
 
 from PySide6.QtCore import QThread, Qt, Signal
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QCloseEvent, QGuiApplication
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -403,8 +403,10 @@ class SettingsPage(QWidget):
             self._active_worker = None
             self._set_slice2_buttons_enabled(True)
             self._refresh_cache_status()
-            on_success(result)
-            worker.deleteLater()
+            try:
+                on_success(result)
+            finally:
+                worker.deleteLater()
 
         def _on_errored(code: str) -> None:
             progress.close()
@@ -734,6 +736,16 @@ class SettingsPage(QWidget):
             )
             return
         QMessageBox.information(self, "已複製", "已複製路徑至剪貼簿")
+
+    # ------------------------------------------------------------------
+    # Window lifecycle
+    # ------------------------------------------------------------------
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        if self._active_worker and self._active_worker.isRunning():
+            self._active_worker.quit()
+            self._active_worker.wait(3000)
+        super().closeEvent(event)
 
     # ------------------------------------------------------------------
     # Backup / restore section (slice 11)

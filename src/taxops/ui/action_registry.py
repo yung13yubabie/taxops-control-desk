@@ -382,13 +382,13 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
     UIActionContract(
         button_label="管理索件批次",
         page=PAGE_ENGAGEMENTS,
-        handler="EngagementsPage._on_open_doc_requests",
+        handler="EngagementsPage._on_open_engagement",
         service=None,
         repository=None,
         success_text="",
         failure_text="",
         audit_action=None,
-        test_marker="test_open_doc_requests_from_engagement",
+        test_marker="test_enter_engagement_requests",
         enabled=True,
     ),
     UIActionContract(

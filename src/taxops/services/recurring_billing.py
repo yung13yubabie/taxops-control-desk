@@ -273,6 +273,8 @@ class RecurringBillingService:
             plan_inp.months_json, plan_inp.start_date, plan_inp.end_date,
             plan_inp.advance_notice_days,
         )
+        if not self._repo.client_exists(plan_inp.client_id):
+            raise RecurringBillingError("recurring_billing.client_not_found")
         for ln in lines_inp:
             if not ln.bill_to_name.strip():
                 raise RecurringBillingError("recurring_billing.bill_to_name.empty")
@@ -472,11 +474,10 @@ class RecurringBillingService:
         dates = _billing_dates(plan, until)
         lines = self._repo.list_lines(plan_id, active_only=True)
 
-        for line in lines:
-            for d in dates:
-                self._repo.insert_occurrence_if_missing(plan_id, line.id, d.isoformat())
-        if lines and dates:
-            self._repo.commit()
+        with self._conn:
+            for line in lines:
+                for d in dates:
+                    self._repo.insert_occurrence_if_missing(plan_id, line.id, d.isoformat())
 
         return self._repo.list_occurrences(plan_id=plan_id)
 
@@ -568,6 +569,8 @@ class RecurringBillingService:
         occ = self._repo.get_occurrence(occurrence_id)
         if occ is None:
             raise RecurringBillingError("recurring_billing.occurrence.not_found")
+        if occ.status == "confirmed":
+            raise RecurringBillingError("recurring_billing.occurrence.cannot_cancel_confirmed")
         row = self._repo.update_occurrence_status(
             occurrence_id=occurrence_id,
             status="cancelled",

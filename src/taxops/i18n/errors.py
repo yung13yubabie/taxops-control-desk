@@ -174,10 +174,12 @@ ERROR_MESSAGES: dict[str, str] = dict(
             "backup.invalid_file": "選取的檔案不是有效的 SQLite 備份，請重新選擇",
             "backup.before_restore.failed": "還原前備份失敗，已取消還原以保護現有資料",
             "backup.restore.failed": "還原失敗，現有資料已保持不變",
+            "backup.restore_migrate_failed": "還原後 schema 升級失敗，請重新啟動應用程式並確認資料是否完整",
             "registry.apply.no_client": "請先選擇要更新的客戶",
             "registry.apply.no_fields": "請至少勾選一個要套用的欄位",
             "registry.apply.no_diff": "選取欄位與客戶資料相同，無需更新",
             "registry.apply.failed": "套用失敗，請確認選取後再試",
+            "recurring_billing.client_not_found": "找不到指定客戶，固定開立方案無法建立",
             "recurring_billing.plan_name.empty": "請輸入方案名稱",
             "recurring_billing.frequency.invalid": "週期設定無效，請選擇有效週期",
             "recurring_billing.issue_day.invalid": "開立日須介於 1 至 31 之間",
@@ -198,6 +200,7 @@ ERROR_MESSAGES: dict[str, str] = dict(
             "recurring_billing.occurrence.not_pending": "此開立紀錄已確認或跳過，無法再次操作",
             "recurring_billing.confirmed_amount.non_positive": "確認金額必須大於零",
             "recurring_billing.confirmed_invoice_no.too_long": "發票號碼不可超過 50 個字元",
+            "recurring_billing.occurrence.cannot_cancel_confirmed": "已確認的開立紀錄無法取消，請先取消確認後再操作",
         }
     )
 )

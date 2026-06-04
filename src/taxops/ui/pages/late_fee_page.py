@@ -27,7 +27,7 @@ from ...core.clock import today_iso
 from ...i18n import error_message
 from ...i18n.status_labels import status_to_label
 from ...services.container import ServiceContainer
-from ..style import toolbar_icon
+from ..style import STATUS_PENDING_BG, STATUS_PENDING_FG, toolbar_icon
 from ..widgets.date_field import DateField
 from ...services.late_fee import (
     PERIOD_CODES,
@@ -125,7 +125,7 @@ class LateFeePage(QWidget):
         form_layout.addRow("", self._unlock_check)
         self._manual_date_hint = QLabel("")
         self._manual_date_hint.setWordWrap(True)
-        self._manual_date_hint.setStyleSheet("color: #B45309; font-size: 12px;")
+        self._manual_date_hint.setStyleSheet(f"color: {STATUS_PENDING_FG}; font-size: 12px;")
         form_layout.addRow("", self._manual_date_hint)
 
         form_layout.addRow("實際繳款日：", self._actual_payment_date)
@@ -163,7 +163,7 @@ class LateFeePage(QWidget):
         outer.addWidget(self._schedule_table)
         self._schedule_note = QLabel("")
         self._schedule_note.setWordWrap(True)
-        self._schedule_note.setStyleSheet("color: #B45309;")
+        self._schedule_note.setStyleSheet(f"color: {STATUS_PENDING_FG};")
         outer.addWidget(self._schedule_note)
 
         # -- History table --
@@ -342,7 +342,7 @@ class LateFeePage(QWidget):
             for col, text in enumerate((f"{band['percent']}%", band["start_date"], end)):
                 cell = QTableWidgetItem(text)
                 if hit_percent is not None and float(band["percent"]) == hit_percent:
-                    cell.setBackground(QColor("#FEF3C7"))
+                    cell.setBackground(QColor(STATUS_PENDING_BG))
                 self._schedule_table.setItem(row, col, cell)
         if overdue is not None and overdue > 30:
             self._schedule_note.setText(

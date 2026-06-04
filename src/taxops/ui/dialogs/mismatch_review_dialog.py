@@ -74,7 +74,7 @@ class MismatchReviewDialog(QDialog):
 
         self.setWindowTitle(f"衝突審查 — {len(items)} 筆名稱不符")
         self.setModal(True)
-        self.setMinimumSize(1050, 500)
+        self.setMinimumSize(780, 480)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(16, 16, 16, 16)

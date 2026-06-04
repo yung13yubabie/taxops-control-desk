@@ -115,6 +115,15 @@ class RecurringBillingRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
+    # ── client helpers ────────────────────────────────────────────────────────
+
+    def client_exists(self, client_id: int) -> bool:
+        row = self._conn.execute(
+            "SELECT 1 FROM clients WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+            (client_id,),
+        ).fetchone()
+        return row is not None
+
     # ── plans ─────────────────────────────────────────────────────────────────
 
     def insert_plan(

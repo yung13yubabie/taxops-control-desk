@@ -48,8 +48,9 @@ from ...services.export import ExportValidationError
 from ..dialogs.add_document_item_dialog import AddDocumentItemDialog
 from ..dialogs.document_item_template_dialog import DocumentItemTemplateDialog
 from ..dialogs.generate_message_dialog import GenerateMessageDialog
-from ..style import toolbar_icon
+from ..style import INFO_BG, INFO_FG, TEXT_MUTED, toolbar_icon
 from ..widgets.column_settings import ColumnSettings
+from ..widgets.empty_state import EmptyState
 from ..widgets.flow_layout import FlowLayout
 
 _REQ_COLUMNS = (
@@ -150,15 +151,15 @@ class DocumentRequestsPage(QWidget):
         self._context_banner = QLabel("現在顯示：全部案件")
         self._context_banner.setObjectName("DocRequestsContextBanner")
         self._context_banner.setStyleSheet(
-            "QLabel#DocRequestsContextBanner {"
-            " background-color: #DBEAFE;"
-            " color: #1E3A8A;"
+            f"QLabel#DocRequestsContextBanner {{"
+            f" background-color: {INFO_BG};"
+            f" color: {INFO_FG};"
             " font-size: 13px;"
             " font-weight: 600;"
             " border: 1px solid #93C5FD;"
             " border-radius: 6px;"
             " padding: 8px 12px;"
-            "}"
+            "}}"
         )
         self._context_banner.setWordWrap(True)
         outer.addWidget(self._context_banner)
@@ -249,7 +250,7 @@ class DocumentRequestsPage(QWidget):
             "尚未建立任何案件，請先到「案件管理」頁建立案件。"
         )
         self._no_engagement_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._no_engagement_label.setStyleSheet("color: #777; padding: 48px;")
+        self._no_engagement_label.setStyleSheet(f"color: {TEXT_MUTED}; padding: 48px;")
         self._no_engagement_label.setVisible(False)
         outer.addWidget(self._no_engagement_label)
 
@@ -275,6 +276,13 @@ class DocumentRequestsPage(QWidget):
         rh.setSectionResizeMode(req_status_idx, QHeaderView.ResizeMode.Fixed)
         self._req_table.setColumnWidth(req_status_idx, _REQ_STATUS_COL_WIDTH)
         req_layout.addWidget(self._req_table)
+        self._req_empty_state = EmptyState(
+            "尚無索件批次",
+            detail="新增批次後即可批量加入文件項目、設定進度並產生訊息。",
+            action_text="新增索件批次",
+        )
+        self._req_empty_state.hide()
+        req_layout.addWidget(self._req_empty_state)
         self._splitter.addWidget(req_widget)
 
         item_widget = QWidget()
@@ -306,6 +314,8 @@ class DocumentRequestsPage(QWidget):
         )
         item_layout.addWidget(self._item_table)
         self._splitter.addWidget(item_widget)
+        self._splitter.setStretchFactor(0, 1)
+        self._splitter.setStretchFactor(1, 2)
 
         outer.addWidget(self._splitter, stretch=1)
         self._request_rows_by_id: dict[int, object] = {}
@@ -374,6 +384,8 @@ class DocumentRequestsPage(QWidget):
             self._on_engagement_combo_changed
         )
         self._new_req_btn.clicked.connect(self._on_new_request)
+        if self._req_empty_state.action_button is not None:
+            self._req_empty_state.action_button.clicked.connect(self._on_new_request)
         self._edit_req_btn.clicked.connect(self._on_edit_request)
         self._mark_requested_btn.clicked.connect(self._on_mark_requested)
         self._request_status_btn.clicked.connect(self._on_set_request_status)
@@ -543,6 +555,9 @@ class DocumentRequestsPage(QWidget):
 
     def _fill_request_table(self, reqs, saved_req_id: int | None) -> None:
         self._req_table.setRowCount(len(reqs))
+        has_rows = len(reqs) > 0
+        self._req_table.setVisible(has_rows)
+        self._req_empty_state.setVisible(not has_rows)
         self._request_rows_by_id = {req.id: req for req in reqs}
         labels = self._engagement_label_map(reqs)
         target_row = -1

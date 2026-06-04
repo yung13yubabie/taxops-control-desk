@@ -257,9 +257,10 @@ class ClientsRepository:
             q = f"%{query.strip()}%"
             rows = self._conn.execute(
                 f"SELECT * FROM clients{base_filter}"
-                f" {cond} (client_code LIKE ? OR client_name LIKE ? OR tax_id LIKE ?)"
+                f" {cond} (client_code LIKE ? OR client_name LIKE ? OR tax_id LIKE ?"
+                f" OR short_name LIKE ? OR contact_name LIKE ?)"
                 f" ORDER BY {col} {direction} LIMIT ? OFFSET ?",
-                (q, q, q, limit, offset),
+                (q, q, q, q, q, limit, offset),
             ).fetchall()
         else:
             rows = self._conn.execute(
@@ -275,8 +276,9 @@ class ClientsRepository:
             q = f"%{query.strip()}%"
             row = self._conn.execute(
                 f"SELECT COUNT(*) AS c FROM clients{base_filter}"
-                f" {cond} (client_code LIKE ? OR client_name LIKE ? OR tax_id LIKE ?)",
-                (q, q, q),
+                f" {cond} (client_code LIKE ? OR client_name LIKE ? OR tax_id LIKE ?"
+                f" OR short_name LIKE ? OR contact_name LIKE ?)",
+                (q, q, q, q, q),
             ).fetchone()
         else:
             row = self._conn.execute(

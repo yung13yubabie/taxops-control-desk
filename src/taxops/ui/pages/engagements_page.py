@@ -17,6 +17,7 @@ jump back to any ancestor level.
 from __future__ import annotations
 
 import datetime
+import logging
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -44,8 +45,11 @@ from ..dialogs.edit_engagement_dialog import EditEngagementDialog
 from ..dialogs.new_engagement_dialog import NewEngagementDialog
 from ..style import toolbar_icon
 from ..widgets.column_settings import ColumnSettings
+from ..widgets.empty_state import EmptyState
 from ..widgets.flow_layout import FlowLayout
 from .document_requests_page import DocumentRequestsPage
+
+_log = logging.getLogger(__name__)
 
 _COLUMN_ORDER = (
     "id",
@@ -151,6 +155,10 @@ class EngagementsPage(QWidget):
         )
         self._stack.addWidget(self._items_page)
 
+        # H1: connect back-navigation signals so the back button works.
+        self._requests_page.back_to_engagements.connect(self._show_master)
+        self._items_page.back_to_engagements.connect(self._show_requests)
+
         self._filter_key: str = ""
         self._show_master()
         self._on_load_and_refresh()
@@ -207,10 +215,15 @@ class EngagementsPage(QWidget):
             toolbar.addWidget(btn)
         layout.addWidget(toolbar_widget)
 
-        self._empty_label = QLabel("請先選擇客戶，或此客戶尚無案件。")
-        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_label.setStyleSheet("color: #777; padding: 24px;")
-        layout.addWidget(self._empty_label)
+        self._empty_state = EmptyState(
+            "尚無案件",
+            detail="請先選擇客戶；選定客戶後即可新增案件並建立索件批次。",
+            action_text="新增案件",
+        )
+        self._empty_label = self._empty_state.title_label
+        if self._empty_state.action_button is not None:
+            self._empty_state.action_button.setEnabled(False)
+        layout.addWidget(self._empty_state)
 
         self._table = QTableWidget(0, len(_COLUMN_ORDER))
         self._table.setHorizontalHeaderLabels(
@@ -231,6 +244,8 @@ class EngagementsPage(QWidget):
 
         self._client_combo.currentIndexChanged.connect(self._on_client_changed)
         self._new_btn.clicked.connect(self._on_new_engagement)
+        if self._empty_state.action_button is not None:
+            self._empty_state.action_button.clicked.connect(self._on_new_engagement)
         self._edit_btn.clicked.connect(self._on_edit_engagement)
         self._status_btn.clicked.connect(self._on_set_status)
         self._delete_btn.clicked.connect(self._on_delete)
@@ -316,6 +331,7 @@ class EngagementsPage(QWidget):
         try:
             req = self._container.doc_requests.get_request(request_id)
         except Exception:
+            _log.warning("_on_drill_to_items: get_request %d failed", request_id, exc_info=True)
             req = None
         self._current_request_id = request_id
         self._items_page.load_request_items(request_id)
@@ -377,16 +393,22 @@ class EngagementsPage(QWidget):
         self._client_combo.setCurrentIndex(restore_idx)
         self._current_client_id = self._client_combo.currentData()
         self._new_btn.setEnabled(self._current_client_id != _ALL_CLIENTS)
+        if self._empty_state.action_button is not None:
+            self._empty_state.action_button.setEnabled(self._current_client_id != _ALL_CLIENTS)
         self._refresh_engagements()
 
     def _on_client_changed(self, idx: int) -> None:
         if idx < 0:
             self._current_client_id = _ALL_CLIENTS
             self._new_btn.setEnabled(False)
+            if self._empty_state.action_button is not None:
+                self._empty_state.action_button.setEnabled(False)
             self._refresh_engagements()
             return
         self._current_client_id = self._client_combo.itemData(idx)
         self._new_btn.setEnabled(self._current_client_id != _ALL_CLIENTS)
+        if self._empty_state.action_button is not None:
+            self._empty_state.action_button.setEnabled(self._current_client_id != _ALL_CLIENTS)
         self._refresh_engagements()
 
     def _refresh_engagements(self) -> None:
@@ -431,7 +453,7 @@ class EngagementsPage(QWidget):
             self._table.setRowHeight(row_idx, 54)
 
         has_rows = len(rows) > 0
-        self._empty_label.setVisible(not has_rows)
+        self._empty_state.setVisible(not has_rows)
         self._table.setVisible(has_rows)
         self._on_selection_changed()
 

@@ -6,9 +6,12 @@ Callers must validate the URL before calling ``download_registry_zip()``.
 
 from __future__ import annotations
 
+import logging
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 
 class DownloadError(Exception):
@@ -41,7 +44,7 @@ def _unlink_quietly(path: Path) -> None:
     try:
         path.unlink(missing_ok=True)
     except OSError:
-        pass
+        _log.warning("failed to remove partial download %s", path, exc_info=True)
 
 
 def download_registry_zip(

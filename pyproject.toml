@@ -1,18 +1,18 @@
 [project]
 name = "taxops-control-desk"
-version = "0.22.0"
+version = "0.24.0"
 description = "Offline-first desktop operations workbench for Taiwan accounting and tax offices."
 requires-python = ">=3.11"
 dependencies = [
-  "PySide6",
-  "Jinja2",
-  "openpyxl",
+  "PySide6>=6.7,<6.11",
+  "Jinja2>=3.1,<4.0",
+  "openpyxl>=3.1,<4.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest",
-  "pyinstaller",
+  "pytest>=8.0,<9.0",
+  "pyinstaller>=6.3,<7.0",
 ]
 
 [build-system]

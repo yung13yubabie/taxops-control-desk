@@ -24,6 +24,10 @@ VALID_OBJECT_TYPES = frozenset({"text_box", "image", "freehand", "shape"})
 VALID_SHAPES = frozenset({"red_box", "yellow_highlight"})
 IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg"})
 
+_MAX_SCENE_OBJECTS = 500
+_MAX_FREEHAND_POINTS = 10_000
+_MAX_PAGE_DIM = 5000
+
 
 class CanvasNoteValidationError(Exception):
     def __init__(self, code: str) -> None:
@@ -128,13 +132,19 @@ def _load_scene(scene_json: str) -> dict:
         raise CanvasNoteValidationError("canvas_note.scene.invalid")
     if not isinstance(objects, list):
         raise CanvasNoteValidationError("canvas_note.scene.invalid")
+    for page in pages:
+        if not isinstance(page, dict) or "width" not in page or "height" not in page:
+            raise CanvasNoteValidationError("canvas_note.scene.invalid")
     return scene
 
 
 def _normalized_scene_json(scene_json: str) -> str:
     scene = _load_scene(scene_json)
+    all_raw_objects = scene["objects"]
+    if len(all_raw_objects) > _MAX_SCENE_OBJECTS:
+        raise CanvasNoteValidationError("canvas_note.scene.invalid")
     normalized_objects: list[dict] = []
-    for obj in scene["objects"]:
+    for obj in all_raw_objects:
         if not isinstance(obj, dict):
             continue
         kind = obj.get("type")
@@ -148,6 +158,19 @@ def _normalized_scene_json(scene_json: str) -> str:
             clean["asset_path"] = safe_asset_path(str(clean.get("asset_path") or ""))
         if kind == "shape" and clean.get("shape") not in VALID_SHAPES:
             continue
+        if kind == "freehand":
+            pts = clean.get("points", [])
+            if not isinstance(pts, list):
+                raise CanvasNoteValidationError("canvas_note.scene.invalid")
+            if len(pts) > _MAX_FREEHAND_POINTS:
+                raise CanvasNoteValidationError("canvas_note.scene.invalid")
+            for pt in pts:
+                if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+                    raise CanvasNoteValidationError("canvas_note.scene.invalid")
+                try:
+                    float(pt[0]), float(pt[1])
+                except (ValueError, TypeError):
+                    raise CanvasNoteValidationError("canvas_note.scene.invalid")
         normalized_objects.append(clean)
     scene["objects"] = normalized_objects
     scene["grid_size"] = GRID_SIZE
@@ -155,8 +178,20 @@ def _normalized_scene_json(scene_json: str) -> str:
 
 
 def safe_asset_path(raw: str) -> str:
+    if not raw:
+        raise CanvasNoteValidationError("canvas_note.asset.path_invalid")
     path = Path(raw)
-    if path.is_absolute() or ".." in path.parts or not raw:
+    if path.is_absolute() or ".." in path.parts:
+        raise CanvasNoteValidationError("canvas_note.asset.path_invalid")
+    # Resolve against a stable base to catch symlink / complex path traversal.
+    # Use a fixed dummy base so this pure-string validation works without a
+    # real filesystem root; the actual filesystem boundary is enforced again
+    # when the caller constructs the full path (e.g. assets_dir / asset_path).
+    dummy_base = Path("/assets").resolve()
+    try:
+        resolved = (dummy_base / path).resolve()
+        resolved.relative_to(dummy_base)
+    except ValueError:
         raise CanvasNoteValidationError("canvas_note.asset.path_invalid")
     return path.as_posix()
 
@@ -262,7 +297,9 @@ def _render_scene_to_pdf(scene: dict, output_path: Path, assets_dir: Path) -> No
         for idx, page in enumerate(pages):
             if idx:
                 writer.newPage()
-            page_rect = QRectF(0, 0, float(page["width"]), float(page["height"]))
+            page_w = min(int(page.get("width", A4_WIDTH)), _MAX_PAGE_DIM)
+            page_h = min(int(page.get("height", A4_HEIGHT)), _MAX_PAGE_DIM)
+            page_rect = QRectF(0, 0, float(page_w), float(page_h))
             painter.fillRect(page_rect, QColor("white"))
             for obj in scene["objects"]:
                 _paint_object(painter, obj, page_rect, assets_dir)
@@ -281,7 +318,7 @@ def _paint_object(painter: QPainter, obj: dict, page_rect: QRectF, assets_dir: P
     if kind == "text_box":
         doc = QTextDocument()
         doc.setDefaultFont(QFont("Microsoft JhengHei", 10))
-        doc.setHtml(sanitize_controlled_html(str(obj.get("html") or "")))
+        doc.setHtml(str(obj.get("html") or ""))
         doc.setTextWidth(width)
         painter.save()
         painter.translate(x, y)

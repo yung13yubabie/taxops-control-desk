@@ -76,8 +76,8 @@ class BulkImportWizard(QDialog):
         self._repo = clients_repo
         self.setWindowTitle("批量匯入客戶名單")
         self.setModal(True)
-        self.setMinimumSize(700, 600)
-        self.resize(760, 640)
+        self.setMinimumSize(700, 500)
+        self.resize(760, 560)
 
         self._headers: list[str] = []
         self._raw_rows: list[RawRow] = []

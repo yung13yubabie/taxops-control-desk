@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import datetime
+import logging
 from dataclasses import dataclass
 
 from ..core.text import sanitize_user_text
+
+_log = logging.getLogger(__name__)
 from ..repositories.tasks import TaskRow, TasksRepository
 from .audit import AuditService
 
@@ -299,8 +302,8 @@ class TasksService:
                     notes=template.notes,
                 ))
                 created.append(row)
-            except TaskValidationError:
-                # Skip invalid clients (e.g. nonexistent id) and continue.
+            except TaskValidationError as exc:
+                _log.warning("create_tasks_bulk: skipped client_id=%r reason=%s", cid, exc.code)
                 continue
         if created:
             with self._conn:
@@ -351,7 +354,8 @@ class TasksService:
                         notes=normalized_fields.get("notes", refreshed.notes),
                     )
                 updated += 1
-            except TaskValidationError:
+            except TaskValidationError as exc:
+                _log.warning("update_tasks_bulk: skipped task_id=%r reason=%s", tid, exc.code)
                 continue
         if updated:
             self._audit.record(
@@ -419,7 +423,8 @@ class TasksService:
             try:
                 self.delete_task(tid)
                 deleted += 1
-            except TaskValidationError:
+            except TaskValidationError as exc:
+                _log.warning("delete_tasks_bulk: skipped task_id=%r reason=%s", tid, exc.code)
                 continue
         if deleted:
             self._audit.record(

@@ -6,7 +6,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
-    QHeaderView,
     QInputDialog,
     QLabel,
     QMessageBox,
@@ -31,6 +30,9 @@ from ..dialogs.task_bulk_dialogs import (
 )
 from ..style import DANGER_COLOR, toolbar_icon
 from ..widgets.column_settings import ColumnSettings
+from ..widgets.empty_state import EmptyState
+from ..widgets.flow_layout import FlowLayout
+from ..widgets.table_builder import build_standard_table
 
 _COLUMN_ORDER = (
     "id",
@@ -94,8 +96,6 @@ class TasksPage(QWidget):
         filter_row.addStretch()
         outer.addLayout(filter_row)
 
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(8)
         self._new_btn = QPushButton("新增待辦")
         self._complete_btn = QPushButton("完成待辦")
         self._complete_btn.setEnabled(False)
@@ -123,40 +123,40 @@ class TasksPage(QWidget):
         self._next_step_btn.setIcon(toolbar_icon("new"))
         self._make_child_btn.setIcon(toolbar_icon("edit"))
         self._refresh_btn.setIcon(toolbar_icon("refresh"))
-        toolbar.addWidget(self._new_btn)
-        toolbar.addWidget(self._bulk_new_btn)
-        toolbar.addWidget(self._complete_btn)
-        toolbar.addWidget(self._status_btn)
-        toolbar.addWidget(self._delete_btn)
-        toolbar.addWidget(self._bulk_edit_btn)
-        toolbar.addWidget(self._bulk_delete_btn)
-        toolbar.addWidget(self._next_step_btn)
-        toolbar.addWidget(self._make_child_btn)
-        toolbar.addStretch()
-        toolbar.addWidget(self._refresh_btn)
-        outer.addLayout(toolbar)
+        toolbar_widget = QWidget()
+        toolbar = FlowLayout(toolbar_widget, h_spacing=6, v_spacing=6)
+        for btn in (
+            self._new_btn,
+            self._bulk_new_btn,
+            self._complete_btn,
+            self._status_btn,
+            self._delete_btn,
+            self._bulk_edit_btn,
+            self._bulk_delete_btn,
+            self._next_step_btn,
+            self._make_child_btn,
+            self._refresh_btn,
+        ):
+            toolbar.addWidget(btn)
+        outer.addWidget(toolbar_widget)
 
-        self._table = QTableWidget(0, len(_COLUMN_ORDER))
-        self._table.setHorizontalHeaderLabels([_TABLE_HEADERS[c] for c in _COLUMN_ORDER])
-        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
-        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        header = self._table.horizontalHeader()
-        header.setSectionResizeMode(
-            _COLUMN_ORDER.index("title"), QHeaderView.ResizeMode.Stretch
+        self._table = build_standard_table(
+            _COLUMN_ORDER,
+            _TABLE_HEADERS,
+            stretch_col="title",
+            fixed_cols={"status": _STATUS_COL_WIDTH},
+            selection_mode=QTableWidget.SelectionMode.ExtendedSelection,
         )
-        status_idx = _COLUMN_ORDER.index("status")
-        header.setSectionResizeMode(status_idx, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(status_idx, _STATUS_COL_WIDTH)
-        self._table.verticalHeader().setVisible(False)
-        self._table.setAlternatingRowColors(True)
         outer.addWidget(self._table, stretch=1)
 
-        self._empty_label = QLabel("目前沒有待辦事項")
-        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_label.setObjectName("EmptyState")
-        self._empty_label.hide()
-        outer.addWidget(self._empty_label, stretch=1)
+        self._empty_state = EmptyState(
+            "目前沒有待辦事項",
+            detail="可直接新增，或先選擇客戶 / 案件後建立關聯待辦。",
+            action_text="新增待辦",
+        )
+        self._empty_label = self._empty_state.title_label
+        self._empty_state.hide()
+        outer.addWidget(self._empty_state, stretch=1)
 
         self._error_label = QLabel("載入待辦事項失敗，請重新整理或重新啟動程式")
         self._error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -166,6 +166,8 @@ class TasksPage(QWidget):
         outer.addWidget(self._error_label, stretch=1)
 
         self._new_btn.clicked.connect(self._on_new_task)
+        if self._empty_state.action_button is not None:
+            self._empty_state.action_button.clicked.connect(self._on_new_task)
         self._bulk_new_btn.clicked.connect(self._on_bulk_new_tasks)
         self._complete_btn.clicked.connect(self._on_complete_task)
         self._status_btn.clicked.connect(self._on_set_status)
@@ -330,7 +332,7 @@ class TasksPage(QWidget):
         has_rows = bool(self._tasks) and not load_error
         self._error_label.setVisible(load_error)
         self._table.setVisible(has_rows)
-        self._empty_label.setVisible(not load_error and not has_rows)
+        self._empty_state.setVisible(not load_error and not has_rows)
         self._on_selection_changed()
 
     def _ordered_tasks_for_display(self, tasks: list) -> list:

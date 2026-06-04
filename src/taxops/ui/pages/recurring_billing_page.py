@@ -32,7 +32,15 @@ from ..dialogs.recurring_billing_dialogs import (
     PlanDialog,
     SkipOccurrenceDialog,
 )
-from ..style import BTN_DANGER_SM, BTN_PRIMARY_SM, BTN_SECONDARY_SM
+from ..style import (
+    BTN_DANGER_SM,
+    BTN_PRIMARY_SM,
+    BTN_SECONDARY_SM,
+    STATUS_ARCHIVED_FG,
+    STATUS_CONFIRMED_FG,
+    STATUS_PENDING_FG,
+    STATUS_SKIPPED_FG,
+)
 from ..widgets.flow_layout import FlowLayout
 
 _log = logging.getLogger(__name__)
@@ -109,10 +117,10 @@ class _OccRow(QWidget):
         row.addStretch()
 
         _COLORS = {
-            "pending":   "#F59E0B",
-            "confirmed": "#16A34A",
-            "skipped":   "#6B7280",
-            "cancelled": "#9CA3AF",
+            "pending":   STATUS_PENDING_FG,
+            "confirmed": STATUS_CONFIRMED_FG,
+            "skipped":   STATUS_SKIPPED_FG,
+            "cancelled": STATUS_ARCHIVED_FG,
         }
         color = _COLORS.get(occ.status, "#6B7280")
 
@@ -205,7 +213,7 @@ class _PlanSection(QFrame):
 
         if plan.status == "archived":
             arch = QLabel("[已封存]")
-            arch.setStyleSheet("color: #9CA3AF; font-size: 12px;")
+            arch.setStyleSheet(f"color: {STATUS_ARCHIVED_FG}; font-size: 12px;")
             h_row.addWidget(arch)
 
         if next_date:
@@ -215,7 +223,7 @@ class _PlanSection(QFrame):
 
         if pending_count > 0:
             p_lbl = QLabel(f"● {pending_count} 筆待確認")
-            p_lbl.setStyleSheet("color: #F59E0B; font-weight: 600; font-size: 12px;")
+            p_lbl.setStyleSheet(f"color: {STATUS_PENDING_FG}; font-weight: 600; font-size: 12px;")
             h_row.addWidget(p_lbl)
 
         h_row.addStretch()
