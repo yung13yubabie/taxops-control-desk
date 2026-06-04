@@ -59,6 +59,7 @@ from ...services.work_records import (
     WorkflowStepInput,
 )
 from ..style import toolbar_icon
+from ..widgets.flow_layout import FlowLayout
 
 _TREE_KIND_ROLE = Qt.ItemDataRole.UserRole
 _TREE_STAGE_ID_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -225,6 +226,7 @@ class WorkRecordsPage(QWidget):
         super().__init__(parent)
         self._container = container
         self._current_note_id: int | None = None
+        self._current_workflow_image_path: Path | None = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 24, 20)
@@ -257,10 +259,13 @@ class WorkRecordsPage(QWidget):
     def _build_workflow_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        toolbar = QHBoxLayout()
+        toolbar_widget = QWidget()
+        toolbar = FlowLayout(toolbar_widget, h_spacing=6, v_spacing=6)
         self._create_template_btn = QPushButton("新增流程")
         self._edit_template_btn = QPushButton("編輯流程")
         self._delete_template_btn = QPushButton("刪除流程")
+        self._edit_run_btn = QPushButton("編輯執行")
+        self._delete_run_btn = QPushButton("刪除執行")
         self._set_template_image_btn = QPushButton("匯入流程圖片")
         self._paste_template_image_btn = QPushButton("貼上截圖")
         self._create_standard_btn = QPushButton("建立標準公司設立流程")
@@ -272,6 +277,8 @@ class WorkRecordsPage(QWidget):
             (self._create_template_btn, "new"),
             (self._edit_template_btn, "edit"),
             (self._delete_template_btn, "delete"),
+            (self._edit_run_btn, "edit"),
+            (self._delete_run_btn, "delete"),
             (self._set_template_image_btn, "upload"),
             (self._paste_template_image_btn, "paste"),
             (self._create_standard_btn, "new"),
@@ -282,11 +289,11 @@ class WorkRecordsPage(QWidget):
         ):
             btn.setIcon(toolbar_icon(icon))
             toolbar.addWidget(btn)
-        toolbar.addStretch(1)
-        layout.addLayout(toolbar)
+        layout.addWidget(toolbar_widget)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         left = QWidget()
+        left.setMinimumWidth(330)
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 8, 0)
         self._templates_table = QTableWidget(0, 4)
@@ -294,7 +301,12 @@ class WorkRecordsPage(QWidget):
         self._templates_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._templates_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self._templates_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._templates_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        templates_header = self._templates_table.horizontalHeader()
+        templates_header.setMinimumSectionSize(56)
+        templates_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._templates_table.setColumnWidth(0, 56)
+        self._templates_table.setColumnWidth(2, 72)
+        self._templates_table.setColumnWidth(3, 96)
         left_layout.addWidget(QLabel("流程範本"))
         left_layout.addWidget(self._templates_table)
 
@@ -303,7 +315,12 @@ class WorkRecordsPage(QWidget):
         self._runs_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._runs_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self._runs_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._runs_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        runs_header = self._runs_table.horizontalHeader()
+        runs_header.setMinimumSectionSize(56)
+        runs_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._runs_table.setColumnWidth(0, 56)
+        self._runs_table.setColumnWidth(2, 96)
+        self._runs_table.setColumnWidth(3, 96)
         left_layout.addWidget(QLabel("執行中流程"))
         left_layout.addWidget(self._runs_table)
         splitter.addWidget(left)
@@ -313,24 +330,26 @@ class WorkRecordsPage(QWidget):
         right_layout.setContentsMargins(8, 0, 0, 0)
         self._workflow_detail = QTreeWidget()
         self._workflow_detail.setHeaderLabels(["流程步驟", "狀態"])
-        self._workflow_detail.setMinimumWidth(420)
         self._workflow_image = QLabel("尚未選擇流程圖片")
         self._workflow_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._workflow_image.setMinimumHeight(220)
+        self._workflow_image.setMinimumHeight(260)
         self._workflow_image.setStyleSheet("border: 1px solid #CBD5E1; color: #64748B;")
+        self._workflow_image.mousePressEvent = lambda _event: self._on_preview_workflow_image()
         right_layout.addWidget(QLabel("流程說明"))
-        right_layout.addWidget(self._workflow_detail, stretch=2)
+        right_layout.addWidget(self._workflow_detail, stretch=4)
         right_layout.addWidget(QLabel("搭配圖片"))
-        right_layout.addWidget(self._workflow_image, stretch=1)
+        right_layout.addWidget(self._workflow_image, stretch=2)
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([520, 720])
+        splitter.setSizes([330, 940])
         layout.addWidget(splitter, stretch=1)
 
         self._create_template_btn.clicked.connect(self._on_create_template)
         self._edit_template_btn.clicked.connect(self._on_edit_template)
         self._delete_template_btn.clicked.connect(self._on_delete_template)
+        self._edit_run_btn.clicked.connect(self._on_edit_run)
+        self._delete_run_btn.clicked.connect(self._on_delete_run)
         self._set_template_image_btn.clicked.connect(self._on_set_template_image)
         self._paste_template_image_btn.clicked.connect(self._on_paste_template_image)
         self._create_standard_btn.clicked.connect(self._on_create_standard_template)
@@ -340,6 +359,7 @@ class WorkRecordsPage(QWidget):
         self._save_as_template_btn.clicked.connect(self._on_save_run_as_template)
         self._templates_table.itemSelectionChanged.connect(self._on_template_selection_changed)
         self._runs_table.itemSelectionChanged.connect(self._on_run_selection_changed)
+        self._workflow_detail.currentItemChanged.connect(lambda *_args: self._refresh_workflow_image())
         return page
 
     def _build_notes_tab(self) -> QWidget:
@@ -823,6 +843,85 @@ class WorkRecordsPage(QWidget):
         except WorkRecordValidationError:
             return None
 
+    def _workflow_asset_path(self, rel: str | None) -> Path | None:
+        rel = str(rel or "")
+        if not rel:
+            return None
+        rel_path = Path(rel)
+        if rel_path.is_absolute() or ".." in rel_path.parts:
+            return None
+        try:
+            return self._container.work_records.workflow_assets_dir / rel_path
+        except WorkRecordValidationError:
+            return None
+
+    def _selected_step_image_path(self) -> Path | None:
+        selected = self._selected_workflow_step()
+        if selected is None:
+            return None
+        run_id, stage_id, item_id, _done = selected
+        run = next((r for r in self._container.work_records.list_runs() if r.id == run_id), None)
+        if run is None:
+            return None
+        for stage in self._container.work_records.stages_for_row(run):
+            if str(stage.get("id") or "") != stage_id:
+                continue
+            for item in stage.get("items", []):
+                if str(item.get("id") or "") == item_id:
+                    return self._workflow_asset_path(item.get("image_path"))
+        return None
+
+    def _set_workflow_image_path(self, image_path: Path | None) -> None:
+        self._current_workflow_image_path = image_path
+        pix = QPixmap(str(image_path)) if image_path else QPixmap()
+        if pix.isNull():
+            self._workflow_image.setPixmap(QPixmap())
+            self._workflow_image.setText("尚未選擇流程圖片")
+            return
+        self._workflow_image.setText("")
+        self._workflow_image.setPixmap(
+            pix.scaled(
+                self._workflow_image.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+
+    def _refresh_workflow_image(self) -> None:
+        selected_run = self._selected_run_id()
+        selected_template = self._selected_template_id()
+        row = None
+        if selected_run is not None:
+            row = next((r for r in self._container.work_records.list_runs() if r.id == selected_run), None)
+        if row is None and selected_template is not None:
+            row = next((t for t in self._container.work_records.list_templates() if t.id == selected_template), None)
+        self._set_workflow_image_path(
+            self._selected_step_image_path()
+            or self._template_image_path(row.context_snapshot if row else None)
+        )
+
+    def _on_preview_workflow_image(self) -> None:
+        if self._current_workflow_image_path is None:
+            return
+        pix = QPixmap(str(self._current_workflow_image_path))
+        if pix.isNull():
+            return
+        dlg = QDialog(self)
+        dlg.setWindowTitle("圖片預覽")
+        dlg.resize(900, 650)
+        layout = QVBoxLayout(dlg)
+        label = QLabel()
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setPixmap(
+            pix.scaled(
+                dlg.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+        layout.addWidget(label)
+        dlg.exec()
+
     def _update_workflow_detail(self) -> None:
         self._workflow_detail.clear()
         selected_template = self._selected_template_id()
@@ -839,8 +938,7 @@ class WorkRecordsPage(QWidget):
             empty = QTreeWidgetItem(["請先從左側選擇流程範本或執行清單。", ""])
             empty.setData(0, _TREE_KIND_ROLE, "empty")
             self._workflow_detail.addTopLevelItem(empty)
-            self._workflow_image.setText("尚未選擇流程圖片")
-            self._workflow_image.setPixmap(QPixmap())
+            self._set_workflow_image_path(None)
             self._toggle_first_btn.setEnabled(False)
             return
         done, total, percent = self._container.work_records.progress_for_stages_json(row.stages_json)
@@ -871,20 +969,7 @@ class WorkRecordsPage(QWidget):
             stage_item.setExpanded(True)
         self._workflow_detail.resizeColumnToContents(0)
         self._toggle_first_btn.setEnabled(selected_run is not None)
-        image_path = self._template_image_path(row.context_snapshot)
-        pix = QPixmap(str(image_path)) if image_path else QPixmap()
-        if pix.isNull():
-            self._workflow_image.setPixmap(QPixmap())
-            self._workflow_image.setText("尚未選擇流程圖片")
-        else:
-            self._workflow_image.setText("")
-            self._workflow_image.setPixmap(
-                pix.scaled(
-                    self._workflow_image.size(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-            )
+        self._refresh_workflow_image()
 
     def _on_create_template(self) -> None:
         dlg = _WorkflowTemplateDialog(title="新增流程", parent=self)
@@ -940,9 +1025,52 @@ class WorkRecordsPage(QWidget):
             return
         self.refresh_context()
 
+    def _on_edit_run(self) -> None:
+        run_id = self._selected_run_id()
+        if run_id is None:
+            return
+        run = next((r for r in self._container.work_records.list_runs() if r.id == run_id), None)
+        if run is None:
+            return
+        name, ok = QInputDialog.getText(
+            self,
+            "編輯執行名稱",
+            "執行名稱",
+            text=run.name,
+        )
+        if not ok:
+            return
+        try:
+            self._container.work_records.rename_run(run_id, name)
+        except WorkRecordValidationError as err:
+            QMessageBox.warning(self, "編輯失敗", error_message(err.code))
+            return
+        self.refresh_context()
+
+    def _on_delete_run(self) -> None:
+        run_id = self._selected_run_id()
+        if run_id is None:
+            return
+        reply = QMessageBox.question(
+            self,
+            "刪除執行清單",
+            "確定要刪除這個執行清單？流程範本不會被刪除。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._container.work_records.delete_run(run_id)
+        except WorkRecordValidationError as err:
+            QMessageBox.warning(self, "刪除失敗", error_message(err.code))
+            return
+        self.refresh_context()
+
     def _on_set_template_image(self) -> None:
+        selected_step = self._selected_workflow_step()
         template_id = self._selected_image_template_id()
-        if template_id is None:
+        if selected_step is None and template_id is None:
             return
         file_name, _ = QFileDialog.getOpenFileName(
             self,
@@ -953,15 +1081,26 @@ class WorkRecordsPage(QWidget):
         if not file_name:
             return
         try:
-            self._container.work_records.set_template_image_path(template_id, file_name)
+            if selected_step is not None:
+                run_id, stage_id, item_id, _done = selected_step
+                self._container.work_records.set_run_step_image_path(
+                    run_id,
+                    stage_id=stage_id,
+                    item_id=item_id,
+                    image_path=file_name,
+                )
+            else:
+                assert template_id is not None
+                self._container.work_records.set_template_image_path(template_id, file_name)
         except WorkRecordValidationError as err:
             QMessageBox.warning(self, "圖片更新失敗", error_message(err.code))
             return
         self.refresh_context()
 
     def _on_paste_template_image(self) -> None:
+        selected_step = self._selected_workflow_step()
         template_id = self._selected_image_template_id()
-        if template_id is None:
+        if selected_step is None and template_id is None:
             return
         pix = QApplication.clipboard().pixmap()
         if pix.isNull():
@@ -973,12 +1112,24 @@ class WorkRecordsPage(QWidget):
             dest.parent.mkdir(parents=True, exist_ok=True)
             if not pix.save(str(dest), "PNG"):
                 raise WorkRecordValidationError("work_record.asset.image_invalid")
-            self._container.work_records.set_template_image_asset(
-                template_id,
-                rel.as_posix(),
-                width=pix.width(),
-                height=pix.height(),
-            )
+            if selected_step is not None:
+                run_id, stage_id, item_id, _done = selected_step
+                self._container.work_records.set_run_step_image_asset(
+                    run_id,
+                    stage_id=stage_id,
+                    item_id=item_id,
+                    rel_path=rel.as_posix(),
+                    width=pix.width(),
+                    height=pix.height(),
+                )
+            else:
+                assert template_id is not None
+                self._container.work_records.set_template_image_asset(
+                    template_id,
+                    rel.as_posix(),
+                    width=pix.width(),
+                    height=pix.height(),
+                )
         except WorkRecordValidationError as err:
             QMessageBox.warning(self, "貼上失敗", error_message(err.code))
             return

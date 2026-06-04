@@ -118,6 +118,7 @@ ERROR_MESSAGES: dict[str, str] = dict(
             "work_record.stages.invalid": "流程資料格式不正確，請重新整理後再試",
             "work_record.template.not_found": "找不到指定流程範本",
             "work_record.run.not_found": "找不到指定執行清單",
+            "work_record.run.name.required": "請輸入執行清單名稱",
             "work_record.step.not_found": "找不到指定流程步驟",
             "work_record.error.severity.invalid": "嚴重程度不正確，請選擇低、中或高",
             "work_record.error.required": "請填寫錯誤回顧的標題、失誤現象與根本原因",

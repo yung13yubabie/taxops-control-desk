@@ -83,6 +83,20 @@ def test_install_restores_widths_from_settings(qapp, container):
 
 
 @pytest.mark.usefixtures("qapp")
+def test_install_clamps_tiny_saved_widths(qapp, container):
+    from taxops.ui.widgets.column_settings import ColumnSettings
+    widths = json.dumps({"id": 1, "name": 1, "status": 1})
+    container.settings.set_setting("ui.engagements.column_widths", widths)
+    table = _make_table(qapp)
+    cs = ColumnSettings(table, "engagements", _TEST_COLS, _TEST_CORE, _TEST_HEADERS, container.settings)
+    cs.install()
+
+    assert table.columnWidth(_TEST_COLS.index("id")) >= 56
+    assert table.columnWidth(_TEST_COLS.index("name")) >= 120
+    assert table.columnWidth(_TEST_COLS.index("status")) >= 120
+
+
+@pytest.mark.usefixtures("qapp")
 def test_toggle_col_persists_hidden(qapp, container):
     from taxops.ui.widgets.column_settings import ColumnSettings
     table = _make_table(qapp)
@@ -146,3 +160,15 @@ def test_tasks_page_installs_column_settings(container):
     page = TasksPage(container)
     assert hasattr(page, "_col_settings")
     assert page._col_settings.hidden_key == "ui.tasks.columns_hidden"
+
+
+@pytest.mark.usefixtures("qapp")
+def test_clients_page_keeps_core_identity_columns_visible(container):
+    from taxops.ui.pages.clients_page import ClientsPage, _COLUMN_ORDER
+
+    page = ClientsPage(container)
+    page._hidden_cols.update({"client_code", "client_name"})
+    page._apply_column_visibility()
+
+    assert not page._table.isColumnHidden(_COLUMN_ORDER.index("client_code"))
+    assert not page._table.isColumnHidden(_COLUMN_ORDER.index("client_name"))

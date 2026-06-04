@@ -496,7 +496,11 @@ class TasksPage(QWidget):
         except TaskValidationError as err:
             QMessageBox.warning(self, "批量編輯失敗", error_message(err.code))
             return
-        except Exception:
+        except Exception as err:
+            self._container.system_log.warn(
+                "tasks_page: bulk edit failed",
+                detail={"exc": type(err).__name__, "msg": str(err)},
+            )
             QMessageBox.warning(self, "批量編輯失敗", error_message("system.unexpected"))
             return
         if updated != len(task_ids):

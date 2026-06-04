@@ -8,17 +8,69 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QPushButton, QVBoxLayout, QWidget
 
 from taxops.services.clients import CreateClientInput
 from taxops.services.tasks import CreateTaskInput
 from taxops.ui.pages.clients_page import ClientsPage
+from taxops.ui.pages.engagements_page import EngagementsPage
 from taxops.ui.pages.tasks_page import TasksPage
+from taxops.ui.widgets.flow_layout import FlowLayout
 
 
 def _show_and_process(widget) -> None:
     widget.resize(1366, 768)
     widget.show()
     QApplication.processEvents()
+
+
+def _visible_child_overflows_page(child, page) -> bool:
+    top_left = child.mapTo(page, child.rect().topLeft())
+    bottom_right = child.mapTo(page, child.rect().bottomRight())
+    return (
+        top_left.x() < -2
+        or top_left.y() < -2
+        or bottom_right.x() > page.width() + 2
+        or bottom_right.y() > page.height() + 2
+    )
+
+
+@pytest.mark.usefixtures("qapp")
+def test_flow_layout_places_children_without_manual_activate():
+    root = QWidget()
+    outer = QVBoxLayout(root)
+    toolbar = QWidget()
+    flow = FlowLayout(toolbar, h_spacing=6, v_spacing=6)
+    one = QPushButton("A")
+    two = QPushButton("B")
+    flow.addWidget(one)
+    flow.addWidget(two)
+    outer.addWidget(toolbar)
+
+    root.resize(300, 100)
+    root.show()
+    QApplication.processEvents()
+
+    assert one.geometry().width() < toolbar.width()
+    assert two.geometry().x() > one.geometry().x()
+
+
+@pytest.mark.usefixtures("qapp")
+def test_engagements_toolbar_buttons_do_not_overflow_at_narrow_width(container):
+    page = EngagementsPage(container)
+    page.resize(640, 520)
+    page.show()
+    QApplication.processEvents()
+
+    buttons = [
+        page._new_btn,
+        page._edit_btn,
+        page._status_btn,
+        page._delete_btn,
+        page._open_btn,
+        page._refresh_btn,
+    ]
+    assert all(not _visible_child_overflows_page(btn, page) for btn in buttons)
 
 
 @pytest.mark.usefixtures("qapp")

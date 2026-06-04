@@ -53,6 +53,7 @@ _COLUMN_ORDER: tuple[str, ...] = (
 
 # Columns hidden by default; user can toggle them via the "欄位顯示" menu.
 _DEFAULT_HIDDEN: frozenset[str] = frozenset({"id", "address", "note", "lease_start"})
+_CORE_COLS: frozenset[str] = frozenset({"client_code", "client_name"})
 
 _DEFAULT_SORT_COL = "client_code"
 _DEFAULT_SORT_DIR = "ASC"
@@ -217,10 +218,13 @@ class ClientsPage(QWidget):
             action.setCheckable(True)
             action.setChecked(col not in self._hidden_cols)
             action.setData(col)
+            action.setEnabled(col not in _CORE_COLS)
         chosen = menu.exec(self._cols_btn.mapToGlobal(self._cols_btn.rect().bottomLeft()))
         if chosen is None:
             return
         col = chosen.data()
+        if col in _CORE_COLS:
+            return
         if chosen.isChecked():
             self._hidden_cols.discard(col)
         else:
@@ -229,6 +233,9 @@ class ClientsPage(QWidget):
 
     def _apply_column_visibility(self) -> None:
         for col_idx, col in enumerate(_COLUMN_ORDER):
+            if col in _CORE_COLS:
+                self._table.setColumnHidden(col_idx, False)
+                continue
             self._table.setColumnHidden(col_idx, col in self._hidden_cols)
 
     # ------------------------------------------------------------------

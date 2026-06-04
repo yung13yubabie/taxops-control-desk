@@ -22,6 +22,9 @@ from PySide6.QtWidgets import QMenu, QTableWidget
 
 _log = logging.getLogger(__name__)
 
+_MIN_RESTORED_WIDTH = 56
+_MIN_CORE_RESTORED_WIDTH = 120
+
 
 class ColumnSettings:
     def __init__(
@@ -51,6 +54,7 @@ class ColumnSettings:
 
     def install(self) -> None:
         header = self._table.horizontalHeader()
+        header.setMinimumSectionSize(_MIN_RESTORED_WIDTH)
         header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self._show_menu)
         header.sectionResized.connect(self._on_section_resized)
@@ -94,7 +98,12 @@ class ColumnSettings:
             except (ValueError, TypeError):
                 continue
             if px > 0:
-                self._table.setColumnWidth(col_idx, px)
+                minimum = (
+                    _MIN_CORE_RESTORED_WIDTH
+                    if col_key in self._core_cols
+                    else _MIN_RESTORED_WIDTH
+                )
+                self._table.setColumnWidth(col_idx, max(px, minimum))
 
     def _save_hidden(self) -> None:
         if self._suspend_save:

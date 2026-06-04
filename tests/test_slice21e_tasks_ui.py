@@ -175,6 +175,50 @@ def test_bulk_edit_button_updates_selected_tasks(qapp, monkeypatch, container, c
     assert [r["priority"] for r in rows] == ["high", "high"]
 
 
+def test_bulk_edit_button_updates_real_dialog_field_set(qapp, monkeypatch, container, clients):
+    c1, _ = clients
+    for i in range(2):
+        container.tasks.create_task(CreateTaskInput(
+            engagement_id=None, client_id=c1.id, title=f"Full{i}", priority="low",
+        ))
+
+    class _Dialog(QDialog):
+        def __init__(self, *_args, **_kwargs):
+            super().__init__()
+
+        def exec(self):
+            return self.DialogCode.Accepted
+
+        def fields(self):
+            return {
+                "status": "doing",
+                "priority": "urgent",
+                "assignee": "Alice",
+                "due_date": "2026-06-20",
+                "next_step": "電話確認",
+                "notes": "批量備註",
+            }
+
+    monkeypatch.setattr("taxops.ui.pages.tasks_page.BulkEditTasksDialog", _Dialog)
+    page = TasksPage(container)
+    page._refresh()
+    _select_row(page, 0)
+    _select_row(page, 1)
+    page._on_bulk_edit_tasks()
+
+    rows = container._conn.execute(
+        "SELECT status, priority, assignee, due_date, next_step, notes"
+        " FROM workflow_tasks ORDER BY id"
+    ).fetchall()
+    assert [
+        tuple(row)
+        for row in rows
+    ] == [
+        ("doing", "urgent", "Alice", "2026-06-20", "電話確認", "批量備註"),
+        ("doing", "urgent", "Alice", "2026-06-20", "電話確認", "批量備註"),
+    ]
+
+
 def test_bulk_delete_button_deletes_selected_tasks(qapp, monkeypatch, container, clients):
     c1, _ = clients
     for i in range(2):

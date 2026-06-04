@@ -10,7 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtGui import QColor, QImage, QPixmap
-from PySide6.QtWidgets import QApplication, QInputDialog, QTabWidget, QTreeWidget
+from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox, QTabWidget, QTreeWidget
 
 from taxops.services.work_records import (
     CreateErrorReviewInput,
@@ -198,6 +198,62 @@ def test_work_records_paste_screenshot_stores_relative_asset(qapp, container) ->
     assert (container.work_records.workflow_assets_dir / snapshot["image_path"]).is_file()
 
 
+def test_work_records_rename_and_delete_run_writes_db_and_audit(container) -> None:
+    template = container.work_records.create_standard_company_setup_template()
+    run = container.work_records.instantiate_run(template.id)
+
+    renamed = container.work_records.rename_run(run.id, "公司設立執行 A")
+    assert renamed.name == "公司設立執行 A"
+
+    container.work_records.delete_run(run.id)
+    assert container.work_records.list_runs() == []
+    actions = [
+        row["action"]
+        for row in container.conn.execute(
+            "SELECT action FROM audit_logs WHERE target_type='workflow_run'"
+        ).fetchall()
+    ]
+    assert "work_record.workflow_run.rename" in actions
+    assert "work_record.workflow_run.delete" in actions
+
+
+def test_work_records_step_image_paste_stores_image_on_selected_run_step(qapp, container) -> None:
+    template = container.work_records.create_standard_company_setup_template()
+    run = container.work_records.instantiate_run(template.id)
+    page = WorkRecordsPage(container)
+    page._runs_table.selectRow(0)
+    page._update_workflow_detail()
+    first_stage = page._workflow_detail.topLevelItem(1)
+    first_step = first_stage.child(0)
+    page._workflow_detail.setCurrentItem(first_step)
+
+    image = QImage(28, 18, QImage.Format.Format_ARGB32)
+    image.fill(QColor("green"))
+    QApplication.clipboard().setPixmap(QPixmap.fromImage(image))
+    page._on_paste_template_image()
+
+    updated = next(r for r in container.work_records.list_runs() if r.id == run.id)
+    stages = container.work_records.stages_for_row(updated)
+    first_item = stages[0]["items"][0]
+    assert first_item["image_path"].startswith("images/")
+    assert first_item["image_width"] == 28
+    assert first_item["image_height"] == 18
+    assert (container.work_records.workflow_assets_dir / first_item["image_path"]).is_file()
+
+
+def test_work_records_run_buttons_are_connected_and_layout_prioritizes_detail(qapp, container) -> None:
+    page = WorkRecordsPage(container)
+    page.resize(640, 520)
+    page.show()
+    QApplication.processEvents()
+    assert page._edit_run_btn.text() == "編輯執行"
+    assert page._delete_run_btn.text() == "刪除執行"
+    assert page._workflow_detail.minimumWidth() < 420
+    assert page._workflow_image.minimumHeight() >= 260
+    assert page._templates_table.columnWidth(1) >= 48
+    assert page._runs_table.columnWidth(1) >= 48
+
+
 def test_work_records_action_registry_contracts() -> None:
     labels = {contract.button_label: contract for contract in actions_for_page(PAGE_WORK_RECORDS)}
 
@@ -207,8 +263,10 @@ def test_work_records_action_registry_contracts() -> None:
     assert labels["新增流程"].service == "WorkRecordsService.create_template"
     assert labels["編輯流程"].service == "WorkRecordsService.update_template"
     assert labels["刪除流程"].repository == "WorkRecordsRepository.soft_delete_template"
-    assert labels["匯入流程圖片"].repository == "WorkRecordsRepository.update_template_context"
-    assert labels["貼上截圖"].service == "WorkRecordsService.set_template_image_asset"
+    assert labels["編輯執行"].service == "WorkRecordsService.rename_run"
+    assert labels["刪除執行"].repository == "WorkRecordsRepository.soft_delete_run"
+    assert "update_run_stages" in labels["匯入流程圖片"].repository
+    assert "set_run_step_image_asset" in labels["貼上截圖"].service
     assert labels["建立執行清單"].repository == "WorkRecordsRepository.insert_run"
     assert labels["完成/取消完成選取步驟"].audit_action == "work_record.workflow_run.step_update"
     assert labels["覆蓋回原範本"].service == "WorkRecordsService.overwrite_template_from_run"

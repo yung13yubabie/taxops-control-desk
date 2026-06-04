@@ -6,7 +6,7 @@ toolbar usage: horizontal-only, no widget reordering on resize except wrap.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt
 from PySide6.QtWidgets import QLayout, QLayoutItem, QWidget
 
 
@@ -21,6 +21,7 @@ class FlowLayout(QLayout):
         super().__init__(parent)
         if parent is not None:
             self.setContentsMargins(margin, margin, margin, margin)
+            parent.installEventFilter(self)
         self._h_spacing = h_spacing
         self._v_spacing = v_spacing
         self._items: list[QLayoutItem] = []
@@ -44,6 +45,15 @@ class FlowLayout(QLayout):
         if 0 <= index < len(self._items):
             return self._items.pop(index)
         return None
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if watched is self.parentWidget() and event.type() in {
+            QEvent.Type.Show,
+            QEvent.Type.Resize,
+            QEvent.Type.LayoutRequest,
+        }:
+            self.setGeometry(self.parentWidget().rect())
+        return super().eventFilter(watched, event)
 
     def expandingDirections(self) -> Qt.Orientations:  # noqa: N802
         return Qt.Orientation(0)
