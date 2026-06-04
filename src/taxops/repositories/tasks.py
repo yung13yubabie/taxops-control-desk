@@ -80,7 +80,6 @@ class TasksRepository:
             (engagement_id, client_id, parent_task_id, title, assignee, due_date, priority, status,
              next_step, notes, ts, ts),
         )
-        self._conn.commit()
         new_id = cur.lastrowid
         if new_id is None:
             raise RuntimeError("tasks.insert: lastrowid missing")
@@ -175,7 +174,6 @@ class TasksRepository:
             " WHERE id = ? AND deleted_at IS NULL",
             (title, assignee, due_date, priority, next_step, notes, ts, task_id),
         )
-        self._conn.commit()
         return self.get(task_id)
 
     def update_status(self, task_id: int, status: str) -> TaskRow | None:
@@ -185,7 +183,6 @@ class TasksRepository:
             " WHERE id = ? AND deleted_at IS NULL",
             (status, ts, task_id),
         )
-        self._conn.commit()
         return self.get(task_id)
 
     def complete(self, task_id: int) -> TaskRow | None:
@@ -196,7 +193,6 @@ class TasksRepository:
             " WHERE id = ? AND deleted_at IS NULL",
             (ts, ts, task_id),
         )
-        self._conn.commit()
         return self.get(task_id)
 
     def delete(self, task_id: int) -> bool:
@@ -205,7 +201,6 @@ class TasksRepository:
             "UPDATE workflow_tasks SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
             (ts, task_id),
         )
-        self._conn.commit()
         return cur.rowcount > 0
 
     def engagement_exists(self, engagement_id: int) -> bool:
@@ -236,7 +231,6 @@ class TasksRepository:
             " WHERE id = ? AND deleted_at IS NULL",
             (parent_task_id, ts, task_id),
         )
-        self._conn.commit()
         return self.get(task_id)
 
     def count_children(self, task_id: int) -> int:

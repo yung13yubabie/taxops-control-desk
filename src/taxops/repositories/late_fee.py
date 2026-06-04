@@ -93,7 +93,6 @@ class LateFeeRepository:
                 penalty_breakdown_json,
             ),
         )
-        self._conn.commit()
         return self.get(cur.lastrowid)  # type: ignore[arg-type]
 
     def get(self, record_id: int) -> LateFeeRow | None:

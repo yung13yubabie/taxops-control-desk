@@ -1,4 +1,4 @@
-"""Work records repository for workflow templates/runs and error reviews."""
+﻿"""Work records repository for workflow templates/runs and error reviews."""
 
 from __future__ import annotations
 
@@ -120,8 +120,7 @@ class WorkRecordsRepository:
             "name, stages_json, version, client_id, engagement_id, context_snapshot, created_at, updated_at"
             ") VALUES (?, ?, 1, ?, ?, ?, ?, ?)",
             (name, stages_json, client_id, engagement_id, context_snapshot, ts, ts),
-        )
-        self._conn.commit()
+        )
         row = self.get_template(int(cur.lastrowid))
         if row is None:
             raise RuntimeError("inserted workflow template could not be reloaded")
@@ -154,8 +153,7 @@ class WorkRecordsRepository:
             f"UPDATE workflow_templates_v2 SET name = ?, stages_json = ?, version = {version_expr}, updated_at = ?"
             " WHERE id = ? AND deleted_at IS NULL",
             (name, stages_json, ts, template_id),
-        )
-        self._conn.commit()
+        )
         return self.get_template(template_id)
 
     def update_template_context(
@@ -169,8 +167,7 @@ class WorkRecordsRepository:
             "UPDATE workflow_templates_v2 SET context_snapshot = ?, updated_at = ?"
             " WHERE id = ? AND deleted_at IS NULL",
             (context_snapshot, ts, template_id),
-        )
-        self._conn.commit()
+        )
         return self.get_template(template_id)
 
     def soft_delete_template(self, template_id: int) -> None:
@@ -179,8 +176,7 @@ class WorkRecordsRepository:
             "UPDATE workflow_templates_v2 SET deleted_at = ?, updated_at = ?"
             " WHERE id = ? AND deleted_at IS NULL",
             (ts, ts, template_id),
-        )
-        self._conn.commit()
+        )
 
     def insert_run(
         self,
@@ -198,8 +194,7 @@ class WorkRecordsRepository:
             "template_id, name, stages_json, client_id, engagement_id, context_snapshot, created_at, updated_at"
             ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (template_id, name, stages_json, client_id, engagement_id, context_snapshot, ts, ts),
-        )
-        self._conn.commit()
+        )
         row = self.get_run(int(cur.lastrowid))
         if row is None:
             raise RuntimeError("inserted workflow run could not be reloaded")
@@ -223,8 +218,16 @@ class WorkRecordsRepository:
         self._conn.execute(
             "UPDATE workflow_runs SET stages_json = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
             (stages_json, ts, run_id),
-        )
-        self._conn.commit()
+        )
+        return self.get_run(run_id)
+
+    def update_run_name(self, run_id: int, *, name: str) -> WorkflowRunRow | None:
+        ts = now_iso()
+        self._conn.execute(
+            "UPDATE workflow_runs SET name = ?, updated_at = ?"
+            " WHERE id = ? AND deleted_at IS NULL",
+            (name, ts, run_id),
+        )
         return self.get_run(run_id)
 
     def soft_delete_run(self, run_id: int) -> None:
@@ -233,8 +236,7 @@ class WorkRecordsRepository:
             "UPDATE workflow_runs SET deleted_at = ?, updated_at = ?"
             " WHERE id = ? AND deleted_at IS NULL",
             (ts, ts, run_id),
-        )
-        self._conn.commit()
+        )
 
     def insert_error_review(
         self,
@@ -275,8 +277,7 @@ class WorkRecordsRepository:
                 ts,
                 ts,
             ),
-        )
-        self._conn.commit()
+        )
         row = self.get_error_review(int(cur.lastrowid))
         if row is None:
             raise RuntimeError("inserted error review could not be reloaded")

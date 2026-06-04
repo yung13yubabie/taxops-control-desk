@@ -1,5 +1,79 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-06-04 - v0.22.0 DB Atomic Audit Fix)
+
+### Completed
+
+- Fixed DB mutation + audit non-atomicity (the TASKS.md Medium-priority technical debt item).
+  - Removed `self._conn.commit()` from 13 repository files: clients, engagements, document_requests, tasks, templates, late_fee, attachments, generated_messages, folder_bookmarks, recurring_billing, work_records, canvas_notes, audit_logs.
+  - Added `self._conn = repo._conn` and `with self._conn:` wrapping to 18 service files: all pairs of `repo.mutation() + self._audit.record()` are now in a single atomic transaction.
+  - Infrastructure repos (app_settings, search, system_logs, backup, tax_registry) retain independent commits.
+  - `document_requests.insert_request_with_items` retains explicit `rollback()` in except block for direct repo call safety (used in tests).
+  - Fixed `purge_client` NameError caused by incorrect edit (missing `purged = self._repo.purge(client_id)` inside `with` block).
+- Bumped version to 0.22.0 in pyproject.toml and src/taxops/__init__.py.
+- Built Windows one-dir EXE at `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`.
+- EXE smoke passed.
+- Created `dist/TaxOpsControlDesk-v0.22.0-windows.zip`; `ZipFile.testzip()` passed.
+
+### Modified Files (core change)
+
+- `src/taxops/repositories/audit_logs.py`
+- `src/taxops/repositories/clients.py`
+- `src/taxops/repositories/engagements.py`
+- `src/taxops/repositories/document_requests.py`
+- `src/taxops/repositories/tasks.py`
+- `src/taxops/repositories/templates.py`
+- `src/taxops/repositories/late_fee.py`
+- `src/taxops/repositories/attachments.py`
+- `src/taxops/repositories/generated_messages.py`
+- `src/taxops/repositories/folder_bookmarks.py`
+- `src/taxops/repositories/recurring_billing.py`
+- `src/taxops/repositories/work_records.py`
+- `src/taxops/repositories/canvas_notes.py`
+- `src/taxops/services/clients.py`
+- `src/taxops/services/engagements.py`
+- `src/taxops/services/document_requests.py`
+- `src/taxops/services/tasks.py`
+- `src/taxops/services/templates.py`
+- `src/taxops/services/late_fee.py`
+- `src/taxops/services/attachments.py`
+- `src/taxops/services/generated_messages.py`
+- `src/taxops/services/folder_bookmarks.py`
+- `src/taxops/services/recurring_billing.py`
+- `src/taxops/services/work_records.py`
+- `src/taxops/services/canvas_notes.py`
+- `src/taxops/services/settings.py`
+- `src/taxops/services/export.py`
+- `src/taxops/services/backup.py`
+- `src/taxops/services/registry/matcher.py`
+- `src/taxops/services/registry/importer.py`
+- `src/taxops/services/registry/bundle.py`
+- `pyproject.toml`
+- `src/taxops/__init__.py`
+- `.ai/CURRENT_STATE.md`
+- `.ai/TASKS.md`
+- `.ai/HANDOFF.md`
+
+### Verification
+
+- `python -m pytest -q` → **1012 passed, 1 skipped**.
+- `python -m build_tools.package_windows` → built `dist/TaxOpsControlDesk/TaxOpsControlDesk.exe` (7.1 MB).
+- `python -m build_tools.smoke_test_exe` → passed.
+- `dist/TaxOpsControlDesk-v0.22.0-windows.zip` created; testzip passed (71.4 MB).
+
+### Remaining
+
+- Manual Windows UI acceptance across 1366x768, 1920x1080, DPI 100%/125%/150%.
+- /grill-me, /ui-ux-pro-max, /debugging-and-error-recovery, /systematic-debugging deep scans (started but interrupted at grill-me Q1).
+
+### Read Next
+
+1. `.ai/CURRENT_STATE.md`
+2. `.ai/TASKS.md`
+3. `src/taxops/services/clients.py` (pattern reference for `with self._conn:` wrapping)
+
+---
+
 ## Latest Handoff Update (2026-06-02 - v0.21.1 Codex Fixes)
 
 ### Completed

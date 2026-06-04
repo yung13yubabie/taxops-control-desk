@@ -94,7 +94,6 @@ class ClientsRepository:
                 ts,
             ),
         )
-        self._conn.commit()
         new_id = cur.lastrowid
         if new_id is None:
             raise RuntimeError("clients.insert: lastrowid missing")
@@ -186,7 +185,6 @@ class ClientsRepository:
                 client_id,
             ),
         )
-        self._conn.commit()
         return self.get(client_id)
 
     def delete(self, client_id: int) -> bool:
@@ -200,7 +198,6 @@ class ClientsRepository:
             "UPDATE clients SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
             (ts, client_id),
         )
-        self._conn.commit()
         return cur.rowcount > 0
 
     def restore(self, client_id: int) -> bool:
@@ -212,7 +209,6 @@ class ClientsRepository:
             "UPDATE clients SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL",
             (client_id,),
         )
-        self._conn.commit()
         return cur.rowcount > 0
 
     def count_engagement_refs(self, client_id: int) -> int:
@@ -229,7 +225,6 @@ class ClientsRepository:
             "DELETE FROM clients WHERE id = ? AND deleted_at IS NOT NULL",
             (client_id,),
         )
-        self._conn.commit()
         return cur.rowcount > 0
 
     _SORT_COLUMNS = frozenset({

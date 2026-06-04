@@ -1,5 +1,27 @@
 # TASKS
 
+## 2026-06-04 Current Task State - v0.22.0 DB Atomic Audit Fix
+
+### TODO
+
+- Run real Windows manual UI acceptance across 1366x768, 1920x1080, and 100%/125%/150% scaling.
+- Design a separate GCIS company/business-registration data model and importer if full nationwide company/business-item data is required.
+- Continue /ui-ux-pro-max redesign analysis (interrupted at grill-me Q1 answer).
+- Continue /debugging-and-error-recovery and /systematic-debugging deep scan.
+
+### DOING
+
+- No active implementation slice is currently in progress.
+
+### DONE (2026-06-04)
+
+- Fixed DB mutation + audit non-atomicity (major technical debt):
+  - Removed `conn.commit()` from 13 repository mutation files.
+  - Added `with self._conn:` wrapping to 18 service files covering all `repo.mutation + audit.record` pairs.
+  - `insert_request_with_items` retains explicit `rollback()` for direct repo call safety.
+  - Full `python -m pytest -q` → **1012 passed, 1 skipped**.
+  - Version bumped to 0.22.0.
+
 ## 2026-06-02 Current Task State - v0.21.1 Codex Fixes
 
 ### TODO

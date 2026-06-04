@@ -75,7 +75,6 @@ class EngagementsRepository:
             (client_id, engagement_name, tax_type, period_name, status,
              owner, due_date, notes, ts, ts),
         )
-        self._conn.commit()
         new_id = cur.lastrowid
         if new_id is None:
             raise RuntimeError("engagements.insert: lastrowid missing")
@@ -148,7 +147,6 @@ class EngagementsRepository:
             (engagement_name, tax_type, period_name, status, owner, due_date, notes, ts,
              engagement_id),
         )
-        self._conn.commit()
         return self.get(engagement_id)
 
     def update_status(self, engagement_id: int, status: str) -> EngagementRow | None:
@@ -158,7 +156,6 @@ class EngagementsRepository:
             " WHERE id = ? AND deleted_at IS NULL",
             (status, ts, engagement_id),
         )
-        self._conn.commit()
         return self.get(engagement_id)
 
     def delete(self, engagement_id: int) -> bool:
@@ -167,7 +164,6 @@ class EngagementsRepository:
             "UPDATE engagements SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
             (ts, engagement_id),
         )
-        self._conn.commit()
         return cur.rowcount > 0
 
     def list_all(

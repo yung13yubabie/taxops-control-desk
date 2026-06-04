@@ -53,7 +53,6 @@ class CanvasNotesRepository:
             ") VALUES (?, ?, ?, ?, ?, ?, ?)",
             (title, scene_json, client_id, engagement_id, context_snapshot, ts, ts),
         )
-        self._conn.commit()
         row = self.get(int(cur.lastrowid))
         if row is None:
             raise RuntimeError("inserted canvas note could not be reloaded")
@@ -78,7 +77,6 @@ class CanvasNotesRepository:
             " WHERE id = ? AND deleted_at IS NULL",
             (title, scene_json, now_iso(), note_id),
         )
-        self._conn.commit()
         return self.get(note_id)
 
     def soft_delete(self, note_id: int) -> CanvasNoteRow | None:
@@ -89,5 +87,4 @@ class CanvasNotesRepository:
             "UPDATE canvas_notes SET deleted_at = ?, updated_at = ? WHERE id = ?",
             (now_iso(), now_iso(), note_id),
         )
-        self._conn.commit()
         return row

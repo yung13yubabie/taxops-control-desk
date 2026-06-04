@@ -59,18 +59,19 @@ class BackupService:
             raise BackupError("backup.create.failed") from exc
 
         file_size = dest_path.stat().st_size
-        row = self._repo.insert(
-            filename=filename,
-            backup_path=str(dest_path),
-            file_size=file_size,
-            notes=notes,
-        )
-        self._audit.record(
-            action="backup.create",
-            target_type="backup",
-            target_id=str(row.id),
-            detail={"filename": filename, "file_size": file_size},
-        )
+        with self._conn:
+            row = self._repo.insert(
+                filename=filename,
+                backup_path=str(dest_path),
+                file_size=file_size,
+                notes=notes,
+            )
+            self._audit.record(
+                action="backup.create",
+                target_type="backup",
+                target_id=str(row.id),
+                detail={"filename": filename, "file_size": file_size},
+            )
         return row
 
     def restore_backup(self, backup_path: Path, paths: AppPaths) -> None:
@@ -121,14 +122,15 @@ class BackupService:
         except Exception:
             _log.error("backup.restore: apply_migrations failed — restart recommended", exc_info=True)
 
-        self._audit.record(
-            action="backup.restore",
-            target_type="backup",
-            detail={
-                "restored_from": str(backup_path),
-                "before_restore_snapshot": str(before_path),
-            },
-        )
+        with self._conn:
+            self._audit.record(
+                action="backup.restore",
+                target_type="backup",
+                detail={
+                    "restored_from": str(backup_path),
+                    "before_restore_snapshot": str(before_path),
+                },
+            )
 
     # ------------------------------------------------------------------
     # Internal helpers

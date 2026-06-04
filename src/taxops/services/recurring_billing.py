@@ -250,6 +250,7 @@ class RecurringBillingService:
     ) -> None:
         self._repo = repo
         self._audit = audit
+        self._conn = repo._conn
 
     # ── plans ──────────────────────────────────────────────────────────────
 
@@ -299,17 +300,18 @@ class RecurringBillingService:
             }
             for ln in lines_inp
         ]
-        plan, lines = self._repo.insert_plan_with_lines(plan_data, lines_data)
-        self._audit.record(
-            action="recurring_billing.plan.create_with_lines",
-            target_type="recurring_billing_plan",
-            target_id=str(plan.id),
-            detail={
-                "plan_name": plan.plan_name,
-                "client_id": plan.client_id,
-                "line_count": len(lines),
-            },
-        )
+        with self._conn:
+            plan, lines = self._repo.insert_plan_with_lines(plan_data, lines_data)
+            self._audit.record(
+                action="recurring_billing.plan.create_with_lines",
+                target_type="recurring_billing_plan",
+                target_id=str(plan.id),
+                detail={
+                    "plan_name": plan.plan_name,
+                    "client_id": plan.client_id,
+                    "line_count": len(lines),
+                },
+            )
         return plan, lines
 
     def create_plan(self, inp: CreatePlanInput) -> PlanRow:
@@ -317,24 +319,25 @@ class RecurringBillingService:
             inp.plan_name, inp.frequency, inp.issue_day, inp.months_json,
             inp.start_date, inp.end_date, inp.advance_notice_days,
         )
-        plan = self._repo.insert_plan(
-            client_id=inp.client_id,
-            plan_name=inp.plan_name,
-            contract_ref=inp.contract_ref,
-            frequency=inp.frequency,
-            issue_day=inp.issue_day,
-            months_json=inp.months_json,
-            start_date=inp.start_date,
-            end_date=inp.end_date,
-            advance_notice_days=inp.advance_notice_days,
-            notes=inp.notes,
-        )
-        self._audit.record(
-            action="recurring_billing.plan.create",
-            target_type="recurring_billing_plan",
-            target_id=str(plan.id),
-            detail={"plan_name": inp.plan_name, "client_id": inp.client_id},
-        )
+        with self._conn:
+            plan = self._repo.insert_plan(
+                client_id=inp.client_id,
+                plan_name=inp.plan_name,
+                contract_ref=inp.contract_ref,
+                frequency=inp.frequency,
+                issue_day=inp.issue_day,
+                months_json=inp.months_json,
+                start_date=inp.start_date,
+                end_date=inp.end_date,
+                advance_notice_days=inp.advance_notice_days,
+                notes=inp.notes,
+            )
+            self._audit.record(
+                action="recurring_billing.plan.create",
+                target_type="recurring_billing_plan",
+                target_id=str(plan.id),
+                detail={"plan_name": inp.plan_name, "client_id": inp.client_id},
+            )
         return plan
 
     def get_plan(self, plan_id: int) -> PlanRow | None:
@@ -348,40 +351,42 @@ class RecurringBillingService:
             inp.plan_name, inp.frequency, inp.issue_day, inp.months_json,
             inp.start_date, inp.end_date, inp.advance_notice_days,
         )
-        plan = self._repo.update_plan(
-            plan_id=plan_id,
-            plan_name=inp.plan_name,
-            contract_ref=inp.contract_ref,
-            frequency=inp.frequency,
-            issue_day=inp.issue_day,
-            months_json=inp.months_json,
-            start_date=inp.start_date,
-            end_date=inp.end_date,
-            advance_notice_days=inp.advance_notice_days,
-            notes=inp.notes,
-        )
-        if plan is None:
-            raise RecurringBillingError("recurring_billing.plan.not_found")
-        self._audit.record(
-            action="recurring_billing.plan.update",
-            target_type="recurring_billing_plan",
-            target_id=str(plan_id),
-            detail={"plan_name": inp.plan_name},
-        )
+        with self._conn:
+            plan = self._repo.update_plan(
+                plan_id=plan_id,
+                plan_name=inp.plan_name,
+                contract_ref=inp.contract_ref,
+                frequency=inp.frequency,
+                issue_day=inp.issue_day,
+                months_json=inp.months_json,
+                start_date=inp.start_date,
+                end_date=inp.end_date,
+                advance_notice_days=inp.advance_notice_days,
+                notes=inp.notes,
+            )
+            if plan is None:
+                raise RecurringBillingError("recurring_billing.plan.not_found")
+            self._audit.record(
+                action="recurring_billing.plan.update",
+                target_type="recurring_billing_plan",
+                target_id=str(plan_id),
+                detail={"plan_name": inp.plan_name},
+            )
         return plan
 
     def archive_plan(self, plan_id: int) -> PlanRow:
         existing = self._repo.get_plan(plan_id)
         if existing is None:
             raise RecurringBillingError("recurring_billing.plan.not_found")
-        plan = self._repo.set_plan_status(plan_id, "archived", deleted_at=now_iso())
-        if plan is None:
-            raise RecurringBillingError("recurring_billing.plan.not_found")
-        self._audit.record(
-            action="recurring_billing.plan.archive",
-            target_type="recurring_billing_plan",
-            target_id=str(plan_id),
-        )
+        with self._conn:
+            plan = self._repo.set_plan_status(plan_id, "archived", deleted_at=now_iso())
+            if plan is None:
+                raise RecurringBillingError("recurring_billing.plan.not_found")
+            self._audit.record(
+                action="recurring_billing.plan.archive",
+                target_type="recurring_billing_plan",
+                target_id=str(plan_id),
+            )
         return plan
 
     def list_plans(
@@ -399,20 +404,21 @@ class RecurringBillingService:
             raise RecurringBillingError("recurring_billing.bill_to_name.empty")
         if inp.amount <= 0:
             raise RecurringBillingError("recurring_billing.amount.non_positive")
-        line = self._repo.insert_line(
-            plan_id=inp.plan_id,
-            bill_to_name=inp.bill_to_name,
-            description=inp.description,
-            amount=inp.amount,
-            tax_type=inp.tax_type,
-            sort_order=inp.sort_order,
-        )
-        self._audit.record(
-            action="recurring_billing.line.create",
-            target_type="recurring_billing_line",
-            target_id=str(line.id),
-            detail={"plan_id": inp.plan_id, "bill_to_name": inp.bill_to_name},
-        )
+        with self._conn:
+            line = self._repo.insert_line(
+                plan_id=inp.plan_id,
+                bill_to_name=inp.bill_to_name,
+                description=inp.description,
+                amount=inp.amount,
+                tax_type=inp.tax_type,
+                sort_order=inp.sort_order,
+            )
+            self._audit.record(
+                action="recurring_billing.line.create",
+                target_type="recurring_billing_line",
+                target_id=str(line.id),
+                detail={"plan_id": inp.plan_id, "bill_to_name": inp.bill_to_name},
+            )
         return line
 
     def list_lines(self, plan_id: int, active_only: bool = False) -> list[LineRow]:
@@ -514,23 +520,24 @@ class RecurringBillingService:
         if inp.confirmed_invoice_no and len(inp.confirmed_invoice_no) > 50:
             raise RecurringBillingError("recurring_billing.confirmed_invoice_no.too_long")
 
-        row = self._repo.update_occurrence_status(
-            occurrence_id=occurrence_id,
-            status="confirmed",
-            confirmed_invoice_no=inp.confirmed_invoice_no,
-            confirmed_issue_date=inp.confirmed_issue_date or occ.expected_issue_date,
-            confirmed_amount=inp.confirmed_amount,
-            confirmed_at=now_iso(),
-            notes=inp.notes,
-        )
-        if row is None:
-            raise RecurringBillingError("recurring_billing.occurrence.not_found")
-        self._audit.record(
-            action="recurring_billing.occurrence.confirm",
-            target_type="recurring_billing_occurrence",
-            target_id=str(occurrence_id),
-            detail={"confirmed_amount": inp.confirmed_amount},
-        )
+        with self._conn:
+            row = self._repo.update_occurrence_status(
+                occurrence_id=occurrence_id,
+                status="confirmed",
+                confirmed_invoice_no=inp.confirmed_invoice_no,
+                confirmed_issue_date=inp.confirmed_issue_date or occ.expected_issue_date,
+                confirmed_amount=inp.confirmed_amount,
+                confirmed_at=now_iso(),
+                notes=inp.notes,
+            )
+            if row is None:
+                raise RecurringBillingError("recurring_billing.occurrence.not_found")
+            self._audit.record(
+                action="recurring_billing.occurrence.confirm",
+                target_type="recurring_billing_occurrence",
+                target_id=str(occurrence_id),
+                detail={"confirmed_amount": inp.confirmed_amount},
+            )
         return row
 
     def skip_occurrence(self, occurrence_id: int, reason: str) -> OccurrenceRow:
@@ -541,19 +548,20 @@ class RecurringBillingService:
             raise RecurringBillingError("recurring_billing.occurrence.not_found")
         if occ.status != "pending":
             raise RecurringBillingError("recurring_billing.occurrence.not_pending")
-        row = self._repo.update_occurrence_status(
-            occurrence_id=occurrence_id,
-            status="skipped",
-            skipped_reason=reason.strip(),
-        )
-        if row is None:
-            raise RecurringBillingError("recurring_billing.occurrence.not_found")
-        self._audit.record(
-            action="recurring_billing.occurrence.skip",
-            target_type="recurring_billing_occurrence",
-            target_id=str(occurrence_id),
-            detail={"reason": reason.strip()},
-        )
+        with self._conn:
+            row = self._repo.update_occurrence_status(
+                occurrence_id=occurrence_id,
+                status="skipped",
+                skipped_reason=reason.strip(),
+            )
+            if row is None:
+                raise RecurringBillingError("recurring_billing.occurrence.not_found")
+            self._audit.record(
+                action="recurring_billing.occurrence.skip",
+                target_type="recurring_billing_occurrence",
+                target_id=str(occurrence_id),
+                detail={"reason": reason.strip()},
+            )
         return row
 
     def cancel_occurrence(self, occurrence_id: int) -> OccurrenceRow:

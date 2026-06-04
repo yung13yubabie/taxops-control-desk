@@ -182,6 +182,7 @@ class TaxCacheBundleService:
         self._metadata = metadata_repo
         self._audit = audit
         self._system_log = system_log
+        self._conn = registry_repo._conn
 
     # ------------------------------------------------------------------
     # Export
@@ -242,17 +243,18 @@ class TaxCacheBundleService:
                 _log.warning("export_bundle: failed to clean up temp file %s", tmp)
             raise
 
-        self._audit.record(
-            action="tax_cache.bundle.export",
-            target_type=_AUDIT_TARGET_TYPE,
-            target_id=cache_version,
-            detail={
-                "row_count": row_count,
-                "cache_version": cache_version,
-                "bundle_sha256_of_data": bundle_sha,
-                "bundle_path": str(dest),
-            },
-        )
+        with self._conn:
+            self._audit.record(
+                action="tax_cache.bundle.export",
+                target_type=_AUDIT_TARGET_TYPE,
+                target_id=cache_version,
+                detail={
+                    "row_count": row_count,
+                    "cache_version": cache_version,
+                    "bundle_sha256_of_data": bundle_sha,
+                    "bundle_path": str(dest),
+                },
+            )
         return ExportResult(
             bundle_path=dest,
             row_count=row_count,
@@ -347,16 +349,17 @@ class TaxCacheBundleService:
                 meta_payload[key] = str(value)
 
         self._metadata.upsert_many(meta_payload)
-        self._audit.record(
-            action="tax_cache.bundle.import",
-            target_type=_AUDIT_TARGET_TYPE,
-            target_id=cache_version,
-            detail={
-                "row_count": row_count,
-                "cache_version": cache_version,
-                "bundle_sha256_of_data": actual_sha,
-            },
-        )
+        with self._conn:
+            self._audit.record(
+                action="tax_cache.bundle.import",
+                target_type=_AUDIT_TARGET_TYPE,
+                target_id=cache_version,
+                detail={
+                    "row_count": row_count,
+                    "cache_version": cache_version,
+                    "bundle_sha256_of_data": actual_sha,
+                },
+            )
         return BundleImportResult(
             bundle_path=path,
             row_count=row_count,

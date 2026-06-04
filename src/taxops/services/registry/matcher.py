@@ -62,23 +62,25 @@ class RegistryMatcher:
         self._matches = match_repo
         self._metadata = metadata_repo
         self._audit = audit
+        self._conn = clients_repo._conn
 
     def regenerate_mof(self) -> MatchSummary:
         cache_version = self._metadata.get("cache_version")
         clients = self._clients.list_clients(limit=1_000_000)
         items = list(self._build_items(clients, cache_version))
         histogram = self._matches.replace_for_source(REGISTRY_SOURCE_MOF, items)
-        self._audit.record(
-            action="tax_cache.match.regenerate",
-            target_type=_AUDIT_TARGET_TYPE,
-            target_id=cache_version,
-            detail={
-                "registry_source": REGISTRY_SOURCE_MOF,
-                "client_count": len(clients),
-                "cache_version": cache_version,
-                "histogram": histogram,
-            },
-        )
+        with self._conn:
+            self._audit.record(
+                action="tax_cache.match.regenerate",
+                target_type=_AUDIT_TARGET_TYPE,
+                target_id=cache_version,
+                detail={
+                    "registry_source": REGISTRY_SOURCE_MOF,
+                    "client_count": len(clients),
+                    "cache_version": cache_version,
+                    "histogram": histogram,
+                },
+            )
         return MatchSummary(
             client_count=len(clients),
             cache_version=cache_version,

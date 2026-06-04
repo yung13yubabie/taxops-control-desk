@@ -48,6 +48,7 @@ class GeneratedMessagesService:
         self._templates_svc = templates_svc
         self._audit = audit
         self._recurring_billing_repo = recurring_billing_repo
+        self._conn = repo._conn
 
     def build_variables(self, request_id: int) -> dict[str, str]:
         """Assemble all ALLOWED_VARIABLES for a given document request."""
@@ -139,20 +140,21 @@ class GeneratedMessagesService:
         except Exception as err:
             raise GeneratedMessageValidationError("gen_message.render_failed") from err
 
-        row = self._repo.insert(
-            request_id=payload.request_id,
-            template_id=payload.template_id,
-            body=body,
-        )
-        self._audit.record(
-            action="gen_message.create",
-            target_type="generated_message",
-            target_id=str(row.id),
-            detail={
-                "request_id": payload.request_id,
-                "template_id": payload.template_id,
-            },
-        )
+        with self._conn:
+            row = self._repo.insert(
+                request_id=payload.request_id,
+                template_id=payload.template_id,
+                body=body,
+            )
+            self._audit.record(
+                action="gen_message.create",
+                target_type="generated_message",
+                target_id=str(row.id),
+                detail={
+                    "request_id": payload.request_id,
+                    "template_id": payload.template_id,
+                },
+            )
         return row
 
     def list_by_request(self, request_id: int) -> list[GeneratedMessageRow]:

@@ -83,6 +83,7 @@ class FolderBookmarksService:
     ) -> None:
         self._repo = repo
         self._audit = audit
+        self._conn = repo._conn
 
     def list_bookmarks(self) -> list[FolderBookmarkRow]:
         return self._repo.list_all()
@@ -102,19 +103,20 @@ class FolderBookmarksService:
         category = _validate_category(payload.category)
         sort_order = max(0, int(payload.sort_order or 0))
         timestamp = _now_iso()
-        new_id = self._repo.insert(
-            name=name,
-            path=path,
-            category=category,
-            sort_order=sort_order,
-            timestamp=timestamp,
-        )
-        self._audit.record(
-            action="folder_bookmark.create",
-            target_type="folder_bookmark",
-            target_id=str(new_id),
-            detail={"name": name, "path": path, "category": category},
-        )
+        with self._conn:
+            new_id = self._repo.insert(
+                name=name,
+                path=path,
+                category=category,
+                sort_order=sort_order,
+                timestamp=timestamp,
+            )
+            self._audit.record(
+                action="folder_bookmark.create",
+                target_type="folder_bookmark",
+                target_id=str(new_id),
+                detail={"name": name, "path": path, "category": category},
+            )
         row = self._repo.get(new_id)
         assert row is not None
         return row
@@ -128,22 +130,23 @@ class FolderBookmarksService:
         category = _validate_category(payload.category)
         sort_order = max(0, int(payload.sort_order or 0))
         timestamp = _now_iso()
-        updated = self._repo.update(
-            bookmark_id=payload.bookmark_id,
-            name=name,
-            path=path,
-            category=category,
-            sort_order=sort_order,
-            timestamp=timestamp,
-        )
-        if updated == 0:
-            raise FolderBookmarkValidationError("folder_bookmark.not_found")
-        self._audit.record(
-            action="folder_bookmark.update",
-            target_type="folder_bookmark",
-            target_id=str(payload.bookmark_id),
-            detail={"name": name, "path": path, "category": category},
-        )
+        with self._conn:
+            updated = self._repo.update(
+                bookmark_id=payload.bookmark_id,
+                name=name,
+                path=path,
+                category=category,
+                sort_order=sort_order,
+                timestamp=timestamp,
+            )
+            if updated == 0:
+                raise FolderBookmarkValidationError("folder_bookmark.not_found")
+            self._audit.record(
+                action="folder_bookmark.update",
+                target_type="folder_bookmark",
+                target_id=str(payload.bookmark_id),
+                detail={"name": name, "path": path, "category": category},
+            )
         row = self._repo.get(payload.bookmark_id)
         assert row is not None
         return row
@@ -153,12 +156,13 @@ class FolderBookmarksService:
         if existing is None:
             raise FolderBookmarkValidationError("folder_bookmark.not_found")
         timestamp = _now_iso()
-        deleted = self._repo.soft_delete(bookmark_id, timestamp)
-        if deleted == 0:
-            raise FolderBookmarkValidationError("folder_bookmark.not_found")
-        self._audit.record(
-            action="folder_bookmark.delete",
-            target_type="folder_bookmark",
-            target_id=str(bookmark_id),
-            detail={"name": existing.name, "path": existing.path},
-        )
+        with self._conn:
+            deleted = self._repo.soft_delete(bookmark_id, timestamp)
+            if deleted == 0:
+                raise FolderBookmarkValidationError("folder_bookmark.not_found")
+            self._audit.record(
+                action="folder_bookmark.delete",
+                target_type="folder_bookmark",
+                target_id=str(bookmark_id),
+                detail={"name": existing.name, "path": existing.path},
+            )

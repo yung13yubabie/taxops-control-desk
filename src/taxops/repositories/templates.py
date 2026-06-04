@@ -49,7 +49,6 @@ class TemplatesRepository:
             " VALUES (?, ?, ?, 0, ?, ?)",
             (name, template_type, body, ts, ts),
         )
-        self._conn.commit()
         new_id = cur.lastrowid
         if new_id is None:
             raise RuntimeError("templates.insert: lastrowid missing")
@@ -91,7 +90,6 @@ class TemplatesRepository:
             " WHERE id = ? AND deleted_at IS NULL AND is_builtin = 0",
             (name, template_type, body, ts, template_id),
         )
-        self._conn.commit()
         return self.get(template_id)
 
     def delete(self, template_id: int) -> bool:
@@ -101,5 +99,4 @@ class TemplatesRepository:
             " WHERE id = ? AND deleted_at IS NULL AND is_builtin = 0",
             (ts, template_id),
         )
-        self._conn.commit()
         return cur.rowcount > 0

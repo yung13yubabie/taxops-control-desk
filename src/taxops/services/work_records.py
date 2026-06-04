@@ -115,6 +115,7 @@ class WorkRecordsService:
         self._repo = repo
         self._audit = audit
         self._workflow_assets_dir = workflow_assets_dir
+        self._conn = repo._conn
 
     @property
     def workflow_assets_dir(self) -> Path:
@@ -127,19 +128,20 @@ class WorkRecordsService:
         if not name:
             raise WorkRecordValidationError("work_record.template.name.required")
         stages = self._normalize_stage_inputs(payload.stages)
-        row = self._repo.insert_template(
-            name=name,
-            stages_json=_dumps_stages(stages),
-            client_id=payload.client_id,
-            engagement_id=payload.engagement_id,
-            context_snapshot=None,
-        )
-        self._audit.record(
-            action="work_record.workflow_template.create",
-            target_type="workflow_template",
-            target_id=str(row.id),
-            detail={"name": row.name},
-        )
+        with self._conn:
+            row = self._repo.insert_template(
+                name=name,
+                stages_json=_dumps_stages(stages),
+                client_id=payload.client_id,
+                engagement_id=payload.engagement_id,
+                context_snapshot=None,
+            )
+            self._audit.record(
+                action="work_record.workflow_template.create",
+                target_type="workflow_template",
+                target_id=str(row.id),
+                detail={"name": row.name},
+            )
         return row
 
     def update_template(
@@ -154,21 +156,22 @@ class WorkRecordsService:
         if not name:
             raise WorkRecordValidationError("work_record.template.name.required")
         stages = self._normalize_stage_inputs(payload.stages)
-        updated = _require_row(
-            self._repo.update_template_stages(
-                template_id,
-                name=name,
-                stages_json=_dumps_stages(stages),
-                bump_version=True,
-            ),
-            "work_record.template.not_found",
-        )
-        self._audit.record(
-            action="work_record.workflow_template.update",
-            target_type="workflow_template",
-            target_id=str(updated.id),
-            detail={"name": updated.name, "previous_version": existing.version},
-        )
+        with self._conn:
+            updated = _require_row(
+                self._repo.update_template_stages(
+                    template_id,
+                    name=name,
+                    stages_json=_dumps_stages(stages),
+                    bump_version=True,
+                ),
+                "work_record.template.not_found",
+            )
+            self._audit.record(
+                action="work_record.workflow_template.update",
+                target_type="workflow_template",
+                target_id=str(updated.id),
+                detail={"name": updated.name, "previous_version": existing.version},
+            )
         return updated
 
     def set_template_image_path(
@@ -229,19 +232,20 @@ class WorkRecordsService:
             snapshot.pop("image_path", None)
             snapshot.pop("image_width", None)
             snapshot.pop("image_height", None)
-        updated = _require_row(
-            self._repo.update_template_context(
-                template_id,
-                context_snapshot=json.dumps(snapshot, ensure_ascii=False) if snapshot else None,
-            ),
-            "work_record.template.not_found",
-        )
-        self._audit.record(
-            action="work_record.workflow_template.image_update",
-            target_type="workflow_template",
-            target_id=str(updated.id),
-            detail={"has_image": bool(clean_path)},
-        )
+        with self._conn:
+            updated = _require_row(
+                self._repo.update_template_context(
+                    template_id,
+                    context_snapshot=json.dumps(snapshot, ensure_ascii=False) if snapshot else None,
+                ),
+                "work_record.template.not_found",
+            )
+            self._audit.record(
+                action="work_record.workflow_template.image_update",
+                target_type="workflow_template",
+                target_id=str(updated.id),
+                detail={"has_image": bool(clean_path)},
+            )
         return updated
 
     def _safe_workflow_asset_path(self, rel_path: str) -> Path:
@@ -260,25 +264,47 @@ class WorkRecordsService:
         existing = self._repo.get_template(template_id)
         if existing is None:
             raise WorkRecordValidationError("work_record.template.not_found")
-        self._repo.soft_delete_template(template_id)
-        self._audit.record(
-            action="work_record.workflow_template.delete",
-            target_type="workflow_template",
-            target_id=str(template_id),
-            detail={"name": existing.name},
-        )
+        with self._conn:
+            self._repo.soft_delete_template(template_id)
+            self._audit.record(
+                action="work_record.workflow_template.delete",
+                target_type="workflow_template",
+                target_id=str(template_id),
+                detail={"name": existing.name},
+            )
 
     def delete_run(self, run_id: int) -> None:
         existing = self._repo.get_run(run_id)
         if existing is None:
             raise WorkRecordValidationError("work_record.run.not_found")
-        self._repo.soft_delete_run(run_id)
-        self._audit.record(
-            action="work_record.workflow_run.delete",
-            target_type="workflow_run",
-            target_id=str(run_id),
-            detail={"name": existing.name},
-        )
+        with self._conn:
+            self._repo.soft_delete_run(run_id)
+            self._audit.record(
+                action="work_record.workflow_run.delete",
+                target_type="workflow_run",
+                target_id=str(run_id),
+                detail={"name": existing.name},
+            )
+
+    def rename_run(self, run_id: int, name: str) -> WorkflowRunRow:
+        existing = self._repo.get_run(run_id)
+        if existing is None:
+            raise WorkRecordValidationError("work_record.run.not_found")
+        clean_name = sanitize_user_text(name, max_length=200)
+        if not clean_name:
+            raise WorkRecordValidationError("work_record.run.name.required")
+        with self._conn:
+            updated = _require_row(
+                self._repo.update_run_name(run_id, name=clean_name),
+                "work_record.run.not_found",
+            )
+            self._audit.record(
+                action="work_record.workflow_run.rename",
+                target_type="workflow_run",
+                target_id=str(run_id),
+                detail={"name": updated.name, "previous_name": existing.name},
+            )
+        return updated
 
     def create_standard_company_setup_template(self) -> WorkflowTemplateRow:
         return self.create_template(
@@ -315,20 +341,21 @@ class WorkRecordsService:
         if template is None:
             raise WorkRecordValidationError("work_record.template.not_found")
         run_name = sanitize_user_text(name, max_length=200) or f"{template.name} 執行"
-        row = self._repo.insert_run(
-            template_id=template.id,
-            name=run_name,
-            stages_json=template.stages_json,
-            client_id=template.client_id,
-            engagement_id=template.engagement_id,
-            context_snapshot=template.context_snapshot,
-        )
-        self._audit.record(
-            action="work_record.workflow_run.create",
-            target_type="workflow_run",
-            target_id=str(row.id),
-            detail={"template_id": template.id},
-        )
+        with self._conn:
+            row = self._repo.insert_run(
+                template_id=template.id,
+                name=run_name,
+                stages_json=template.stages_json,
+                client_id=template.client_id,
+                engagement_id=template.engagement_id,
+                context_snapshot=template.context_snapshot,
+            )
+            self._audit.record(
+                action="work_record.workflow_run.create",
+                target_type="workflow_run",
+                target_id=str(row.id),
+                detail={"template_id": template.id},
+            )
         return row
 
     def set_run_step_done(
@@ -354,16 +381,83 @@ class WorkRecordsService:
                     break
         if not changed:
             raise WorkRecordValidationError("work_record.step.not_found")
-        updated = _require_row(
-            self._repo.update_run_stages(run.id, stages_json=_dumps_stages(stages)),
-            "work_record.run.not_found",
+        with self._conn:
+            updated = _require_row(
+                self._repo.update_run_stages(run.id, stages_json=_dumps_stages(stages)),
+                "work_record.run.not_found",
+            )
+            self._audit.record(
+                action="work_record.workflow_run.step_update",
+                target_type="workflow_run",
+                target_id=str(run.id),
+                detail={"stage_id": stage_id, "item_id": item_id, "done": done},
+            )
+        return updated
+
+    def set_run_step_image_path(
+        self,
+        run_id: int,
+        *,
+        stage_id: str,
+        item_id: str,
+        image_path: str,
+    ) -> WorkflowRunRow:
+        rel_path, width, height = self.import_workflow_image_asset(Path(image_path))
+        return self.set_run_step_image_asset(
+            run_id,
+            stage_id=stage_id,
+            item_id=item_id,
+            rel_path=rel_path,
+            width=width,
+            height=height,
         )
-        self._audit.record(
-            action="work_record.workflow_run.step_update",
-            target_type="workflow_run",
-            target_id=str(run.id),
-            detail={"stage_id": stage_id, "item_id": item_id, "done": done},
-        )
+
+    def set_run_step_image_asset(
+        self,
+        run_id: int,
+        *,
+        stage_id: str,
+        item_id: str,
+        rel_path: str,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> WorkflowRunRow:
+        run = self._repo.get_run(run_id)
+        if run is None:
+            raise WorkRecordValidationError("work_record.run.not_found")
+        clean_path = sanitize_user_text(rel_path, max_length=1000)
+        if not clean_path:
+            raise WorkRecordValidationError("work_record.asset.path_invalid")
+        asset_path = self._safe_workflow_asset_path(clean_path)
+        reader = QImageReader(str(asset_path))
+        if not reader.canRead():
+            raise WorkRecordValidationError("work_record.asset.image_invalid")
+        size = reader.size()
+        stages = _loads_stages(run.stages_json)
+        changed = False
+        for stage in stages:
+            if stage.get("id") != stage_id:
+                continue
+            for item in stage.get("items", []):
+                if item.get("id") == item_id:
+                    item["image_path"] = clean_path
+                    item["image_width"] = int(width or size.width())
+                    item["image_height"] = int(height or size.height())
+                    changed = True
+                    break
+        if not changed:
+            raise WorkRecordValidationError("work_record.step.not_found")
+        with self._conn:
+            updated = _require_row(
+                self._repo.update_run_stages(run.id, stages_json=_dumps_stages(stages)),
+                "work_record.run.not_found",
+            )
+            self._audit.record(
+                action="work_record.workflow_run.step_image_update",
+                target_type="workflow_run",
+                target_id=str(run.id),
+                detail={"stage_id": stage_id, "item_id": item_id, "has_image": True},
+            )
         return updated
 
     def overwrite_template_from_run(self, run_id: int) -> WorkflowTemplateRow:
@@ -375,21 +469,22 @@ class WorkRecordsService:
         template = self._repo.get_template(run.template_id)
         if template is None:
             raise WorkRecordValidationError("work_record.template.not_found")
-        updated = _require_row(
-            self._repo.update_template_stages(
-                template.id,
-                name=template.name,
-                stages_json=run.stages_json,
-                bump_version=True,
-            ),
-            "work_record.template.not_found",
-        )
-        self._audit.record(
-            action="work_record.workflow_template.overwrite_from_run",
-            target_type="workflow_template",
-            target_id=str(template.id),
-            detail={"run_id": run.id},
-        )
+        with self._conn:
+            updated = _require_row(
+                self._repo.update_template_stages(
+                    template.id,
+                    name=template.name,
+                    stages_json=run.stages_json,
+                    bump_version=True,
+                ),
+                "work_record.template.not_found",
+            )
+            self._audit.record(
+                action="work_record.workflow_template.overwrite_from_run",
+                target_type="workflow_template",
+                target_id=str(template.id),
+                detail={"run_id": run.id},
+            )
         return updated
 
     def save_run_as_template(self, run_id: int, name: str) -> WorkflowTemplateRow:
@@ -399,19 +494,20 @@ class WorkRecordsService:
         template_name = sanitize_user_text(name, max_length=200)
         if not template_name:
             raise WorkRecordValidationError("work_record.template.name.required")
-        row = self._repo.insert_template(
-            name=template_name,
-            stages_json=run.stages_json,
-            client_id=run.client_id,
-            engagement_id=run.engagement_id,
-            context_snapshot=run.context_snapshot,
-        )
-        self._audit.record(
-            action="work_record.workflow_template.save_from_run",
-            target_type="workflow_template",
-            target_id=str(row.id),
-            detail={"run_id": run.id},
-        )
+        with self._conn:
+            row = self._repo.insert_template(
+                name=template_name,
+                stages_json=run.stages_json,
+                client_id=run.client_id,
+                engagement_id=run.engagement_id,
+                context_snapshot=run.context_snapshot,
+            )
+            self._audit.record(
+                action="work_record.workflow_template.save_from_run",
+                target_type="workflow_template",
+                target_id=str(row.id),
+                detail={"run_id": run.id},
+            )
         return row
 
     def create_error_review(self, payload: CreateErrorReviewInput) -> ErrorReviewRow:
@@ -429,26 +525,27 @@ class WorkRecordsService:
                 stage_id=payload.guard_stage_id,
                 step_text=guard_step,
             )
-        row = self._repo.insert_error_review(
-            title=title,
-            phenomenon=phenomenon,
-            root_cause=root_cause,
-            short_term_fix=sanitize_user_text(payload.short_term_fix, max_length=2000) or None,
-            long_term_guard=sanitize_user_text(payload.long_term_guard, max_length=2000) or None,
-            severity=payload.severity,
-            workflow_template_id=payload.workflow_template_id,
-            guard_stage_id=payload.guard_stage_id,
-            guard_step_text=guard_step,
-            client_id=payload.client_id,
-            engagement_id=payload.engagement_id,
-            context_snapshot=None,
-        )
-        self._audit.record(
-            action="work_record.error_review.create",
-            target_type="error_review",
-            target_id=str(row.id),
-            detail={"severity": row.severity, "workflow_template_id": row.workflow_template_id},
-        )
+        with self._conn:
+            row = self._repo.insert_error_review(
+                title=title,
+                phenomenon=phenomenon,
+                root_cause=root_cause,
+                short_term_fix=sanitize_user_text(payload.short_term_fix, max_length=2000) or None,
+                long_term_guard=sanitize_user_text(payload.long_term_guard, max_length=2000) or None,
+                severity=payload.severity,
+                workflow_template_id=payload.workflow_template_id,
+                guard_stage_id=payload.guard_stage_id,
+                guard_step_text=guard_step,
+                client_id=payload.client_id,
+                engagement_id=payload.engagement_id,
+                context_snapshot=None,
+            )
+            self._audit.record(
+                action="work_record.error_review.create",
+                target_type="error_review",
+                target_id=str(row.id),
+                detail={"severity": row.severity, "workflow_template_id": row.workflow_template_id},
+            )
         return row
 
     def append_guard_step_to_template(
@@ -477,21 +574,22 @@ class WorkRecordsService:
             "text": clean_step,
             "done": False,
         })
-        updated = _require_row(
-            self._repo.update_template_stages(
-                template.id,
-                name=template.name,
-                stages_json=_dumps_stages(stages),
-                bump_version=True,
-            ),
-            "work_record.template.not_found",
-        )
-        self._audit.record(
-            action="work_record.workflow_template.guard_step_append",
-            target_type="workflow_template",
-            target_id=str(template.id),
-            detail={"stage_id": target_stage.get("id"), "step_text": clean_step},
-        )
+        with self._conn:
+            updated = _require_row(
+                self._repo.update_template_stages(
+                    template.id,
+                    name=template.name,
+                    stages_json=_dumps_stages(stages),
+                    bump_version=True,
+                ),
+                "work_record.template.not_found",
+            )
+            self._audit.record(
+                action="work_record.workflow_template.guard_step_append",
+                target_type="workflow_template",
+                target_id=str(template.id),
+                detail={"stage_id": target_stage.get("id"), "step_text": clean_step},
+            )
         return updated
 
     def list_templates(self) -> list[WorkflowTemplateRow]:

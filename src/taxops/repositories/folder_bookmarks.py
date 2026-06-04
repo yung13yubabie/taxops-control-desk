@@ -83,7 +83,6 @@ class FolderBookmarksRepository:
             "VALUES (?, ?, ?, ?, ?, ?)",
             (name, path, category, sort_order, timestamp, timestamp),
         )
-        self._conn.commit()
         return int(cur.lastrowid)
 
     def update(
@@ -102,7 +101,6 @@ class FolderBookmarksRepository:
             "WHERE id = ? AND deleted_at IS NULL",
             (name, path, category, sort_order, timestamp, bookmark_id),
         )
-        self._conn.commit()
         return cur.rowcount
 
     def soft_delete(self, bookmark_id: int, timestamp: str) -> int:
@@ -110,7 +108,6 @@ class FolderBookmarksRepository:
             "UPDATE folder_bookmarks SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
             (timestamp, bookmark_id),
         )
-        self._conn.commit()
         return cur.rowcount
 
     def list_categories(self) -> list[str]:

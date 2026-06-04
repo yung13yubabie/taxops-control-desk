@@ -1,4 +1,4 @@
-"""Repository for recurring_billing_plans, lines, and occurrences."""
+﻿"""Repository for recurring_billing_plans, lines, and occurrences."""
 
 from __future__ import annotations
 
@@ -145,7 +145,6 @@ class RecurringBillingRepository:
                 "active", notes, now, now,
             ),
         )
-        self._conn.commit()
         return self.get_plan(cur.lastrowid)  # type: ignore[arg-type]
 
     def insert_plan_with_lines(
@@ -195,9 +194,7 @@ class RecurringBillingRepository:
                     ),
                 )
                 line_ids.append(line_cur.lastrowid)
-            self._conn.commit()
         except Exception:
-            self._conn.rollback()
             raise
         plan_row = self.get_plan(plan_id)  # type: ignore[arg-type]
         if plan_row is None:
@@ -244,7 +241,6 @@ class RecurringBillingRepository:
                 notes, now, plan_id,
             ),
         )
-        self._conn.commit()
         return self.get_plan(plan_id)
 
     def set_plan_status(
@@ -255,7 +251,6 @@ class RecurringBillingRepository:
             "UPDATE recurring_billing_plans SET status=?, deleted_at=?, updated_at=? WHERE id=?",
             (status, deleted_at, now, plan_id),
         )
-        self._conn.commit()
         return self.get_plan(plan_id)
 
     def list_plans(
@@ -296,7 +291,6 @@ class RecurringBillingRepository:
             """,
             (plan_id, bill_to_name, description, amount, tax_type, sort_order, now, now),
         )
-        self._conn.commit()
         return self.get_line(cur.lastrowid)  # type: ignore[arg-type]
 
     def get_line(self, line_id: int) -> LineRow | None:
@@ -324,7 +318,6 @@ class RecurringBillingRepository:
             """,
             (bill_to_name, description, amount, tax_type, sort_order, now, line_id),
         )
-        self._conn.commit()
         return self.get_line(line_id)
 
     def set_line_active(self, line_id: int, active: bool) -> LineRow | None:
@@ -333,7 +326,6 @@ class RecurringBillingRepository:
             "UPDATE recurring_billing_lines SET active=?, updated_at=? WHERE id=?",
             (int(active), now, line_id),
         )
-        self._conn.commit()
         return self.get_line(line_id)
 
     def list_lines(self, plan_id: int, active_only: bool = False) -> list[LineRow]:
@@ -402,7 +394,6 @@ class RecurringBillingRepository:
                 skipped_reason, notes, now, occurrence_id,
             ),
         )
-        self._conn.commit()
         return self.get_occurrence(occurrence_id)
 
     def list_occurrences(

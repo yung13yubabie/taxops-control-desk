@@ -43,7 +43,6 @@ class GeneratedMessagesRepository:
             " VALUES (?, ?, ?, ?)",
             (request_id, template_id, body, ts),
         )
-        self._conn.commit()
         new_id = cur.lastrowid
         if new_id is None:
             raise RuntimeError("generated_messages.insert: lastrowid missing")

@@ -135,6 +135,7 @@ class LateFeeService:
         self._repo = repo
         self._doc_requests_repo = doc_requests_repo
         self._audit = audit
+        self._conn = repo._conn
 
     def calculate_and_save(self, payload: CalculateLateFeeInput) -> LateFeeRow:
         has_period_year = payload.period_year is not None
@@ -180,35 +181,36 @@ class LateFeeService:
                 ensure_ascii=False,
             )
 
-        row = self._repo.insert(
-            request_id=payload.request_id,
-            overdue_days=overdue_days,
-            penalty_percent=penalty_percent,
-            base_amount=payload.base_amount,
-            penalty_amount=penalty_amount,
-            tax_type=tax_type,
-            needs_manual_review=needs_manual_review,
-            period_year=payload.period_year,
-            period_code=payload.period_code,
-            last_payment_date=payload.last_payment_date,
-            actual_payment_date=payload.actual_payment_date,
-            penalty_breakdown_json=breakdown_json,
-        )
-        self._audit.record(
-            action="late_fee.calculate",
-            target_type="late_fee_record",
-            target_id=str(row.id),
-            detail={
-                "request_id": payload.request_id,
-                "overdue_days": overdue_days,
-                "period_year": payload.period_year,
-                "period_code": payload.period_code,
-                "last_payment_date": payload.last_payment_date,
-                "actual_payment_date": payload.actual_payment_date,
-                "penalty_percent": penalty_percent,
-                "penalty_amount": penalty_amount,
-            },
-        )
+        with self._conn:
+            row = self._repo.insert(
+                request_id=payload.request_id,
+                overdue_days=overdue_days,
+                penalty_percent=penalty_percent,
+                base_amount=payload.base_amount,
+                penalty_amount=penalty_amount,
+                tax_type=tax_type,
+                needs_manual_review=needs_manual_review,
+                period_year=payload.period_year,
+                period_code=payload.period_code,
+                last_payment_date=payload.last_payment_date,
+                actual_payment_date=payload.actual_payment_date,
+                penalty_breakdown_json=breakdown_json,
+            )
+            self._audit.record(
+                action="late_fee.calculate",
+                target_type="late_fee_record",
+                target_id=str(row.id),
+                detail={
+                    "request_id": payload.request_id,
+                    "overdue_days": overdue_days,
+                    "period_year": payload.period_year,
+                    "period_code": payload.period_code,
+                    "last_payment_date": payload.last_payment_date,
+                    "actual_payment_date": payload.actual_payment_date,
+                    "penalty_percent": penalty_percent,
+                    "penalty_amount": penalty_amount,
+                },
+            )
         return row
 
     def list_by_request(self, request_id: int) -> list[LateFeeRow]:

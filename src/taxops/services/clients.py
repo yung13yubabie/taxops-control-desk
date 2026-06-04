@@ -81,6 +81,7 @@ class ClientsService:
         self._repo = repo
         self._audit = audit
         self._search_repo = search_repo
+        self._conn = repo._conn
 
     def _fts_add(self, row: ClientRow) -> None:
         if self._search_repo is None:
@@ -152,31 +153,7 @@ class ClientsService:
         if not date_range_is_valid(ls, le):
             raise ClientValidationError("client.lease_range.invalid")
 
-        try:
-            row = self._repo.insert(
-                client_code=client_code,
-                client_name=client_name,
-                tax_id=tax_id,
-                short_name=short_name,
-                contact_name=contact_name,
-                contact_phone=contact_phone,
-                contact_email=contact_email,
-                address=address,
-                note=note,
-                lease_start=lease_start,
-                lease_end=lease_end,
-            )
-        except sqlite3.IntegrityError as exc:
-            # Backstop in case the pre-check raced with another writer.
-            if "client_code" in str(exc) or "UNIQUE" in str(exc).upper():
-                raise ClientValidationError("client.client_code.duplicate") from exc
-            raise
-
-        audit_detail: dict = {
-            "client_code": row.client_code,
-            "client_name": row.client_name,
-            "tax_id": row.tax_id,
-        }
+        audit_detail: dict = {"client_code": client_code, "client_name": client_name, "tax_id": tax_id}
         if payload.registry_source_tax_id:
             audit_detail["registry_prefill_used"] = True
             audit_detail["source_tax_id"] = payload.registry_source_tax_id
@@ -185,12 +162,31 @@ class ClientsService:
                 "source_tax_id/cache_version recorded at fill time; "
                 "user may have edited fields before saving"
             )
-        self._audit.record(
-            action="client.create",
-            target_type="client",
-            target_id=str(row.id),
-            detail=audit_detail,
-        )
+        try:
+            with self._conn:
+                row = self._repo.insert(
+                    client_code=client_code,
+                    client_name=client_name,
+                    tax_id=tax_id,
+                    short_name=short_name,
+                    contact_name=contact_name,
+                    contact_phone=contact_phone,
+                    contact_email=contact_email,
+                    address=address,
+                    note=note,
+                    lease_start=lease_start,
+                    lease_end=lease_end,
+                )
+                self._audit.record(
+                    action="client.create",
+                    target_type="client",
+                    target_id=str(row.id),
+                    detail=audit_detail,
+                )
+        except sqlite3.IntegrityError as exc:
+            if "client_code" in str(exc) or "UNIQUE" in str(exc).upper():
+                raise ClientValidationError("client.client_code.duplicate") from exc
+            raise
         self._fts_add(row)
         return row
 
@@ -225,38 +221,37 @@ class ClientsService:
             raise ClientValidationError("client.client_code.duplicate")
 
         try:
-            row = self._repo.update(
-                client_id,
-                client_code=client_code,
-                client_name=client_name,
-                tax_id=tax_id,
-                short_name=short_name,
-                contact_name=contact_name,
-                contact_phone=contact_phone,
-                contact_email=contact_email,
-                address=address,
-                note=note,
-                lease_start=lease_start_u,
-                lease_end=lease_end_u,
-            )
+            with self._conn:
+                row = self._repo.update(
+                    client_id,
+                    client_code=client_code,
+                    client_name=client_name,
+                    tax_id=tax_id,
+                    short_name=short_name,
+                    contact_name=contact_name,
+                    contact_phone=contact_phone,
+                    contact_email=contact_email,
+                    address=address,
+                    note=note,
+                    lease_start=lease_start_u,
+                    lease_end=lease_end_u,
+                )
+                if row is None:
+                    raise ClientValidationError("client.not_found")
+                self._audit.record(
+                    action="client.update",
+                    target_type="client",
+                    target_id=str(client_id),
+                    detail={
+                        "client_code": row.client_code,
+                        "client_name": row.client_name,
+                        "tax_id": row.tax_id,
+                    },
+                )
         except sqlite3.IntegrityError as exc:
             if "client_code" in str(exc) or "UNIQUE" in str(exc).upper():
                 raise ClientValidationError("client.client_code.duplicate") from exc
             raise
-
-        if row is None:
-            raise ClientValidationError("client.not_found")
-
-        self._audit.record(
-            action="client.update",
-            target_type="client",
-            target_id=str(client_id),
-            detail={
-                "client_code": row.client_code,
-                "client_name": row.client_name,
-                "tax_id": row.tax_id,
-            },
-        )
         self._fts_update(row)
         return row
 
@@ -264,35 +259,37 @@ class ClientsService:
         existing = self._repo.get(client_id)
         if existing is None:
             raise ClientValidationError("client.not_found")
-        self._repo.delete(client_id)
+        with self._conn:
+            self._repo.delete(client_id)
+            self._audit.record(
+                action="client.delete",
+                target_type="client",
+                target_id=str(client_id),
+                detail={
+                    "client_code": existing.client_code,
+                    "client_name": existing.client_name,
+                },
+            )
         self._fts_delete(client_id)
-        self._audit.record(
-            action="client.delete",
-            target_type="client",
-            target_id=str(client_id),
-            detail={
-                "client_code": existing.client_code,
-                "client_name": existing.client_name,
-            },
-        )
 
     def restore_client(self, client_id: int) -> None:
         """Undo a soft-delete. Raises client.not_found if id is unknown or already active."""
-        restored = self._repo.restore(client_id)
-        if not restored:
-            raise ClientValidationError("client.not_found")
-        row = self._repo.get(client_id)
+        with self._conn:
+            restored = self._repo.restore(client_id)
+            if not restored:
+                raise ClientValidationError("client.not_found")
+            row = self._repo.get(client_id)
+            self._audit.record(
+                action="client.restore",
+                target_type="client",
+                target_id=str(client_id),
+                detail={
+                    "client_code": row.client_code if row else "",
+                    "client_name": row.client_name if row else "",
+                },
+            )
         if row is not None:
             self._fts_add(row)
-        self._audit.record(
-            action="client.restore",
-            target_type="client",
-            target_id=str(client_id),
-            detail={
-                "client_code": row.client_code if row else "",
-                "client_name": row.client_name if row else "",
-            },
-        )
 
     def purge_client(self, client_id: int) -> None:
         """Permanently delete a soft-deleted client with no engagement refs."""
@@ -304,20 +301,21 @@ class ClientsService:
         if self._repo.count_engagement_refs(client_id) > 0:
             raise ClientValidationError("client.purge.has_engagements")
 
-        purged = self._repo.purge(client_id)
-        if not purged:
-            raise ClientValidationError("client.not_found")
+        with self._conn:
+            purged = self._repo.purge(client_id)
+            if not purged:
+                raise ClientValidationError("client.not_found")
+            self._audit.record(
+                action="client.purge",
+                target_type="client",
+                target_id=str(client_id),
+                detail={
+                    "client_code": existing.client_code,
+                    "client_name": existing.client_name,
+                    "deleted_at": existing.deleted_at,
+                },
+            )
         self._fts_delete(client_id)
-        self._audit.record(
-            action="client.purge",
-            target_type="client",
-            target_id=str(client_id),
-            detail={
-                "client_code": existing.client_code,
-                "client_name": existing.client_name,
-                "deleted_at": existing.deleted_at,
-            },
-        )
 
     def list_clients(self, *, limit: int = 500, offset: int = 0) -> list[ClientRow]:
         return self._repo.list_clients(limit=limit, offset=offset)

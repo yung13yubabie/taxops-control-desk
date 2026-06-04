@@ -43,7 +43,6 @@ class AuditLogRepository:
             "detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
             (actor, action, target_type, target_id, detail_json, ts),
         )
-        self._conn.commit()
         return AuditLogRow(
             id=int(cur.lastrowid or 0),
             actor=actor,

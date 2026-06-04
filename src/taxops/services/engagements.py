@@ -102,6 +102,7 @@ class EngagementsService:
         self._repo = repo
         self._audit = audit
         self._search_repo = search_repo
+        self._conn = repo._conn
 
     def _fts_add(self, row: EngagementRow) -> None:
         if self._search_repo is None:
@@ -155,28 +156,29 @@ class EngagementsService:
             raise EngagementValidationError("engagement.due_date.invalid")
         notes = sanitize_user_text(payload.notes, max_length=2000) or None
 
-        row = self._repo.insert(
-            client_id=payload.client_id,
-            engagement_name=name,
-            tax_type=payload.tax_type,
-            period_name=period,
-            status=status,
-            owner=owner,
-            due_date=due_date,
-            notes=notes,
-        )
-        self._audit.record(
-            action="engagement.create",
-            target_type="engagement",
-            target_id=str(row.id),
-            detail={
-                "client_id": payload.client_id,
-                "engagement_name": row.engagement_name,
-                "tax_type": row.tax_type,
-                "period_name": row.period_name,
-                "status": row.status,
-            },
-        )
+        with self._conn:
+            row = self._repo.insert(
+                client_id=payload.client_id,
+                engagement_name=name,
+                tax_type=payload.tax_type,
+                period_name=period,
+                status=status,
+                owner=owner,
+                due_date=due_date,
+                notes=notes,
+            )
+            self._audit.record(
+                action="engagement.create",
+                target_type="engagement",
+                target_id=str(row.id),
+                detail={
+                    "client_id": payload.client_id,
+                    "engagement_name": row.engagement_name,
+                    "tax_type": row.tax_type,
+                    "period_name": row.period_name,
+                    "status": row.status,
+                },
+            )
         self._fts_add(row)
         return row
 
@@ -212,30 +214,30 @@ class EngagementsService:
             raise EngagementValidationError("engagement.due_date.invalid")
         notes = sanitize_user_text(payload.notes, max_length=2000) or None
 
-        row = self._repo.update(
-            engagement_id,
-            engagement_name=name,
-            tax_type=payload.tax_type,
-            period_name=period,
-            status=payload.status,
-            owner=owner,
-            due_date=due_date,
-            notes=notes,
-        )
-        if row is None:
-            raise EngagementValidationError("engagement.not_found")
-
-        self._audit.record(
-            action="engagement.update",
-            target_type="engagement",
-            target_id=str(engagement_id),
-            detail={
-                "engagement_name": row.engagement_name,
-                "status": row.status,
-                "tax_type": row.tax_type,
-                "period_name": row.period_name,
-            },
-        )
+        with self._conn:
+            row = self._repo.update(
+                engagement_id,
+                engagement_name=name,
+                tax_type=payload.tax_type,
+                period_name=period,
+                status=payload.status,
+                owner=owner,
+                due_date=due_date,
+                notes=notes,
+            )
+            if row is None:
+                raise EngagementValidationError("engagement.not_found")
+            self._audit.record(
+                action="engagement.update",
+                target_type="engagement",
+                target_id=str(engagement_id),
+                detail={
+                    "engagement_name": row.engagement_name,
+                    "status": row.status,
+                    "tax_type": row.tax_type,
+                    "period_name": row.period_name,
+                },
+            )
         self._fts_update(row)
         return row
 
@@ -248,33 +250,35 @@ class EngagementsService:
         allowed = _ALLOWED_TRANSITIONS.get(existing.status, frozenset())
         if status not in allowed:
             raise EngagementValidationError("engagement.status.transition_invalid")
-        row = self._repo.update_status(engagement_id, status)
-        if row is None:
-            raise EngagementValidationError("engagement.not_found")
-        self._audit.record(
-            action="engagement.status_change",
-            target_type="engagement",
-            target_id=str(engagement_id),
-            detail={"status": status},
-        )
+        with self._conn:
+            row = self._repo.update_status(engagement_id, status)
+            if row is None:
+                raise EngagementValidationError("engagement.not_found")
+            self._audit.record(
+                action="engagement.status_change",
+                target_type="engagement",
+                target_id=str(engagement_id),
+                detail={"status": status},
+            )
         return row
 
     def delete_engagement(self, engagement_id: int) -> None:
         existing = self._repo.get(engagement_id)
         if existing is None:
             raise EngagementValidationError("engagement.not_found")
-        self._repo.delete(engagement_id)
+        with self._conn:
+            self._repo.delete(engagement_id)
+            self._audit.record(
+                action="engagement.delete",
+                target_type="engagement",
+                target_id=str(engagement_id),
+                detail={
+                    "engagement_name": existing.engagement_name,
+                    "tax_type": existing.tax_type,
+                    "period_name": existing.period_name,
+                },
+            )
         self._fts_delete(engagement_id)
-        self._audit.record(
-            action="engagement.delete",
-            target_type="engagement",
-            target_id=str(engagement_id),
-            detail={
-                "engagement_name": existing.engagement_name,
-                "tax_type": existing.tax_type,
-                "period_name": existing.period_name,
-            },
-        )
 
     def get_engagement(self, engagement_id: int) -> EngagementRow | None:
         return self._repo.get(engagement_id)

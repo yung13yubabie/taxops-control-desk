@@ -75,6 +75,7 @@ class TaxRegistryImporter:
         self._metadata = metadata_repo
         self._audit = audit
         self._system_log = system_log
+        self._conn = registry_repo._conn
 
     def import_zip(
         self,
@@ -142,18 +143,19 @@ class TaxRegistryImporter:
 
         self._metadata.upsert_many(meta_payload)
 
-        self._audit.record(
-            action="tax_cache.import.zip",
-            target_type=_AUDIT_TARGET_TYPE,
-            target_id=cache_version,
-            detail={
-                "row_count": row_count,
-                "cache_version": cache_version,
-                "source_sha256": sha,
-                "source_size": size,
-                "data_freshness_iso": header.data_freshness_iso,
-            },
-        )
+        with self._conn:
+            self._audit.record(
+                action="tax_cache.import.zip",
+                target_type=_AUDIT_TARGET_TYPE,
+                target_id=cache_version,
+                detail={
+                    "row_count": row_count,
+                    "cache_version": cache_version,
+                    "source_sha256": sha,
+                    "source_size": size,
+                    "data_freshness_iso": header.data_freshness_iso,
+                },
+            )
 
         return ImportResult(
             row_count=row_count,

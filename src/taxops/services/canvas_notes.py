@@ -171,6 +171,7 @@ class CanvasNotesService:
         self._repo = repo
         self._audit = audit
         self._note_assets_dir = note_assets_dir
+        self._conn = repo._conn
 
     @property
     def note_assets_dir(self) -> Path:
@@ -180,19 +181,20 @@ class CanvasNotesService:
         title = sanitize_user_text(payload.title, max_length=200)
         if not title:
             raise CanvasNoteValidationError("canvas_note.title.required")
-        row = self._repo.insert(
-            title=title,
-            scene_json=default_scene_json(),
-            client_id=payload.client_id,
-            engagement_id=payload.engagement_id,
-            context_snapshot=None,
-        )
-        self._audit.record(
-            action="canvas_note.create",
-            target_type="canvas_note",
-            target_id=str(row.id),
-            detail={"title": row.title},
-        )
+        with self._conn:
+            row = self._repo.insert(
+                title=title,
+                scene_json=default_scene_json(),
+                client_id=payload.client_id,
+                engagement_id=payload.engagement_id,
+                context_snapshot=None,
+            )
+            self._audit.record(
+                action="canvas_note.create",
+                target_type="canvas_note",
+                target_id=str(row.id),
+                detail={"title": row.title},
+            )
         return row
 
     def update_note(self, note_id: int, *, title: str, scene_json: str) -> CanvasNoteRow:
@@ -200,15 +202,16 @@ class CanvasNotesService:
         if not clean_title:
             raise CanvasNoteValidationError("canvas_note.title.required")
         normalized = _normalized_scene_json(scene_json)
-        row = self._repo.update(note_id, title=clean_title, scene_json=normalized)
-        if row is None:
-            raise CanvasNoteValidationError("canvas_note.not_found")
-        self._audit.record(
-            action="canvas_note.update",
-            target_type="canvas_note",
-            target_id=str(row.id),
-            detail={"title": row.title},
-        )
+        with self._conn:
+            row = self._repo.update(note_id, title=clean_title, scene_json=normalized)
+            if row is None:
+                raise CanvasNoteValidationError("canvas_note.not_found")
+            self._audit.record(
+                action="canvas_note.update",
+                target_type="canvas_note",
+                target_id=str(row.id),
+                detail={"title": row.title},
+            )
         return row
 
     def import_image_asset(self, source_path: Path) -> str:
@@ -238,12 +241,13 @@ class CanvasNotesService:
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
         _render_scene_to_pdf(scene, output, self._note_assets_dir)
-        self._audit.record(
-            action="canvas_note.export_pdf",
-            target_type="canvas_note",
-            target_id=str(note.id),
-            detail={"output_path": str(output)},
-        )
+        with self._conn:
+            self._audit.record(
+                action="canvas_note.export_pdf",
+                target_type="canvas_note",
+                target_id=str(note.id),
+                detail={"output_path": str(output)},
+            )
         return output
 
 

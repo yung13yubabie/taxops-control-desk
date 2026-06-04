@@ -1,5 +1,16 @@
 # CURRENT_STATE
 
+## 2026-06-04 Current Development State - v0.22.0 DB Atomic Audit Fix
+
+- v0.22.0 DB atomicity fix is implemented in the current worktree, not committed.
+- Fixed DB mutation + audit non-atomicity across all 18 service files and 13 repository files.
+  - Removed `self._conn.commit()` from all business-data repository mutation methods (clients, engagements, document_requests, tasks, templates, late_fee, attachments, generated_messages, folder_bookmarks, recurring_billing, work_records, canvas_notes, audit_logs).
+  - Each service method now wraps `repo.mutation() + audit.record()` in a single `with self._conn:` block ensuring atomic commit or rollback.
+  - FTS (search.py) and infrastructure repos (app_settings, system_logs, backup, tax_registry) retain their own commit() semantics.
+  - `insert_request_with_items` retains explicit `rollback()` in its except block for direct repo usage (bypassing service layer).
+- Verification pending: full `python -m pytest -q` suite running.
+- Version bumped from 0.21.2 → 0.22.0 (significant architectural fix).
+
 ## 2026-06-02 Current Development State - v0.21.1 Codex Fixes
 
 - v0.21.1 code fixes are implemented in the current worktree, not committed.

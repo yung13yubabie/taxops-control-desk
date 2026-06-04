@@ -49,6 +49,7 @@ class AttachmentsService:
         self._repo = repo
         self._attachments_dir = attachments_dir
         self._audit = audit
+        self._conn = repo._conn
 
     def upload_attachment(self, inp: UploadAttachmentInput) -> AttachmentRow:
         source = Path(inp.source_path)
@@ -91,30 +92,31 @@ class AttachmentsService:
         shutil.copy2(str(source), str(dest))
 
         try:
-            row = self._repo.insert_with_version(
-                engagement_id=inp.engagement_id,
-                request_id=inp.request_id,
-                original_filename=source.name,
-                stored_filename=str(rel_path),
-                file_hash_sha256=file_hash,
-                file_size=file_size,
-                mime_type=mime_type,
-                extension=ext,
-                uploaded_by=inp.uploaded_by,
-                source="manual",
-                notes=inp.notes,
-            )
-            self._audit.record(
-                action="attachment.upload",
-                target_type="attachment",
-                target_id=str(row.id),
-                detail={
-                    "original_filename": source.name,
-                    "stored_filename": str(rel_path),
-                    "file_size": file_size,
-                    "engagement_id": inp.engagement_id,
-                },
-            )
+            with self._conn:
+                row = self._repo.insert_with_version(
+                    engagement_id=inp.engagement_id,
+                    request_id=inp.request_id,
+                    original_filename=source.name,
+                    stored_filename=str(rel_path),
+                    file_hash_sha256=file_hash,
+                    file_size=file_size,
+                    mime_type=mime_type,
+                    extension=ext,
+                    uploaded_by=inp.uploaded_by,
+                    source="manual",
+                    notes=inp.notes,
+                )
+                self._audit.record(
+                    action="attachment.upload",
+                    target_type="attachment",
+                    target_id=str(row.id),
+                    detail={
+                        "original_filename": source.name,
+                        "stored_filename": str(rel_path),
+                        "file_size": file_size,
+                        "engagement_id": inp.engagement_id,
+                    },
+                )
         except Exception:
             try:
                 dest.unlink(missing_ok=True)
@@ -127,38 +129,41 @@ class AttachmentsService:
     def accept_attachment(
         self, attachment_id: int, accepted_by: str = "local_user"
     ) -> AttachmentRow:
-        updated = self._update_status_or_raise(
-            attachment_id,
-            status="accepted",
-            accepted_by=accepted_by,
-            accepted_at=now_iso(),
-        )
-        self._audit.record(
-            action="attachment.accept",
-            target_type="attachment",
-            target_id=str(attachment_id),
-            detail={"accepted_by": accepted_by},
-        )
+        with self._conn:
+            updated = self._update_status_or_raise(
+                attachment_id,
+                status="accepted",
+                accepted_by=accepted_by,
+                accepted_at=now_iso(),
+            )
+            self._audit.record(
+                action="attachment.accept",
+                target_type="attachment",
+                target_id=str(attachment_id),
+                detail={"accepted_by": accepted_by},
+            )
         return updated
 
     def reject_attachment(self, attachment_id: int) -> AttachmentRow:
-        updated = self._update_status_or_raise(attachment_id, status="rejected")
-        self._audit.record(
-            action="attachment.reject",
-            target_type="attachment",
-            target_id=str(attachment_id),
-            detail=None,
-        )
+        with self._conn:
+            updated = self._update_status_or_raise(attachment_id, status="rejected")
+            self._audit.record(
+                action="attachment.reject",
+                target_type="attachment",
+                target_id=str(attachment_id),
+                detail=None,
+            )
         return updated
 
     def delete_attachment(self, attachment_id: int) -> AttachmentRow:
-        updated = self._update_status_or_raise(attachment_id, status="archived")
-        self._audit.record(
-            action="attachment.delete",
-            target_type="attachment",
-            target_id=str(attachment_id),
-            detail={"status": "archived"},
-        )
+        with self._conn:
+            updated = self._update_status_or_raise(attachment_id, status="archived")
+            self._audit.record(
+                action="attachment.delete",
+                target_type="attachment",
+                target_id=str(attachment_id),
+                detail={"status": "archived"},
+            )
         return updated
 
     def get(self, attachment_id: int) -> AttachmentRow | None:

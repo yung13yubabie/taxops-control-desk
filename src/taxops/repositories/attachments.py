@@ -91,7 +91,6 @@ class AttachmentsRepository:
             ),
         )
         attachment_id = cur.lastrowid
-        self._conn.commit()
         return self.get(attachment_id)  # type: ignore[arg-type]
 
     def insert_version(
@@ -108,7 +107,6 @@ class AttachmentsRepository:
             (attachment_id, supersedes_id, now),
         )
         version_id = cur.lastrowid
-        self._conn.commit()
         r = self._conn.execute(
             "SELECT * FROM attachment_versions WHERE id = ?", (version_id,)
         ).fetchone()
@@ -155,7 +153,6 @@ class AttachmentsRepository:
             " VALUES (?, ?, ?)",
             (attachment_id, None, now),
         )
-        self._conn.commit()
         return self.get(attachment_id)  # type: ignore[return-value]
 
     def request_belongs_to_engagement(
@@ -222,7 +219,6 @@ class AttachmentsRepository:
             """,
             (status, accepted_by, accepted_at, attachment_id),
         )
-        self._conn.commit()
         return self.get(attachment_id)
 
     def engagement_exists(self, engagement_id: int) -> bool:

@@ -106,7 +106,6 @@ class DocumentRequestsRepository:
                 ts,
             ),
         )
-        self._conn.commit()
         new_id = cur.lastrowid
         if new_id is None:
             raise RuntimeError("document_requests.insert: lastrowid missing")
@@ -152,7 +151,6 @@ class DocumentRequestsRepository:
             " WHERE id = ? AND deleted_at IS NULL",
             (request_name, due_date, notes, ts, request_id),
         )
-        self._conn.commit()
         return self.get_request(request_id)
 
     def update_request_status(
@@ -175,7 +173,6 @@ class DocumentRequestsRepository:
                 " WHERE id = ? AND deleted_at IS NULL",
                 (status, ts, request_id),
             )
-        self._conn.commit()
         return self.get_request(request_id)
 
     def increment_follow_up(self, request_id: int) -> DocumentRequestRow | None:
@@ -186,7 +183,6 @@ class DocumentRequestsRepository:
             " WHERE id = ? AND deleted_at IS NULL",
             (ts, request_id),
         )
-        self._conn.commit()
         return self.get_request(request_id)
 
     def delete_request(self, request_id: int) -> bool:
@@ -196,7 +192,6 @@ class DocumentRequestsRepository:
             " WHERE id = ? AND deleted_at IS NULL",
             (ts, request_id),
         )
-        self._conn.commit()
         return cur.rowcount > 0
 
     # --- document_request_items ---
@@ -216,7 +211,6 @@ class DocumentRequestsRepository:
             ") VALUES (?, ?, ?, ?, ?, ?)",
             (request_id, item_name, item_status, notes, ts, ts),
         )
-        self._conn.commit()
         new_id = cur.lastrowid
         if new_id is None:
             raise RuntimeError("document_request_items.insert: lastrowid missing")
@@ -252,7 +246,6 @@ class DocumentRequestsRepository:
             " WHERE id = ?",
             (item_name, notes, ts, item_id),
         )
-        self._conn.commit()
         return self.get_item(item_id)
 
     def delete_item(self, item_id: int) -> bool:
@@ -260,7 +253,6 @@ class DocumentRequestsRepository:
             "DELETE FROM document_request_items WHERE id = ?",
             (item_id,),
         )
-        self._conn.commit()
         return cur.rowcount > 0
 
     def update_item_status(
@@ -276,7 +268,6 @@ class DocumentRequestsRepository:
             " WHERE id = ?",
             (item_status, notes, ts, item_id),
         )
-        self._conn.commit()
         return self.get_item(item_id)
 
     # --- atomic batch insert ---
@@ -328,7 +319,6 @@ class DocumentRequestsRepository:
                 if ic.lastrowid is None:
                     raise RuntimeError("insert_request_with_items: item lastrowid missing")
                 item_ids.append(ic.lastrowid)
-            self._conn.commit()
         except Exception:
             self._conn.rollback()
             raise

@@ -33,6 +33,7 @@ class SettingsService:
     ) -> None:
         self._repo = repo
         self._audit = audit
+        self._conn = repo._conn
 
     def get(self, key: str) -> str | None:
         return self._repo.get(key)
@@ -49,10 +50,11 @@ class SettingsService:
         if key == "display.local_user_name" and not cleaned:
             cleaned = "local_user"
         self._repo.upsert(key, cleaned)
-        self._audit.record(
-            action="settings.update",
-            target_type="setting",
-            target_id=key,
-            detail={"value": cleaned},
-        )
+        with self._conn:
+            self._audit.record(
+                action="settings.update",
+                target_type="setting",
+                target_id=key,
+                detail={"value": cleaned},
+            )
         return cleaned

@@ -72,6 +72,7 @@ class TasksService:
     def __init__(self, repo: TasksRepository, audit: AuditService) -> None:
         self._repo = repo
         self._audit = audit
+        self._conn = repo._conn
 
     def create_task(self, payload: CreateTaskInput) -> TaskRow:
         if payload.engagement_id is not None:
@@ -106,29 +107,30 @@ class TasksService:
         next_step = sanitize_user_text(payload.next_step, max_length=500) or None
         notes = sanitize_user_text(payload.notes, max_length=2000) or None
 
-        row = self._repo.insert(
-            engagement_id=payload.engagement_id,
-            client_id=effective_client_id,
-            title=title,
-            assignee=assignee,
-            due_date=due_date,
-            priority=payload.priority,
-            status="todo",
-            next_step=next_step,
-            notes=notes,
-        )
-        self._audit.record(
-            action="task.create",
-            target_type="task",
-            target_id=str(row.id),
-            detail={
-                "engagement_id": payload.engagement_id,
-                "client_id": effective_client_id,
-                "title": row.title,
-                "priority": row.priority,
-                "due_date": row.due_date,
-            },
-        )
+        with self._conn:
+            row = self._repo.insert(
+                engagement_id=payload.engagement_id,
+                client_id=effective_client_id,
+                title=title,
+                assignee=assignee,
+                due_date=due_date,
+                priority=payload.priority,
+                status="todo",
+                next_step=next_step,
+                notes=notes,
+            )
+            self._audit.record(
+                action="task.create",
+                target_type="task",
+                target_id=str(row.id),
+                detail={
+                    "engagement_id": payload.engagement_id,
+                    "client_id": effective_client_id,
+                    "title": row.title,
+                    "priority": row.priority,
+                    "due_date": row.due_date,
+                },
+            )
         return row
 
     def complete_task(self, task_id: int, *, completion_note: str | None = None) -> TaskRow:
@@ -140,18 +142,19 @@ class TasksService:
         if existing.status == "cancelled":
             raise TaskValidationError("task.status.transition_invalid")
 
-        row = self._repo.complete(task_id)
-        if row is None:
-            raise TaskValidationError("task.not_found")
-        self._audit.record(
-            action="task.complete",
-            target_type="task",
-            target_id=str(task_id),
-            detail={
-                "title": existing.title,
-                "completion_note": sanitize_user_text(completion_note, max_length=500) or None,
-            },
-        )
+        with self._conn:
+            row = self._repo.complete(task_id)
+            if row is None:
+                raise TaskValidationError("task.not_found")
+            self._audit.record(
+                action="task.complete",
+                target_type="task",
+                target_id=str(task_id),
+                detail={
+                    "title": existing.title,
+                    "completion_note": sanitize_user_text(completion_note, max_length=500) or None,
+                },
+            )
         return row
 
     def set_status(self, task_id: int, status: str) -> TaskRow:
@@ -163,15 +166,16 @@ class TasksService:
         allowed = _ALLOWED_TASK_TRANSITIONS.get(existing.status, frozenset())
         if status not in allowed:
             raise TaskValidationError("task.status.transition_invalid")
-        row = self._repo.update_status(task_id, status)
-        if row is None:
-            raise TaskValidationError("task.not_found")
-        self._audit.record(
-            action="task.status_change",
-            target_type="task",
-            target_id=str(task_id),
-            detail={"status": status, "previous_status": existing.status},
-        )
+        with self._conn:
+            row = self._repo.update_status(task_id, status)
+            if row is None:
+                raise TaskValidationError("task.not_found")
+            self._audit.record(
+                action="task.status_change",
+                target_type="task",
+                target_id=str(task_id),
+                detail={"status": status, "previous_status": existing.status},
+            )
         return row
 
     def delete_task(self, task_id: int) -> None:
@@ -181,13 +185,14 @@ class TasksService:
         # Slice 21D: forbid deleting a parent that still has live children.
         if self._repo.count_children(task_id) > 0:
             raise TaskValidationError("task.delete.has_children")
-        self._repo.delete(task_id)
-        self._audit.record(
-            action="task.delete",
-            target_type="task",
-            target_id=str(task_id),
-            detail={"title": existing.title},
-        )
+        with self._conn:
+            self._repo.delete(task_id)
+            self._audit.record(
+                action="task.delete",
+                target_type="task",
+                target_id=str(task_id),
+                detail={"title": existing.title},
+            )
 
     # ── Slice 21D: parent/child + bulk CRUD ──────────────────────────
 
@@ -219,15 +224,16 @@ class TasksService:
         # it would make a grandchild and exceed depth.
         if self._repo.count_children(task_id) > 0:
             raise TaskValidationError("task.parent.depth_exceeded")
-        row = self._repo.update_parent(task_id, parent_task_id)
-        if row is None:
-            raise TaskValidationError("task.not_found")
-        self._audit.record(
-            action="task.convert_to_child",
-            target_type="task",
-            target_id=str(task_id),
-            detail={"parent_task_id": parent_task_id},
-        )
+        with self._conn:
+            row = self._repo.update_parent(task_id, parent_task_id)
+            if row is None:
+                raise TaskValidationError("task.not_found")
+            self._audit.record(
+                action="task.convert_to_child",
+                target_type="task",
+                target_id=str(task_id),
+                detail={"parent_task_id": parent_task_id},
+            )
         return row
 
     def create_child_task(self, parent_task_id: int, title: str) -> TaskRow:
@@ -239,29 +245,30 @@ class TasksService:
         clean_title = sanitize_user_text(title, max_length=200)
         if not clean_title:
             raise TaskValidationError("task.title.required")
-        row = self._repo.insert(
-            engagement_id=parent.engagement_id,
-            client_id=parent.client_id,
-            parent_task_id=parent.id,
-            title=clean_title,
-            assignee=parent.assignee,
-            due_date=None,
-            priority=parent.priority,
-            status="todo",
-            next_step=None,
-            notes=None,
-        )
-        self._audit.record(
-            action="task.create_child",
-            target_type="task",
-            target_id=str(row.id),
-            detail={
-                "parent_task_id": parent.id,
-                "client_id": parent.client_id,
-                "engagement_id": parent.engagement_id,
-                "title": row.title,
-            },
-        )
+        with self._conn:
+            row = self._repo.insert(
+                engagement_id=parent.engagement_id,
+                client_id=parent.client_id,
+                parent_task_id=parent.id,
+                title=clean_title,
+                assignee=parent.assignee,
+                due_date=None,
+                priority=parent.priority,
+                status="todo",
+                next_step=None,
+                notes=None,
+            )
+            self._audit.record(
+                action="task.create_child",
+                target_type="task",
+                target_id=str(row.id),
+                detail={
+                    "parent_task_id": parent.id,
+                    "client_id": parent.client_id,
+                    "engagement_id": parent.engagement_id,
+                    "title": row.title,
+                },
+            )
         return row
 
     def create_tasks_bulk(
@@ -296,16 +303,17 @@ class TasksService:
                 # Skip invalid clients (e.g. nonexistent id) and continue.
                 continue
         if created:
-            self._audit.record(
-                action="task.bulk_create",
-                target_type="task",
-                target_id=",".join(str(t.id) for t in created),
-                detail={
-                    "task_count": len(created),
-                    "title": template.title,
-                    "client_ids": client_ids,
-                },
-            )
+            with self._conn:
+                self._audit.record(
+                    action="task.bulk_create",
+                    target_type="task",
+                    target_id=",".join(str(t.id) for t in created),
+                    detail={
+                        "task_count": len(created),
+                        "title": template.title,
+                        "client_ids": client_ids,
+                    },
+                )
         return created
 
     def update_tasks_bulk(

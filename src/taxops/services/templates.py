@@ -90,6 +90,7 @@ class TemplatesService:
     def __init__(self, repo: TemplatesRepository, audit: AuditService) -> None:
         self._repo = repo
         self._audit = audit
+        self._conn = repo._conn
         self._env = Environment(undefined=StrictUndefined)
 
     @staticmethod
@@ -133,13 +134,14 @@ class TemplatesService:
         body = sanitize_user_text(payload.body, max_length=10000)
         self._validate_body(body)
 
-        row = self._repo.insert(name=name, template_type=payload.template_type, body=body)
-        self._audit.record(
-            action="template.create",
-            target_type="template",
-            target_id=str(row.id),
-            detail={"name": row.name, "template_type": row.template_type},
-        )
+        with self._conn:
+            row = self._repo.insert(name=name, template_type=payload.template_type, body=body)
+            self._audit.record(
+                action="template.create",
+                target_type="template",
+                target_id=str(row.id),
+                detail={"name": row.name, "template_type": row.template_type},
+            )
         return row
 
     def update_template(self, template_id: int, payload: UpdateTemplateInput) -> TemplateRow:
@@ -157,15 +159,16 @@ class TemplatesService:
         body = sanitize_user_text(payload.body, max_length=10000)
         self._validate_body(body)
 
-        row = self._repo.update(template_id, name=name, template_type=payload.template_type, body=body)
-        if row is None:
-            raise TemplateValidationError("template.not_found")
-        self._audit.record(
-            action="template.update",
-            target_type="template",
-            target_id=str(template_id),
-            detail={"name": row.name},
-        )
+        with self._conn:
+            row = self._repo.update(template_id, name=name, template_type=payload.template_type, body=body)
+            if row is None:
+                raise TemplateValidationError("template.not_found")
+            self._audit.record(
+                action="template.update",
+                target_type="template",
+                target_id=str(template_id),
+                detail={"name": row.name},
+            )
         return row
 
     def delete_template(self, template_id: int) -> None:
@@ -174,13 +177,14 @@ class TemplatesService:
             raise TemplateValidationError("template.not_found")
         if existing.is_builtin:
             raise TemplateValidationError("template.builtin.readonly")
-        self._repo.delete(template_id)
-        self._audit.record(
-            action="template.delete",
-            target_type="template",
-            target_id=str(template_id),
-            detail={"name": existing.name},
-        )
+        with self._conn:
+            self._repo.delete(template_id)
+            self._audit.record(
+                action="template.delete",
+                target_type="template",
+                target_id=str(template_id),
+                detail={"name": existing.name},
+            )
 
     def get_template(self, template_id: int) -> TemplateRow | None:
         return self._repo.get(template_id)

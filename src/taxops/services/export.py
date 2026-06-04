@@ -58,6 +58,7 @@ class ExportService:
     ) -> None:
         self._repo = repo
         self._audit = audit
+        self._conn = repo._conn
 
     def export_missing_items_xlsx(
         self,
@@ -94,10 +95,11 @@ class ExportService:
         except Exception as exc:
             raise ExportValidationError("export.save_failed") from exc
 
-        self._audit.record(
-            action="export.missing_items",
-            target_type="export",
-            target_id=str(output_path.name),
-            detail={"rows": len(rows), "engagement_id": engagement_id},
-        )
+        with self._conn:
+            self._audit.record(
+                action="export.missing_items",
+                target_type="export",
+                target_id=str(output_path.name),
+                detail={"rows": len(rows), "engagement_id": engagement_id},
+            )
         return len(rows)
