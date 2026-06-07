@@ -203,6 +203,42 @@ def test_deactivate_line_sets_inactive(conn, svc):
     assert deactivated.active is False
 
 
+def test_deactivate_line_cancels_pending_occurrences_but_keeps_confirmed(conn, svc):
+    cid = _seed_client(conn)
+    plan = _make_plan(
+        svc,
+        cid,
+        start_date="2026-01-01",
+        frequency="monthly",
+        issue_day=1,
+    )
+    line = svc.create_line(
+        CreateLineInput(plan_id=plan.id, bill_to_name="停用測試", amount=5000)
+    )
+    occurrences = svc.generate_occurrences(
+        plan.id, until_date=datetime.date(2026, 2, 1)
+    )
+    svc.confirm_occurrence(
+        occurrences[0].id,
+        ConfirmOccurrenceInput(confirmed_amount=5000),
+    )
+
+    svc.deactivate_line(line.id)
+
+    rows = svc.list_occurrences(line_id=line.id)
+    assert [row.status for row in rows] == ["confirmed", "cancelled"]
+    audit = conn.execute(
+        """
+        SELECT detail_json
+        FROM audit_logs
+        WHERE action = 'recurring_billing.line.deactivate'
+        ORDER BY id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    assert '"cancelled_pending_count": 1' in audit["detail_json"]
+
+
 def test_update_line_amount(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid)

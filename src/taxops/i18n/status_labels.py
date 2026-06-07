@@ -67,7 +67,7 @@ STATUS_LABELS: dict[str, str] = dict(
 TEMPLATE_TYPE_LABELS: dict[str, str] = {
     "initial_request": "首次索件",
     "follow_up": "催件通知",
-    "payment_follow_up": "欠款催繳",
+    "payment_follow_up": "固定開立提醒",
     "custom": "自訂",
 }
 

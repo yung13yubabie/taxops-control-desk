@@ -37,6 +37,7 @@ _HANDLER_MODULES = {
     "TemplatesPage": "taxops.ui.pages.templates_page",
     "WorkRecordsPage": "taxops.ui.pages.work_records_page",
     "_ClientGroup": "taxops.ui.pages.recurring_billing_page",
+    "_LineRow": "taxops.ui.pages.recurring_billing_page",
     "_OccRow": "taxops.ui.pages.recurring_billing_page",
     "_PlanSection": "taxops.ui.pages.recurring_billing_page",
 }

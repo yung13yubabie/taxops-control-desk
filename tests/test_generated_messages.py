@@ -153,6 +153,56 @@ def test_build_variables_future_fields_absent(conn, gen_svc):
         assert field not in v, f"future field '{field}' should not be in variables"
 
 
+def test_payment_variables_distinguish_all_pending_from_overdue(
+    conn, gen_svc, monkeypatch
+):
+    client_id, req_id = _seed_request(conn)
+    ts = "2026-01-01T00:00:00"
+    plan_id = conn.execute(
+        """
+        INSERT INTO recurring_billing_plans
+            (client_id, plan_name, frequency, issue_day, months_json,
+             start_date, advance_notice_days, status, created_at, updated_at)
+        VALUES (?, '顧問費', 'monthly', 1, '[]',
+                '2026-01-01', 7, 'active', ?, ?)
+        """,
+        (client_id, ts, ts),
+    ).lastrowid
+    line_id = conn.execute(
+        """
+        INSERT INTO recurring_billing_lines
+            (plan_id, bill_to_name, description, amount, sort_order,
+             active, created_at, updated_at)
+        VALUES (?, '測試公司', '月度顧問費', 1000, 0, 1, ?, ?)
+        """,
+        (plan_id, ts, ts),
+    ).lastrowid
+    conn.executemany(
+        """
+        INSERT INTO recurring_billing_occurrences
+            (plan_id, line_id, expected_issue_date, status, created_at, updated_at)
+        VALUES (?, ?, ?, 'pending', ?, ?)
+        """,
+        [
+            (plan_id, line_id, "2026-06-01", ts, ts),
+            (plan_id, line_id, "2026-07-01", ts, ts),
+        ],
+    )
+    conn.commit()
+    monkeypatch.setattr(
+        "taxops.services.generated_messages.today_iso",
+        lambda: "2026-06-07",
+    )
+
+    variables = gen_svc.build_variables(req_id)
+
+    assert variables["outstanding_amount"] == "2000"
+    assert variables["overdue_amount"] == "1000"
+    assert "2026-06-01" in variables["payment_records"]
+    assert "2026-07-01" not in variables["payment_records"]
+    assert variables["payment_due_date"] == "2026-06-01"
+
+
 def test_build_variables_request_not_found(gen_svc):
     with pytest.raises(GeneratedMessageValidationError) as exc_info:
         gen_svc.build_variables(99999)

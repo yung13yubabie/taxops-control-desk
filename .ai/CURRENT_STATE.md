@@ -1,5 +1,53 @@
 # CURRENT_STATE
 
+## 2026-06-07 v0.27.0 — Recurring billing line management + template semantics
+
+- Version: `0.27.0`.
+- Fixed recurring billing line management after plan creation:
+  - Active lines are visible inside expanded plans.
+  - Users can edit or delete the wrong line directly.
+  - Delete soft-deactivates the line, cancels pending occurrences, preserves
+    confirmed history, and audits the cancelled pending count.
+  - Expanded client/plan state is preserved after refresh.
+- Template provenance and fixed-billing semantics from the previous update are
+  included in this release.
+- Late-fee parameter layout correction is included in this release.
+- Verification:
+  - Targeted recurring-billing/action-contract regression: 138 passed.
+  - Broader targeted gate: 200 passed.
+  - Full regression: `python -m pytest -q` => 1118 passed.
+  - `python -m build_tools.package_windows` => rebuilt EXE.
+  - `python -m build_tools.smoke_test_exe` => passed.
+  - `python -m pip_audit -r requirements-release.txt` => No known
+    vulnerabilities found.
+- Release artifact:
+  `dist/TaxOpsControlDesk-v0.27.0-windows.zip` (68.1 MB).
+- SHA-256:
+  `d32d22aeffcea8077f10038c86c8d9070ac89560be897727d19ce7a542c0003d`.
+- Old `v0.26.0` ZIP and `.sha256` were removed after the new archive passed
+  readback verification.
+- Remaining release closure: commit, push, tag, and GitHub Release upload.
+
+## 2026-06-07 Template provenance and late-fee layout correction
+
+- Template fields now expose their real source and empty-value behavior in the
+  editor instead of presenting an unexplained list of labels.
+- Recurring-billing `pending` occurrences are treated as not-yet-confirmed
+  invoice issuance schedules, not as unpaid customer debt.
+- Built-in template id 3 is updated by migration
+  `0026_fix_payment_template_semantics` to `固定開立提醒`.
+- Existing custom templates using the old payment placeholder labels remain
+  compatible through a legacy label-to-variable mapping.
+- Payment variables now distinguish all pending issue schedules
+  (`outstanding_amount`) from overdue pending issue schedules
+  (`overdue_amount`); the overdue detail list contains only due occurrences.
+- Late-fee input controls now use both sides of the parameter area.
+- A true accounts-receivable/payment ledger is not implemented. Client master
+  data must not be used as a duplicate balance store.
+- Package metadata was consistently `0.26.0` in `pyproject.toml` and
+  `src/taxops/__init__.py`.
+- Final verification: `python -m pytest -q` => 1114 passed.
+
 ## 2026-06-07 v0.26.0 — Anti-Slop Quality Pass
 
 - Version: `0.26.0`.

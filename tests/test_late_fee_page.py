@@ -7,7 +7,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QGridLayout
 
 import taxops.ui.pages.late_fee_page as late_fee_page_module
 from taxops.ui.pages.late_fee_page import LateFeePage
@@ -26,6 +26,21 @@ def test_default_year_uses_project_clock(qapp, container, monkeypatch) -> None:
     monkeypatch.setattr(late_fee_page_module, "today_iso", lambda: "2031-06-02")
     page = LateFeePage(container)
     assert page._year_spin.value() == 2031
+
+
+def test_parameters_use_two_column_grid(qapp, container) -> None:
+    page = LateFeePage(container)
+
+    assert isinstance(page._form_layout, QGridLayout)
+    assert page._form_layout.getItemPosition(
+        page._form_layout.indexOf(page._year_spin)
+    )[1:] == (1, 1, 1)
+    assert page._form_layout.getItemPosition(
+        page._form_layout.indexOf(page._period_combo)
+    )[1:] == (3, 1, 1)
+    assert page._form_layout.getItemPosition(
+        page._form_layout.indexOf(page._actual_payment_date)
+    )[1:] == (3, 1, 1)
 
 
 def test_period_autofills_last_payment_date(qapp, container) -> None:

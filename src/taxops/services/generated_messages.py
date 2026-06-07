@@ -97,36 +97,39 @@ class GeneratedMessagesService:
                 "overdue_amount": "0",
                 "payment_due_date": "",
             }
-        rows: list[tuple[str, str, str, int]] = []
-        total = 0
+        overdue_rows: list[tuple[str, str, str, int]] = []
+        total_pending = 0
+        total_overdue = 0
+        today = today_iso()
         for plan in self._recurring_billing_repo.list_plans(client_id=client_id):
             occurrences = self._recurring_billing_repo.list_occurrences(
                 plan_id=plan.id,
                 status="pending",
-                before_date=today_iso(),
             )
             for occurrence in occurrences:
                 line = self._recurring_billing_repo.get_line(occurrence.line_id)
                 if line is None or not line.active:
                     continue
                 amount = int(line.amount)
-                total += amount
-                rows.append((
-                    occurrence.expected_issue_date,
-                    plan.plan_name,
-                    line.description or line.bill_to_name,
-                    amount,
-                ))
+                total_pending += amount
+                if occurrence.expected_issue_date <= today:
+                    total_overdue += amount
+                    overdue_rows.append((
+                        occurrence.expected_issue_date,
+                        plan.plan_name,
+                        line.description or line.bill_to_name,
+                        amount,
+                    ))
+        overdue_rows.sort(key=lambda row: (row[0], row[1], row[2]))
         payment_records = "\n".join(
             f"- {due}｜{plan_name}｜{desc}｜NT${amount:,}"
-            for due, plan_name, desc, amount in rows
+            for due, plan_name, desc, amount in overdue_rows
         )
-        earliest = rows[0][0] if rows else ""
-        amount_text = str(total)
+        earliest = overdue_rows[0][0] if overdue_rows else ""
         return {
             "payment_records": payment_records,
-            "outstanding_amount": amount_text,
-            "overdue_amount": amount_text,
+            "outstanding_amount": str(total_pending),
+            "overdue_amount": str(total_overdue),
             "payment_due_date": earliest,
         }
 

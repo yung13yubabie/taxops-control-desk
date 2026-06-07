@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
-    QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -119,44 +119,50 @@ class LateFeePage(QWidget):
 
         # -- Input form --
         form_box = QGroupBox("試算參數")
-        form_layout = QFormLayout(form_box)
-        form_layout.setSpacing(10)
-        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+        self._form_layout = QGridLayout(form_box)
+        self._form_layout.setHorizontalSpacing(16)
+        self._form_layout.setVerticalSpacing(10)
+        self._form_layout.setColumnStretch(1, 1)
+        self._form_layout.setColumnStretch(3, 1)
 
         self._year_spin = QSpinBox()
         self._year_spin.setRange(2000, 2100)
         self._year_spin.setValue(datetime.date.fromisoformat(today_iso()).year)
-        form_layout.addRow("年份：", self._year_spin)
+        self._form_layout.addWidget(QLabel("年份："), 0, 0)
+        self._form_layout.addWidget(self._year_spin, 0, 1)
 
         self._period_combo = QComboBox()
         self._period_combo.addItem("（不指定期別）", "")
         for code in PERIOD_CODES:
             self._period_combo.addItem(f"{code} 月", code)
-        form_layout.addRow("期別：", self._period_combo)
+        self._form_layout.addWidget(QLabel("期別："), 0, 2)
+        self._form_layout.addWidget(self._period_combo, 0, 3)
 
         self._last_payment_date = DateField(required=False)
         self._actual_payment_date = DateField(required=False)
-        form_layout.addRow("最後繳款日：", self._last_payment_date)
+        self._form_layout.addWidget(QLabel("最後繳款日："), 1, 0)
+        self._form_layout.addWidget(self._last_payment_date, 1, 1)
+        self._form_layout.addWidget(QLabel("實際繳款日："), 1, 2)
+        self._form_layout.addWidget(self._actual_payment_date, 1, 3)
 
         self._unlock_check = QCheckBox("自行輸入最後繳款日（解除期別自動帶入）")
-        form_layout.addRow("", self._unlock_check)
+        self._form_layout.addWidget(self._unlock_check, 2, 1, 1, 3)
         self._manual_date_hint = QLabel("")
         self._manual_date_hint.setWordWrap(True)
         self._manual_date_hint.setStyleSheet(f"color: {STATUS_PENDING_FG}; font-size: 12px;")
-        form_layout.addRow("", self._manual_date_hint)
-
-        form_layout.addRow("實際繳款日：", self._actual_payment_date)
+        self._form_layout.addWidget(self._manual_date_hint, 3, 1, 1, 3)
 
         self._base_spin = QDoubleSpinBox()
         self._base_spin.setRange(0, 999_999_999)
         self._base_spin.setDecimals(2)
         self._base_spin.setSuffix(" 元")
-        form_layout.addRow("申報稅額：", self._base_spin)
+        self._form_layout.addWidget(QLabel("申報稅額："), 4, 0)
+        self._form_layout.addWidget(self._base_spin, 4, 1)
 
         self._calc_btn = QPushButton("開始試算")
         self._calc_btn.setIcon(toolbar_icon("trial"))
         self._calc_btn.clicked.connect(self._on_calculate)
-        form_layout.addRow("", self._calc_btn)
+        self._form_layout.addWidget(self._calc_btn, 4, 3)
 
         outer.addWidget(form_box)
 

@@ -250,8 +250,33 @@
 - No implementation blocker is currently recorded.
 - Full GCIS import is intentionally not implemented in this slice because it needs a separate schema from the existing MOF BGMOPEN1 tax-cache importer.
 
+### TODO
+
+- Design a separate accounts-receivable/payment ledger before offering real
+  debt-collection templates. Minimum model must track invoice identity, issue
+  date, payment due date, original amount, adjustments, payments, remaining
+  balance, status, and audit history. Do not store a mutable balance directly
+  on `clients`.
+
 ### DONE
 
+- 2026-06-07 v0.27.0 recurring billing line-management fix:
+  - Added visible line rows with edit/delete actions under each expanded plan.
+  - Delete now soft-deactivates the line and cancels pending occurrences in the
+    same transaction; confirmed history remains.
+  - Page refresh preserves expanded client/plan state.
+  - Added action contracts and regression tests.
+  - Full regression passed: 1118 tests.
+  - EXE rebuilt and smoke-tested.
+  - Release ZIP `TaxOpsControlDesk-v0.27.0-windows.zip` created and old v0.26.0
+    ZIP removed after readback verification.
+- 2026-06-07 template provenance + late-fee layout correction:
+  - Added visible source/meaning/empty-value guidance for every template field.
+  - Renamed misleading debt labels to fixed-billing issuance labels.
+  - Added migration `0026_fix_payment_template_semantics`.
+  - Split all-pending and overdue-pending fixed-billing totals.
+  - Replaced the late-fee single-column form with a two-column grid.
+  - Corrected `pyproject.toml` version to `0.26.0`.
 - 2026-06-02 UIUX SLOP 修正三模組（cross-module 138 passed）：
   - 模組 1：EngagementsPage + DocumentRequestsPage 移除 detail panel，去 maxWidth 上限，status 欄固定 110px，顯示截止日。
   - 模組 2：TasksPage 移除 detail panel/splitter，新增 client_label 欄（core col），status 欄固定 110px。

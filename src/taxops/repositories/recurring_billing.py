@@ -428,6 +428,18 @@ class RecurringBillingRepository:
         )
         return self.get_occurrence(occurrence_id)
 
+    def cancel_pending_occurrences_for_line(self, line_id: int) -> int:
+        now = now_iso()
+        cur = self._conn.execute(
+            "UPDATE recurring_billing_occurrences"
+            " SET status='cancelled', updated_at=?"
+            " WHERE line_id=?"
+            " AND status='pending'"
+            f" AND {_ACTIVE_OCCURRENCE_OWNER_SQL}",
+            (now, line_id),
+        )
+        return cur.rowcount
+
     def list_occurrences(
         self,
         plan_id: int | None = None,

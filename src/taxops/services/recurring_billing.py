@@ -458,11 +458,16 @@ class RecurringBillingService:
             line = self._repo.set_line_active(line_id, False)
             if line is None:
                 raise RecurringBillingError("recurring_billing.line.not_found")
+            cancelled_count = self._repo.cancel_pending_occurrences_for_line(line_id)
             self._audit.record(
                 action="recurring_billing.line.deactivate",
                 target_type="recurring_billing_line",
                 target_id=str(line_id),
-                detail={"plan_id": existing.plan_id, "bill_to_name": existing.bill_to_name},
+                detail={
+                    "plan_id": existing.plan_id,
+                    "bill_to_name": existing.bill_to_name,
+                    "cancelled_pending_count": cancelled_count,
+                },
             )
         return line
 

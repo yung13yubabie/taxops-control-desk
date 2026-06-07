@@ -48,13 +48,96 @@ VARIABLE_LABELS: dict[str, str] = {
     "contact_person": "聯絡人",
     "engagement_name": "案件名稱",
     "notes": "備註",
-    "payment_records": "款項紀錄",
-    "outstanding_amount": "未收款總額",
-    "overdue_amount": "逾期未收款",
-    "payment_due_date": "最早應收日",
+    "payment_records": "逾期待開立明細",
+    "outstanding_amount": "全部待開立總額",
+    "overdue_amount": "逾期待開立總額",
+    "payment_due_date": "最早預計開立日",
 }
 
-_LABEL_TO_VARIABLE = {label: key for key, label in VARIABLE_LABELS.items()}
+
+@dataclass(frozen=True)
+class TemplateVariableInfo:
+    source: str
+    description: str
+    empty_behavior: str = "沒有資料時留白"
+
+
+VARIABLE_INFO: dict[str, TemplateVariableInfo] = {
+    "client_name": TemplateVariableInfo(
+        "客戶資料",
+        "取自所選索件批次所屬案件的客戶名稱",
+    ),
+    "tax_id": TemplateVariableInfo(
+        "客戶資料",
+        "取自所選索件批次所屬客戶的統一編號",
+    ),
+    "contact_person": TemplateVariableInfo(
+        "客戶資料",
+        "取自所選索件批次所屬客戶的聯絡人",
+    ),
+    "engagement_name": TemplateVariableInfo(
+        "案件資料",
+        "取自所選索件批次所屬案件的案件名稱",
+    ),
+    "period_name": TemplateVariableInfo(
+        "索件批次",
+        "取自目前套版的索件批次申報期間",
+    ),
+    "tax_type_name": TemplateVariableInfo(
+        "索件批次",
+        "取自目前套版的索件批次稅目",
+    ),
+    "missing_items": TemplateVariableInfo(
+        "索件文件",
+        "列出目前索件批次中狀態為缺少的文件",
+    ),
+    "invalid_items": TemplateVariableInfo(
+        "索件文件",
+        "列出目前索件批次中狀態為格式錯誤的文件",
+    ),
+    "incomplete_items": TemplateVariableInfo(
+        "索件文件",
+        "列出目前索件批次中狀態為內容不完整的文件",
+    ),
+    "due_date": TemplateVariableInfo(
+        "索件批次",
+        "取自目前套版的索件批次截止日",
+    ),
+    "notes": TemplateVariableInfo(
+        "索件批次",
+        "取自目前套版的索件批次備註",
+    ),
+    "payment_records": TemplateVariableInfo(
+        "固定開立",
+        "列出已到預計開立日、但尚未確認開立的明細；不代表客戶欠款",
+    ),
+    "outstanding_amount": TemplateVariableInfo(
+        "固定開立",
+        "加總該客戶全部尚未確認開立的排程金額；包含尚未到期項目，不代表客戶欠款",
+        "沒有資料時顯示 0",
+    ),
+    "overdue_amount": TemplateVariableInfo(
+        "固定開立",
+        "加總已到預計開立日、但尚未確認開立的排程金額；不代表客戶欠款",
+        "沒有資料時顯示 0",
+    ),
+    "payment_due_date": TemplateVariableInfo(
+        "固定開立",
+        "取自最早一筆逾期待開立排程的預計開立日；不代表付款期限",
+    ),
+}
+
+_LEGACY_LABEL_TO_VARIABLE: dict[str, str] = {
+    "款項紀錄": "payment_records",
+    "未收款總額": "outstanding_amount",
+    "逾期未收款": "overdue_amount",
+    "最早應收日": "payment_due_date",
+}
+
+_LABEL_TO_VARIABLE = {
+    **_LEGACY_LABEL_TO_VARIABLE,
+    **{label: key for key, label in VARIABLE_LABELS.items()},
+}
 
 # AST node types permitted in templates: pure text + simple variable references only.
 # Anything else (attribute access, expressions, control flow, filters, calls) is rejected.

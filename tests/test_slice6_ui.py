@@ -219,7 +219,37 @@ def test_template_form_variable_list_tracks_template_type(container, qapp):
 
     labels = [dialog._var_list.item(i).text() for i in range(dialog._var_list.count())]
 
-    assert "可用欄位：欠款催繳" in dialog._var_title.text()
-    assert "款項紀錄" in labels
-    assert "未收款總額" in labels
+    assert "可用欄位：固定開立提醒" in dialog._var_title.text()
+    assert "逾期待開立明細" in labels
+    assert "全部待開立總額" in labels
     assert "缺少文件" not in labels
+
+
+def test_template_form_shows_selected_variable_source(container, qapp):
+    dialog = TemplateFormDialog(container.templates)
+    item = next(
+        dialog._var_list.item(i)
+        for i in range(dialog._var_list.count())
+        if dialog._var_list.item(i).text() == "客戶名稱"
+    )
+
+    dialog._var_list.setCurrentItem(item)
+
+    detail = dialog._var_detail.text()
+    assert "來源：客戶資料" in detail
+    assert "所選索件批次" in detail
+
+
+def test_template_form_warns_payment_fields_are_not_receivables(container, qapp):
+    dialog = TemplateFormDialog(container.templates)
+    dialog._type.setCurrentIndex(dialog._type.findData("payment_follow_up"))
+    item = next(
+        dialog._var_list.item(i)
+        for i in range(dialog._var_list.count())
+        if dialog._var_list.item(i).text() == "逾期待開立總額"
+    )
+
+    dialog._var_list.setCurrentItem(item)
+
+    assert "固定開立" in dialog._var_detail.text()
+    assert "不代表客戶欠款" in dialog._var_detail.text()

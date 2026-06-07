@@ -28,6 +28,7 @@ from ...services.templates import (
     TemplateValidationError,
     TemplatesService,
     UpdateTemplateInput,
+    VARIABLE_INFO,
     VARIABLE_LABELS,
 )
 
@@ -97,7 +98,7 @@ class TemplateFormDialog(QDialog):
         is_edit = existing is not None
         self.setWindowTitle("編輯模板" if is_edit else "新增模板")
         self.setModal(True)
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(760)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 20, 20, 20)
@@ -136,10 +137,20 @@ class TemplateFormDialog(QDialog):
         var_col = QVBoxLayout()
         var_col.setSpacing(4)
         self._var_title = QLabel()
+        self._var_title.setWordWrap(True)
         var_col.addWidget(self._var_title)
         self._var_list = QListWidget()
-        self._var_list.setMaximumWidth(180)
+        self._var_list.setMinimumWidth(220)
+        self._var_list.setMaximumWidth(260)
         var_col.addWidget(self._var_list)
+        self._var_detail = QLabel()
+        self._var_detail.setWordWrap(True)
+        self._var_detail.setMinimumWidth(220)
+        self._var_detail.setMaximumWidth(260)
+        self._var_detail.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
+        var_col.addWidget(self._var_detail)
 
         body_area.addLayout(body_col, stretch=3)
         body_area.addLayout(var_col, stretch=1)
@@ -162,6 +173,7 @@ class TemplateFormDialog(QDialog):
         self._save_btn.clicked.connect(self.on_save)
         cancel_btn.clicked.connect(self.reject)
         self._var_list.itemDoubleClicked.connect(self._on_insert_variable)
+        self._var_list.currentItemChanged.connect(self._on_variable_selected)
         self._type.currentIndexChanged.connect(self._refresh_variable_list)
 
         if is_edit:
@@ -198,8 +210,31 @@ class TemplateFormDialog(QDialog):
         for key in keys:
             item = QListWidgetItem(VARIABLE_LABELS[key])
             item.setData(Qt.ItemDataRole.UserRole, key)
-            item.setToolTip(f"{type_label} 可用欄位：{VARIABLE_LABELS[key]}")
+            info = VARIABLE_INFO[key]
+            item.setToolTip(
+                f"來源：{info.source}\n{info.description}\n{info.empty_behavior}"
+            )
             self._var_list.addItem(item)
+        if self._var_list.count():
+            self._var_list.setCurrentRow(0)
+        else:
+            self._var_detail.clear()
+
+    def _on_variable_selected(
+        self,
+        current: QListWidgetItem | None,
+        _previous: QListWidgetItem | None,
+    ) -> None:
+        if current is None:
+            self._var_detail.clear()
+            return
+        key = str(current.data(Qt.ItemDataRole.UserRole))
+        info = VARIABLE_INFO[key]
+        self._var_detail.setText(
+            f"來源：{info.source}\n"
+            f"取值：{info.description}\n"
+            f"空值：{info.empty_behavior}"
+        )
 
     def on_save(self) -> None:
         self._save_btn.setEnabled(False)

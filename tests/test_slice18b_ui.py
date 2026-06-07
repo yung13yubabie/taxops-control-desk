@@ -45,6 +45,8 @@ def test_recurring_billing_action_contracts_registered():
     assert "新增方案" in labels
     assert "編輯方案" in labels
     assert "新增明細" in labels
+    assert "編輯明細" in labels
+    assert "刪除明細" in labels
     assert "產生待開立紀錄" in labels
     assert "封存" in labels
     assert "確認開立" in labels
@@ -104,6 +106,123 @@ def test_recurring_billing_page_with_plan(container, seed_client_id):
         if isinstance(page._content_layout.itemAt(i).widget(), _ClientGroup)
     ]
     assert len(groups) >= 1
+
+
+@pytest.mark.usefixtures("qapp")
+def test_plan_section_renders_active_lines_with_edit_delete_actions(
+    container, seed_client_id
+):
+    from taxops.services.recurring_billing import CreateLineInput, CreatePlanInput
+    from taxops.ui.pages.recurring_billing_page import (
+        RecurringBillingPage,
+        _LineRow,
+        _PlanSection,
+    )
+
+    rb = container.recurring_billing
+    plan = rb.create_plan(
+        CreatePlanInput(
+            client_id=seed_client_id,
+            plan_name="明細管理測試",
+            start_date="2026-01-01",
+        )
+    )
+    line = rb.create_line(
+        CreateLineInput(plan_id=plan.id, bill_to_name="錯誤對象", amount=1234)
+    )
+    page = RecurringBillingPage(container)
+    section = _PlanSection(
+        plan=plan,
+        line_by_id={line.id: line},
+        window_occs=[],
+        pending_count=0,
+        next_date=None,
+        svc=rb,
+        page=page,
+    )
+
+    assert len(section._line_rows) == 1
+    assert isinstance(section._line_rows[0], _LineRow)
+    assert section._line_rows[0]._edit_btn.text() == "編輯"
+    assert section._line_rows[0]._delete_btn.text() == "刪除"
+
+
+@pytest.mark.usefixtures("qapp")
+def test_line_delete_deactivates_and_refreshes(
+    container, seed_client_id, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+    from taxops.services.recurring_billing import CreateLineInput, CreatePlanInput
+    from taxops.ui.pages.recurring_billing_page import RecurringBillingPage, _LineRow
+
+    rb = container.recurring_billing
+    plan = rb.create_plan(
+        CreatePlanInput(
+            client_id=seed_client_id,
+            plan_name="刪除明細測試",
+            start_date="2026-01-01",
+        )
+    )
+    line = rb.create_line(
+        CreateLineInput(plan_id=plan.id, bill_to_name="誤植明細", amount=9000)
+    )
+    page = RecurringBillingPage(container)
+    refresh_calls = []
+    monkeypatch.setattr(page, "_refresh", lambda: refresh_calls.append(True))
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    row = _LineRow(line, rb, page)
+
+    row._on_delete()
+
+    assert rb.list_lines(plan.id, active_only=True) == []
+    assert refresh_calls == [True]
+
+
+@pytest.mark.usefixtures("qapp")
+def test_refresh_preserves_expanded_client_and_plan(container, seed_client_id):
+    from taxops.services.recurring_billing import CreateLineInput, CreatePlanInput
+    from taxops.ui.pages.recurring_billing_page import (
+        RecurringBillingPage,
+        _ClientGroup,
+        _PlanSection,
+    )
+
+    rb = container.recurring_billing
+    plan = rb.create_plan(
+        CreatePlanInput(
+            client_id=seed_client_id,
+            plan_name="展開狀態測試",
+            start_date="2026-01-01",
+        )
+    )
+    rb.create_line(
+        CreateLineInput(plan_id=plan.id, bill_to_name="測試對象", amount=1000)
+    )
+    page = RecurringBillingPage(container)
+    page._refresh()
+    group = next(
+        page._content_layout.itemAt(i).widget()
+        for i in range(page._content_layout.count())
+        if isinstance(page._content_layout.itemAt(i).widget(), _ClientGroup)
+    )
+    section = group.findChild(_PlanSection)
+    group.expand()
+    section.expand()
+
+    page._refresh()
+
+    refreshed_group = next(
+        page._content_layout.itemAt(i).widget()
+        for i in range(page._content_layout.count())
+        if isinstance(page._content_layout.itemAt(i).widget(), _ClientGroup)
+    )
+    refreshed_section = refreshed_group.findChild(_PlanSection)
+    assert refreshed_group._expanded
+    assert refreshed_section._expanded
 
 
 # ── dialog instantiation ─────────────────────────────────────────────────────

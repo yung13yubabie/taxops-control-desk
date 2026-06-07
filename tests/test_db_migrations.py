@@ -58,14 +58,26 @@ def test_migrations_record_applied_version(db_conn: sqlite3.Connection) -> None:
         "SELECT version FROM schema_migrations ORDER BY version"
     ).fetchall()
     versions = [row["version"] for row in rows]
-    assert versions == ["0001_initial", "0002_tax_cache", "0003_soft_delete", "0004_engagements", "0005_workflow_tasks", "0006_message_templates", "0007_generated_messages", "0008_review_notes", "0009_late_fee", "0010_attachments", "0011_backup", "0012_fts5", "0013_client_lease", "0014_nullable_engagement", "0015_recurring_billing", "0016_rename_amount_cents", "0017_workflow_tasks_client_id", "0018_task_parent", "0019_drop_review_notes", "0020_folder_bookmarks", "0021_document_request_name", "0022_work_records", "0023_canvas_notes", "0024_payment_follow_up_template", "0025_late_fee_period_breakdown"]
+    assert versions == ["0001_initial", "0002_tax_cache", "0003_soft_delete", "0004_engagements", "0005_workflow_tasks", "0006_message_templates", "0007_generated_messages", "0008_review_notes", "0009_late_fee", "0010_attachments", "0011_backup", "0012_fts5", "0013_client_lease", "0014_nullable_engagement", "0015_recurring_billing", "0016_rename_amount_cents", "0017_workflow_tasks_client_id", "0018_task_parent", "0019_drop_review_notes", "0020_folder_bookmarks", "0021_document_request_name", "0022_work_records", "0023_canvas_notes", "0024_payment_follow_up_template", "0025_late_fee_period_breakdown", "0026_fix_payment_template_semantics"]
 
 
 def test_migrations_are_idempotent(db_conn: sqlite3.Connection) -> None:
     second_pass = apply_migrations(db_conn)
     assert second_pass == []
     rows = db_conn.execute("SELECT COUNT(*) AS c FROM schema_migrations").fetchone()
-    assert rows["c"] == 25
+    assert rows["c"] == 26
+
+
+def test_payment_template_uses_fixed_billing_semantics(
+    db_conn: sqlite3.Connection,
+) -> None:
+    row = db_conn.execute(
+        "SELECT name, body FROM message_templates WHERE id = 3"
+    ).fetchone()
+
+    assert row["name"] == "固定開立提醒"
+    assert "逾期待開立總額" in row["body"]
+    assert "未收款" not in row["body"]
 
 
 def test_document_requests_has_request_name_column(db_conn: sqlite3.Connection) -> None:

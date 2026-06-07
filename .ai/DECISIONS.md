@@ -1,5 +1,28 @@
 # DECISIONS
 
+## 2026-06-07 - Recurring billing line delete semantics
+
+- A recurring billing line delete is a soft deactivation, not a physical delete.
+- Pending occurrences for that line are cancelled in the same service
+  transaction, because they are no longer valid after the line is removed from
+  the active contract.
+- Confirmed occurrences remain as audit/history; they must not be rewritten by
+  a later line deletion.
+- The UI must expose edit/delete on the line itself, not only on generated
+  occurrence rows.
+
+## 2026-06-07 - Fixed billing is not accounts receivable
+
+- `recurring_billing_occurrences.status = 'pending'` means the scheduled invoice
+  occurrence has not been confirmed as issued.
+- It must not be presented as customer debt or an unpaid invoice.
+- Client master remains the owner of stable client identity/contact fields, but
+  mutable balances must not be copied onto the client row.
+- A future debt-collection feature requires a separate receivables/payment
+  ledger and explicit payment reconciliation.
+- Until that ledger exists, message templates may remind users about pending
+  fixed-billing issuance only.
+
 > [已確認] 2026-05-09 交接整理註記：本輪只補充每項長期決策的「不應再重複討論、待驗證風險、證據來源」欄位；沒有新增暫定方案為正式決策。
 
 ## 2026-05-29 - Remove Dashboard/Control Panel

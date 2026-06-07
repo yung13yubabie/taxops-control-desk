@@ -320,6 +320,19 @@ def test_create_template_extended_allowed_variables(svc):
     assert tmpl.id > 0
 
 
+def test_render_legacy_payment_placeholder_remains_compatible(svc):
+    tmpl = svc.create_template(
+        CreateTemplateInput(name="Legacy payment", body="金額：【未收款總額】")
+    )
+
+    result = svc.render_template(
+        tmpl.id,
+        {key: "0" for key in ALLOWED_VARIABLES} | {"outstanding_amount": "1234"},
+    )
+
+    assert result == "金額：1234"
+
+
 def test_create_template_future_fields_rejected(svc):
     for field in ("office_owner", "reviewer", "last_followed_up_at"):
         with pytest.raises(TemplateValidationError) as exc:

@@ -1,5 +1,76 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-06-07 - v0.27.0 recurring billing line management)
+
+### Implemented
+- Fixed recurring billing line-management UX:
+  - Expanded plans now show active fixed-billing lines before occurrence rows.
+  - Each line has explicit `編輯` and `刪除` actions.
+  - Line rows include visible column headers: opening target, amount, tax type,
+    description, and actions.
+- Delete semantics are safe and auditable:
+  - `RecurringBillingService.deactivate_line()` still soft-deletes the line.
+  - Pending occurrences for that line are atomically cancelled.
+  - Confirmed history remains intact.
+  - Audit detail records `cancelled_pending_count`.
+- Recurring billing page preserves expanded client/plan state across refresh, so
+  edits/deletes no longer kick the user out of the current plan.
+- UI action registry now includes `編輯明細` and `刪除明細` contracts.
+- Version bumped to `0.27.0` for the release containing these changes plus the
+  template provenance / late-fee layout corrections below.
+
+### Verification
+- Targeted recurring-billing/action-contract regression: 138 passed.
+- Broader targeted gate: 200 passed.
+- Final full regression: `python -m pytest -q` => 1118 passed.
+- `python -m build_tools.package_windows` => EXE rebuilt.
+- `python -m build_tools.smoke_test_exe` => passed with isolated temp
+  `LOCALAPPDATA`; process terminated cleanly.
+- Release ZIP: `dist/TaxOpsControlDesk-v0.27.0-windows.zip` (68.1 MB).
+- SHA-256:
+  `d32d22aeffcea8077f10038c86c8d9070ac89560be897727d19ce7a542c0003d`.
+- Old `v0.26.0` ZIP and `.sha256` were removed after `v0.27.0` ZIP readback
+  passed.
+- `python -m pip_audit -r requirements-release.txt` => No known
+  vulnerabilities found. The command still prints a global Python
+  `RequestsDependencyWarning`; this is environment noise from the runner, not a
+  release requirements finding.
+- Post-smoke process check found no `TaxOpsControlDesk`, `pytest`, or
+  `pyinstaller` process residue.
+- Git commit/push/tag/release pending at the time this section was written.
+
+## Latest Handoff Update (2026-06-07 - template provenance + late-fee layout)
+
+### Implemented
+- Template variable list now shows a persistent source/meaning/empty-value panel.
+  Sources are explicit: client, engagement, document request, request items, or
+  recurring billing.
+- Corrected a serious semantic mismatch: recurring-billing `pending` means an
+  invoice occurrence is not confirmed as issued. It is not evidence of an
+  unpaid receivable.
+- User-facing payment template wording is now `固定開立提醒`; fields distinguish
+  all pending issue schedules from overdue pending issue schedules.
+- Migration `0026_fix_payment_template_semantics` updates built-in template id 3
+  without modifying user-created templates.
+- Legacy user-facing placeholders such as `【未收款總額】` remain renderable, so
+  existing custom templates do not silently stop substituting values.
+- Late-fee parameters use a two-column grid: year/period, last/actual payment
+  date, then amount/action. The previous left-only form no longer wastes the
+  right side.
+- `pyproject.toml` version corrected from stale `0.25.0` to `0.26.0`.
+
+### Important boundary
+- Do not add debt or outstanding-balance totals to the client master record.
+  Those values change over time and require a separate receivables/payment
+  ledger with invoice, due date, payment, adjustment, and audit semantics.
+- Current recurring billing can safely answer "not confirmed as issued"; it
+  cannot answer "issued but unpaid".
+
+### Verification
+- New regression tests: 6 passed.
+- Related template/generated-message/late-fee/migration tests: 145 passed.
+- Final full suite after legacy-placeholder compatibility: 1114 passed.
+
 ## Latest Handoff Update (2026-06-07 - v0.26.0 Anti-Slop Wave packaged)
 
 ### 狀態

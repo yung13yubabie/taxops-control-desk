@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from ...core.clock import today_iso as project_today_iso
 from ...i18n import error_message
+from ...i18n.status_labels import status_to_label
 from ...repositories.recurring_billing import LineRow, OccurrenceRow, PlanRow
 from ...services.container import ServiceContainer
 from ...services.recurring_billing import RecurringBillingError
@@ -84,6 +85,90 @@ _CLIENT_TOGGLE = (
 
 def _fmt(cents: int) -> str:
     return f"NT${cents:,}"
+
+
+# ── line row ──────────────────────────────────────────────────────────────────
+
+class _LineRow(QWidget):
+    def __init__(
+        self,
+        line: LineRow,
+        svc,
+        page: "RecurringBillingPage",
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._line = line
+        self._svc = svc
+        self._page = page
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(12, 4, 12, 4)
+        row.setSpacing(10)
+
+        bill_to = QLabel(line.bill_to_name)
+        bill_to.setTextFormat(Qt.TextFormat.PlainText)
+        bill_to.setMinimumWidth(140)
+        bill_to.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        row.addWidget(bill_to, stretch=2)
+
+        amount = QLabel(_fmt(line.amount))
+        amount.setFixedWidth(110)
+        row.addWidget(amount)
+
+        tax_type = QLabel(status_to_label(line.tax_type) if line.tax_type else "未指定稅目")
+        tax_type.setTextFormat(Qt.TextFormat.PlainText)
+        tax_type.setFixedWidth(100)
+        tax_type.setStyleSheet(f"color: {TEXT_MUTED};")
+        row.addWidget(tax_type)
+
+        description = QLabel(line.description or "")
+        description.setTextFormat(Qt.TextFormat.PlainText)
+        description.setStyleSheet(f"color: {TEXT_MUTED};")
+        description.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        row.addWidget(description, stretch=2)
+
+        self._edit_btn = QPushButton("編輯")
+        self._edit_btn.setStyleSheet(_SMALL_BTN)
+        self._delete_btn = QPushButton("刪除")
+        self._delete_btn.setStyleSheet(_DANGER_BTN)
+        self._edit_btn.clicked.connect(self._on_edit)
+        self._delete_btn.clicked.connect(self._on_delete)
+        row.addWidget(self._edit_btn)
+        row.addWidget(self._delete_btn)
+
+    def _on_edit(self) -> None:
+        dialog = LineDialog(
+            self._svc,
+            self._line.plan_id,
+            line=self._line,
+            parent=self,
+        )
+        if dialog.exec() == dialog.DialogCode.Accepted:
+            self._page._refresh()
+
+    def _on_delete(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            "刪除固定開立明細",
+            f"確定刪除「{self._line.bill_to_name}」嗎？\n\n"
+            "尚未確認的待開立紀錄會一併取消；已確認的歷史紀錄會保留。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._svc.deactivate_line(self._line.id)
+        except RecurringBillingError as err:
+            QMessageBox.warning(self, "刪除失敗", error_message(err.code))
+            return
+        except Exception:
+            _log.exception("deactivate_line failed line=%d", self._line.id)
+            QMessageBox.warning(self, "刪除失敗", error_message("system.unexpected"))
+            return
+        self._page._refresh()
 
 
 # ── occurrence row ────────────────────────────────────────────────────────────
@@ -259,7 +344,46 @@ class _PlanSection(QFrame):
         self._body = QWidget()
         body_layout = QVBoxLayout(self._body)
         body_layout.setContentsMargins(0, 0, 0, 0)
-        body_layout.setSpacing(0)
+        body_layout.setSpacing(4)
+
+        active_lines = [line for line in line_by_id.values() if line.active]
+        line_header = QLabel(f"固定開立明細（{len(active_lines)}）")
+        line_header.setStyleSheet(
+            "font-weight: 600; color: #334155; padding: 8px 12px 2px 12px;"
+        )
+        body_layout.addWidget(line_header)
+        header_row = QWidget(self._body)
+        header_layout = QHBoxLayout(header_row)
+        header_layout.setContentsMargins(12, 0, 12, 0)
+        header_layout.setSpacing(10)
+        for text, width, stretch in (
+            ("開立對象", 140, 2),
+            ("金額", 110, 0),
+            ("稅目", 100, 0),
+            ("說明", 0, 2),
+            ("操作", 112, 0),
+        ):
+            label = QLabel(text)
+            label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+            if width:
+                label.setFixedWidth(width)
+            else:
+                label.setSizePolicy(
+                    QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+                )
+            header_layout.addWidget(label, stretch=stretch)
+        body_layout.addWidget(header_row)
+        self._line_rows: list[_LineRow] = []
+        for line in active_lines:
+            line_row = _LineRow(line, svc, page, parent=self._body)
+            self._line_rows.append(line_row)
+            body_layout.addWidget(line_row)
+
+        occurrence_header = QLabel("待開立與歷史紀錄")
+        occurrence_header.setStyleSheet(
+            "font-weight: 600; color: #334155; padding: 8px 12px 2px 12px;"
+        )
+        body_layout.addWidget(occurrence_header)
 
         if window_occs:
             for i, occ in enumerate(window_occs):
@@ -287,6 +411,7 @@ class _PlanSection(QFrame):
             btn.setVisible(self._expanded)
         icon = "▼" if self._expanded else "▶"
         self._toggle_btn.setText(f"{icon}  {self._plan.plan_name}")
+        self._page._remember_plan_expanded(self._plan.id, self._expanded)
 
     def expand(self) -> None:
         if not self._expanded:
@@ -407,6 +532,7 @@ class _ClientGroup(QFrame):
         self._new_plan_btn.setVisible(self._expanded)
         icon = "▼" if self._expanded else "▶"
         self._toggle_btn.setText(f"{icon}  {self._client_name}")
+        self._page._remember_client_expanded(self._client_id, self._expanded)
 
     def _on_new_plan(self) -> None:
         dlg = PlanDialog(self._svc, self._client_id, parent=self)
@@ -425,6 +551,8 @@ class RecurringBillingPage(QWidget):
         self._container = container
         self._rb = container.recurring_billing
         self._clients_map: dict[int, str] = {}
+        self._expanded_client_ids: set[int] = set()
+        self._expanded_plan_ids: set[int] = set()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 24, 20)
@@ -487,6 +615,18 @@ class RecurringBillingPage(QWidget):
     def _refresh(self) -> None:
         self._repopulate_client_combo()
         self._rebuild_accordion()
+
+    def _remember_client_expanded(self, client_id: int, expanded: bool) -> None:
+        if expanded:
+            self._expanded_client_ids.add(client_id)
+        else:
+            self._expanded_client_ids.discard(client_id)
+
+    def _remember_plan_expanded(self, plan_id: int, expanded: bool) -> None:
+        if expanded:
+            self._expanded_plan_ids.add(plan_id)
+        else:
+            self._expanded_plan_ids.discard(plan_id)
 
     def _generate_for_client(self, client_id: int) -> bool:
         """Generate occurrences for all active plans of a client (idempotent).
@@ -732,11 +872,11 @@ class RecurringBillingPage(QWidget):
                     page=self,
                 )
                 group.add_plan(section)
-                if pending_count > 0:
+                if pending_count > 0 or plan.id in self._expanded_plan_ids:
                     section.expand()
                     any_pending = True
 
-            if any_pending:
+            if any_pending or client_id in self._expanded_client_ids:
                 group.expand()
 
             self._content_layout.insertWidget(insert_pos, group)
