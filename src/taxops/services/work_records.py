@@ -795,13 +795,13 @@ class WorkRecordsService:
         if not title or not phenomenon or not root_cause:
             raise WorkRecordValidationError("work_record.error.required")
         guard_step = sanitize_user_text(payload.guard_step_text, max_length=500) or None
-        if payload.workflow_template_id and guard_step:
-            self.append_guard_step_to_template(
-                payload.workflow_template_id,
-                stage_id=payload.guard_stage_id,
-                step_text=guard_step,
-            )
         with self._conn:
+            if payload.workflow_template_id and guard_step:
+                self._append_guard_step_uncommitted(
+                    payload.workflow_template_id,
+                    stage_id=payload.guard_stage_id,
+                    step_text=guard_step,
+                )
             row = self._repo.insert_error_review(
                 title=title,
                 phenomenon=phenomenon,
@@ -824,13 +824,17 @@ class WorkRecordsService:
             )
         return row
 
-    def append_guard_step_to_template(
+    def _append_guard_step_uncommitted(
         self,
         template_id: int,
         *,
         stage_id: str | None,
         step_text: str,
     ) -> WorkflowTemplateRow:
+        """Append a guard step to a template without opening a new transaction.
+
+        Must be called inside an existing ``with self._conn:`` block.
+        """
         template = self._repo.get_template(template_id)
         if template is None:
             raise WorkRecordValidationError("work_record.template.not_found")
@@ -850,23 +854,36 @@ class WorkRecordsService:
             "text": clean_step,
             "done": False,
         })
-        with self._conn:
-            updated = _require_row(
-                self._repo.update_template_stages(
-                    template.id,
-                    name=template.name,
-                    stages_json=_dumps_stages(stages),
-                    bump_version=True,
-                ),
-                "work_record.template.not_found",
-            )
-            self._audit.record(
-                action="work_record.workflow_template.guard_step_append",
-                target_type="workflow_template",
-                target_id=str(template.id),
-                detail={"stage_id": target_stage.get("id"), "step_text": clean_step},
-            )
+        updated = _require_row(
+            self._repo.update_template_stages(
+                template.id,
+                name=template.name,
+                stages_json=_dumps_stages(stages),
+                bump_version=True,
+            ),
+            "work_record.template.not_found",
+        )
+        self._audit.record(
+            action="work_record.workflow_template.guard_step_append",
+            target_type="workflow_template",
+            target_id=str(template.id),
+            detail={"stage_id": target_stage.get("id"), "step_text": clean_step},
+        )
         return updated
+
+    def append_guard_step_to_template(
+        self,
+        template_id: int,
+        *,
+        stage_id: str | None,
+        step_text: str,
+    ) -> WorkflowTemplateRow:
+        with self._conn:
+            return self._append_guard_step_uncommitted(
+                template_id,
+                stage_id=stage_id,
+                step_text=step_text,
+            )
 
     def list_templates(self) -> list[WorkflowTemplateRow]:
         return self._repo.list_templates()
