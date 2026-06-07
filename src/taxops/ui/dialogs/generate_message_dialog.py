@@ -83,6 +83,10 @@ class GenerateMessageDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         self._template_combo.currentIndexChanged.connect(self._on_template_changed)
 
+        self.setTabOrder(self._template_combo, self._preview)
+        self.setTabOrder(self._preview, self._copy_btn)
+        self.setTabOrder(self._copy_btn, self._save_btn)
+
         self._load_templates()
 
         try:

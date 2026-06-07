@@ -285,6 +285,15 @@ class PlanDialog(QDialog):
         self._save_btn.clicked.connect(self._on_save)
         cancel_btn.clicked.connect(self.reject)
 
+        for a, b in [
+            (self._name, self._freq),
+            (self._freq, self._issue_day),
+            (self._issue_day, self._notice_days),
+            (self._notice_days, self._contract_ref),
+            (self._contract_ref, self._save_btn),
+        ]:
+            self.setTabOrder(a, b)
+
         self._populate(plan)
         self._on_freq_changed()
 
@@ -586,6 +595,15 @@ class LineDialog(QDialog):
         self._save_btn.clicked.connect(self._on_save)
         cancel_btn.clicked.connect(self.reject)
 
+        for a, b in [
+            (self._bill_to, self._amount),
+            (self._amount, self._desc),
+            (self._desc, self._tax_type),
+            (self._tax_type, self._sort_order),
+            (self._sort_order, self._save_btn),
+        ]:
+            self.setTabOrder(a, b)
+
         if line is not None:
             self._populate(line)
 
@@ -692,6 +710,13 @@ class ConfirmOccurrenceDialog(QDialog):
 
         self._save_btn.clicked.connect(self._on_save)
         cancel_btn.clicked.connect(self.reject)
+
+        for a, b in [
+            (self._amount, self._invoice_no),
+            (self._invoice_no, self._notes),
+            (self._notes, self._save_btn),
+        ]:
+            self.setTabOrder(a, b)
 
     def _on_save(self) -> None:
         self._save_btn.setEnabled(False)
