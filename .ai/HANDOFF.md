@@ -1,5 +1,30 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-06-07 - v0.26.0 Anti-Slop Wave packaged)
+
+### 狀態
+- **版本**：v0.26.0
+- **Commit**：aa1546d（含 Wave 1-4 修復 + setTabOrder 擴充）
+- **測試**：`python -m pytest -q` → 1108 passed（v0.26.0 baseline）
+- **EXE**：已打包，smoke test 通過
+- **Artifact**：`dist/TaxOpsControlDesk-v0.26.0-windows.zip`（70.4 MB）
+- **SHA-256**：`4043ea7c1e193d9b88c950a6f87ac5bb7569ee66cd370a4d1b00a13452df1eed`
+- **Tag**：`v0.26.0`
+- **GitHub Release**：含 ZIP + .sha256 artifact
+
+### 本輪修復摘要（Anti-Slop 7 維度審計 → Wave 1-4）
+1. **C1 CRITICAL（service 靜默失敗）**：`tasks.py update_tasks_bulk` update_status 回傳 None 時加 error log + continue
+2. **C2 CRITICAL（tax registry UI 不反饋）**：`clients_page.py` 初始化失敗時顯示 QMessageBox.warning
+3. **C3 CRITICAL 降級**：`audit.py` 使用同一個 SQLite connection，`with self._conn:` 已自動原子化，非問題
+4. **設計系統 token 化**：15+ 處 hardcoded 顏色（`#64748B`, `#2563EB`, `#1D4ED8`, `#555`）→ `TEXT_MUTED` / `PRIMARY_COLOR` / `PRIMARY_HOVER` / `DANGER_COLOR`
+   - 修改檔案：`style.py`, `clients_page.py`, `engagements_page.py`, `settings_page.py`, `registry_page.py`, `recurring_billing_page.py`, `placeholder_page.py`, `date_field.py`, `registry_apply_dialog.py`, `bulk_import_wizard.py`
+5. **cross-page 資料同步**：`recurring_billing_page.py` 新增 `refresh_context()` 和 `clear_filter()`；`clients_page.py` `clear_filter()` 同步重設 search 和 pagination
+6. **empty state widget**：`folder_bookmarks_page.py` 補上 `EmptyState` widget，空清單時顯示說明
+7. **鍵盤導覽（setTabOrder + setDefault）**：13+ 個 dialog 補上 Tab 順序和 Enter 確認
+   - `task_bulk_dialogs.py`, `add_document_item_dialog.py`, `registry_apply_dialog.py`, `new_client_dialog.py`, `edit_client_dialog.py`, `new_engagement_dialog.py`, `edit_engagement_dialog.py`, `new_task_dialog.py`, `work_records_dialogs.py`, `template_form_dialog.py`, `document_item_template_dialog.py`, `generate_message_dialog.py`, `recurring_billing_dialogs.py`
+
+---
+
 ## Latest Handoff Update (2026-06-07 - v0.25.0 packaged)
 
 - Final source state passed `python -m pytest -q`: 1108 passed in 762.02s.
