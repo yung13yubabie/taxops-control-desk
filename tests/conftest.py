@@ -28,19 +28,11 @@ def _ensure_app_dirs(paths: AppPaths) -> None:
     paths.attachments_dir.mkdir(parents=True, exist_ok=True)
 
 
-@pytest.fixture(autouse=True)
-def _auto_mock_doc_item_template_dialog(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Auto-mock ``DocumentItemTemplateDialog.exec`` to return Accepted.
-
-    Slice 21A introduced a modal checklist dialog inside
-    ``DocumentRequestsPage._on_new_request``. Tests written before 21A call
-    that handler without mocking the new dialog, which would otherwise open
-    a real modal under offscreen Qt and hang the test process indefinitely.
-
-    Tests that explicitly cover the dialog (Slice 21A) construct it directly
-    and access methods like ``selected_items()`` / ``accept()``; they do not
-    call ``exec()``, so this mock is invisible to them.
-    """
+@pytest.fixture
+def accept_document_item_template_dialog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accept the checklist dialog in tests that explicitly opt in."""
     from PySide6.QtWidgets import QDialog
 
     monkeypatch.setattr(

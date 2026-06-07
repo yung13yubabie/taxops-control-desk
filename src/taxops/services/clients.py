@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import sqlite3
 from dataclasses import dataclass
 
@@ -11,9 +10,6 @@ from ..core.text import sanitize_user_text
 from ..repositories.clients import ClientRow, ClientsRepository
 from ..repositories.search import SearchRepository
 from .audit import AuditService
-
-_log = logging.getLogger(__name__)
-
 
 class ClientValidationError(Exception):
     """Raised when client input fails business validation.
@@ -86,42 +82,33 @@ class ClientsService:
     def _fts_add(self, row: ClientRow) -> None:
         if self._search_repo is None:
             return
-        try:
-            self._search_repo.add_client(
-                row.id,
-                client_code=row.client_code,
-                client_name=row.client_name,
-                tax_id=row.tax_id,
-                short_name=row.short_name,
-                contact_name=row.contact_name,
-                note=row.note,
-            )
-        except Exception:
-            _log.warning("client FTS add failed", exc_info=True)
+        self._search_repo.add_client(
+            row.id,
+            client_code=row.client_code,
+            client_name=row.client_name,
+            tax_id=row.tax_id,
+            short_name=row.short_name,
+            contact_name=row.contact_name,
+            note=row.note,
+        )
 
     def _fts_update(self, row: ClientRow) -> None:
         if self._search_repo is None:
             return
-        try:
-            self._search_repo.update_client(
-                row.id,
-                client_code=row.client_code,
-                client_name=row.client_name,
-                tax_id=row.tax_id,
-                short_name=row.short_name,
-                contact_name=row.contact_name,
-                note=row.note,
-            )
-        except Exception:
-            _log.warning("client FTS update failed", exc_info=True)
+        self._search_repo.update_client(
+            row.id,
+            client_code=row.client_code,
+            client_name=row.client_name,
+            tax_id=row.tax_id,
+            short_name=row.short_name,
+            contact_name=row.contact_name,
+            note=row.note,
+        )
 
     def _fts_delete(self, client_id: int) -> None:
         if self._search_repo is None:
             return
-        try:
-            self._search_repo.delete_client(client_id)
-        except Exception:
-            _log.warning("client FTS delete failed", exc_info=True)
+        self._search_repo.delete_client(client_id)
 
     def create_client(self, payload: CreateClientInput) -> ClientRow:
         client_code = sanitize_user_text(payload.client_code, max_length=50)
@@ -183,11 +170,11 @@ class ClientsService:
                     target_id=str(row.id),
                     detail=audit_detail,
                 )
+                self._fts_add(row)
         except sqlite3.IntegrityError as exc:
-            if "client_code" in str(exc) or "UNIQUE" in str(exc).upper():
+            if "clients.client_code" in str(exc):
                 raise ClientValidationError("client.client_code.duplicate") from exc
             raise
-        self._fts_add(row)
         return row
 
     def update_client(self, client_id: int, payload: UpdateClientInput) -> ClientRow:
@@ -248,11 +235,11 @@ class ClientsService:
                         "tax_id": row.tax_id,
                     },
                 )
+                self._fts_update(row)
         except sqlite3.IntegrityError as exc:
-            if "client_code" in str(exc) or "UNIQUE" in str(exc).upper():
+            if "clients.client_code" in str(exc):
                 raise ClientValidationError("client.client_code.duplicate") from exc
             raise
-        self._fts_update(row)
         return row
 
     def delete_client(self, client_id: int) -> None:
@@ -270,7 +257,7 @@ class ClientsService:
                     "client_name": existing.client_name,
                 },
             )
-        self._fts_delete(client_id)
+            self._fts_delete(client_id)
 
     def restore_client(self, client_id: int) -> None:
         """Undo a soft-delete. Raises client.not_found if id is unknown or already active."""
@@ -288,8 +275,8 @@ class ClientsService:
                     "client_name": row.client_name if row else "",
                 },
             )
-        if row is not None:
-            self._fts_add(row)
+            if row is not None:
+                self._fts_add(row)
 
     def purge_client(self, client_id: int) -> None:
         """Permanently delete a soft-deleted client with no engagement refs."""
@@ -315,7 +302,7 @@ class ClientsService:
                     "deleted_at": existing.deleted_at,
                 },
             )
-        self._fts_delete(client_id)
+            self._fts_delete(client_id)
 
     def list_clients(self, *, limit: int = 500, offset: int = 0) -> list[ClientRow]:
         return self._repo.list_clients(limit=limit, offset=offset)

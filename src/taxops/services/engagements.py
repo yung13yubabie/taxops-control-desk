@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 from ..core.dates import parse_optional_iso_date
@@ -10,8 +9,6 @@ from ..core.text import sanitize_user_text
 from ..repositories.engagements import EngagementRow, EngagementsRepository
 from ..repositories.search import SearchRepository
 from .audit import AuditService
-
-_log = logging.getLogger(__name__)
 
 VALID_TAX_TYPES = frozenset({"vat", "cit", "iit", "stamp", "inheritance", "other"})
 
@@ -107,30 +104,21 @@ class EngagementsService:
     def _fts_add(self, row: EngagementRow) -> None:
         if self._search_repo is None:
             return
-        try:
-            self._search_repo.add_engagement(
-                row.id, engagement_name=row.engagement_name
-            )
-        except Exception:
-            _log.warning("engagement FTS add failed", exc_info=True)
+        self._search_repo.add_engagement(
+            row.id, engagement_name=row.engagement_name
+        )
 
     def _fts_update(self, row: EngagementRow) -> None:
         if self._search_repo is None:
             return
-        try:
-            self._search_repo.update_engagement(
-                row.id, engagement_name=row.engagement_name
-            )
-        except Exception:
-            _log.warning("engagement FTS update failed", exc_info=True)
+        self._search_repo.update_engagement(
+            row.id, engagement_name=row.engagement_name
+        )
 
     def _fts_delete(self, engagement_id: int) -> None:
         if self._search_repo is None:
             return
-        try:
-            self._search_repo.delete_engagement(engagement_id)
-        except Exception:
-            _log.warning("engagement FTS delete failed", exc_info=True)
+        self._search_repo.delete_engagement(engagement_id)
 
     def create_engagement(self, payload: CreateEngagementInput) -> EngagementRow:
         if not self._repo.client_exists(payload.client_id):
@@ -179,7 +167,7 @@ class EngagementsService:
                     "status": row.status,
                 },
             )
-        self._fts_add(row)
+            self._fts_add(row)
         return row
 
     def update_engagement(
@@ -238,7 +226,7 @@ class EngagementsService:
                     "period_name": row.period_name,
                 },
             )
-        self._fts_update(row)
+            self._fts_update(row)
         return row
 
     def set_status(self, engagement_id: int, status: str) -> EngagementRow:
@@ -278,7 +266,7 @@ class EngagementsService:
                     "period_name": existing.period_name,
                 },
             )
-        self._fts_delete(engagement_id)
+            self._fts_delete(engagement_id)
 
     def get_engagement(self, engagement_id: int) -> EngagementRow | None:
         return self._repo.get(engagement_id)

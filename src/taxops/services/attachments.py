@@ -169,6 +169,19 @@ class AttachmentsService:
     def get(self, attachment_id: int) -> AttachmentRow | None:
         return self._repo.get(attachment_id)
 
+    def resolve_file_path(self, attachment_id: int) -> Path:
+        """Return a validated on-disk path for an existing attachment file."""
+        row = self._repo.get(attachment_id)
+        if row is None:
+            raise AttachmentValidationError("attachment.not_found")
+        try:
+            path = resolve_safe_path(self._attachments_dir, row.stored_filename)
+        except FileGuardError as e:
+            raise AttachmentValidationError(e.code) from e
+        if not path.is_file():
+            raise AttachmentValidationError("attachment.not_found")
+        return path
+
     def list_all(self) -> list[AttachmentRow]:
         return self._repo.list_all()
 

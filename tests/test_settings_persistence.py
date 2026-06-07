@@ -65,3 +65,19 @@ def test_settings_save_query_mode_validates(container: ServiceContainer) -> None
 def test_unknown_setting_key_rejected(container: ServiceContainer) -> None:
     with pytest.raises(SettingsValidationError):
         container.settings.set_setting("not.a.real.key", "x")
+
+
+def test_setting_update_rolls_back_when_audit_fails(
+    container: ServiceContainer, monkeypatch
+) -> None:
+    original = container.settings.get("tax_cache.query_mode")
+    monkeypatch.setattr(
+        container.settings._audit,
+        "record",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("audit unavailable")),
+    )
+
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        container.settings.set_setting("tax_cache.query_mode", "allow_online")
+
+    assert container.settings.get("tax_cache.query_mode") == original

@@ -10,6 +10,19 @@ from dataclasses import dataclass
 
 from ..core.clock import now_iso
 
+_ACTIVE_REQUEST_OWNER_SQL = (
+    "EXISTS (SELECT 1 FROM engagements e"
+    " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+    " WHERE e.id = document_requests.engagement_id AND e.deleted_at IS NULL)"
+)
+
+_ACTIVE_ITEM_OWNER_SQL = (
+    "EXISTS (SELECT 1 FROM document_requests dr"
+    " JOIN engagements e ON e.id = dr.engagement_id AND e.deleted_at IS NULL"
+    " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+    " WHERE dr.id = document_request_items.request_id AND dr.deleted_at IS NULL)"
+)
+
 
 @dataclass(frozen=True)
 class DocumentRequestRow:
@@ -116,14 +129,17 @@ class DocumentRequestsRepository:
 
     def get_request(self, request_id: int) -> DocumentRequestRow | None:
         row = self._conn.execute(
-            "SELECT * FROM document_requests WHERE id = ? AND deleted_at IS NULL",
+            "SELECT * FROM document_requests WHERE id = ? AND deleted_at IS NULL"
+            f" AND {_ACTIVE_REQUEST_OWNER_SQL}",
             (request_id,),
         ).fetchone()
         return _row_to_request(row) if row else None
 
     def list_all(self) -> list[DocumentRequestRow]:
         rows = self._conn.execute(
-            "SELECT * FROM document_requests WHERE deleted_at IS NULL ORDER BY created_at ASC"
+            "SELECT * FROM document_requests WHERE deleted_at IS NULL"
+            f" AND {_ACTIVE_REQUEST_OWNER_SQL}"
+            " ORDER BY created_at ASC"
         ).fetchall()
         return [_row_to_request(r) for r in rows]
 
@@ -131,6 +147,7 @@ class DocumentRequestsRepository:
         rows = self._conn.execute(
             "SELECT * FROM document_requests"
             " WHERE engagement_id = ? AND deleted_at IS NULL"
+            f" AND {_ACTIVE_REQUEST_OWNER_SQL}"
             " ORDER BY created_at ASC",
             (engagement_id,),
         ).fetchall()
@@ -221,14 +238,17 @@ class DocumentRequestsRepository:
 
     def get_item(self, item_id: int) -> DocumentRequestItemRow | None:
         row = self._conn.execute(
-            "SELECT * FROM document_request_items WHERE id = ?",
+            "SELECT * FROM document_request_items WHERE id = ?"
+            f" AND {_ACTIVE_ITEM_OWNER_SQL}",
             (item_id,),
         ).fetchone()
         return _row_to_item(row) if row else None
 
     def list_items(self, request_id: int) -> list[DocumentRequestItemRow]:
         rows = self._conn.execute(
-            "SELECT * FROM document_request_items WHERE request_id = ? ORDER BY id ASC",
+            "SELECT * FROM document_request_items WHERE request_id = ?"
+            f" AND {_ACTIVE_ITEM_OWNER_SQL}"
+            " ORDER BY id ASC",
             (request_id,),
         ).fetchall()
         return [_row_to_item(r) for r in rows]
@@ -372,6 +392,7 @@ class DocumentRequestsRepository:
             f" WHERE dri.item_status IN ({placeholders})"
             "  AND dr.deleted_at IS NULL"
             "  AND e.deleted_at IS NULL"
+            "  AND c.deleted_at IS NULL"
             f"{where_extra}"
             " ORDER BY c.client_code, e.engagement_name, dr.id, dri.id"
             " LIMIT 100000"
@@ -383,7 +404,9 @@ class DocumentRequestsRepository:
 
     def engagement_exists(self, engagement_id: int) -> bool:
         row = self._conn.execute(
-            "SELECT id FROM engagements WHERE id = ? AND deleted_at IS NULL",
+            "SELECT e.id FROM engagements e"
+            " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+            " WHERE e.id = ? AND e.deleted_at IS NULL",
             (engagement_id,),
         ).fetchone()
         return row is not None

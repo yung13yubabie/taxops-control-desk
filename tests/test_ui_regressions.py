@@ -8,9 +8,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import QDate
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QApplication
 
-from taxops.services.clients import CreateClientInput
+from taxops.services.clients import CreateClientInput, UpdateClientInput
 from taxops.services.container import ServiceContainer
 from taxops.services.engagements import CreateEngagementInput
 
@@ -122,3 +123,96 @@ def test_clients_page_purge_button_permanently_deletes_soft_deleted_client(
         "SELECT id FROM clients WHERE id = ?", (client.id,)
     ).fetchone()
     assert raw is None
+
+
+def test_clients_refresh_preserves_selection_by_client_id(
+    qapp: QApplication,
+    container: ServiceContainer,
+) -> None:
+    from taxops.ui.pages.clients_page import ClientsPage
+
+    first = container.clients.create_client(
+        CreateClientInput(client_code="SEL001", client_name="第一位客戶")
+    )
+    selected = container.clients.create_client(
+        CreateClientInput(client_code="SEL002", client_name="保留選取客戶")
+    )
+    page = ClientsPage(container)
+    page.on_refresh()
+    for row in range(page._table.rowCount()):
+        if int(page._table.item(row, 0).text()) == selected.id:
+            page._table.selectRow(row)
+            break
+
+    container.clients.update_client(
+        first.id,
+        UpdateClientInput(client_code="ZZZ001", client_name="排序後客戶"),
+    )
+    page.on_refresh()
+
+    assert page._selected_client_id() == selected.id
+
+
+def test_engagements_refresh_preserves_selection_by_engagement_id(
+    qapp: QApplication,
+    container: ServiceContainer,
+) -> None:
+    from taxops.ui.pages.engagements_page import EngagementsPage
+
+    client = container.clients.create_client(
+        CreateClientInput(client_code="ENGSEL", client_name="案件選取客戶")
+    )
+    first = container.engagements.create_engagement(
+        CreateEngagementInput(
+            client_id=client.id,
+            engagement_name="第一案件",
+            tax_type="vat",
+            period_name="2026",
+        )
+    )
+    selected = container.engagements.create_engagement(
+        CreateEngagementInput(
+            client_id=client.id,
+            engagement_name="保留選取案件",
+            tax_type="vat",
+            period_name="2026",
+        )
+    )
+    page = EngagementsPage(container)
+    page.refresh_context()
+    for row in range(page._table.rowCount()):
+        if int(page._table.item(row, 0).text()) == selected.id:
+            page._table.selectRow(row)
+            break
+
+    container.engagements.delete_engagement(first.id)
+    page._refresh_engagements()
+
+    assert page._selected_engagement_id() == selected.id
+    assert page._requests_page._engagement_id == selected.id
+
+
+def test_main_window_refuses_close_while_registry_worker_is_active(
+    qapp: QApplication,
+    container: ServiceContainer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from taxops.ui.main_window import MainWindow
+
+    window = MainWindow(container)
+    monkeypatch.setattr(
+        window._settings_page,
+        "has_active_operation",
+        lambda: True,
+    )
+    warnings = []
+    monkeypatch.setattr(
+        "taxops.ui.main_window.QMessageBox.warning",
+        lambda *args: warnings.append(args),
+    )
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    assert not event.isAccepted()
+    assert len(warnings) == 1

@@ -45,6 +45,7 @@ def test_recurring_billing_action_contracts_registered():
     assert "新增方案" in labels
     assert "編輯方案" in labels
     assert "新增明細" in labels
+    assert "產生待開立紀錄" in labels
     assert "封存" in labels
     assert "確認開立" in labels
     assert "確定跳過" in labels

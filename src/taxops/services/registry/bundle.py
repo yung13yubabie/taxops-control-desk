@@ -46,6 +46,11 @@ BUNDLE_FORMAT_VERSION = 1
 MANIFEST_NAME = "manifest.json"
 CACHE_CSV_NAME = "tax_registry_cache.csv"
 ALLOWED_BUNDLE_MEMBERS = frozenset({MANIFEST_NAME, CACHE_CSV_NAME})
+MAX_MANIFEST_BYTES = 64 * 1024
+MAX_CACHE_CSV_BYTES = 1024 * 1024 * 1024
+MAX_COMPRESSION_RATIO = 100
+MAX_BUNDLE_ROWS = 5_000_000
+MAX_FIELD_CHARS = 20_000
 
 CSV_COLUMNS: tuple[str, ...] = (
     "tax_id",
@@ -278,9 +283,19 @@ class TaxCacheBundleService:
 
         try:
             with zipfile.ZipFile(path, "r") as zf:
-                names = set(zf.namelist())
-                if names != ALLOWED_BUNDLE_MEMBERS:
+                infos = zf.infolist()
+                names = [info.filename for info in infos]
+                if len(infos) != 2 or set(names) != ALLOWED_BUNDLE_MEMBERS:
                     raise BundleError("registry.bundle.unexpected_members")
+                info_by_name = {info.filename: info for info in infos}
+                if info_by_name[MANIFEST_NAME].file_size > MAX_MANIFEST_BYTES:
+                    raise BundleError("registry.bundle.bad_manifest")
+                if info_by_name[CACHE_CSV_NAME].file_size > MAX_CACHE_CSV_BYTES:
+                    raise BundleError("registry.bundle.csv_too_large")
+                for info in infos:
+                    ratio = info.file_size / max(info.compress_size, 1)
+                    if ratio > MAX_COMPRESSION_RATIO:
+                        raise BundleError("registry.bundle.compression_ratio_invalid")
                 manifest_raw = zf.read(MANIFEST_NAME)
                 csv_bytes = zf.read(CACHE_CSV_NAME)
         except zipfile.BadZipFile as exc:
@@ -316,26 +331,21 @@ class TaxCacheBundleService:
             raise BundleError("registry.bundle.csv_schema_mismatch")
 
         def _entries():
+            row_count = 0
             for row in reader:
                 if not (row.get("tax_id") or "").strip():
                     continue
+                if row_count >= MAX_BUNDLE_ROWS:
+                    raise BundleError("registry.bundle.too_many_rows")
+                if any(len(value or "") > MAX_FIELD_CHARS for value in row.values()):
+                    raise BundleError("registry.bundle.field_too_large")
+                row_count += 1
                 yield _row_dict_to_entry(row)
-
-        try:
-            row_count = self._registry.replace_all_from_entries(
-                _entries(),
-                cache_version=cache_version,
-                on_progress=on_progress,
-            )
-        except Exception as exc:
-            self._system_log.error("tax_cache bundle import failed", exc=exc)
-            raise BundleError("registry.bundle.import_failed") from exc
 
         imported_at = now_iso()
         meta_payload: dict[str, str] = {
             "cache_version": cache_version,
             "source": "bundle",
-            "row_count": str(row_count),
             "imported_at": imported_at,
             "last_import_source": "bundle",
             "bundle_sha256_of_data": actual_sha,
@@ -348,8 +358,9 @@ class TaxCacheBundleService:
             elif isinstance(value, int):
                 meta_payload[key] = str(value)
 
-        self._metadata.upsert_many(meta_payload)
-        with self._conn:
+        def _finalize(row_count: int) -> None:
+            meta_payload["row_count"] = str(row_count)
+            self._metadata.upsert_many(meta_payload, commit=False)
             self._audit.record(
                 action="tax_cache.bundle.import",
                 target_type=_AUDIT_TARGET_TYPE,
@@ -360,6 +371,18 @@ class TaxCacheBundleService:
                     "bundle_sha256_of_data": actual_sha,
                 },
             )
+
+        try:
+            row_count = self._registry.replace_all_from_entries(
+                _entries(),
+                cache_version=cache_version,
+                on_progress=on_progress,
+                before_commit=_finalize,
+            )
+        except Exception as exc:
+            self._system_log.error("tax_cache bundle import failed", exc=exc)
+            raise BundleError("registry.bundle.import_failed") from exc
+
         return BundleImportResult(
             bundle_path=path,
             row_count=row_count,

@@ -55,6 +55,7 @@ BTN_PRIMARY_SM = (
     "font-size: 12px; font-weight: 500; min-height: 24px; }"
     "QPushButton:hover { background-color: #1D4ED8; }"
     "QPushButton:pressed { background-color: #1E40AF; }"
+    "QPushButton:focus { border: 2px solid #93C5FD; }"
     "QPushButton:disabled { background-color: #CBD5E1; color: #94A3B8; }"
 )
 BTN_SECONDARY_SM = (
@@ -63,6 +64,7 @@ BTN_SECONDARY_SM = (
     "font-size: 12px; font-weight: 500; min-height: 24px; }"
     "QPushButton:hover { background-color: #4B5563; }"
     "QPushButton:pressed { background-color: #374151; }"
+    "QPushButton:focus { border: 2px solid #93C5FD; }"
     "QPushButton:disabled { background-color: #E5E7EB; color: #9CA3AF; }"
 )
 BTN_DANGER_SM = (
@@ -71,6 +73,7 @@ BTN_DANGER_SM = (
     "font-size: 12px; font-weight: 500; min-height: 24px; }"
     f"QPushButton:hover {{ background-color: {DANGER_HOVER_COLOR}; }}"
     "QPushButton:pressed { background-color: #991B1B; }"
+    "QPushButton:focus { border: 2px solid #FCA5A5; }"
     "QPushButton:disabled { background-color: #FCA5A5; color: #FECACA; }"
 )
 
@@ -89,8 +92,10 @@ QMainWindow, QDialog {{
 QListWidget#MainNav {{
     background-color: {_SIDEBAR_BG};
     border: none;
-    outline: none;
     padding: 8px 0;
+}}
+QListWidget#MainNav:focus {{
+    border: 2px solid #93C5FD;
 }}
 QListWidget#MainNav::item {{
     color: {_SIDEBAR_TEXT};
@@ -121,16 +126,19 @@ QPushButton {{
 }}
 QPushButton:hover {{ background-color: {_PRIMARY_HOVER}; }}
 QPushButton:pressed {{ background-color: {_PRIMARY_PRESSED}; }}
+QPushButton:focus {{ border: 2px solid #93C5FD; }}
 QPushButton:disabled {{ background-color: #CBD5E1; color: #94A3B8; }}
 
-QLineEdit, QTextEdit, QPlainTextEdit {{
+QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox {{
     background-color: {_INPUT_BG};
     border: 1px solid {_BORDER};
     border-radius: 6px;
     padding: 6px 10px;
     selection-background-color: #BFDBFE;
 }}
-QLineEdit:focus, QTextEdit:focus {{ border-color: {_PRIMARY}; }}
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QAbstractSpinBox:focus {{
+    border: 2px solid {_PRIMARY};
+}}
 QLineEdit:disabled, QTextEdit:disabled {{ background-color: #F1F5F9; color: {_TEXT_MUTED}; }}
 
 QComboBox {{
@@ -141,6 +149,7 @@ QComboBox {{
     min-height: 32px;
 }}
 QComboBox::drop-down {{ border: none; width: 24px; }}
+QComboBox:focus {{ border: 2px solid {_PRIMARY}; }}
 QComboBox QAbstractItemView {{
     border: 1px solid {_BORDER};
     selection-background-color: #DBEAFE;
@@ -156,6 +165,7 @@ QTableWidget {{
     outline: none;
     alternate-background-color: #F8FAFC;
 }}
+QTableWidget:focus {{ border: 2px solid {_PRIMARY}; }}
 QTableWidget::item {{ padding: 6px 8px; }}
 QTableWidget::item:selected {{ background-color: #DBEAFE; color: {_TEXT}; }}
 QHeaderView::section {{
@@ -212,6 +222,9 @@ QProgressBar {{
 QProgressBar::chunk {{ background: {_PRIMARY}; border-radius: 4px; }}
 
 QRadioButton, QCheckBox {{ spacing: 6px; }}
+QRadioButton:focus, QCheckBox:focus {{
+    border: 1px dotted {_PRIMARY};
+}}
 QRadioButton::indicator, QCheckBox::indicator {{
     width: 16px; height: 16px;
     border-radius: 3px;
@@ -224,6 +237,15 @@ QRadioButton::indicator:checked, QCheckBox::indicator:checked {{
 }}
 
 QDialogButtonBox QPushButton {{ min-width: 80px; }}
+
+QLabel#PageTitle {{
+    font-size: 20px;
+    font-weight: 600;
+}}
+QLabel#SectionTitle {{
+    font-size: 15px;
+    font-weight: 600;
+}}
 """
 
 

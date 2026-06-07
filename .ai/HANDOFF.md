@@ -1,12 +1,181 @@
 # HANDOFF
 
-## Latest Handoff Update (2026-06-05 - v0.24.0 完成，全套通過)
+## Latest Handoff Update (2026-06-07 - v0.25.0 packaged)
+
+- Final source state passed `python -m pytest -q`: 1108 passed in 762.02s.
+- The first final run exposed one stale source-string assertion for
+  `worker.deleteLater()`. Root cause was the test expecting the old callback
+  cleanup form after cleanup moved to the native `QThread.finished` signal.
+  The test now verifies `worker.finished.connect(worker.deleteLater)`.
+- Release dependencies are pinned in `requirements-release.txt`; project-scoped
+  `pip-audit` found 0 known vulnerabilities across 15 dependencies.
+- Fresh release environment:
+  `%TEMP%\taxops-release-venv-v025`.
+- EXE build and isolated-data smoke test passed.
+- Artifact:
+  `dist/TaxOpsControlDesk-v0.25.0-windows.zip`.
+- SHA-256:
+  `da5e034248867a8c72dcf79b5d2718e062cdd1ae9d1a3bcb93d04ca2ad6aad76`.
+- Old v0.24.0 ZIP was removed after ZIP readback passed.
+- Computer Use could not initialize because its kernel-assets path was missing
+  (`failed to write kernel assets`, OS error 3). Do not claim real DPI/manual
+  desktop acceptance from this session.
+- Release closure includes commit/push of `main`, tag `v0.25.0`, and a GitHub
+  Release carrying the ZIP and `.sha256` artifact.
+
+## Latest Handoff Update (2026-06-07 - audit closure in progress)
+
+- Read `.ai/AUDIT_2026-06-07.md` before modifying this worktree.
+- The worktree contains a large integrated set of Claude/Codex changes. Do not
+  revert unrelated files.
+- Final full pytest after official-download redirect hardening: 1100 passed,
+  exit code 0, in 825.52 seconds.
+- Post-test process and temporary-artifact hygiene passed.
+- Final targeted checks: workflow records 25 passed; registry download plus
+  workflow records 49 passed; compileall and `git diff --check` passed.
+- Bandit report is `.ai/bandit-latest.json`. The actionable redirect finding was
+  fixed; B701/B608 require context-aware triage, not blanket suppression.
+- `.ai/pip-audit-latest.json` is a shared-machine scan, not a release SBOM.
+- Packaging, EXE smoke, Git commit/push, tag, and release are not done.
+- PowerShell quoting root cause and command safety rules are documented in
+  `.ai/COMMAND_EXECUTION_RULES.md`.
+
+## Latest Handoff Update (2026-06-06 - Debugging/Error-Recovery UIUX Fix Wave)
 
 ### 狀態
-- **版本**：pyproject.toml + `__init__.py` 已更新為 **0.24.0**
+- **目前 worktree 未提交**：包含既有 v0.25.0-dev recurring billing 修復，以及本輪 Debugging/Error-Recovery UIUX 修復。
+- **全套測試**：`python -m pytest -q` → **1025 passed, 1 skipped**（2026-06-06 確認）
+- **Targeted**：
+  - Tasks / Work Records / Templates / Late Fee / DateField / Folder Bookmarks / Recurring Billing / Engagement smoke → **211 passed**
+  - Work Records action contracts after registry update and legacy parser regression → **24 passed**
+- **EXE**：尚未重新打包。
+
+### 本輪 root cause 與修復
+
+1. **待辦批量編輯 RuntimeError**
+   - Root cause：`BulkEditTasksDialog._combo_row/_line_row` 未保留 row QWidget reference，dialog 執行後 checkbox/field C++ object 被 Qt 刪除，`fields()` 讀取時拋 `Internal C++ object already deleted`。
+   - Fix：`BulkEditTasksDialog` 新增 `_row_widgets` 持有 row widgets。
+   - Regression：`test_bulk_edit_real_dialog_fields_survive_until_page_handler`。
+
+2. **工作紀錄流程 UX**
+   - 流程輸入不再要求手打 `-`：`WorkflowTemplateDialog` 現在支援「空行分階段，每段第一行是階段名稱，後面每行是一個步驟」；舊 `-` / `*` / `[x]` 格式與未加空行的舊階段寫法仍可讀。
+   - 完成執行中步驟後保留原步驟選取，不再跳掉。
+   - 模板步驟新增 step-level 圖片：`WorkRecordsService.set_template_step_image_path/set_template_step_image_asset`，UI 依目前選取 step 寫入模板或執行清單。
+   - Action registry 的「貼上截圖」service contract 已補上 `set_template_step_image_asset`。
+
+3. **案件管理新增入口**
+   - `EngagementsPage` 的「新增案件」移到客戶下拉列旁邊，避免藏在第二行工具列。
+
+4. **訊息模板欄位上下文**
+   - `TemplateFormDialog` 可用欄位標題會顯示目前模板類型。
+   - `initial_request/follow_up/payment_follow_up` 依類型顯示常用欄位；`custom` 保留全部欄位。
+
+5. **日期欄 / 滯納金 RWD**
+   - `DateField` 改用 Qt standard icon，不再用 emoji 日曆按鈕，避免 Windows 字型缺失造成藍色空方塊。
+   - `DateField` 設定穩定 min/max width。
+   - `LateFeePage` form 改 `FieldsStayAtSizeHint`，避免日期欄與「開始試算」按鈕吃滿整行。
+
+6. **資料夾管理**
+   - 新增分類篩選、關鍵字搜尋、父路徑欄。
+   - 父路徑由現有 path 即時計算，不新增 migration，不破壞既有資料。
+
+7. **固定開立 UX/RWD**
+   - `PlanDialog` create mode 最小寬度提升，明細表金額/稅別欄固定可讀寬度。
+   - `LineDialog` 單筆輸入欄位設穩定寬度。
+   - `_BulkPasteDialog` 新增明確範例與「從剪貼簿貼上」按鈕。
+
+### 剩餘風險
+- 尚未做真機 EXE UI 驗收；尤其是 1366x768 / DPI 125%/150%。
+- 尚未重新打包 EXE。
+- 資料夾管理目前是無 migration 的父路徑視覺分組；若未來要真正 tree view / parent_id，需要獨立 schema slice。
+
+---
+
+## Latest Handoff Update (2026-06-06 - v0.25.0-dev 完整品質提升完成)
+
+### 狀態
+- **版本**：**v0.24.0**（未 bump，修復尚未發版）
+- **全套測試**：`python -m pytest -q` → **1016 passed, 1 skipped**（2026-06-06 確認，+3 vs 基線）
+- **EXE**：需重新打包
+- **下一步**：bump v0.25.0 → 打包 → 真機驗收
+
+### 本輪完成（v0.25.0-dev）
+
+**Batch A — 服務正確性（CRITICAL/HIGH）**
+- `services/recurring_billing.py`：`cancel_occurrence` 補 `with self._conn:` + `audit.record()`
+- `services/recurring_billing.py`：`update_line` 補 `with self._conn:` + `audit.record()`
+- `repositories/recurring_billing.py`：移除 `insert_plan_with_lines` 的無意義 `try: … except Exception: raise`
+
+**Batch B — 程式碼品質**
+- `services/recurring_billing.py`：`_billing_dates` 的 `months_json` 損毀防護
+- `pages/recurring_billing_page.py`：`_STATUS_COLORS` 提升為 module-level 常數
+- `pages/recurring_billing_page.py`：`_rebuild_accordion` 的 `next_date` 只排序一次
+- `pages/recurring_billing_page.py`：`_new_plan_btn` 改用 `_SMALL_BTN` design token
+- `dialogs/recurring_billing_dialogs.py`：`SkipOccurrenceDialog` 補 `setDefault(True)`
+
+**Batch C — UX 改善**
+- toolbar "+ 新增方案"：全部客戶模式下 disabled + tooltip
+- 封存確認：有待確認筆數時顯示 `⚠ N 筆待確認` 警告
+- 產生紀錄：完成後顯示「✓ 目前共 N 筆待確認」或「所有方案已是最新」（4 秒自清除）
+
+**Batch D — 補測試**
+- `test_cancel_occurrence_writes_audit`
+- `test_update_line_writes_audit`
+- `test_deactivate_line_writes_audit`
+- `test_add_plan_btn_all_clients_is_disabled`（取代舊的 info-dialog 測試）
+
+**Debug 深掘追加（deactivate_line）**
+- `deactivate_line` 也缺少 transaction + audit，同步修復（與 cancel/update_line 同一根因）
+
+**Grill-me UX 追加**
+- 新增 `_generate_for_client(client_id)` — 在方案/明細建立後自動 generate occurrences（三個 call sites：global add plan, client group add plan, add line）
+- `_refresh()` read-only 約束保留（舊有設計決策正確，不在 refresh 中 write DB）
+
+**Code Review 追加**
+- `_status_lbl` 移至正確初始化位置（在 `outer.addWidget(filter_widget)` 前加入 filter_row）
+- `_on_add_plan_global` 接受後改呼叫 `_refresh()` 而非 `_rebuild_accordion()`（與 client group path 一致）
+
+**Simplification 追加**
+- 移除 `_rebuild_accordion` 的冗餘 `sorted()`（`list_occurrences` 已 `ORDER BY`，改用 `reversed()`）
+- 新增 `_show_status(text, duration_ms)` helper，防止連續點擊 generate 時多個 timer 競爭清除 label
+
+### 剩餘待辦（依優先順序）
+
+**P0 — 發版前**
+- bump version 0.24.0 → 0.25.0（pyproject.toml + `__init__.py`）
+- 重新打包 EXE：`python -m build_tools.package_windows`
+- 真機 Windows UI 驗收（1366x768 + 1920x1080 / DPI 100%/125%/150%）
+
+**P1 — 功能補強（可規劃下一個 slice）**
+- M23：滯納金 `needs_manual_review` 補 migration + `confirm_manual_review()` 方法（需先設計 UI）
+- GCIS 線上查詢整合（需先查官方 API 文件）
+
+**P2 — 低優先**
+- M2：container.py 登記 clients_bulk / registry_download
+- QDialog setTabOrder 鍵盤導覽補強
+- `_rebuild_accordion` 拆分（98 行，超過 50 行規範）
+- `RecurringBillingService` 改由 repo 公開 `transaction()` 取代直接存取 `repo._conn`
+
+### 下一個 Session 的啟動指令
+
+```
+請接手 C:\Users\LIN\taxops-control-desk
+先讀：.ai/HANDOFF.md .ai/TASKS.md
+目前版本：v0.24.0（本輪修復未 bump），1015 passed, 1 skipped（已確認）
+主要待辦：bump v0.25.0 → 打包 EXE → 真機驗收
+```
+
+---
+
+## Latest Handoff Update (2026-06-05 - v0.24.0 released，等待真機驗收)
+
+### 狀態
+- **版本**：**v0.24.0**（pyproject.toml + `__init__.py` 已更新）
+- **Git**：`main` branch，commit `89d62d5`，tag `v0.24.0` 已 push
+- **GitHub Release**：https://github.com/yung13yubabie/taxops-control-desk/releases/tag/v0.24.0（含 68.1 MB ZIP）
 - **全套測試**：`python -m pytest -q` → **1013 passed, 1 skipped**（2026-06-05 確認）
-- **工作樹狀態**：所有修改尚未 git commit（自 v0.22.0 起累積所有 working dir 修改）
-- **下一個目標**：真機 Windows UI acceptance（1366x768 / 1920x1080 / DPI 100%/125%/150%），通過後打包 v0.24.0 EXE
+- **EXE**：`dist/TaxOpsControlDesk/TaxOpsControlDesk.exe` 已打包，smoke test 通過
+- **下一步**：真機 Windows UI 人工驗收（是上線前唯一剩餘的必要步驟）
 
 ### v0.24.0 本輪完成項目
 
@@ -36,20 +205,32 @@
 
 **v0.23.0 所有 Bug Audit 修復（C1 + H1-H21 + M16-M22 + M24）— 已確認完成**
 
-### 剩餘待辦
-- **真機 Windows UI 驗收**（必須在宣布 release 前完成）
-- M2: container.py 服務登記（低優先，現行架構可用）
-- M23: 滯納金 needs_manual_review migration（需規劃）
-- Keyboard tab order（QDialog setTabOrder）— 低優先
+### 剩餘待辦（依優先順序）
 
-### git 操作提醒
-執行以下指令 commit 並建立 v0.24.0：
+**P0 — 必做，出 release 前**
+- 真機 Windows UI 驗收：
+  - 解析度：1366x768 + 1920x1080
+  - DPI：100% / 125% / 150%
+  - 驗收重點：中文字體顯示、側邊欄展開收合、客戶新增持久化、audit log 寫入、EXE 雙開鎖、canvas 畫布拖拉縮放、PDF 匯出
+  - EXE 位置：`dist/TaxOpsControlDesk/TaxOpsControlDesk.exe`（或從 GitHub Release 下載）
+
+**P1 — 功能補強（可規劃下一個 slice）**
+- M23：滯納金 `needs_manual_review` 補 migration + `confirm_manual_review()` 方法（需先設計 UI）
+- GCIS 線上查詢整合（需先查官方 API 文件，不得憑記憶實作）
+
+**P2 — 低優先，可 backlog**
+- M2：container.py 登記 clients_bulk / registry_download（現行直接 import 架構可用）
+- QDialog setTabOrder 鍵盤導覽補強
+- Empty state 文字走 i18n（現在硬碼中文）
+
+### 下一個 Session 的啟動指令
+
 ```
-cd C:\Users\LIN\taxops-control-desk
-git add -u
-git add src/taxops/ui/widgets/empty_state.py src/taxops/ui/widgets/table_builder.py
-git add src/taxops/ui/dialogs/work_records_dialogs.py .ai/BUG_AUDIT_2026-06-04.md
-git commit -m "feat: v0.24.0 UI slop fixes + bug audit complete"
+請接手 C:\Users\LIN\taxops-control-desk
+先讀：.ai/HANDOFF.md .ai/TASKS.md
+目前版本：v0.24.0，1013 passed, 1 skipped（已確認）
+Git：commit 89d62d5，tag v0.24.0，已 push + GitHub Release 完成
+主要待辦：真機 Windows UI 驗收（見 HANDOFF.md P0）
 ```
 
 ---

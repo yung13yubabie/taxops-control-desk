@@ -5,7 +5,7 @@ import datetime
 import logging
 
 from PySide6.QtCore import QDate, Qt, Signal
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QKeyEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QCalendarWidget,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSizePolicy,
+    QStyle,
     QVBoxLayout,
     QWidget,
 )
@@ -166,6 +167,9 @@ class DateField(QWidget):
         self._required = required
         self._min_date: str | None = None
         self._max_date: str | None = None
+        self.setMinimumWidth(180)
+        self.setMaximumWidth(360)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         main = QVBoxLayout(self)
         main.setContentsMargins(0, 0, 0, 0)
@@ -181,16 +185,26 @@ class DateField(QWidget):
         self._edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         row.addWidget(self._edit)
 
-        self._cal_btn = QPushButton("\U0001f4c5")
+        self._cal_btn = QPushButton()
+        self._cal_btn.setIcon(
+            QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView)
+        )
         self._cal_btn.setFixedSize(28, 28)
-        self._cal_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._cal_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._cal_btn.setAccessibleName("開啟日期選擇器")
+        self._cal_btn.setShortcut(QKeySequence("Alt+Down"))
         self._cal_btn.setToolTip("開啟日曆")
         self._cal_btn.clicked.connect(self._open_calendar)
         row.addWidget(self._cal_btn)
 
-        self._clear_btn = QPushButton("×")
+        self._clear_btn = QPushButton()
+        self._clear_btn.setIcon(
+            QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton)
+        )
         self._clear_btn.setFixedSize(28, 28)
-        self._clear_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._clear_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._clear_btn.setAccessibleName("清除日期")
+        self._clear_btn.setShortcut(QKeySequence("Alt+Backspace"))
         self._clear_btn.setToolTip("清除日期")
         self._clear_btn.clicked.connect(self.clear)
         self._clear_btn.setVisible(not required)

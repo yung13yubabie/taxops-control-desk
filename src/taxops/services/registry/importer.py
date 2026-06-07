@@ -110,13 +110,44 @@ class TaxRegistryImporter:
             raise TaxRegistryImportError("registry.zip.read_failed") from exc
 
         try:
+            imported_at = now_iso()
             with BGMOPEN1Reader(path) as reader:
                 header: ParseHeader = reader.header
                 cache_version = header.cache_version
+                meta_payload: dict[str, str] = {
+                    "cache_version": cache_version,
+                    "source": "zip",
+                    "source_sha256": sha,
+                    "source_size": str(size),
+                    "imported_at": imported_at,
+                    "data_freshness_raw": header.data_freshness_raw or "",
+                    "data_freshness_iso": header.data_freshness_iso or "",
+                    "last_import_source": "zip",
+                }
+                if source_url:
+                    meta_payload["source_url"] = source_url
+
+                def _finalize(row_count: int) -> None:
+                    meta_payload["row_count"] = str(row_count)
+                    self._metadata.upsert_many(meta_payload, commit=False)
+                    self._audit.record(
+                        action="tax_cache.import.zip",
+                        target_type=_AUDIT_TARGET_TYPE,
+                        target_id=cache_version,
+                        detail={
+                            "row_count": row_count,
+                            "cache_version": cache_version,
+                            "source_sha256": sha,
+                            "source_size": size,
+                            "data_freshness_iso": header.data_freshness_iso,
+                        },
+                    )
+
                 row_count = self._registry.replace_all_from_entries(
                     reader.entries(),
                     cache_version=cache_version,
                     on_progress=on_progress,
+                    before_commit=_finalize,
                 )
         except BGMOPEN1FormatError:
             raise
@@ -125,37 +156,6 @@ class TaxRegistryImporter:
         except Exception as exc:
             self._system_log.error("tax_cache import failed", exc=exc)
             raise TaxRegistryImportError("registry.import.failed") from exc
-
-        imported_at = now_iso()
-        meta_payload: dict[str, str] = {
-            "cache_version": cache_version,
-            "source": "zip",
-            "source_sha256": sha,
-            "source_size": str(size),
-            "row_count": str(row_count),
-            "imported_at": imported_at,
-            "data_freshness_raw": header.data_freshness_raw or "",
-            "data_freshness_iso": header.data_freshness_iso or "",
-            "last_import_source": "zip",
-        }
-        if source_url:
-            meta_payload["source_url"] = source_url
-
-        self._metadata.upsert_many(meta_payload)
-
-        with self._conn:
-            self._audit.record(
-                action="tax_cache.import.zip",
-                target_type=_AUDIT_TARGET_TYPE,
-                target_id=cache_version,
-                detail={
-                    "row_count": row_count,
-                    "cache_version": cache_version,
-                    "source_sha256": sha,
-                    "source_size": size,
-                    "data_freshness_iso": header.data_freshness_iso,
-                },
-            )
 
         return ImportResult(
             row_count=row_count,

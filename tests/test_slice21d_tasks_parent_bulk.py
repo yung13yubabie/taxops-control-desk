@@ -197,6 +197,34 @@ def test_create_tasks_bulk_skips_invalid_client(container, two_clients):
     assert len(created) == 1
 
 
+def test_create_tasks_bulk_rolls_back_all_rows_when_bulk_audit_fails(
+    container, two_clients, monkeypatch
+):
+    from taxops.services.tasks import BulkTaskTemplate
+
+    c1, c2 = two_clients
+    original_record = container.tasks._audit.record
+
+    def fail_bulk_audit(**kwargs):
+        if kwargs["action"] == "task.bulk_create":
+            raise RuntimeError("audit unavailable")
+        return original_record(**kwargs)
+
+    monkeypatch.setattr(container.tasks._audit, "record", fail_bulk_audit)
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        container.tasks.create_tasks_bulk(
+            [c1.id, c2.id], BulkTaskTemplate(title="must rollback")
+        )
+
+    assert container.conn.execute(
+        "SELECT COUNT(*) FROM workflow_tasks WHERE title = 'must rollback'"
+    ).fetchone()[0] == 0
+    assert container.conn.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+        " WHERE action IN ('task.create', 'task.bulk_create')"
+    ).fetchone()[0] == 0
+
+
 def test_update_tasks_bulk_changes_only_specified_fields(container, two_clients):
     from taxops.services.tasks import CreateTaskInput
     c1, _ = two_clients
@@ -207,6 +235,93 @@ def test_update_tasks_bulk_changes_only_specified_fields(container, two_clients)
     assert container.tasks.get_task(t1.id).priority == "high"
     assert container.tasks.get_task(t2.id).priority == "high"
     assert container.tasks.get_task(t1.id).title == "T1"
+
+
+def test_update_tasks_bulk_persists_for_independent_connection(container, two_clients):
+    from taxops.db.connection import open_connection
+    from taxops.services.tasks import CreateTaskInput
+
+    c1, _ = two_clients
+    task = container.tasks.create_task(CreateTaskInput(
+        engagement_id=None, client_id=c1.id, title="Persistent", priority="low",
+    ))
+
+    assert container.tasks.update_tasks_bulk([task.id], {"priority": "high"}) == 1
+
+    db_path = container.conn.execute("PRAGMA database_list").fetchone()["file"]
+    independent = open_connection(db_path)
+    try:
+        row = independent.execute(
+            "SELECT priority FROM workflow_tasks WHERE id = ?", (task.id,)
+        ).fetchone()
+        assert row["priority"] == "high"
+        audit = independent.execute(
+            "SELECT id FROM audit_logs"
+            " WHERE action = 'task.bulk_update' AND target_id = ?",
+            (str(task.id),),
+        ).fetchone()
+        assert audit is not None
+    finally:
+        independent.close()
+
+
+def test_update_tasks_bulk_rolls_back_when_audit_fails(
+    container, two_clients, monkeypatch
+):
+    from taxops.db.connection import open_connection
+    from taxops.services.tasks import CreateTaskInput
+
+    c1, _ = two_clients
+    tasks = [
+        container.tasks.create_task(CreateTaskInput(
+            engagement_id=None,
+            client_id=c1.id,
+            title=f"Rollback {index}",
+            priority="low",
+        ))
+        for index in range(2)
+    ]
+    original_record = container.tasks._audit.record
+
+    def fail_bulk_audit(**kwargs):
+        if kwargs["action"] == "task.bulk_update":
+            raise RuntimeError("audit unavailable")
+        return original_record(**kwargs)
+
+    monkeypatch.setattr(container.tasks._audit, "record", fail_bulk_audit)
+
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        container.tasks.update_tasks_bulk(
+            [task.id for task in tasks],
+            {"status": "doing", "priority": "high"},
+        )
+
+    assert [
+        (container.tasks.get_task(task.id).status,
+         container.tasks.get_task(task.id).priority)
+        for task in tasks
+    ] == [("todo", "low"), ("todo", "low")]
+    assert container.conn.execute(
+        "SELECT COUNT(*) AS c FROM audit_logs WHERE action = 'task.status_change'"
+    ).fetchone()["c"] == 0
+    db_path = container.conn.execute("PRAGMA database_list").fetchone()["file"]
+    independent = open_connection(db_path)
+    try:
+        rows = independent.execute(
+            "SELECT status, priority FROM workflow_tasks"
+            " WHERE id IN (?, ?) ORDER BY id",
+            (tasks[0].id, tasks[1].id),
+        ).fetchall()
+        assert [(row["status"], row["priority"]) for row in rows] == [
+            ("todo", "low"),
+            ("todo", "low"),
+        ]
+        assert independent.execute(
+            "SELECT COUNT(*) AS c FROM audit_logs"
+            " WHERE action IN ('task.status_change', 'task.bulk_update')"
+        ).fetchone()["c"] == 0
+    finally:
+        independent.close()
 
 
 def test_update_tasks_bulk_rejects_unknown_field_without_audit(container, two_clients):
@@ -261,3 +376,37 @@ def test_delete_tasks_bulk_skips_parent_with_children(container, two_clients):
     assert n == 1
     assert container.tasks.get_task(parent.id) is not None
     assert container.tasks.get_task(other.id) is None
+
+
+def test_delete_tasks_bulk_rolls_back_when_bulk_audit_fails(
+    container, two_clients, monkeypatch
+):
+    from taxops.services.tasks import CreateTaskInput
+
+    c1, _ = two_clients
+    tasks = [
+        container.tasks.create_task(
+            CreateTaskInput(
+                engagement_id=None,
+                client_id=c1.id,
+                title=f"Delete rollback {index}",
+            )
+        )
+        for index in range(2)
+    ]
+    original_record = container.tasks._audit.record
+
+    def fail_bulk_audit(**kwargs):
+        if kwargs["action"] == "task.bulk_delete":
+            raise RuntimeError("audit unavailable")
+        return original_record(**kwargs)
+
+    monkeypatch.setattr(container.tasks._audit, "record", fail_bulk_audit)
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        container.tasks.delete_tasks_bulk([task.id for task in tasks])
+
+    assert all(container.tasks.get_task(task.id) is not None for task in tasks)
+    assert container.conn.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+        " WHERE action IN ('task.delete', 'task.bulk_delete')"
+    ).fetchone()[0] == 0

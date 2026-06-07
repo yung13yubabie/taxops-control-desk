@@ -1,5 +1,77 @@
 # TASKS
 
+## 2026-06-07 v0.25.0 release closure
+
+### VERIFIED
+
+- [x] Attachment previews validate file dimensions and decoded pixel count
+  before `QPixmap` decoding.
+- [x] Registry worker uses the native `QThread.finished` lifecycle signal,
+  closes owned SQLite connections, sanitizes unknown errors, and blocks window
+  close while an operation is active.
+- [x] Enabled action-registry handler strings resolve to real callables.
+- [x] Release dependency versions are exactly pinned.
+- [x] Release dependency audit reports 0 known vulnerabilities.
+- [x] Final full pytest: 1108 passed, exit code 0, in 762.02 seconds.
+- [x] Fresh-environment PyInstaller build completed.
+- [x] Automated EXE smoke and post-smoke process hygiene completed.
+- [x] v0.25.0 ZIP passed readback and SHA-256 generation.
+- [x] Old v0.24.0 ZIP removed after successful replacement verification.
+
+### RELEASE CLOSURE
+
+- [x] Commit and push the integrated worktree.
+- [x] Create and push `v0.25.0`.
+- [x] Publish GitHub Release with ZIP and SHA-256 file.
+
+### MANUAL ACCEPTANCE
+
+- [ ] Retry Windows Computer Use when its kernel-assets path is available.
+- [ ] Record real 1366x768 and 100/125/150/200 percent DPI screenshots.
+
+### DEFERRED_WITH_RISK
+
+- [ ] Add stable audit actor identity and tamper evidence.
+- [ ] Reduce raw SQLite/private repository coupling through an ADR and public
+  transaction API.
+- [ ] Expand cross-connection readback coverage for lower-risk repositories.
+- [ ] Split oversized UI pages only after characterization tests.
+- [ ] Add CI-generated SBOM and license scanning.
+
+## 2026-06-07 Audit closure
+
+### DOING
+
+- No active implementation task.
+
+### VERIFIED
+
+- [x] Fix P0/P1 data, transaction, backup, registry, image, and UI selection defects.
+- [x] Replace skipped single-instance coverage with a real cross-process test.
+- [x] Add PyInstaller migration-module discovery contract.
+- [x] Run compileall and `git diff --check`.
+- [x] Run Bandit and triage findings; fix official-download redirect bypass.
+- [x] Run local-environment pip-audit and distinguish project dependencies from
+  unrelated globally installed packages.
+- [x] Final full pytest: 1100 passed, exit code 0, in 825.52 seconds.
+- [x] Record final process/resource hygiene.
+
+### DEFERRED_WITH_RISK
+
+- [ ] Redesign action-registry `test_marker` governance.
+- [ ] Add real QThread lifecycle tests for registry download/import.
+- [ ] Expand cross-connection SQLite readback tests.
+- [ ] Add stable audit actor identity and tamper evidence.
+- [ ] Reduce raw SQLite/private repository coupling through an ADR and API.
+- [ ] Split oversized UI pages only after characterization tests.
+- [ ] Add dependency lock/export, SBOM, and CI vulnerability/license checks.
+- [ ] Apply decoded-pixel guard to attachment image preview.
+
+### UNKNOWN
+
+- [ ] EXE packaging and smoke test for this worktree.
+- [ ] Manual acceptance at 1366x768 and 100/125/150/200 percent DPI.
+
 ## 2026-06-04 Current Task State - v0.23.0 Bug Audit Fix Wave（已完成）
 
 > 完整問題清單見 `.ai/BUG_AUDIT_2026-06-04.md`。

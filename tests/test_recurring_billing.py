@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from unittest.mock import patch
 
 import pytest
 
@@ -67,6 +68,11 @@ def _make_plan(svc, client_id: int, **kwargs) -> object:
     )
     defaults.update(kwargs)
     return svc.create_plan(CreatePlanInput(**defaults))
+
+
+def _generate_and_list(svc, plan_id: int, until_date: datetime.date):
+    svc.generate_occurrences(plan_id, until_date=until_date)
+    return svc.list_occurrences(plan_id=plan_id)
 
 
 # ── schema ────────────────────────────────────────────────────────────────────
@@ -254,11 +260,89 @@ def test_generate_monthly_creates_occurrences(conn, svc):
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
     svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     until = datetime.date(2026, 3, 31)
-    occs = svc.generate_occurrences(plan.id, until_date=until)
+    occs = _generate_and_list(svc, plan.id, until)
     dates = [o.expected_issue_date for o in occs]
     assert "2026-01-01" in dates
     assert "2026-02-01" in dates
     assert "2026-03-01" in dates
+
+
+def test_generate_occurrences_preserves_list_contract_and_audits(conn, svc):
+    cid = _seed_client(conn)
+    plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
+
+    first = svc.generate_occurrences(
+        plan.id, until_date=datetime.date(2026, 3, 31)
+    )
+    second = svc.generate_occurrences(
+        plan.id, until_date=datetime.date(2026, 3, 31)
+    )
+
+    assert len(first) == 3
+    assert {row.id for row in first} == {row.id for row in second}
+    logs = conn.execute(
+        """
+        SELECT detail_json
+          FROM audit_logs
+         WHERE action = 'recurring_billing.occurrence.generate'
+         ORDER BY id
+        """
+    ).fetchall()
+    assert len(logs) == 2
+    assert '"added_count": 3' in logs[0]["detail_json"]
+    assert '"added_count": 0' in logs[1]["detail_json"]
+
+
+def test_generate_occurrences_rolls_back_when_audit_fails(conn, svc):
+    cid = _seed_client(conn)
+    plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
+
+    with patch.object(svc._audit, "record", side_effect=RuntimeError("audit unavailable")):
+        with pytest.raises(RuntimeError, match="audit unavailable"):
+            svc.generate_occurrences(
+                plan.id, until_date=datetime.date(2026, 3, 31)
+            )
+
+    assert svc.list_occurrences(plan_id=plan.id) == []
+
+
+@pytest.mark.parametrize(
+    ("column", "value", "expected_code"),
+    [
+        ("frequency", "weekly", "recurring_billing.frequency.invalid"),
+        ("months_json", "{broken", "recurring_billing.months_json.invalid"),
+        ("start_date", "not-a-date", "recurring_billing.start_date.invalid"),
+        ("end_date", "not-a-date", "recurring_billing.end_date.invalid"),
+    ],
+)
+def test_generate_rejects_invalid_persisted_plan_data(
+    conn, svc, column, value, expected_code
+):
+    cid = _seed_client(conn)
+    plan = _make_plan(
+        svc,
+        cid,
+        start_date="2026-01-01",
+        frequency="custom_months",
+        months_json="[1, 4, 7, 10]",
+        issue_day=1,
+    )
+    svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
+    conn.execute(
+        f"UPDATE recurring_billing_plans SET {column} = ? WHERE id = ?",
+        (value, plan.id),
+    )
+    conn.commit()
+
+    with pytest.raises(RecurringBillingError) as exc:
+        svc.generate_occurrences(
+            plan.id, until_date=datetime.date(2026, 12, 31)
+        )
+
+    assert exc.value.code == expected_code
+    assert svc.list_occurrences(plan_id=plan.id) == []
 
 
 def test_generate_quarterly_from_start_month(conn, svc):
@@ -267,7 +351,7 @@ def test_generate_quarterly_from_start_month(conn, svc):
     plan = _make_plan(svc, cid, start_date="2026-03-01", frequency="quarterly", issue_day=1)
     svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     until = datetime.date(2027, 3, 31)
-    occs = svc.generate_occurrences(plan.id, until_date=until)
+    occs = _generate_and_list(svc, plan.id, until)
     dates = [o.expected_issue_date for o in occs]
     assert "2026-03-01" in dates
     assert "2026-06-01" in dates
@@ -283,7 +367,7 @@ def test_generate_semiannual(conn, svc):
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="semiannual", issue_day=1)
     svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     until = datetime.date(2027, 12, 31)
-    occs = svc.generate_occurrences(plan.id, until_date=until)
+    occs = _generate_and_list(svc, plan.id, until)
     dates = [o.expected_issue_date for o in occs]
     assert "2026-01-01" in dates
     assert "2026-07-01" in dates
@@ -296,7 +380,7 @@ def test_generate_annual(conn, svc):
     plan = _make_plan(svc, cid, start_date="2026-05-01", frequency="annual", issue_day=1)
     svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     until = datetime.date(2028, 12, 31)
-    occs = svc.generate_occurrences(plan.id, until_date=until)
+    occs = _generate_and_list(svc, plan.id, until)
     dates = [o.expected_issue_date for o in occs]
     assert "2026-05-01" in dates
     assert "2027-05-01" in dates
@@ -315,7 +399,7 @@ def test_generate_custom_months(conn, svc):
     )
     svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     until = datetime.date(2026, 12, 31)
-    occs = svc.generate_occurrences(plan.id, until_date=until)
+    occs = _generate_and_list(svc, plan.id, until)
     dates = [o.expected_issue_date for o in occs]
     assert "2026-01-15" in dates
     assert "2026-04-15" in dates
@@ -331,8 +415,8 @@ def test_generate_is_idempotent(conn, svc):
     until = datetime.date(2026, 3, 31)
     first = svc.generate_occurrences(plan.id, until_date=until)
     second = svc.generate_occurrences(plan.id, until_date=until)
-    assert len(first) == len(second)
-    assert {o.id for o in first} == {o.id for o in second}
+    assert len(first) == 3
+    assert {row.id for row in first} == {row.id for row in second}
 
 
 def test_generate_issue_day_31_feb_clamps(conn, svc):
@@ -340,7 +424,7 @@ def test_generate_issue_day_31_feb_clamps(conn, svc):
     plan = _make_plan(svc, cid, start_date="2026-02-01", frequency="monthly", issue_day=31)
     svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     until = datetime.date(2026, 2, 28)
-    occs = svc.generate_occurrences(plan.id, until_date=until)
+    occs = _generate_and_list(svc, plan.id, until)
     assert any(o.expected_issue_date == "2026-02-28" for o in occs)
 
 
@@ -349,7 +433,7 @@ def test_generate_issue_day_31_april_clamps(conn, svc):
     plan = _make_plan(svc, cid, start_date="2026-04-01", frequency="monthly", issue_day=31)
     svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     until = datetime.date(2026, 4, 30)
-    occs = svc.generate_occurrences(plan.id, until_date=until)
+    occs = _generate_and_list(svc, plan.id, until)
     assert any(o.expected_issue_date == "2026-04-30" for o in occs)
 
 
@@ -360,7 +444,7 @@ def test_generate_respects_end_date(conn, svc):
         frequency="monthly", issue_day=1,
     )
     svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
-    occs = svc.generate_occurrences(plan.id, until_date=datetime.date(2027, 12, 31))
+    occs = _generate_and_list(svc, plan.id, datetime.date(2027, 12, 31))
     dates = [o.expected_issue_date for o in occs]
     assert "2026-04-01" not in dates
     assert "2026-03-01" in dates
@@ -370,7 +454,7 @@ def test_generate_with_until_date_param(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
     svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
-    occs = svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 2, 28))
+    occs = _generate_and_list(svc, plan.id, datetime.date(2026, 2, 28))
     dates = [o.expected_issue_date for o in occs]
     assert "2026-03-01" not in dates
     assert len(dates) == 2
@@ -379,8 +463,10 @@ def test_generate_with_until_date_param(conn, svc):
 def test_generate_plan_with_no_lines_returns_empty(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
-    occs = svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 6, 30))
-    assert occs == []
+    occurrences = svc.generate_occurrences(
+        plan.id, until_date=datetime.date(2026, 6, 30)
+    )
+    assert occurrences == []
 
 
 def test_generate_for_multiple_lines(conn, svc):
@@ -388,16 +474,20 @@ def test_generate_for_multiple_lines(conn, svc):
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
     svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="B", amount=200))
-    occs = svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 2, 28))
-    assert len(occs) == 4  # 2 lines × 2 months
+    occurrences = svc.generate_occurrences(
+        plan.id, until_date=datetime.date(2026, 2, 28)
+    )
+    assert len(occurrences) == 4  # 2 lines × 2 months
 
 
 def test_generate_start_after_until_returns_empty(conn, svc):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2027-01-01", frequency="monthly", issue_day=1)
     svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
-    occs = svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 12, 31))
-    assert occs == []
+    occurrences = svc.generate_occurrences(
+        plan.id, until_date=datetime.date(2026, 12, 31)
+    )
+    assert occurrences == []
 
 
 def test_generate_archived_plan_returns_empty(conn, svc):
@@ -405,8 +495,10 @@ def test_generate_archived_plan_returns_empty(conn, svc):
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
     svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
     svc.archive_plan(plan.id)
-    occs = svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 6, 30))
-    assert occs == []
+    occurrences = svc.generate_occurrences(
+        plan.id, until_date=datetime.date(2026, 6, 30)
+    )
+    assert occurrences == []
 
 
 # ── occurrence status ─────────────────────────────────────────────────────────
@@ -415,7 +507,7 @@ def _seed_occurrence(svc, conn):
     cid = _seed_client(conn)
     plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
     svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=50000))
-    occs = svc.generate_occurrences(plan.id, until_date=datetime.date(2026, 1, 31))
+    occs = _generate_and_list(svc, plan.id, datetime.date(2026, 1, 31))
     return plan, occs[0]
 
 
@@ -447,6 +539,37 @@ def test_cancel_occurrence(conn, svc):
     plan, occ = _seed_occurrence(svc, conn)
     cancelled = svc.cancel_occurrence(occ.id)
     assert cancelled.status == "cancelled"
+
+
+def test_cancel_occurrence_writes_audit(conn, svc):
+    plan, occ = _seed_occurrence(svc, conn)
+    svc.cancel_occurrence(occ.id)
+    logs = conn.execute(
+        "SELECT action FROM audit_logs WHERE action = 'recurring_billing.occurrence.cancel'"
+    ).fetchall()
+    assert len(logs) == 1
+
+
+def test_update_line_writes_audit(conn, svc):
+    cid = _seed_client(conn)
+    plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
+    line = svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
+    svc.update_line(line.id, UpdateLineInput(bill_to_name="B", amount=200))
+    logs = conn.execute(
+        "SELECT action FROM audit_logs WHERE action = 'recurring_billing.line.update'"
+    ).fetchall()
+    assert len(logs) == 1
+
+
+def test_deactivate_line_writes_audit(conn, svc):
+    cid = _seed_client(conn)
+    plan = _make_plan(svc, cid, start_date="2026-01-01", frequency="monthly", issue_day=1)
+    line = svc.create_line(CreateLineInput(plan_id=plan.id, bill_to_name="A", amount=100))
+    svc.deactivate_line(line.id)
+    logs = conn.execute(
+        "SELECT action FROM audit_logs WHERE action = 'recurring_billing.line.deactivate'"
+    ).fetchall()
+    assert len(logs) == 1
 
 
 def test_confirm_rejects_non_positive_confirmed_amount(conn, svc):

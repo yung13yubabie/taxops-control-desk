@@ -5,12 +5,20 @@ from __future__ import annotations
 import os
 import sqlite3
 import json
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtGui import QColor, QImage, QPixmap
-from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox, QTabWidget, QTreeWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QInputDialog,
+    QMessageBox,
+    QTabWidget,
+    QTreeWidget,
+)
 
 from taxops.services.work_records import (
     CreateErrorReviewInput,
@@ -147,6 +155,9 @@ def test_work_records_page_single_workflow_surface_and_writes_db(qapp, container
     selected_step = second_stage.child(0)
     page._workflow_detail.setCurrentItem(selected_step)
     page._on_toggle_selected_run_step()
+    current = page._workflow_detail.currentItem()
+    assert current is not None
+    assert current.text(0) == "檢查身分證明文件"
     monkeypatch.setattr(
         QInputDialog,
         "getText",
@@ -180,6 +191,167 @@ def test_work_records_template_image_import_stores_relative_asset(container, tmp
     assert str(source) not in updated.context_snapshot
 
 
+def test_replacing_template_image_removes_unreferenced_old_asset(
+    container, tmp_path
+) -> None:
+    template = container.work_records.create_standard_company_setup_template()
+    sources = []
+    for name, color in (("first.png", "red"), ("second.png", "blue")):
+        source = tmp_path / name
+        image = QImage(16, 12, QImage.Format.Format_ARGB32)
+        image.fill(QColor(color))
+        assert image.save(str(source))
+        sources.append(source)
+
+    first = container.work_records.set_template_image_path(
+        template.id, str(sources[0])
+    )
+    first_path = container.work_records.workflow_assets_dir / json.loads(
+        first.context_snapshot
+    )["image_path"]
+    assert first_path.is_file()
+
+    second = container.work_records.set_template_image_path(
+        template.id, str(sources[1])
+    )
+    second_path = container.work_records.workflow_assets_dir / json.loads(
+        second.context_snapshot
+    )["image_path"]
+
+    assert not first_path.exists()
+    assert second_path.is_file()
+
+
+def test_delete_keeps_shared_image_until_last_reference_is_deleted(
+    container, tmp_path
+) -> None:
+    template = container.work_records.create_standard_company_setup_template()
+    source = tmp_path / "shared.png"
+    image = QImage(16, 12, QImage.Format.Format_ARGB32)
+    image.fill(QColor("green"))
+    assert image.save(str(source))
+    updated = container.work_records.set_template_image_path(template.id, str(source))
+    asset_path = container.work_records.workflow_assets_dir / json.loads(
+        updated.context_snapshot
+    )["image_path"]
+    run = container.work_records.instantiate_run(template.id)
+
+    container.work_records.delete_template(template.id)
+    assert asset_path.is_file()
+
+    container.work_records.delete_run(run.id)
+    assert not asset_path.exists()
+
+
+def test_delete_with_corrupt_active_workflow_keeps_asset_without_false_failure(
+    container, tmp_path
+) -> None:
+    template = container.work_records.create_standard_company_setup_template()
+    source = tmp_path / "guarded.png"
+    image = QImage(16, 12, QImage.Format.Format_ARGB32)
+    image.fill(QColor("green"))
+    assert image.save(str(source))
+    updated = container.work_records.set_template_image_path(template.id, str(source))
+    asset_path = container.work_records.workflow_assets_dir / json.loads(
+        updated.context_snapshot
+    )["image_path"]
+
+    corrupt = container.work_records.create_template(
+        CreateWorkflowTemplateInput(
+            name="corrupt historical workflow",
+            stages=(
+                WorkflowStageInput(
+                    title="stage",
+                    steps=(WorkflowStepInput("item"),),
+                ),
+            ),
+        )
+    )
+    container.conn.execute(
+        "UPDATE workflow_templates_v2 SET stages_json = ? WHERE id = ?",
+        ("{not-json", corrupt.id),
+    )
+    container.conn.commit()
+
+    container.work_records.delete_template(template.id)
+
+    deleted_at = container.conn.execute(
+        "SELECT deleted_at FROM workflow_templates_v2 WHERE id = ?",
+        (template.id,),
+    ).fetchone()["deleted_at"]
+    assert deleted_at is not None
+    assert asset_path.is_file()
+
+
+def test_work_records_step_image_path_validates_target_before_import(container, tmp_path) -> None:
+    template = container.work_records.create_standard_company_setup_template()
+    source = tmp_path / "source.png"
+    image = QImage(12, 10, QImage.Format.Format_ARGB32)
+    image.fill(QColor("red"))
+    assert image.save(str(source))
+
+    with pytest.raises(WorkRecordValidationError) as error:
+        container.work_records.set_template_step_image_path(
+            template.id,
+            stage_id="missing-stage",
+            item_id="missing-step",
+            image_path=str(source),
+        )
+
+    assert error.value.code == "work_record.step.not_found"
+    assert list(container.work_records.workflow_assets_dir.rglob("*")) == []
+
+
+def test_work_records_image_copy_failure_leaves_no_formal_asset(
+    container, tmp_path, monkeypatch
+) -> None:
+    source = tmp_path / "source.png"
+    image = QImage(12, 10, QImage.Format.Format_ARGB32)
+    image.fill(QColor("red"))
+    assert image.save(str(source))
+
+    def fail_after_partial_copy(_source, dest) -> None:
+        Path(dest).write_bytes(b"partial")
+        raise OSError("simulated copy failure")
+
+    monkeypatch.setattr("taxops.services.work_records.shutil.copy2", fail_after_partial_copy)
+
+    with pytest.raises(OSError, match="simulated copy failure"):
+        container.work_records.import_workflow_image_asset(source)
+
+    assert [path for path in container.work_records.workflow_assets_dir.rglob("*") if path.is_file()] == []
+
+
+@pytest.mark.parametrize("failure_source", ["repository", "audit"])
+def test_work_records_run_step_image_failure_leaves_no_orphan_asset(
+    container, tmp_path, monkeypatch, failure_source
+) -> None:
+    template = container.work_records.create_standard_company_setup_template()
+    run = container.work_records.instantiate_run(template.id)
+    stages = container.work_records.stages_for_row(run)
+    source = tmp_path / "source.png"
+    image = QImage(12, 10, QImage.Format.Format_ARGB32)
+    image.fill(QColor("red"))
+    assert image.save(str(source))
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError(f"simulated {failure_source} failure")
+
+    target = container.work_records._repo if failure_source == "repository" else container.work_records._audit
+    method = "update_run_stages" if failure_source == "repository" else "record"
+    monkeypatch.setattr(target, method, fail)
+
+    with pytest.raises(RuntimeError, match=f"simulated {failure_source} failure"):
+        container.work_records.set_run_step_image_path(
+            run.id,
+            stage_id=stages[0]["id"],
+            item_id=stages[0]["items"][0]["id"],
+            image_path=str(source),
+        )
+
+    assert [path for path in container.work_records.workflow_assets_dir.rglob("*") if path.is_file()] == []
+
+
 def test_work_records_paste_screenshot_stores_relative_asset(qapp, container) -> None:
     template = container.work_records.create_standard_company_setup_template()
     page = WorkRecordsPage(container)
@@ -196,6 +368,94 @@ def test_work_records_paste_screenshot_stores_relative_asset(qapp, container) ->
     assert snapshot["image_width"] == 20
     assert snapshot["image_height"] == 16
     assert (container.work_records.workflow_assets_dir / snapshot["image_path"]).is_file()
+
+
+def test_workflow_dialog_plain_lines_create_steps(qapp) -> None:
+    from taxops.ui.dialogs.work_records_dialogs import WorkflowTemplateDialog
+
+    dlg = WorkflowTemplateDialog(title="新增流程")
+    dlg._name.setText("不用符號的流程")
+    dlg._stages.setPlainText(
+        "前期準備\n"
+        "確認公司名稱\n"
+        "確認負責人資料\n\n"
+        "正式送件\n"
+        "送出登記申請\n"
+        "追蹤補件"
+    )
+
+    payload = dlg.payload()
+
+    assert payload.stages[0].title == "前期準備"
+    assert [step.text for step in payload.stages[0].steps] == [
+        "確認公司名稱",
+        "確認負責人資料",
+    ]
+    assert payload.stages[1].title == "正式送件"
+    assert [step.text for step in payload.stages[1].steps] == [
+        "送出登記申請",
+        "追蹤補件",
+    ]
+
+
+def test_workflow_dialog_dash_steps_keep_legacy_stage_breaks_without_blank_line(qapp) -> None:
+    from taxops.ui.dialogs.work_records_dialogs import WorkflowTemplateDialog
+
+    dlg = WorkflowTemplateDialog(title="新增流程")
+    dlg._name.setText("舊格式流程")
+    dlg._stages.setPlainText(
+        "前期準備\n"
+        "- 確認公司名稱\n"
+        "- 確認負責人資料\n"
+        "正式送件\n"
+        "- 送出登記申請"
+    )
+
+    payload = dlg.payload()
+
+    assert [stage.title for stage in payload.stages] == ["前期準備", "正式送件"]
+    assert [step.text for step in payload.stages[0].steps] == [
+        "確認公司名稱",
+        "確認負責人資料",
+    ]
+    assert [step.text for step in payload.stages[1].steps] == ["送出登記申請"]
+
+
+@pytest.mark.parametrize(
+    ("name", "stages_text", "error_code", "focused_field"),
+    [
+        ("", "前期準備\n確認公司名稱", "work_record.template.name.required", "_name"),
+        ("有效流程", "", "work_record.stage.required", "_stages"),
+    ],
+)
+def test_workflow_dialog_invalid_submit_stays_open_preserves_content_and_focuses_error(
+    qapp, monkeypatch, name, stages_text, error_code, focused_field
+) -> None:
+    from taxops.ui.dialogs.work_records_dialogs import WorkflowTemplateDialog
+
+    submitted = []
+
+    def reject_invalid(payload) -> None:
+        submitted.append(payload)
+        raise WorkRecordValidationError(error_code)
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *_args, **_kwargs: None)
+    dlg = WorkflowTemplateDialog(title="新增流程", on_submit=reject_invalid)
+    dlg._name.setText(name)
+    dlg._stages.setPlainText(stages_text)
+    dlg.show()
+    QApplication.processEvents()
+
+    dlg.accept()
+    QApplication.processEvents()
+
+    assert submitted
+    assert dlg.result() != QDialog.DialogCode.Accepted
+    assert dlg.isVisible()
+    assert dlg._name.text() == name
+    assert dlg._stages.toPlainText() == stages_text
+    assert getattr(dlg, focused_field).hasFocus()
+    dlg.reject()
 
 
 def test_work_records_rename_and_delete_run_writes_db_and_audit(container) -> None:
@@ -241,6 +501,30 @@ def test_work_records_step_image_paste_stores_image_on_selected_run_step(qapp, c
     assert (container.work_records.workflow_assets_dir / first_item["image_path"]).is_file()
 
 
+def test_work_records_template_step_image_paste_targets_selected_step(qapp, container) -> None:
+    template = container.work_records.create_standard_company_setup_template()
+    page = WorkRecordsPage(container)
+    page._templates_table.selectRow(0)
+    page._update_workflow_detail()
+    first_stage = page._workflow_detail.topLevelItem(1)
+    first_step = first_stage.child(0)
+    page._workflow_detail.setCurrentItem(first_step)
+
+    image = QImage(30, 22, QImage.Format.Format_ARGB32)
+    image.fill(QColor("yellow"))
+    QApplication.clipboard().setPixmap(QPixmap.fromImage(image))
+    page._on_paste_template_image()
+
+    updated = next(t for t in container.work_records.list_templates() if t.id == template.id)
+    stages = container.work_records.stages_for_row(updated)
+    first_item = stages[0]["items"][0]
+    assert first_item["image_path"].startswith("images/")
+    assert first_item["image_width"] == 30
+    assert first_item["image_height"] == 22
+    assert (container.work_records.workflow_assets_dir / first_item["image_path"]).is_file()
+    assert updated.context_snapshot is None
+
+
 def test_work_records_run_buttons_are_connected_and_layout_prioritizes_detail(qapp, container) -> None:
     page = WorkRecordsPage(container)
     page.resize(640, 520)
@@ -267,6 +551,7 @@ def test_work_records_action_registry_contracts() -> None:
     assert labels["刪除執行"].repository == "WorkRecordsRepository.soft_delete_run"
     assert "update_run_stages" in labels["匯入流程圖片"].repository
     assert "set_run_step_image_asset" in labels["貼上截圖"].service
+    assert "set_template_step_image_asset" in labels["貼上截圖"].service
     assert labels["建立執行清單"].repository == "WorkRecordsRepository.insert_run"
     assert labels["完成/取消完成選取步驟"].audit_action == "work_record.workflow_run.step_update"
     assert labels["覆蓋回原範本"].service == "WorkRecordsService.overwrite_template_from_run"

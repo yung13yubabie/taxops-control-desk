@@ -156,6 +156,7 @@ class BulkImportWizard(QDialog):
 
         file_row = QHBoxLayout()
         self._file_path_label = QLabel("尚未選擇檔案")
+        self._file_path_label.setTextFormat(Qt.TextFormat.PlainText)
         self._file_path_label.setWordWrap(True)
         browse_btn = QPushButton("選擇檔案…")
         browse_btn.clicked.connect(self._browse_file)
@@ -366,7 +367,9 @@ class BulkImportWizard(QDialog):
             canonical = detected.get(header)
             if canonical and canonical in BULK_FIELDS:
                 combo.setCurrentIndex(BULK_FIELDS.index(canonical) + 1)
-            self._mapping_form.addRow(QLabel(header), combo)
+            header_label = QLabel(header)
+            header_label.setTextFormat(Qt.TextFormat.PlainText)
+            self._mapping_form.addRow(header_label, combo)
             self._mapping_combos[header] = combo
 
     def _collect_mapping(self) -> None:

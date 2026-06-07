@@ -110,6 +110,7 @@ class BulkEditTasksDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("批量編輯待辦")
         self.setMinimumWidth(460)
+        self._row_widgets: list[QWidget] = []
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(f"將套用到 {task_count} 筆待辦。只會更新已勾選欄位。"))
@@ -167,6 +168,7 @@ class BulkEditTasksDialog(QDialog):
         row.addWidget(field)
         box = QWidget()
         box.setLayout(row)
+        self._row_widgets.append(box)
         return checkbox, field
 
     def _combo_row(self, values: list[tuple[str, str]]) -> tuple[QCheckBox, QComboBox]:
@@ -179,6 +181,7 @@ class BulkEditTasksDialog(QDialog):
         row.addWidget(combo)
         box = QWidget()
         box.setLayout(row)
+        self._row_widgets.append(box)
         return checkbox, combo
 
     def fields(self) -> dict:

@@ -38,9 +38,11 @@ except Exception:  # pragma: no cover - fallback for minimal Qt installs.
     QPdfView = None  # type: ignore[assignment]
 
 from ...i18n import error_message
+from ...security.image_guard import ImageGuardError, validate_image_file
 from ...services.attachments import AttachmentValidationError, UploadAttachmentInput
 from ...services.container import ServiceContainer
 from ..style import toolbar_icon
+from ..widgets.flow_layout import FlowLayout
 
 _IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"})
 _TEXT_EXTS = frozenset({".txt", ".csv", ".log", ".xml", ".json", ".md"})
@@ -138,43 +140,45 @@ class AttachmentsPage(QWidget):
         outer.addLayout(filter_row)
 
         # Action buttons
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
+        self._toolbar_widget = QWidget()
+        self._toolbar_layout = FlowLayout(
+            self._toolbar_widget, h_spacing=8, v_spacing=6
+        )
 
         self._upload_btn = QPushButton("新增附件")
         self._upload_btn.setIcon(toolbar_icon("new"))
         self._upload_btn.clicked.connect(self._on_upload)
-        btn_row.addWidget(self._upload_btn)
+        self._toolbar_layout.addWidget(self._upload_btn)
 
         self._accept_btn = QPushButton("標記已驗收")
         self._accept_btn.setIcon(toolbar_icon("complete"))
         self._accept_btn.setEnabled(False)
         self._accept_btn.clicked.connect(self._on_accept)
-        btn_row.addWidget(self._accept_btn)
+        self._toolbar_layout.addWidget(self._accept_btn)
 
         self._reject_btn = QPushButton("標記退回")
         self._reject_btn.setIcon(toolbar_icon("delete"))
         self._reject_btn.setEnabled(False)
         self._reject_btn.clicked.connect(self._on_reject)
-        btn_row.addWidget(self._reject_btn)
+        self._toolbar_layout.addWidget(self._reject_btn)
 
         self._delete_btn = QPushButton("刪除附件")
         self._delete_btn.setIcon(toolbar_icon("delete"))
         self._delete_btn.setEnabled(False)
         self._delete_btn.clicked.connect(self._on_delete)
-        btn_row.addWidget(self._delete_btn)
+        self._toolbar_layout.addWidget(self._delete_btn)
 
         self._info_btn = QPushButton("檔案資訊")
         self._info_btn.setIcon(toolbar_icon("trial"))
         self._info_btn.setEnabled(False)
         self._info_btn.clicked.connect(self._on_show_info)
-        btn_row.addWidget(self._info_btn)
+        self._toolbar_layout.addWidget(self._info_btn)
 
         self._open_btn = QPushButton("用系統程式開啟")
         self._open_btn.setIcon(toolbar_icon("export"))
         self._open_btn.setEnabled(False)
         self._open_btn.clicked.connect(self._on_open_system)
-        btn_row.addWidget(self._open_btn)
+        self._toolbar_layout.addWidget(self._open_btn)
 
         self._location_btn = QPushButton("檔案位置")
         self._location_btn.setIcon(toolbar_icon("trial"))
@@ -185,10 +189,8 @@ class AttachmentsPage(QWidget):
         self._location_btn.customContextMenuRequested.connect(
             self._show_location_menu
         )
-        btn_row.addWidget(self._location_btn)
-
-        btn_row.addStretch()
-        outer.addLayout(btn_row)
+        self._toolbar_layout.addWidget(self._location_btn)
+        outer.addWidget(self._toolbar_widget)
 
         # Table
         self._table = QTableWidget(0, len(_COLUMNS))
@@ -332,11 +334,30 @@ class AttachmentsPage(QWidget):
             return None
         return self._attachments[idx]
 
-    def _att_file_path(self, att) -> Path:
-        return self._container.paths.attachments_dir / att.stored_filename
+    def _resolve_att_file_path(self, att, *, notify: bool) -> Path | None:
+        try:
+            return self._container.attachments.resolve_file_path(att.id)
+        except AttachmentValidationError as err:
+            message = error_message(err.code)
+        except Exception as exc:
+            self._container.system_log.warn(
+                "attachments: failed to resolve stored file",
+                detail={
+                    "attachment_id": att.id,
+                    "exc": type(exc).__name__,
+                    "msg": str(exc),
+                },
+            )
+            message = error_message("attachment.not_found")
+        if notify:
+            QMessageBox.warning(self, "無法存取附件", message)
+        return None
 
-    def _att_file_url(self, att) -> str:
-        return QUrl.fromLocalFile(str(self._att_file_path(att))).toString()
+    def _att_file_url(self, att) -> str | None:
+        path = self._resolve_att_file_path(att, notify=True)
+        if path is None:
+            return None
+        return QUrl.fromLocalFile(str(path)).toString()
 
     def _on_selection_changed(self) -> None:
         has = self._selected_index() is not None
@@ -353,16 +374,37 @@ class AttachmentsPage(QWidget):
             self._preview_stack.setCurrentIndex(_PREVIEW_NONE)
             return
 
-        file_path = self._att_file_path(att)
+        file_path = self._resolve_att_file_path(att, notify=False)
+        if file_path is None:
+            self._preview_meta.setText(
+                f"無法預覽附件：{error_message('attachment.not_found')}"
+            )
+            self._preview_stack.setCurrentIndex(_PREVIEW_META)
+            return
         ext = att.extension.lower()
 
-        if ext == ".pdf" and file_path.exists() and self._preview_pdf_doc is not None:
+        if ext == ".pdf" and self._preview_pdf_doc is not None:
             status = self._preview_pdf_doc.load(str(file_path))
             if status == QPdfDocument.Error.None_:
                 self._preview_stack.setCurrentIndex(_PREVIEW_PDF)
                 return
 
-        if ext in _IMAGE_EXTS and file_path.exists():
+        if ext in _IMAGE_EXTS:
+            self._preview_image.clear()
+            try:
+                validate_image_file(file_path)
+            except (ImageGuardError, OSError) as exc:
+                _log.warning(
+                    "preview: rejected unsafe image %s: %s",
+                    file_path,
+                    exc,
+                )
+                self._preview_meta.setText(
+                    "圖片無法預覽：檔案格式或像素尺寸超過安全限制。\n"
+                    f"檔案：{att.original_filename}"
+                )
+                self._preview_stack.setCurrentIndex(_PREVIEW_META)
+                return
             pixmap = QPixmap(str(file_path))
             if not pixmap.isNull():
                 scaled = pixmap.scaled(
@@ -374,7 +416,7 @@ class AttachmentsPage(QWidget):
                 self._preview_stack.setCurrentIndex(_PREVIEW_IMAGE)
                 return
 
-        if ext in _TEXT_EXTS and file_path.exists():
+        if ext in _TEXT_EXTS:
             try:
                 text = file_path.read_text(encoding="utf-8", errors="replace")[:4096]
                 self._preview_text.setPlainText(text)
@@ -484,9 +526,8 @@ class AttachmentsPage(QWidget):
         att = self._selected_attachment()
         if att is None:
             return
-        file_path = self._att_file_path(att)
-        if not file_path.exists():
-            QMessageBox.warning(self, "找不到檔案", f"檔案已移動或刪除：{att.original_filename}")
+        file_path = self._resolve_att_file_path(att, notify=True)
+        if file_path is None:
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(file_path)))
 
@@ -502,16 +543,16 @@ class AttachmentsPage(QWidget):
 
     def _copy_file_url(self, att) -> None:
         url = self._att_file_url(att)
-        if url:
-            QApplication.clipboard().setText(url)
+        if url is None:
+            return
+        QApplication.clipboard().setText(url)
 
     def _on_open_location(self) -> None:
         att = self._selected_attachment()
         if att is None:
             return
-        file_path = self._att_file_path(att)
-        folder = file_path.parent if file_path.parent.exists() else self._container.paths.attachments_dir
-        if not folder.exists():
-            QMessageBox.warning(self, "找不到資料夾", "附件資料夾不存在，請確認資料目錄。")
+        file_path = self._resolve_att_file_path(att, notify=True)
+        if file_path is None:
             return
+        folder = file_path.parent
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))

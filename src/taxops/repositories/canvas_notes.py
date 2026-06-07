@@ -60,14 +60,33 @@ class CanvasNotesRepository:
 
     def get(self, note_id: int) -> CanvasNoteRow | None:
         row = self._conn.execute(
-            "SELECT * FROM canvas_notes WHERE id = ? AND deleted_at IS NULL",
+            "SELECT n.* FROM canvas_notes n"
+            " WHERE n.id = ? AND n.deleted_at IS NULL"
+            " AND (n.client_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM clients c WHERE c.id = n.client_id AND c.deleted_at IS NULL"
+            " ))"
+            " AND (n.engagement_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM engagements e JOIN clients c ON c.id = e.client_id"
+            "   WHERE e.id = n.engagement_id AND e.deleted_at IS NULL"
+            "     AND c.deleted_at IS NULL"
+            " ))",
             (note_id,),
         ).fetchone()
         return _row(row) if row else None
 
     def list_all(self) -> list[CanvasNoteRow]:
         rows = self._conn.execute(
-            "SELECT * FROM canvas_notes WHERE deleted_at IS NULL ORDER BY updated_at DESC, id DESC"
+            "SELECT n.* FROM canvas_notes n"
+            " WHERE n.deleted_at IS NULL"
+            " AND (n.client_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM clients c WHERE c.id = n.client_id AND c.deleted_at IS NULL"
+            " ))"
+            " AND (n.engagement_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM engagements e JOIN clients c ON c.id = e.client_id"
+            "   WHERE e.id = n.engagement_id AND e.deleted_at IS NULL"
+            "     AND c.deleted_at IS NULL"
+            " ))"
+            " ORDER BY n.updated_at DESC, n.id DESC"
         ).fetchall()
         return [_row(r) for r in rows]
 

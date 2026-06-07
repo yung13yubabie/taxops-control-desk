@@ -36,7 +36,6 @@ class BackupRepository:
             " VALUES (?, ?, ?, ?, ?)",
             (filename, backup_path, file_size, notes, ts),
         )
-        self._conn.commit()
         return BackupRow(
             id=int(cur.lastrowid or 0),
             filename=filename,

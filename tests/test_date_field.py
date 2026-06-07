@@ -8,7 +8,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import QApplication
 
 
@@ -43,6 +43,18 @@ def test_optional_clear_button_is_visible(qapp: QApplication) -> None:
     field = DateField(required=False)
     # isHidden() checks this widget's own flag; isVisible() requires full parent chain shown
     assert not field._clear_btn.isHidden()
+
+
+def test_icon_buttons_are_keyboard_focusable_and_accessible(qapp: QApplication) -> None:
+    from taxops.ui.widgets.date_field import DateField
+
+    field = DateField(required=False)
+
+    for button in (field._cal_btn, field._clear_btn):
+        assert button.focusPolicy() == Qt.FocusPolicy.StrongFocus
+        assert button.accessibleName()
+        assert not button.shortcut().isEmpty()
+    assert field._cal_btn.shortcut() != field._clear_btn.shortcut()
 
 
 # ---------------------------------------------------------------------------

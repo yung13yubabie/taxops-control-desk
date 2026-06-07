@@ -138,6 +138,11 @@ class LateFeeService:
         self._conn = repo._conn
 
     def calculate_and_save(self, payload: CalculateLateFeeInput) -> LateFeeRow:
+        """Validate, calculate, and persist one immutable calculation version.
+
+        Each independent call intentionally creates a new record and audit entry.
+        UI callers must prevent a single user action from re-entering this method.
+        """
         has_period_year = payload.period_year is not None
         has_period_code = payload.period_code is not None
         if has_period_year != has_period_code:

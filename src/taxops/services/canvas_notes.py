@@ -15,6 +15,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPageSize, QPdfWriter, QPen, 
 
 from ..core.text import sanitize_user_text
 from ..repositories.canvas_notes import CanvasNoteRow, CanvasNotesRepository
+from ..security.image_guard import ImageGuardError, validate_image_file
 from .audit import AuditService
 
 A4_WIDTH = 595.0
@@ -256,6 +257,10 @@ class CanvasNotesService:
             raise CanvasNoteValidationError("canvas_note.asset.extension_invalid")
         if not source.is_file():
             raise CanvasNoteValidationError("canvas_note.asset.not_found")
+        try:
+            validate_image_file(source)
+        except (OSError, ImageGuardError) as exc:
+            raise CanvasNoteValidationError("canvas_note.asset.image_invalid") from exc
         rel = Path("images") / f"{uuid4().hex}{ext}"
         dest = self._note_assets_dir / rel
         dest.parent.mkdir(parents=True, exist_ok=True)

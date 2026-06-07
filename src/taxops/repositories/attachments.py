@@ -7,6 +7,12 @@ from dataclasses import dataclass
 
 from ..core.clock import now_iso
 
+_ACTIVE_ATTACHMENT_OWNER_SQL = (
+    "EXISTS (SELECT 1 FROM engagements e"
+    " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+    " WHERE e.id = attachments.engagement_id AND e.deleted_at IS NULL)"
+)
+
 
 @dataclass(frozen=True)
 class AttachmentRow:
@@ -159,14 +165,19 @@ class AttachmentsRepository:
         self, request_id: int, engagement_id: int
     ) -> bool:
         r = self._conn.execute(
-            "SELECT 1 FROM document_requests WHERE id = ? AND engagement_id = ?",
+            "SELECT 1 FROM document_requests dr"
+            " JOIN engagements e ON e.id = dr.engagement_id AND e.deleted_at IS NULL"
+            " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+            " WHERE dr.id = ? AND dr.engagement_id = ? AND dr.deleted_at IS NULL",
             (request_id, engagement_id),
         ).fetchone()
         return r is not None
 
     def get(self, attachment_id: int) -> AttachmentRow | None:
         r = self._conn.execute(
-            "SELECT * FROM attachments WHERE id = ?", (attachment_id,)
+            "SELECT * FROM attachments WHERE id = ?"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}",
+            (attachment_id,),
         ).fetchone()
         return _row(r) if r else None
 
@@ -179,14 +190,18 @@ class AttachmentsRepository:
             else "engagement_id = ? AND status != 'archived'"
         )
         rows = self._conn.execute(
-            f"SELECT * FROM attachments WHERE {where} ORDER BY uploaded_at DESC",
+            f"SELECT * FROM attachments WHERE {where}"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
+            " ORDER BY uploaded_at DESC",
             (engagement_id,),
         ).fetchall()
         return [_row(r) for r in rows]
 
     def list_all(self) -> list[AttachmentRow]:
         rows = self._conn.execute(
-            "SELECT * FROM attachments WHERE status != 'archived' ORDER BY uploaded_at DESC"
+            "SELECT * FROM attachments WHERE status != 'archived'"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
+            " ORDER BY uploaded_at DESC"
         ).fetchall()
         return [_row(r) for r in rows]
 
@@ -199,7 +214,9 @@ class AttachmentsRepository:
             else "request_id = ? AND status != 'archived'"
         )
         rows = self._conn.execute(
-            f"SELECT * FROM attachments WHERE {where} ORDER BY uploaded_at DESC",
+            f"SELECT * FROM attachments WHERE {where}"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
+            " ORDER BY uploaded_at DESC",
             (request_id,),
         ).fetchall()
         return [_row(r) for r in rows]
@@ -223,7 +240,9 @@ class AttachmentsRepository:
 
     def engagement_exists(self, engagement_id: int) -> bool:
         r = self._conn.execute(
-            "SELECT 1 FROM engagements WHERE id = ? AND deleted_at IS NULL",
+            "SELECT 1 FROM engagements e"
+            " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+            " WHERE e.id = ? AND e.deleted_at IS NULL",
             (engagement_id,),
         ).fetchone()
         return r is not None

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+from pathlib import PureWindowsPath
 
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -35,14 +38,23 @@ from ..widgets.flow_layout import FlowLayout
 
 _log = logging.getLogger(__name__)
 
-_COLUMNS = ("id", "name", "path", "category", "updated_at")
+_ALL_CATEGORIES = "__all__"
+
+_COLUMNS = ("id", "name", "parent_path", "path", "category", "updated_at")
 _HEADERS = {
     "id": "編號",
     "name": "名稱",
+    "parent_path": "父路徑",
     "path": "路徑",
     "category": "分類",
     "updated_at": "更新時間",
 }
+
+
+def _parent_path(path: str) -> str:
+    parent = PureWindowsPath(path).parent
+    text = str(parent)
+    return "" if text == "." or text == path else text
 
 
 class _BookmarkDialog(QDialog):
@@ -140,6 +152,21 @@ class FolderBookmarksPage(QWidget):
         hint.setWordWrap(True)
         outer.addWidget(hint)
 
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(8)
+        filter_row.addWidget(QLabel("分類："))
+        self._category_filter = QComboBox()
+        self._category_filter.setMinimumWidth(160)
+        filter_row.addWidget(self._category_filter)
+        filter_row.addWidget(QLabel("搜尋："))
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText("輸入名稱、路徑或分類")
+        self._search_edit.setMinimumWidth(240)
+        filter_row.addWidget(self._search_edit, stretch=1)
+        self._clear_filter_btn = QPushButton("清除篩選")
+        filter_row.addWidget(self._clear_filter_btn)
+        outer.addLayout(filter_row)
+
         toolbar_widget = QWidget()
         toolbar = FlowLayout(toolbar_widget, h_spacing=6, v_spacing=6)
         self._new_btn = QPushButton("新增資料夾")
@@ -182,6 +209,9 @@ class FolderBookmarksPage(QWidget):
         self._delete_btn.clicked.connect(self._on_delete)
         self._open_btn.clicked.connect(self._on_open)
         self._refresh_btn.clicked.connect(self._refresh)
+        self._category_filter.currentIndexChanged.connect(self._render_filtered_rows)
+        self._search_edit.textChanged.connect(self._render_filtered_rows)
+        self._clear_filter_btn.clicked.connect(self._clear_filters)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
         self._table.doubleClicked.connect(self._on_open)
 
@@ -189,6 +219,9 @@ class FolderBookmarksPage(QWidget):
 
     def refresh_context(self) -> None:
         self._refresh()
+
+    def clear_filter(self) -> None:
+        self._clear_filters()
 
     def _refresh(self) -> None:
         try:
@@ -199,11 +232,41 @@ class FolderBookmarksPage(QWidget):
             )
             QMessageBox.warning(self, "載入失敗", error_message("system.unexpected"))
             return
+        self._bookmarks = bookmarks
+        self._rebuild_category_filter(bookmarks)
+        self._render_filtered_rows()
+
+    def _rebuild_category_filter(self, bookmarks) -> None:
+        selected = self._category_filter.currentData() or _ALL_CATEGORIES
+        self._category_filter.blockSignals(True)
+        try:
+            self._category_filter.clear()
+            self._category_filter.addItem("全部分類", _ALL_CATEGORIES)
+            for category in sorted({bm.category for bm in bookmarks if bm.category}):
+                self._category_filter.addItem(str(category), str(category))
+            idx = self._category_filter.findData(selected)
+            self._category_filter.setCurrentIndex(idx if idx >= 0 else 0)
+        finally:
+            self._category_filter.blockSignals(False)
+
+    def _clear_filters(self) -> None:
+        self._category_filter.setCurrentIndex(0)
+        self._search_edit.clear()
+        self._render_filtered_rows()
+
+    def _render_filtered_rows(self) -> None:
+        selected_id = self._selected_id()
+        bookmarks = [
+            bm for bm in getattr(self, "_bookmarks", [])
+            if self._bookmark_matches_filters(bm)
+        ]
+        bookmarks.sort(key=lambda bm: (_parent_path(bm.path).lower(), bm.name.lower()))
         self._table.setRowCount(len(bookmarks))
         for row_idx, bm in enumerate(bookmarks):
             values = {
                 "id": str(bm.id),
                 "name": bm.name,
+                "parent_path": _parent_path(bm.path),
                 "path": bm.path,
                 "category": bm.category or "",
                 "updated_at": bm.updated_at,
@@ -212,7 +275,33 @@ class FolderBookmarksPage(QWidget):
                 item = QTableWidgetItem(values[col])
                 item.setToolTip(values[col])
                 self._table.setItem(row_idx, col_idx, item)
+        self._restore_selection(selected_id)
         self._on_selection_changed()
+
+    def _restore_selection(self, bookmark_id: int | None) -> None:
+        self._table.clearSelection()
+        if bookmark_id is None:
+            return
+        for row in range(self._table.rowCount()):
+            item = self._table.item(row, 0)
+            if item is not None and item.text() == str(bookmark_id):
+                self._table.selectRow(row)
+                return
+
+    def _bookmark_matches_filters(self, bm) -> bool:
+        selected_category = self._category_filter.currentData() or _ALL_CATEGORIES
+        if selected_category != _ALL_CATEGORIES and bm.category != selected_category:
+            return False
+        query = self._search_edit.text().strip().lower()
+        if not query:
+            return True
+        haystack = " ".join((
+            bm.name,
+            bm.path,
+            bm.category or "",
+            _parent_path(bm.path),
+        )).lower()
+        return query in haystack
 
     def _on_selection_changed(self) -> None:
         has_sel = bool(self._table.selectedItems())
@@ -230,24 +319,24 @@ class FolderBookmarksPage(QWidget):
 
     def _on_new(self) -> None:
         dialog = _BookmarkDialog(title="新增資料夾", parent=self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        name, path, category, sort_order = dialog.values()
-        try:
-            self._container.folder_bookmarks.create_bookmark(
-                CreateBookmarkInput(
-                    name=name, path=path, category=category or None,
-                    sort_order=sort_order,
+        while dialog.exec() == QDialog.DialogCode.Accepted:
+            name, path, category, sort_order = dialog.values()
+            try:
+                self._container.folder_bookmarks.create_bookmark(
+                    CreateBookmarkInput(
+                        name=name, path=path, category=category or None,
+                        sort_order=sort_order,
+                    )
                 )
-            )
-        except FolderBookmarkValidationError as exc:
-            QMessageBox.warning(self, "新增失敗", error_message(exc.code))
+            except FolderBookmarkValidationError as exc:
+                QMessageBox.warning(dialog, "新增失敗", error_message(exc.code))
+                continue
+            except Exception:
+                _log.exception("folder_bookmark create failed")
+                QMessageBox.warning(dialog, "新增失敗", error_message("system.unexpected"))
+                continue
+            self._refresh()
             return
-        except Exception:
-            _log.exception("folder_bookmark create failed")
-            QMessageBox.warning(self, "新增失敗", error_message("system.unexpected"))
-            return
-        self._refresh()
 
     def _on_edit(self, *_args) -> None:
         bookmark_id = self._selected_id()
@@ -266,24 +355,24 @@ class FolderBookmarksPage(QWidget):
             sort_order=bm.sort_order,
             parent=self,
         )
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        name, path, category, sort_order = dialog.values()
-        try:
-            self._container.folder_bookmarks.update_bookmark(
-                UpdateBookmarkInput(
-                    bookmark_id=bookmark_id, name=name, path=path,
-                    category=category or None, sort_order=sort_order,
+        while dialog.exec() == QDialog.DialogCode.Accepted:
+            name, path, category, sort_order = dialog.values()
+            try:
+                self._container.folder_bookmarks.update_bookmark(
+                    UpdateBookmarkInput(
+                        bookmark_id=bookmark_id, name=name, path=path,
+                        category=category or None, sort_order=sort_order,
+                    )
                 )
-            )
-        except FolderBookmarkValidationError as exc:
-            QMessageBox.warning(self, "更新失敗", error_message(exc.code))
+            except FolderBookmarkValidationError as exc:
+                QMessageBox.warning(dialog, "更新失敗", error_message(exc.code))
+                continue
+            except Exception:
+                _log.exception("folder_bookmark update failed")
+                QMessageBox.warning(dialog, "更新失敗", error_message("system.unexpected"))
+                continue
+            self._refresh()
             return
-        except Exception:
-            _log.exception("folder_bookmark update failed")
-            QMessageBox.warning(self, "更新失敗", error_message("system.unexpected"))
-            return
-        self._refresh()
 
     def _on_delete(self) -> None:
         bookmark_id = self._selected_id()
@@ -319,6 +408,14 @@ class FolderBookmarksPage(QWidget):
             return
         bm = self._container.folder_bookmarks.get_bookmark(bookmark_id)
         if bm is None:
+            return
+        path = Path(bm.path)
+        if not path.exists() or not path.is_dir():
+            QMessageBox.warning(
+                self,
+                "開啟失敗",
+                "此書籤不是可用的資料夾，請先編輯並確認路徑。",
+            )
             return
         url = QUrl.fromLocalFile(bm.path)
         opened = QDesktopServices.openUrl(url)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt
 from PySide6.QtWidgets import QLayout, QLayoutItem, QWidget
+from shiboken6 import isValid
 
 
 class FlowLayout(QLayout):
@@ -47,13 +48,16 @@ class FlowLayout(QLayout):
         return None
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if watched is self.parentWidget() and event.type() in {
-            QEvent.Type.Show,
-            QEvent.Type.Resize,
-            QEvent.Type.LayoutRequest,
-        }:
-            self.setGeometry(self.parentWidget().rect())
-        return super().eventFilter(watched, event)
+        if not isValid(self) or not isValid(watched):
+            return False
+        if (
+            watched is self.parentWidget()
+            and event.type() in {QEvent.Type.Show, QEvent.Type.Resize}
+        ):
+            parent = self.parentWidget()
+            if parent is not None and isValid(parent):
+                self.setGeometry(parent.rect())
+        return False
 
     def expandingDirections(self) -> Qt.Orientations:  # noqa: N802
         return Qt.Orientation(0)
@@ -73,7 +77,7 @@ class FlowLayout(QLayout):
 
     def minimumSize(self) -> QSize:  # noqa: N802
         size = QSize(0, 0)
-        for item in self._items:
+        for item in self._live_items():
             size = size.expandedTo(item.minimumSize())
         margins = self.contentsMargins()
         size += QSize(
@@ -81,6 +85,19 @@ class FlowLayout(QLayout):
             margins.top() + margins.bottom(),
         )
         return size
+
+    def _live_items(self) -> list[QLayoutItem]:
+        live: list[QLayoutItem] = []
+        for item in self._items:
+            if not isValid(item):
+                continue
+            widget = item.widget()
+            if widget is not None and not isValid(widget):
+                continue
+            live.append(item)
+        if len(live) != len(self._items):
+            self._items = live
+        return live
 
     def _do_layout(self, rect: QRect, test_only: bool) -> int:
         margins = self.contentsMargins()
@@ -91,7 +108,7 @@ class FlowLayout(QLayout):
         y = effective.y()
         line_height = 0
 
-        for item in self._items:
+        for item in self._live_items():
             widget = item.widget()
             if widget is not None and not widget.isVisible():
                 continue

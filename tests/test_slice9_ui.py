@@ -30,6 +30,7 @@ from taxops.ui.action_registry import PAGE_ATTACHMENTS, actions_for_page
 from taxops.ui.pages.attachments_page import (
     QPdfDocument,
     _AttachmentInfoDialog,
+    _PREVIEW_META,
     _PREVIEW_PDF,
     AttachmentsPage,
 )
@@ -269,6 +270,41 @@ def test_info_dialog_labels_plain_text(qapp):
                 )
 
 
+def test_image_preview_rejects_unsafe_dimensions_before_pixmap_decode(
+    qapp, tmp_path, monkeypatch
+):
+    from taxops.security.image_guard import ImageGuardError
+
+    conn, attachments_dir = _make_conn(tmp_path)
+    container = _FakeContainer(conn, attachments_dir)
+    page = AttachmentsPage(container)
+    source = tmp_path / "oversized.png"
+    source.write_bytes(b"not decoded")
+    attachment = SimpleNamespace(
+        id=999,
+        extension=".png",
+        original_filename="oversized.png",
+        file_size=source.stat().st_size,
+        mime_type="image/png",
+        status="uploaded",
+        uploaded_at="2026-06-07T00:00:00",
+    )
+    monkeypatch.setattr(page, "_resolve_att_file_path", lambda *_args, **_kwargs: source)
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.validate_image_file",
+        lambda _path: (_ for _ in ()).throw(
+            ImageGuardError("image.pixel_count_too_large")
+        ),
+    )
+
+    page._update_preview(attachment)
+
+    assert page._preview_stack.currentIndex() == _PREVIEW_META
+    assert "oversized.png" in page._preview_meta.text()
+    assert page._preview_image.pixmap().isNull()
+    conn.close()
+
+
 def test_delete_button_archives_row_and_audits(qapp, tmp_path):
     from unittest.mock import patch
 
@@ -411,6 +447,57 @@ def test_location_button_right_click_copies_file_url(qapp, tmp_path):
     page._copy_file_url(att)
     expected = QUrl.fromLocalFile(str(attachments_dir / row.stored_filename)).toString()
     assert QApplication.clipboard().text() == expected
+    conn.close()
+
+
+def test_malicious_stored_filename_cannot_preview_open_or_copy(
+    qapp, monkeypatch, tmp_path
+):
+    conn, attachments_dir = _make_conn(tmp_path)
+    eng_id = _seed(conn)
+    source = tmp_path / "safe.txt"
+    source.write_text("safe", encoding="utf-8")
+    container = _FakeContainer(conn, attachments_dir)
+    row = container.attachments.upload_attachment(UploadAttachmentInput(
+        engagement_id=eng_id,
+        request_id=None,
+        source_path=source,
+    ))
+    outside = attachments_dir.parent / "outside.txt"
+    outside.write_text("must not be exposed", encoding="utf-8")
+    conn.execute(
+        "UPDATE attachments SET stored_filename = ? WHERE id = ?",
+        ("../outside.txt", row.id),
+    )
+    conn.commit()
+
+    opened: list[QUrl] = []
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QDesktopServices.openUrl",
+        lambda url: opened.append(url) or True,
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QMessageBox.warning",
+        lambda _parent, _title, message: warnings.append(message),
+    )
+    QApplication.clipboard().setText("unchanged")
+
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(1)
+    page._load_attachments()
+    page._table.selectRow(0)
+    assert "must not be exposed" not in page._preview_text.toPlainText()
+
+    page._on_open_system()
+    page._on_open_location()
+    att = page._selected_attachment()
+    assert att is not None
+    page._copy_file_url(att)
+
+    assert opened == []
+    assert QApplication.clipboard().text() == "unchanged"
+    assert warnings
     conn.close()
 
 

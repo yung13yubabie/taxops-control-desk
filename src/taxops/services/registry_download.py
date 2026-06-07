@@ -1,7 +1,7 @@
 """HTTP download of the official MOF tax registry ZIP.
 
 Only URLs that pass ``is_allowed_official_url()`` may be downloaded.
-Callers must validate the URL before calling ``download_registry_zip()``.
+The service validates both the requested URL and the final redirect target.
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ import logging
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+from ..security.domains import is_allowed_official_url
 
 _log = logging.getLogger(__name__)
 
@@ -56,16 +58,19 @@ def download_registry_zip(
     """Download *url* to *dest_path* as a raw binary file.
 
     Raises DownloadError on network, I/O, or resource-limit failure.
-    URL allowlist validation is the caller's responsibility.
-
     The file is written to ``*.part`` first and atomically moved into place only
     after the full download succeeds. Failed downloads do not leave a partial
     file at ``dest_path``.
     """
     part_path = dest_path.with_name(dest_path.name + ".part")
     try:
+        if not is_allowed_official_url(url):
+            raise DownloadError("registry.download.url_not_allowed")
         req = urllib.request.Request(url, headers={"User-Agent": "TaxOps-ControlDesk/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
+            response_url = getattr(resp, "geturl", lambda: url)()
+            if isinstance(response_url, str) and not is_allowed_official_url(response_url):
+                raise DownloadError("registry.download.url_not_allowed")
             announced_size = _content_length(resp)
             if announced_size is not None and announced_size > max_bytes:
                 raise DownloadError("registry.download.too_large")

@@ -456,6 +456,7 @@ class ClientsPage(QWidget):
 
     def on_refresh(self) -> None:
         from ..action_registry import FilterKey
+        selected_client_id = self._selected_client_id()
         query = self._search_input.text()
         include_deleted = self._show_deleted_check.isChecked()
         try:
@@ -519,5 +520,13 @@ class ClientsPage(QWidget):
 
         self._empty_state.setVisible(self._total == 0)
         self._table.setVisible(self._total > 0)
+        self._table.clearSelection()
+        if selected_client_id is not None:
+            for row_idx in range(self._table.rowCount()):
+                id_item = self._table.item(row_idx, _ID_COL_IDX)
+                if id_item is not None and int(id_item.text()) == selected_client_id:
+                    self._table.selectRow(row_idx)
+                    break
+        self._on_selection_changed()
         self._update_pagination_controls()
         self._apply_column_visibility()

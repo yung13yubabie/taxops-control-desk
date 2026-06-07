@@ -10,6 +10,18 @@ from dataclasses import dataclass
 
 from ..core.clock import now_iso
 
+_ACTIVE_OWNER_SQL = (
+    "(workflow_tasks.client_id IS NULL OR EXISTS ("
+    " SELECT 1 FROM clients c"
+    " WHERE c.id = workflow_tasks.client_id AND c.deleted_at IS NULL"
+    "))"
+    " AND (workflow_tasks.engagement_id IS NULL OR EXISTS ("
+    " SELECT 1 FROM engagements e"
+    " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+    " WHERE e.id = workflow_tasks.engagement_id AND e.deleted_at IS NULL"
+    "))"
+)
+
 
 @dataclass(frozen=True)
 class TaskRow:
@@ -90,7 +102,8 @@ class TasksRepository:
 
     def get(self, task_id: int) -> TaskRow | None:
         row = self._conn.execute(
-            "SELECT * FROM workflow_tasks WHERE id = ? AND deleted_at IS NULL",
+            "SELECT * FROM workflow_tasks WHERE id = ? AND deleted_at IS NULL"
+            f" AND {_ACTIVE_OWNER_SQL}",
             (task_id,),
         ).fetchone()
         return _row_to_task(row) if row else None
@@ -109,6 +122,7 @@ class TasksRepository:
         rows = self._conn.execute(
             f"SELECT * FROM workflow_tasks"
             f" WHERE engagement_id = ? AND deleted_at IS NULL"
+            f" AND {_ACTIVE_OWNER_SQL}"
             f" ORDER BY {col} {direction} LIMIT ? OFFSET ?",
             (engagement_id, limit, offset),
         ).fetchall()
@@ -126,6 +140,7 @@ class TasksRepository:
         direction = "DESC" if order_dir.upper() == "DESC" else "ASC"
         rows = self._conn.execute(
             f"SELECT * FROM workflow_tasks WHERE deleted_at IS NULL"
+            f" AND {_ACTIVE_OWNER_SQL}"
             f" ORDER BY {col} {direction} LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
@@ -136,6 +151,7 @@ class TasksRepository:
         rows = self._conn.execute(
             "SELECT * FROM workflow_tasks"
             " WHERE deleted_at IS NULL"
+            f"   AND {_ACTIVE_OWNER_SQL}"
             "   AND due_date IS NOT NULL"
             "   AND due_date < ?"
             "   AND status NOT IN ('done', 'cancelled')"
@@ -148,6 +164,7 @@ class TasksRepository:
         rows = self._conn.execute(
             "SELECT * FROM workflow_tasks"
             " WHERE deleted_at IS NULL"
+            f"   AND {_ACTIVE_OWNER_SQL}"
             "   AND due_date = ?"
             "   AND status NOT IN ('done', 'cancelled')"
             " ORDER BY id ASC",
@@ -205,14 +222,18 @@ class TasksRepository:
 
     def engagement_exists(self, engagement_id: int) -> bool:
         row = self._conn.execute(
-            "SELECT id FROM engagements WHERE id = ? AND deleted_at IS NULL",
+            "SELECT e.id FROM engagements e"
+            " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+            " WHERE e.id = ? AND e.deleted_at IS NULL",
             (engagement_id,),
         ).fetchone()
         return row is not None
 
     def get_engagement_client_id(self, engagement_id: int) -> int | None:
         row = self._conn.execute(
-            "SELECT client_id FROM engagements WHERE id = ? AND deleted_at IS NULL",
+            "SELECT e.client_id FROM engagements e"
+            " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+            " WHERE e.id = ? AND e.deleted_at IS NULL",
             (engagement_id,),
         ).fetchone()
         return row["client_id"] if row else None
@@ -236,7 +257,8 @@ class TasksRepository:
     def count_children(self, task_id: int) -> int:
         row = self._conn.execute(
             "SELECT COUNT(*) AS c FROM workflow_tasks"
-            " WHERE parent_task_id = ? AND deleted_at IS NULL",
+            " WHERE parent_task_id = ? AND deleted_at IS NULL"
+            f" AND {_ACTIVE_OWNER_SQL}",
             (task_id,),
         ).fetchone()
         return int(row["c"]) if row else 0
@@ -244,7 +266,8 @@ class TasksRepository:
     def get_parent_id(self, task_id: int) -> int | None:
         row = self._conn.execute(
             "SELECT parent_task_id FROM workflow_tasks"
-            " WHERE id = ? AND deleted_at IS NULL",
+            " WHERE id = ? AND deleted_at IS NULL"
+            f" AND {_ACTIVE_OWNER_SQL}",
             (task_id,),
         ).fetchone()
         return row["parent_task_id"] if row else None
@@ -263,6 +286,7 @@ class TasksRepository:
         rows = self._conn.execute(
             f"SELECT * FROM workflow_tasks"
             f" WHERE client_id = ? AND deleted_at IS NULL"
+            f" AND {_ACTIVE_OWNER_SQL}"
             f" ORDER BY {col} {direction} LIMIT ? OFFSET ?",
             (client_id, limit, offset),
         ).fetchall()

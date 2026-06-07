@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import sqlite3
 
+import pytest
+
+from taxops.db import migrate
 from taxops.db.migrate import apply_migrations
 
 EXPECTED_TABLES = {
@@ -79,3 +82,36 @@ def test_clients_has_deleted_at_column(db_conn: sqlite3.Connection) -> None:
         for row in db_conn.execute("PRAGMA table_info(clients)").fetchall()
     }
     assert "deleted_at" in cols
+
+
+def test_failed_migration_rolls_back_schema_and_ledger(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    monkeypatch.setattr(
+        migrate,
+        "MIGRATIONS",
+        (
+            (
+                "test_failure",
+                """
+                CREATE TABLE partially_applied (id INTEGER PRIMARY KEY);
+                INSERT INTO missing_table(id) VALUES (1);
+                """,
+            ),
+        ),
+    )
+
+    with pytest.raises(sqlite3.OperationalError):
+        apply_migrations(conn)
+
+    table = conn.execute(
+        "SELECT name FROM sqlite_master WHERE name = 'partially_applied'"
+    ).fetchone()
+    ledger = conn.execute(
+        "SELECT version FROM schema_migrations WHERE version = 'test_failure'"
+    ).fetchone()
+    assert table is None
+    assert ledger is None
+    conn.close()

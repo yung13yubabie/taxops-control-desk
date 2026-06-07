@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QItemSelectionModel, Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -20,7 +20,7 @@ from ...core.clock import today_iso
 from ...i18n import error_message
 from ...i18n.status_labels import PRIORITY_LABELS, STATUS_LABELS, status_to_label
 from ...services.container import ServiceContainer
-from ...services.tasks import VALID_TASK_STATUSES, TaskValidationError
+from ...services.tasks import TaskValidationError, allowed_task_status_transitions
 from ..action_registry import FilterKey
 from ..dialogs.new_task_dialog import NewTaskDialog
 from ..dialogs.task_bulk_dialogs import (
@@ -74,6 +74,7 @@ class TasksPage(QWidget):
         self._container = container
         self._tasks: list = []
         self._task_by_id: dict[int, object] = {}
+        self._status_change_in_progress = False
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 24, 20)
@@ -279,6 +280,8 @@ class TasksPage(QWidget):
         self._refresh()
 
     def _refresh(self) -> None:
+        selected_task_ids = self._selected_task_ids()
+        current_task_id = self._selected_task_id()
         try:
             if self._filter_key == FilterKey.DUE_TODAY:
                 tasks = self._container.tasks.list_due_today(today_iso())
@@ -305,6 +308,9 @@ class TasksPage(QWidget):
             self._task_by_id = {}
             load_error = True
 
+        sorting_enabled = self._table.isSortingEnabled()
+        if sorting_enabled:
+            self._table.setSortingEnabled(False)
         self._table.setRowCount(len(self._tasks))
         client_cache: dict[int, str] = {}
         eng_client_cache: dict[int, int | None] = {}
@@ -328,12 +334,17 @@ class TasksPage(QWidget):
                 item = QTableWidgetItem(values[col])
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self._table.setItem(row_idx, col_idx, item)
+        if sorting_enabled:
+            self._table.setSortingEnabled(True)
 
         has_rows = bool(self._tasks) and not load_error
         self._error_label.setVisible(load_error)
         self._table.setVisible(has_rows)
         self._empty_state.setVisible(not load_error and not has_rows)
-        self._on_selection_changed()
+        self._select_task_ids(
+            selected_task_ids,
+            current_task_id=current_task_id,
+        )
 
     def _ordered_tasks_for_display(self, tasks: list) -> list:
         by_parent: dict[int | None, list] = {}
@@ -384,12 +395,21 @@ class TasksPage(QWidget):
                 continue
         return ids
 
-    def _select_task_ids(self, task_ids: list[int]) -> None:
-        if not task_ids:
-            return
+    def _select_task_ids(
+        self,
+        task_ids: list[int],
+        *,
+        current_task_id: int | None = None,
+    ) -> None:
         wanted = set(task_ids)
-        self._table.clearSelection()
+        selection = self._table.selectionModel()
+        if selection is None:
+            self._on_selection_changed()
+            return
+        signals_were_blocked = self._table.blockSignals(True)
+        selection.clearSelection()
         first_row: int | None = None
+        current_row: int | None = None
         for row in range(self._table.rowCount()):
             item = self._table.item(row, _COLUMN_ORDER.index("id"))
             if item is None:
@@ -399,19 +419,47 @@ class TasksPage(QWidget):
             except ValueError:
                 continue
             if task_id in wanted:
-                self._table.selectRow(row)
+                index = self._table.model().index(
+                    row, _COLUMN_ORDER.index("id")
+                )
+                selection.select(
+                    index,
+                    QItemSelectionModel.SelectionFlag.Select
+                    | QItemSelectionModel.SelectionFlag.Rows,
+                )
                 if first_row is None:
                     first_row = row
-        if first_row is not None:
-            self._table.setCurrentCell(first_row, _COLUMN_ORDER.index("title"))
+                if task_id == current_task_id:
+                    current_row = row
+        focus_row = current_row if current_row is not None else first_row
+        if focus_row is not None:
+            selection.setCurrentIndex(
+                self._table.model().index(
+                    focus_row, _COLUMN_ORDER.index("title")
+                ),
+                QItemSelectionModel.SelectionFlag.NoUpdate,
+            )
+        self._table.blockSignals(signals_were_blocked)
         self._on_selection_changed()
 
     def _on_selection_changed(self) -> None:
         selected_ids = self._selected_task_ids()
         single = len(selected_ids) == 1
-        multiple = len(selected_ids) > 1
-        self._complete_btn.setEnabled(single)
-        self._status_btn.setEnabled(single)
+        selected_task = self._task_by_id.get(selected_ids[0]) if single else None
+        terminal = (
+            selected_task is not None
+            and selected_task.status in {"done", "cancelled"}
+        )
+        has_status_transition = (
+            selected_task is not None
+            and bool(allowed_task_status_transitions(selected_task.status))
+        )
+        self._complete_btn.setEnabled(single and not terminal)
+        self._status_btn.setEnabled(
+            single
+            and has_status_transition
+            and not self._status_change_in_progress
+        )
         self._delete_btn.setEnabled(single)
         self._bulk_edit_btn.setEnabled(bool(selected_ids))
         self._bulk_delete_btn.setEnabled(bool(selected_ids))
@@ -619,22 +667,32 @@ class TasksPage(QWidget):
         self._refresh()
 
     def _on_set_status(self) -> None:
+        if self._status_change_in_progress:
+            return
         task_id = self._selected_task_id()
         if task_id is None:
             return
-        label_to_value = {STATUS_LABELS.get(s, s): s for s in VALID_TASK_STATUSES}
+        task = self._task_by_id.get(task_id)
+        if task is None:
+            return
+        allowed_statuses = allowed_task_status_transitions(task.status)
+        if not allowed_statuses:
+            return
+        label_to_value = {
+            STATUS_LABELS.get(status, status): status
+            for status in allowed_statuses
+        }
         choices = sorted(label_to_value)
-        row = self._table.currentRow()
-        cur_status_label = (self._table.item(row, _COLUMN_ORDER.index("status")) or QTableWidgetItem()).text()
-        current_idx = choices.index(cur_status_label) if cur_status_label in choices else 0
         label, ok = QInputDialog.getItem(
-            self, "切換狀態", "請選擇新狀態：", choices, current=current_idx, editable=False
+            self, "切換狀態", "請選擇新狀態：", choices, current=0, editable=False
         )
         if not ok or not label:
             return
         target = label_to_value.get(label)
-        if target is None:
+        if target is None or target == task.status:
             return
+        self._status_change_in_progress = True
+        self._status_btn.setEnabled(False)
         try:
             self._container.tasks.set_status(task_id, target)
         except TaskValidationError as err:
@@ -643,6 +701,9 @@ class TasksPage(QWidget):
         except Exception:
             QMessageBox.warning(self, "切換失敗", error_message("system.unexpected"))
             return
+        finally:
+            self._status_change_in_progress = False
+            self._on_selection_changed()
         self._refresh()
 
     def _on_delete_task(self) -> None:

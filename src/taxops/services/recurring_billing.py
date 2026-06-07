@@ -5,7 +5,6 @@ from __future__ import annotations
 import calendar
 import datetime
 import json
-import logging
 from dataclasses import dataclass
 
 from ..core.clock import now_iso, today_iso
@@ -16,8 +15,6 @@ from ..repositories.recurring_billing import (
     RecurringBillingRepository,
 )
 from .audit import AuditService
-
-_log = logging.getLogger(__name__)
 
 _VALID_FREQUENCIES = frozenset({"monthly", "quarterly", "semiannual", "annual", "custom_months"})
 _MAX_GENERATE_YEARS = 3
@@ -434,25 +431,39 @@ class RecurringBillingService:
             raise RecurringBillingError("recurring_billing.bill_to_name.empty")
         if inp.amount <= 0:
             raise RecurringBillingError("recurring_billing.amount.non_positive")
-        line = self._repo.update_line(
-            line_id=line_id,
-            bill_to_name=inp.bill_to_name,
-            description=inp.description,
-            amount=inp.amount,
-            tax_type=inp.tax_type,
-            sort_order=inp.sort_order,
-        )
-        if line is None:
-            raise RecurringBillingError("recurring_billing.line.not_found")
+        with self._conn:
+            line = self._repo.update_line(
+                line_id=line_id,
+                bill_to_name=inp.bill_to_name,
+                description=inp.description,
+                amount=inp.amount,
+                tax_type=inp.tax_type,
+                sort_order=inp.sort_order,
+            )
+            if line is None:
+                raise RecurringBillingError("recurring_billing.line.not_found")
+            self._audit.record(
+                action="recurring_billing.line.update",
+                target_type="recurring_billing_line",
+                target_id=str(line_id),
+                detail={"bill_to_name": inp.bill_to_name, "amount": inp.amount},
+            )
         return line
 
     def deactivate_line(self, line_id: int) -> LineRow:
         existing = self._repo.get_line(line_id)
         if existing is None:
             raise RecurringBillingError("recurring_billing.line.not_found")
-        line = self._repo.set_line_active(line_id, False)
-        if line is None:
-            raise RecurringBillingError("recurring_billing.line.not_found")
+        with self._conn:
+            line = self._repo.set_line_active(line_id, False)
+            if line is None:
+                raise RecurringBillingError("recurring_billing.line.not_found")
+            self._audit.record(
+                action="recurring_billing.line.deactivate",
+                target_type="recurring_billing_line",
+                target_id=str(line_id),
+                detail={"plan_id": existing.plan_id, "bill_to_name": existing.bill_to_name},
+            )
         return line
 
     # ── occurrences ────────────────────────────────────────────────────────
@@ -468,16 +479,35 @@ class RecurringBillingService:
         if plan.status == "archived":
             return []
 
+        _validate_plan_input(
+            plan.plan_name,
+            plan.frequency,
+            plan.issue_day,
+            plan.months_json,
+            plan.start_date,
+            plan.end_date,
+            plan.advance_notice_days,
+        )
+
         today = datetime.date.fromisoformat(today_iso())
         until = until_date or today + datetime.timedelta(days=_MAX_GENERATE_YEARS * 365)
 
         dates = _billing_dates(plan, until)
         lines = self._repo.list_lines(plan_id, active_only=True)
 
+        added_count = 0
         with self._conn:
             for line in lines:
                 for d in dates:
-                    self._repo.insert_occurrence_if_missing(plan_id, line.id, d.isoformat())
+                    added_count += self._repo.insert_occurrence_if_missing(
+                        plan_id, line.id, d.isoformat()
+                    )
+            self._audit.record(
+                action="recurring_billing.occurrence.generate",
+                target_type="recurring_billing_plan",
+                target_id=str(plan_id),
+                detail={"added_count": added_count},
+            )
 
         return self._repo.list_occurrences(plan_id=plan_id)
 
@@ -571,12 +601,19 @@ class RecurringBillingService:
             raise RecurringBillingError("recurring_billing.occurrence.not_found")
         if occ.status == "confirmed":
             raise RecurringBillingError("recurring_billing.occurrence.cannot_cancel_confirmed")
-        row = self._repo.update_occurrence_status(
-            occurrence_id=occurrence_id,
-            status="cancelled",
-        )
-        if row is None:
-            raise RecurringBillingError("recurring_billing.occurrence.not_found")
+        with self._conn:
+            row = self._repo.update_occurrence_status(
+                occurrence_id=occurrence_id,
+                status="cancelled",
+            )
+            if row is None:
+                raise RecurringBillingError("recurring_billing.occurrence.not_found")
+            self._audit.record(
+                action="recurring_billing.occurrence.cancel",
+                target_type="recurring_billing_occurrence",
+                target_id=str(occurrence_id),
+                detail={"previous_status": occ.status},
+            )
         return row
 
     def get_occurrence_summary(self, plan_id: int) -> dict[str, int]:

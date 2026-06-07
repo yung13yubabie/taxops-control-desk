@@ -128,14 +128,33 @@ class WorkRecordsRepository:
 
     def get_template(self, template_id: int) -> WorkflowTemplateRow | None:
         row = self._conn.execute(
-            "SELECT * FROM workflow_templates_v2 WHERE id = ? AND deleted_at IS NULL",
+            "SELECT wt.* FROM workflow_templates_v2 wt"
+            " WHERE wt.id = ? AND wt.deleted_at IS NULL"
+            " AND (wt.client_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM clients c WHERE c.id = wt.client_id AND c.deleted_at IS NULL"
+            " ))"
+            " AND (wt.engagement_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM engagements e JOIN clients c ON c.id = e.client_id"
+            "   WHERE e.id = wt.engagement_id AND e.deleted_at IS NULL"
+            "     AND c.deleted_at IS NULL"
+            " ))",
             (template_id,),
         ).fetchone()
         return _template(row) if row else None
 
     def list_templates(self) -> list[WorkflowTemplateRow]:
         rows = self._conn.execute(
-            "SELECT * FROM workflow_templates_v2 WHERE deleted_at IS NULL ORDER BY updated_at DESC, id DESC"
+            "SELECT wt.* FROM workflow_templates_v2 wt"
+            " WHERE wt.deleted_at IS NULL"
+            " AND (wt.client_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM clients c WHERE c.id = wt.client_id AND c.deleted_at IS NULL"
+            " ))"
+            " AND (wt.engagement_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM engagements e JOIN clients c ON c.id = e.client_id"
+            "   WHERE e.id = wt.engagement_id AND e.deleted_at IS NULL"
+            "     AND c.deleted_at IS NULL"
+            " ))"
+            " ORDER BY wt.updated_at DESC, wt.id DESC"
         ).fetchall()
         return [_template(r) for r in rows]
 
@@ -202,14 +221,33 @@ class WorkRecordsRepository:
 
     def get_run(self, run_id: int) -> WorkflowRunRow | None:
         row = self._conn.execute(
-            "SELECT * FROM workflow_runs WHERE id = ? AND deleted_at IS NULL",
+            "SELECT wr.* FROM workflow_runs wr"
+            " WHERE wr.id = ? AND wr.deleted_at IS NULL"
+            " AND (wr.client_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM clients c WHERE c.id = wr.client_id AND c.deleted_at IS NULL"
+            " ))"
+            " AND (wr.engagement_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM engagements e JOIN clients c ON c.id = e.client_id"
+            "   WHERE e.id = wr.engagement_id AND e.deleted_at IS NULL"
+            "     AND c.deleted_at IS NULL"
+            " ))",
             (run_id,),
         ).fetchone()
         return _run(row) if row else None
 
     def list_runs(self) -> list[WorkflowRunRow]:
         rows = self._conn.execute(
-            "SELECT * FROM workflow_runs WHERE deleted_at IS NULL ORDER BY updated_at DESC, id DESC"
+            "SELECT wr.* FROM workflow_runs wr"
+            " WHERE wr.deleted_at IS NULL"
+            " AND (wr.client_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM clients c WHERE c.id = wr.client_id AND c.deleted_at IS NULL"
+            " ))"
+            " AND (wr.engagement_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM engagements e JOIN clients c ON c.id = e.client_id"
+            "   WHERE e.id = wr.engagement_id AND e.deleted_at IS NULL"
+            "     AND c.deleted_at IS NULL"
+            " ))"
+            " ORDER BY wr.updated_at DESC, wr.id DESC"
         ).fetchall()
         return [_run(r) for r in rows]
 
@@ -285,13 +323,32 @@ class WorkRecordsRepository:
 
     def get_error_review(self, review_id: int) -> ErrorReviewRow | None:
         row = self._conn.execute(
-            "SELECT * FROM error_reviews WHERE id = ? AND deleted_at IS NULL",
+            "SELECT er.* FROM error_reviews er"
+            " WHERE er.id = ? AND er.deleted_at IS NULL"
+            " AND (er.client_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM clients c WHERE c.id = er.client_id AND c.deleted_at IS NULL"
+            " ))"
+            " AND (er.engagement_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM engagements e JOIN clients c ON c.id = e.client_id"
+            "   WHERE e.id = er.engagement_id AND e.deleted_at IS NULL"
+            "     AND c.deleted_at IS NULL"
+            " ))",
             (review_id,),
         ).fetchone()
         return _error(row) if row else None
 
     def list_error_reviews(self) -> list[ErrorReviewRow]:
         rows = self._conn.execute(
-            "SELECT * FROM error_reviews WHERE deleted_at IS NULL ORDER BY updated_at DESC, id DESC"
+            "SELECT er.* FROM error_reviews er"
+            " WHERE er.deleted_at IS NULL"
+            " AND (er.client_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM clients c WHERE c.id = er.client_id AND c.deleted_at IS NULL"
+            " ))"
+            " AND (er.engagement_id IS NULL OR EXISTS ("
+            "   SELECT 1 FROM engagements e JOIN clients c ON c.id = e.client_id"
+            "   WHERE e.id = er.engagement_id AND e.deleted_at IS NULL"
+            "     AND c.deleted_at IS NULL"
+            " ))"
+            " ORDER BY er.updated_at DESC, er.id DESC"
         ).fetchall()
         return [_error(r) for r in rows]

@@ -43,7 +43,7 @@ After automated checks pass, open the EXE (TAXOPS_DEV=1) and confirm:
   [ ] Audit log row exists for the create action
   [ ] Disabled tax-cache buttons show correct tooltip
   [ ] No fake rows, fake counts, or fake success messages
-  [ ] Window renders correctly at 1366x768 / 125% DPI / 150% DPI
+  [ ] Window renders correctly at 1366x768 / 100% / 125% / 150% / 200% DPI
 """
 
 

@@ -6,7 +6,11 @@ import os
 import pathlib
 import tempfile
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+pytestmark = pytest.mark.usefixtures("accept_document_item_template_dialog")
 
 
 def _make_app():

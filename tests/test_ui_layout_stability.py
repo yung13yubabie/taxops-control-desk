@@ -7,13 +7,19 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import QPushButton, QVBoxLayout, QWidget
 
 from taxops.services.clients import CreateClientInput
 from taxops.services.tasks import CreateTaskInput
+from taxops.ui.pages.attachments_page import AttachmentsPage
 from taxops.ui.pages.clients_page import ClientsPage
 from taxops.ui.pages.engagements_page import EngagementsPage
+from taxops.ui.main_window import _initial_window_size, _minimum_window_size
+from taxops.ui.pages.late_fee_page import LateFeePage
+from taxops.ui.pages.settings_page import SettingsPage
+from taxops.ui.style import APP_STYLESHEET
 from taxops.ui.pages.tasks_page import TasksPage
 from taxops.ui.widgets.flow_layout import FlowLayout
 
@@ -53,6 +59,116 @@ def test_flow_layout_places_children_without_manual_activate():
 
     assert one.geometry().width() < toolbar.width()
     assert two.geometry().x() > one.geometry().x()
+
+
+@pytest.mark.usefixtures("qapp")
+def test_flow_layout_can_be_destroyed_after_wrapped_children():
+    root = QWidget()
+    outer = QVBoxLayout(root)
+    toolbar = QWidget()
+    flow = FlowLayout(toolbar, h_spacing=6, v_spacing=6)
+    for label in ("One", "Two", "Three", "Four"):
+        flow.addWidget(QPushButton(label))
+    outer.addWidget(toolbar)
+
+    root.resize(120, 100)
+    root.show()
+    QApplication.processEvents()
+    root.close()
+    root.deleteLater()
+    QApplication.processEvents()
+
+
+def test_main_window_initial_size_tracks_available_geometry():
+    from taxops.ui.main_window import _initial_window_size
+
+    compact = _initial_window_size(QSize(1093, 614))
+    large = _initial_window_size(QSize(1920, 1080))
+
+    assert compact.width() <= 1093
+    assert compact.height() <= 614
+    assert large != compact
+    assert large.width() <= 1280
+    assert large.height() <= 720
+
+
+@pytest.mark.usefixtures("qapp")
+def test_main_window_can_resize_to_supported_compact_geometry(container):
+    from taxops.ui.main_window import MainWindow
+
+    window = MainWindow(container)
+    window.resize(1093, 614)
+
+    assert window.minimumWidth() <= 1093
+    assert window.minimumHeight() <= 614
+    assert window.size() == QSize(1093, 614)
+
+
+def test_global_stylesheet_has_visible_focus_and_title_tokens():
+    for selector in (
+        "QPushButton:focus",
+        "QLineEdit:focus",
+        "QComboBox:focus",
+        "QTableWidget:focus",
+        "QListWidget#MainNav:focus",
+        "QLabel#PageTitle",
+        "QLabel#SectionTitle",
+    ):
+        assert selector in APP_STYLESHEET
+
+
+@pytest.mark.usefixtures("qapp")
+def test_attachments_toolbar_wraps_at_compact_width(container):
+    page = AttachmentsPage(container)
+    page.resize(640, 614)
+    page.show()
+    QApplication.processEvents()
+
+    assert isinstance(page._toolbar_layout, FlowLayout)
+    assert page._toolbar_widget.height() > page._upload_btn.height()
+    assert all(
+        not _visible_child_overflows_page(button, page)
+        for button in (
+            page._upload_btn,
+            page._accept_btn,
+            page._reject_btn,
+            page._delete_btn,
+            page._info_btn,
+            page._open_btn,
+            page._location_btn,
+        )
+    )
+
+
+@pytest.mark.usefixtures("qapp")
+@pytest.mark.parametrize("height", [614, 720])
+def test_late_fee_content_remains_reachable_without_collapsing_tables(
+    container, height
+):
+    page = LateFeePage(container)
+    page.resize(853, height)
+    page.show()
+    QApplication.processEvents()
+
+    assert page._scroll.verticalScrollBar().maximum() > 0
+    assert page._schedule_table.height() >= 140
+    assert page._table.height() >= 140
+
+
+@pytest.mark.usefixtures("qapp")
+@pytest.mark.parametrize("width", [640, 800, 1040])
+def test_settings_content_has_no_horizontal_overflow(container, width):
+    page = SettingsPage(container)
+    page.resize(width, 614)
+    page.show()
+    QApplication.processEvents()
+
+    viewport_width = page._scroll.viewport().width()
+    assert page._settings_body.width() <= viewport_width
+    assert (
+        page._scroll.horizontalScrollBarPolicy()
+        == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    )
 
 
 @pytest.mark.usefixtures("qapp")
@@ -143,3 +259,8 @@ def test_tasks_list_is_table_first_with_client_and_status(container):
     # table is no longer capped at 520/560, and the status column keeps its width
     assert page._table.maximumWidth() > 1000
     assert page._table.columnWidth(status_col) >= _STATUS_COL_WIDTH - 1
+def test_window_sizes_fit_1366x768_at_150_percent_dpi() -> None:
+    logical_available = QSize(911, 512)
+
+    assert _minimum_window_size(logical_available).height() <= 512
+    assert _initial_window_size(logical_available).height() <= 512

@@ -97,13 +97,24 @@ class LateFeeRepository:
 
     def get(self, record_id: int) -> LateFeeRow | None:
         r = self._conn.execute(
-            "SELECT * FROM late_fee_records WHERE id = ?", (record_id,)
+            "SELECT lf.* FROM late_fee_records lf"
+            " JOIN document_requests dr ON dr.id = lf.request_id"
+            " JOIN engagements e ON e.id = dr.engagement_id"
+            " JOIN clients c ON c.id = e.client_id"
+            " WHERE lf.id = ? AND e.deleted_at IS NULL AND c.deleted_at IS NULL",
+            (record_id,),
         ).fetchone()
         return _row(r) if r else None
 
     def list_by_request(self, request_id: int) -> list[LateFeeRow]:
         rows = self._conn.execute(
-            "SELECT * FROM late_fee_records WHERE request_id = ? ORDER BY id",
+            "SELECT lf.* FROM late_fee_records lf"
+            " JOIN document_requests dr ON dr.id = lf.request_id"
+            " JOIN engagements e ON e.id = dr.engagement_id"
+            " JOIN clients c ON c.id = e.client_id"
+            " WHERE lf.request_id = ?"
+            " AND e.deleted_at IS NULL AND c.deleted_at IS NULL"
+            " ORDER BY lf.id",
             (request_id,),
         ).fetchall()
         return [_row(r) for r in rows]

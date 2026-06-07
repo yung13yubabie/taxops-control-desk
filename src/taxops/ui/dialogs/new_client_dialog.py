@@ -159,7 +159,8 @@ class NewClientDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _on_search(self) -> None:
-        assert self._registry_repo is not None
+        if self._registry_repo is None:
+            return
         # Clear previous results first — prevents stale A results showing after B fails
         self._registry_results = []
         self._registry_prefill = None

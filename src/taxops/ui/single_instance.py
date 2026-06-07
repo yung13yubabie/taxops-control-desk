@@ -68,7 +68,7 @@ class SingleInstanceGuard(QObject):
                 self._server_name,
                 server.errorString(),
             )
-            return True
+            return False
         server.newConnection.connect(self._on_new_connection)
         self._server = server
         return True

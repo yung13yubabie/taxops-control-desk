@@ -179,33 +179,33 @@ class EngagementsPage(QWidget):
         self._client_combo = QComboBox()
         self._client_combo.setMinimumWidth(260)
         filter_row.addWidget(self._client_combo)
+        self._new_btn = QPushButton("新增案件")
+        self._new_btn.setIcon(toolbar_icon("new"))
+        self._new_btn.setEnabled(False)
+        filter_row.addWidget(self._new_btn)
         filter_row.addStretch(1)
         layout.addLayout(filter_row)
 
         toolbar_widget = QWidget()
         toolbar = FlowLayout(toolbar_widget, h_spacing=6, v_spacing=6)
-        self._new_btn = QPushButton("新增案件")
         self._edit_btn = QPushButton("編輯案件")
         self._status_btn = QPushButton("切換狀態")
         self._delete_btn = QPushButton("刪除案件")
         self._open_btn = QPushButton("進入索件 →")
         self._refresh_btn = QPushButton("重新整理")
 
-        self._new_btn.setIcon(toolbar_icon("new"))
         self._edit_btn.setIcon(toolbar_icon("edit"))
         self._status_btn.setIcon(toolbar_icon("edit"))
         self._delete_btn.setIcon(toolbar_icon("delete"))
         self._open_btn.setIcon(toolbar_icon("export"))
         self._refresh_btn.setIcon(toolbar_icon("refresh"))
 
-        self._new_btn.setEnabled(False)
         self._edit_btn.setEnabled(False)
         self._status_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
         self._open_btn.setEnabled(False)
 
         for btn in (
-            self._new_btn,
             self._edit_btn,
             self._status_btn,
             self._delete_btn,
@@ -412,6 +412,7 @@ class EngagementsPage(QWidget):
         self._refresh_engagements()
 
     def _refresh_engagements(self) -> None:
+        selected_engagement_id = self._selected_engagement_id()
         try:
             if self._filter_key == FilterKey.UPCOMING:
                 today = today_iso()
@@ -455,6 +456,13 @@ class EngagementsPage(QWidget):
         has_rows = len(rows) > 0
         self._empty_state.setVisible(not has_rows)
         self._table.setVisible(has_rows)
+        self._table.clearSelection()
+        if selected_engagement_id is not None:
+            for row_idx in range(self._table.rowCount()):
+                id_item = self._table.item(row_idx, 0)
+                if id_item is not None and int(id_item.text()) == selected_engagement_id:
+                    self._table.selectRow(row_idx)
+                    break
         self._on_selection_changed()
 
     def _on_selection_changed(self) -> None:

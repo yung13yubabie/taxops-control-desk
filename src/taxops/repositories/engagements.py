@@ -10,6 +10,11 @@ from dataclasses import dataclass
 
 from ..core.clock import now_iso
 
+_ACTIVE_CLIENT_SQL = (
+    "EXISTS (SELECT 1 FROM clients c"
+    " WHERE c.id = engagements.client_id AND c.deleted_at IS NULL)"
+)
+
 
 @dataclass(frozen=True)
 class EngagementRow:
@@ -85,7 +90,9 @@ class EngagementsRepository:
 
     def get(self, engagement_id: int) -> EngagementRow | None:
         row = self._conn.execute(
-            "SELECT * FROM engagements WHERE id = ? AND deleted_at IS NULL",
+            "SELECT * FROM engagements"
+            " WHERE id = ? AND deleted_at IS NULL"
+            f" AND {_ACTIVE_CLIENT_SQL}",
             (engagement_id,),
         ).fetchone()
         return _row_to_engagement(row) if row else None
@@ -96,7 +103,8 @@ class EngagementsRepository:
             return []
         placeholders = ",".join("?" * len(ids))
         rows = self._conn.execute(
-            f"SELECT * FROM engagements WHERE id IN ({placeholders}) AND deleted_at IS NULL",
+            f"SELECT * FROM engagements WHERE id IN ({placeholders})"
+            f" AND deleted_at IS NULL AND {_ACTIVE_CLIENT_SQL}",
             ids,
         ).fetchall()
         by_id = {_row_to_engagement(r).id: _row_to_engagement(r) for r in rows}
@@ -115,6 +123,7 @@ class EngagementsRepository:
         direction = "DESC" if order_dir.upper() == "DESC" else "ASC"
         rows = self._conn.execute(
             f"SELECT * FROM engagements WHERE client_id = ? AND deleted_at IS NULL"
+            f" AND {_ACTIVE_CLIENT_SQL}"
             f" ORDER BY {col} {direction} LIMIT ? OFFSET ?",
             (client_id, limit, offset),
         ).fetchall()
@@ -122,7 +131,9 @@ class EngagementsRepository:
 
     def count_by_client(self, client_id: int) -> int:
         row = self._conn.execute(
-            "SELECT COUNT(*) AS c FROM engagements WHERE client_id = ? AND deleted_at IS NULL",
+            "SELECT COUNT(*) AS c FROM engagements"
+            " WHERE client_id = ? AND deleted_at IS NULL"
+            f" AND {_ACTIVE_CLIENT_SQL}",
             (client_id,),
         ).fetchone()
         return int(row["c"]) if row else 0
@@ -178,6 +189,7 @@ class EngagementsRepository:
         direction = "DESC" if order_dir.upper() == "DESC" else "ASC"
         rows = self._conn.execute(
             f"SELECT * FROM engagements WHERE deleted_at IS NULL"
+            f" AND {_ACTIVE_CLIENT_SQL}"
             f" ORDER BY {col} {direction} LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
@@ -187,6 +199,7 @@ class EngagementsRepository:
         rows = self._conn.execute(
             "SELECT * FROM engagements"
             " WHERE deleted_at IS NULL"
+            f"   AND {_ACTIVE_CLIENT_SQL}"
             "   AND due_date >= ? AND due_date <= ?"
             "   AND status NOT IN ('filed', 'cancelled')"
             " ORDER BY due_date ASC",
@@ -198,6 +211,7 @@ class EngagementsRepository:
         rows = self._conn.execute(
             "SELECT * FROM engagements"
             " WHERE deleted_at IS NULL"
+            f"   AND {_ACTIVE_CLIENT_SQL}"
             "   AND due_date < ?"
             "   AND status NOT IN ('filed', 'cancelled')"
             " ORDER BY due_date ASC",

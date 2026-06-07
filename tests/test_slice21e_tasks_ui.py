@@ -7,7 +7,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QItemSelectionModel
+from PySide6.QtCore import QItemSelectionModel, Qt
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from taxops.db.connection import open_connection
@@ -122,6 +122,135 @@ def test_single_selection_enables_next_step_and_shows_client(qapp, container, cl
     assert page._table.item(0, client_col).text() == "客戶一"
 
 
+def test_refresh_after_sort_preserves_selection_by_task_id(
+    qapp, container, clients
+):
+    c1, _ = clients
+    target = container.tasks.create_task(CreateTaskInput(
+        engagement_id=None, client_id=c1.id, title="Alpha",
+    ))
+    container.tasks.create_task(CreateTaskInput(
+        engagement_id=None, client_id=c1.id, title="Zulu",
+    ))
+    page = TasksPage(container)
+    from taxops.ui.pages.tasks_page import _COLUMN_ORDER
+
+    title_col = _COLUMN_ORDER.index("title")
+    id_col = _COLUMN_ORDER.index("id")
+    page._table.setSortingEnabled(True)
+    page._table.sortItems(title_col, Qt.SortOrder.AscendingOrder)
+    target_row = next(
+        row for row in range(page._table.rowCount())
+        if int(page._table.item(row, id_col).text()) == target.id
+    )
+    page._table.selectRow(target_row)
+
+    container._conn.execute(
+        "UPDATE workflow_tasks SET title = ? WHERE id = ?",
+        ("Zzz", target.id),
+    )
+    container._conn.commit()
+    page._refresh()
+
+    assert page._selected_task_id() == target.id
+    visible = {
+        int(page._table.item(row, id_col).text()):
+        page._table.item(row, title_col).text()
+        for row in range(page._table.rowCount())
+    }
+    assert visible[target.id] == "Zzz"
+
+
+def test_status_action_offers_only_legal_non_duplicate_transitions(
+    qapp, monkeypatch, container, clients
+):
+    from taxops.i18n.status_labels import status_to_label
+
+    c1, _ = clients
+    task = container.tasks.create_task(CreateTaskInput(
+        engagement_id=None, client_id=c1.id, title="Status choices",
+    ))
+    captured_choices: list[str] = []
+
+    def choose_doing(_parent, _title, _prompt, choices, **_kwargs):
+        captured_choices.extend(choices)
+        return status_to_label("doing"), True
+
+    monkeypatch.setattr(
+        "taxops.ui.pages.tasks_page.QInputDialog.getItem", choose_doing
+    )
+    page = TasksPage(container)
+    row = next(
+        row for row in range(page._table.rowCount())
+        if int(page._table.item(row, 0).text()) == task.id
+    )
+    page._table.selectRow(row)
+
+    page._on_set_status()
+
+    assert set(captured_choices) == {
+        status_to_label("doing"),
+        status_to_label("waiting_client"),
+        status_to_label("waiting_internal_review"),
+        status_to_label("cancelled"),
+    }
+    assert container.tasks.get_task(task.id).status == "doing"
+
+
+@pytest.mark.parametrize("terminal_status", ["done", "cancelled"])
+def test_terminal_task_disables_invalid_status_operations(
+    qapp, container, clients, terminal_status
+):
+    c1, _ = clients
+    task = container.tasks.create_task(CreateTaskInput(
+        engagement_id=None, client_id=c1.id, title=terminal_status,
+    ))
+    if terminal_status == "done":
+        container.tasks.complete_task(task.id)
+    else:
+        container.tasks.set_status(task.id, terminal_status)
+    page = TasksPage(container)
+    row = next(
+        row for row in range(page._table.rowCount())
+        if int(page._table.item(row, 0).text()) == task.id
+    )
+    page._table.selectRow(row)
+
+    assert not page._complete_btn.isEnabled()
+    assert not page._status_btn.isEnabled()
+
+
+def test_status_action_does_not_submit_current_status(
+    qapp, monkeypatch, container, clients
+):
+    from taxops.i18n.status_labels import status_to_label
+
+    c1, _ = clients
+    task = container.tasks.create_task(CreateTaskInput(
+        engagement_id=None, client_id=c1.id, title="No duplicate",
+    ))
+    submissions: list[tuple[int, str]] = []
+    monkeypatch.setattr(
+        "taxops.ui.pages.tasks_page.QInputDialog.getItem",
+        lambda *_args, **_kwargs: (status_to_label("todo"), True),
+    )
+    monkeypatch.setattr(
+        container.tasks,
+        "set_status",
+        lambda task_id, status: submissions.append((task_id, status)),
+    )
+    page = TasksPage(container)
+    row = next(
+        row for row in range(page._table.rowCount())
+        if int(page._table.item(row, 0).text()) == task.id
+    )
+    page._table.selectRow(row)
+
+    page._on_set_status()
+
+    assert submissions == []
+
+
 def test_bulk_create_button_writes_db_and_audit(qapp, monkeypatch, container, clients):
     c1, c2 = clients
 
@@ -144,6 +273,31 @@ def test_bulk_create_button_writes_db_and_audit(qapp, monkeypatch, container, cl
     assert page._table.rowCount() == 2
     logs = container.audit_repo.list_recent(limit=20)
     assert any(log.action == "task.bulk_create" for log in logs)
+
+
+def test_bulk_create_real_dialog_widgets_reach_page_handler(
+    qapp, monkeypatch, container, clients
+):
+    from taxops.ui.dialogs.task_bulk_dialogs import BulkCreateTasksDialog as RealDialog
+
+    class _Dialog(RealDialog):
+        def exec(self):
+            self._clients.item(0).setCheckState(Qt.CheckState.Checked)
+            self._title.setText("真實批量對話框")
+            self._due_date.set_value("2026-06-30")
+            self.accept()
+            return self.result()
+
+    monkeypatch.setattr("taxops.ui.pages.tasks_page.BulkCreateTasksDialog", _Dialog)
+    page = TasksPage(container)
+    page._on_bulk_new_tasks()
+
+    rows = container._conn.execute(
+        "SELECT client_id, title, due_date FROM workflow_tasks"
+    ).fetchall()
+    assert [tuple(row) for row in rows] == [
+        (clients[0].id, "真實批量對話框", "2026-06-30")
+    ]
 
 
 def test_bulk_edit_button_updates_selected_tasks(qapp, monkeypatch, container, clients):
@@ -173,6 +327,41 @@ def test_bulk_edit_button_updates_selected_tasks(qapp, monkeypatch, container, c
         "SELECT priority FROM workflow_tasks ORDER BY id"
     ).fetchall()
     assert [r["priority"] for r in rows] == ["high", "high"]
+
+
+def test_bulk_edit_real_dialog_fields_survive_until_page_handler(
+    qapp, monkeypatch, container, clients
+):
+    c1, _ = clients
+    task = container.tasks.create_task(CreateTaskInput(
+        engagement_id=None, client_id=c1.id, title="Real dialog", priority="low",
+    ))
+
+    from taxops.ui.dialogs.task_bulk_dialogs import BulkEditTasksDialog as RealDialog
+
+    class _Dialog(RealDialog):
+        def exec(self):
+            self._priority_enabled.setChecked(True)
+            self._priority.setCurrentIndex(self._priority.findData("high"))
+            return self.DialogCode.Accepted
+
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr("taxops.ui.pages.tasks_page.BulkEditTasksDialog", _Dialog)
+    monkeypatch.setattr(
+        "taxops.ui.pages.tasks_page.QMessageBox.warning",
+        lambda _parent, title, body: warnings.append((title, body)),
+    )
+    page = TasksPage(container)
+    page._refresh()
+    page._table.selectRow(0)
+
+    page._on_bulk_edit_tasks()
+
+    row = container._conn.execute(
+        "SELECT priority FROM workflow_tasks WHERE id = ?", (task.id,)
+    ).fetchone()
+    assert row["priority"] == "high"
+    assert warnings == []
 
 
 def test_bulk_edit_button_updates_real_dialog_field_set(qapp, monkeypatch, container, clients):
@@ -269,6 +458,40 @@ def test_make_child_button_uses_parent_dialog_and_indents_child(qapp, monkeypatc
     title_col = _COLUMN_ORDER.index("title")
     titles = [page._table.item(r, title_col).text() for r in range(page._table.rowCount())]
     assert any(t.startswith("　└ ") for t in titles)
+
+
+def test_make_child_real_parent_dialog_selection_reaches_page_handler(
+    qapp, monkeypatch, container, clients
+):
+    from taxops.ui.dialogs.task_bulk_dialogs import ParentTaskDialog as RealDialog
+
+    c1, _ = clients
+    parent = container.tasks.create_task(
+        CreateTaskInput(engagement_id=None, client_id=c1.id, title="真父待辦")
+    )
+    child = container.tasks.create_task(
+        CreateTaskInput(engagement_id=None, client_id=c1.id, title="真子待辦")
+    )
+
+    class _Dialog(RealDialog):
+        def exec(self):
+            for row in range(self._list.count()):
+                if self._list.item(row).data(Qt.ItemDataRole.UserRole) == parent.id:
+                    self._list.setCurrentRow(row)
+                    break
+            self.accept()
+            return self.result()
+
+    monkeypatch.setattr("taxops.ui.pages.tasks_page.ParentTaskDialog", _Dialog)
+    page = TasksPage(container)
+    page._refresh()
+    for row in range(page._table.rowCount()):
+        if int(page._table.item(row, 0).text()) == child.id:
+            page._table.selectRow(row)
+            break
+    page._on_make_child_task()
+
+    assert container.tasks.get_task(child.id).parent_task_id == parent.id
 
 
 def test_next_step_button_creates_context_inheriting_child(qapp, monkeypatch, container, clients):

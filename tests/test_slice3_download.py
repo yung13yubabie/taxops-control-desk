@@ -208,9 +208,16 @@ def test_download_registry_zip_unexpected_read_error_cleans_part(tmp_path) -> No
 
 
 class _FakeDownloadResponse:
-    def __init__(self, chunks: list[bytes], headers: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        chunks: list[bytes],
+        headers: dict[str, str] | None = None,
+        *,
+        final_url: str = "https://eip.fia.gov.tw/data/BGMOPEN1.zip",
+    ) -> None:
         self._chunks = list(chunks)
         self.headers = headers or {}
+        self._final_url = final_url
 
     def __enter__(self):
         return self
@@ -223,6 +230,9 @@ class _FakeDownloadResponse:
             return b""
         return self._chunks.pop(0)
 
+    def geturl(self) -> str:
+        return self._final_url
+
 
 def test_download_registry_zip_writes_atomically_on_success(tmp_path) -> None:
     from taxops.services.registry_download import download_registry_zip
@@ -234,6 +244,26 @@ def test_download_registry_zip_writes_atomically_on_success(tmp_path) -> None:
         download_registry_zip("https://eip.fia.gov.tw/data/BGMOPEN1.zip", out)
 
     assert out.read_bytes() == b"abcdef"
+    assert not (tmp_path / "out.zip.part").exists()
+
+
+def test_download_registry_zip_rejects_redirect_outside_allowlist(tmp_path) -> None:
+    from taxops.services.registry_download import DownloadError, download_registry_zip
+
+    out = tmp_path / "out.zip"
+    resp = _FakeDownloadResponse(
+        [b"malicious"],
+        final_url="https://evil.example.com/registry.zip",
+    )
+
+    with patch("urllib.request.urlopen", return_value=resp):
+        try:
+            download_registry_zip("https://eip.fia.gov.tw/data/BGMOPEN1.zip", out)
+            assert False, "should have rejected the redirect target"
+        except DownloadError as exc:
+            assert exc.code == "registry.download.url_not_allowed"
+
+    assert not out.exists()
     assert not (tmp_path / "out.zip.part").exists()
 
 

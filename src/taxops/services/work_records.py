@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
-from PySide6.QtGui import QImageReader
+from PySide6.QtGui import QImage
 
 from ..core.text import sanitize_user_text
 from ..repositories.work_records import (
@@ -17,6 +17,7 @@ from ..repositories.work_records import (
     WorkflowRunRow,
     WorkflowTemplateRow,
 )
+from ..security.image_guard import ImageGuardError, validate_image_data, validate_image_file
 from .audit import AuditService
 
 VALID_SEVERITIES = frozenset({"low", "medium", "high"})
@@ -181,13 +182,38 @@ class WorkRecordsService:
     ) -> WorkflowTemplateRow:
         if not image_path:
             return self.set_template_image_asset(template_id, None)
+        if self._repo.get_template(template_id) is None:
+            raise WorkRecordValidationError("work_record.template.not_found")
         rel_path, width, height = self.import_workflow_image_asset(Path(image_path))
-        return self.set_template_image_asset(
-            template_id,
-            rel_path,
-            width=width,
-            height=height,
-        )
+        try:
+            return self.set_template_image_asset(
+                template_id,
+                rel_path,
+                width=width,
+                height=height,
+            )
+        except Exception:
+            self._remove_workflow_image_asset(rel_path)
+            raise
+
+    def set_template_image_data(
+        self,
+        template_id: int,
+        image: QImage,
+    ) -> WorkflowTemplateRow:
+        if self._repo.get_template(template_id) is None:
+            raise WorkRecordValidationError("work_record.template.not_found")
+        rel_path, width, height = self.import_workflow_image_data(image)
+        try:
+            return self.set_template_image_asset(
+                template_id,
+                rel_path,
+                width=width,
+                height=height,
+            )
+        except Exception:
+            self._remove_workflow_image_asset(rel_path)
+            raise
 
     def import_workflow_image_asset(self, source_path: Path) -> tuple[str, int, int]:
         source = Path(source_path)
@@ -196,15 +222,89 @@ class WorkRecordsService:
             raise WorkRecordValidationError("work_record.asset.extension_invalid")
         if not source.is_file():
             raise WorkRecordValidationError("work_record.asset.not_found")
-        reader = QImageReader(str(source))
-        if not reader.canRead():
-            raise WorkRecordValidationError("work_record.asset.image_invalid")
-        size = reader.size()
+        try:
+            width, height = validate_image_file(source)
+        except (OSError, ImageGuardError) as exc:
+            raise WorkRecordValidationError("work_record.asset.image_invalid") from exc
         rel = Path("images") / f"{uuid4().hex}{ext}"
         dest = self.workflow_assets_dir / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, dest)
-        return rel.as_posix(), max(size.width(), 0), max(size.height(), 0)
+        staging = dest.with_name(f".{dest.name}.tmp")
+        try:
+            shutil.copy2(source, staging)
+            staging.replace(dest)
+        except Exception:
+            staging.unlink(missing_ok=True)
+            dest.unlink(missing_ok=True)
+            raise
+        return rel.as_posix(), width, height
+
+    def import_workflow_image_data(self, image: QImage) -> tuple[str, int, int]:
+        try:
+            width, height = validate_image_data(image)
+        except ImageGuardError as exc:
+            raise WorkRecordValidationError("work_record.asset.image_invalid") from exc
+        rel = Path("images") / f"{uuid4().hex}.png"
+        dest = self.workflow_assets_dir / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        staging = dest.with_name(f".{dest.name}.tmp")
+        try:
+            if not image.save(str(staging), "PNG"):
+                raise WorkRecordValidationError("work_record.asset.image_invalid")
+            staging.replace(dest)
+        except Exception:
+            staging.unlink(missing_ok=True)
+            dest.unlink(missing_ok=True)
+            raise
+        return rel.as_posix(), width, height
+
+    def _remove_workflow_image_asset(self, rel_path: str) -> None:
+        try:
+            asset_path = self._safe_workflow_asset_path(rel_path)
+        except WorkRecordValidationError:
+            return
+        asset_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _image_paths(context_snapshot: str | None, stages_json: str) -> set[str]:
+        paths: set[str] = set()
+        snapshot = _load_context_snapshot(context_snapshot)
+        main_image = snapshot.get("image_path")
+        if isinstance(main_image, str) and main_image:
+            paths.add(main_image)
+        for stage in _loads_stages(stages_json):
+            for item in stage.get("items", []):
+                image_path = item.get("image_path")
+                if isinstance(image_path, str) and image_path:
+                    paths.add(image_path)
+        return paths
+
+    def _remove_asset_if_unreferenced(self, rel_path: str | None) -> None:
+        if not rel_path:
+            return
+        rows = self._conn.execute(
+            "SELECT context_snapshot, stages_json FROM workflow_templates_v2"
+            " WHERE deleted_at IS NULL"
+            " UNION ALL"
+            " SELECT context_snapshot, stages_json FROM workflow_runs"
+            " WHERE deleted_at IS NULL"
+        ).fetchall()
+        for row in rows:
+            try:
+                referenced_paths = self._image_paths(
+                    row["context_snapshot"], row["stages_json"]
+                )
+            except WorkRecordValidationError:
+                # Corrupt historical JSON must not turn a committed delete/update
+                # into a reported failure or risk deleting an asset still in use.
+                return
+            if rel_path in referenced_paths:
+                return
+        self._remove_workflow_image_asset(rel_path)
+
+    def _cleanup_unreferenced_assets(self, rel_paths: set[str]) -> None:
+        for rel_path in rel_paths:
+            self._remove_asset_if_unreferenced(rel_path)
 
     def set_template_image_asset(
         self,
@@ -218,16 +318,17 @@ class WorkRecordsService:
         if template is None:
             raise WorkRecordValidationError("work_record.template.not_found")
         snapshot = _load_context_snapshot(template.context_snapshot)
+        previous_path = snapshot.get("image_path")
         clean_path = sanitize_user_text(rel_path, max_length=1000) if rel_path else ""
         if clean_path:
             asset_path = self._safe_workflow_asset_path(clean_path)
-            reader = QImageReader(str(asset_path))
-            if not reader.canRead():
-                raise WorkRecordValidationError("work_record.asset.image_invalid")
-            size = reader.size()
+            try:
+                image_width, image_height = validate_image_file(asset_path)
+            except (OSError, ImageGuardError) as exc:
+                raise WorkRecordValidationError("work_record.asset.image_invalid") from exc
             snapshot["image_path"] = clean_path
-            snapshot["image_width"] = int(width or size.width())
-            snapshot["image_height"] = int(height or size.height())
+            snapshot["image_width"] = int(width or image_width)
+            snapshot["image_height"] = int(height or image_height)
         else:
             snapshot.pop("image_path", None)
             snapshot.pop("image_width", None)
@@ -246,6 +347,112 @@ class WorkRecordsService:
                 target_id=str(updated.id),
                 detail={"has_image": bool(clean_path)},
             )
+        self._remove_asset_if_unreferenced(
+            previous_path if isinstance(previous_path, str) else None
+        )
+        return updated
+
+    def set_template_step_image_path(
+        self,
+        template_id: int,
+        *,
+        stage_id: str,
+        item_id: str,
+        image_path: str,
+    ) -> WorkflowTemplateRow:
+        self._require_template_step_target(template_id, stage_id=stage_id, item_id=item_id)
+        rel_path, width, height = self.import_workflow_image_asset(Path(image_path))
+        try:
+            return self.set_template_step_image_asset(
+                template_id,
+                stage_id=stage_id,
+                item_id=item_id,
+                rel_path=rel_path,
+                width=width,
+                height=height,
+            )
+        except Exception:
+            self._remove_workflow_image_asset(rel_path)
+            raise
+
+    def set_template_step_image_data(
+        self,
+        template_id: int,
+        *,
+        stage_id: str,
+        item_id: str,
+        image: QImage,
+    ) -> WorkflowTemplateRow:
+        self._require_template_step_target(template_id, stage_id=stage_id, item_id=item_id)
+        rel_path, width, height = self.import_workflow_image_data(image)
+        try:
+            return self.set_template_step_image_asset(
+                template_id,
+                stage_id=stage_id,
+                item_id=item_id,
+                rel_path=rel_path,
+                width=width,
+                height=height,
+            )
+        except Exception:
+            self._remove_workflow_image_asset(rel_path)
+            raise
+
+    def set_template_step_image_asset(
+        self,
+        template_id: int,
+        *,
+        stage_id: str,
+        item_id: str,
+        rel_path: str,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> WorkflowTemplateRow:
+        template = self._repo.get_template(template_id)
+        if template is None:
+            raise WorkRecordValidationError("work_record.template.not_found")
+        clean_path = sanitize_user_text(rel_path, max_length=1000)
+        if not clean_path:
+            raise WorkRecordValidationError("work_record.asset.path_invalid")
+        asset_path = self._safe_workflow_asset_path(clean_path)
+        try:
+            image_width, image_height = validate_image_file(asset_path)
+        except (OSError, ImageGuardError) as exc:
+            raise WorkRecordValidationError("work_record.asset.image_invalid") from exc
+        stages = _loads_stages(template.stages_json)
+        changed = False
+        previous_path: str | None = None
+        for stage in stages:
+            if stage.get("id") != stage_id:
+                continue
+            for item in stage.get("items", []):
+                if item.get("id") == item_id:
+                    old_path = item.get("image_path")
+                    previous_path = old_path if isinstance(old_path, str) else None
+                    item["image_path"] = clean_path
+                    item["image_width"] = int(width or image_width)
+                    item["image_height"] = int(height or image_height)
+                    changed = True
+                    break
+        if not changed:
+            raise WorkRecordValidationError("work_record.step.not_found")
+        with self._conn:
+            updated = _require_row(
+                self._repo.update_template_stages(
+                    template.id,
+                    name=template.name,
+                    stages_json=_dumps_stages(stages),
+                    bump_version=False,
+                ),
+                "work_record.template.not_found",
+            )
+            self._audit.record(
+                action="work_record.workflow_template.step_image_update",
+                target_type="workflow_template",
+                target_id=str(template.id),
+                detail={"stage_id": stage_id, "item_id": item_id, "has_image": True},
+            )
+        self._remove_asset_if_unreferenced(previous_path)
         return updated
 
     def _safe_workflow_asset_path(self, rel_path: str) -> Path:
@@ -260,10 +467,44 @@ class WorkRecordsService:
             raise WorkRecordValidationError("work_record.asset.not_found")
         return target
 
+    def _require_template_step_target(
+        self,
+        template_id: int,
+        *,
+        stage_id: str,
+        item_id: str,
+    ) -> None:
+        template = self._repo.get_template(template_id)
+        if template is None:
+            raise WorkRecordValidationError("work_record.template.not_found")
+        self._require_step_target(template.stages_json, stage_id=stage_id, item_id=item_id)
+
+    def _require_run_step_target(
+        self,
+        run_id: int,
+        *,
+        stage_id: str,
+        item_id: str,
+    ) -> None:
+        run = self._repo.get_run(run_id)
+        if run is None:
+            raise WorkRecordValidationError("work_record.run.not_found")
+        self._require_step_target(run.stages_json, stage_id=stage_id, item_id=item_id)
+
+    @staticmethod
+    def _require_step_target(stages_json: str, *, stage_id: str, item_id: str) -> None:
+        for stage in _loads_stages(stages_json):
+            if stage.get("id") != stage_id:
+                continue
+            if any(item.get("id") == item_id for item in stage.get("items", [])):
+                return
+        raise WorkRecordValidationError("work_record.step.not_found")
+
     def delete_template(self, template_id: int) -> None:
         existing = self._repo.get_template(template_id)
         if existing is None:
             raise WorkRecordValidationError("work_record.template.not_found")
+        asset_paths = self._image_paths(existing.context_snapshot, existing.stages_json)
         with self._conn:
             self._repo.soft_delete_template(template_id)
             self._audit.record(
@@ -272,11 +513,13 @@ class WorkRecordsService:
                 target_id=str(template_id),
                 detail={"name": existing.name},
             )
+        self._cleanup_unreferenced_assets(asset_paths)
 
     def delete_run(self, run_id: int) -> None:
         existing = self._repo.get_run(run_id)
         if existing is None:
             raise WorkRecordValidationError("work_record.run.not_found")
+        asset_paths = self._image_paths(existing.context_snapshot, existing.stages_json)
         with self._conn:
             self._repo.soft_delete_run(run_id)
             self._audit.record(
@@ -285,6 +528,7 @@ class WorkRecordsService:
                 target_id=str(run_id),
                 detail={"name": existing.name},
             )
+        self._cleanup_unreferenced_assets(asset_paths)
 
     def rename_run(self, run_id: int, name: str) -> WorkflowRunRow:
         existing = self._repo.get_run(run_id)
@@ -402,15 +646,43 @@ class WorkRecordsService:
         item_id: str,
         image_path: str,
     ) -> WorkflowRunRow:
+        self._require_run_step_target(run_id, stage_id=stage_id, item_id=item_id)
         rel_path, width, height = self.import_workflow_image_asset(Path(image_path))
-        return self.set_run_step_image_asset(
-            run_id,
-            stage_id=stage_id,
-            item_id=item_id,
-            rel_path=rel_path,
-            width=width,
-            height=height,
-        )
+        try:
+            return self.set_run_step_image_asset(
+                run_id,
+                stage_id=stage_id,
+                item_id=item_id,
+                rel_path=rel_path,
+                width=width,
+                height=height,
+            )
+        except Exception:
+            self._remove_workflow_image_asset(rel_path)
+            raise
+
+    def set_run_step_image_data(
+        self,
+        run_id: int,
+        *,
+        stage_id: str,
+        item_id: str,
+        image: QImage,
+    ) -> WorkflowRunRow:
+        self._require_run_step_target(run_id, stage_id=stage_id, item_id=item_id)
+        rel_path, width, height = self.import_workflow_image_data(image)
+        try:
+            return self.set_run_step_image_asset(
+                run_id,
+                stage_id=stage_id,
+                item_id=item_id,
+                rel_path=rel_path,
+                width=width,
+                height=height,
+            )
+        except Exception:
+            self._remove_workflow_image_asset(rel_path)
+            raise
 
     def set_run_step_image_asset(
         self,
@@ -429,20 +701,23 @@ class WorkRecordsService:
         if not clean_path:
             raise WorkRecordValidationError("work_record.asset.path_invalid")
         asset_path = self._safe_workflow_asset_path(clean_path)
-        reader = QImageReader(str(asset_path))
-        if not reader.canRead():
-            raise WorkRecordValidationError("work_record.asset.image_invalid")
-        size = reader.size()
+        try:
+            image_width, image_height = validate_image_file(asset_path)
+        except (OSError, ImageGuardError) as exc:
+            raise WorkRecordValidationError("work_record.asset.image_invalid") from exc
         stages = _loads_stages(run.stages_json)
         changed = False
+        previous_path: str | None = None
         for stage in stages:
             if stage.get("id") != stage_id:
                 continue
             for item in stage.get("items", []):
                 if item.get("id") == item_id:
+                    old_path = item.get("image_path")
+                    previous_path = old_path if isinstance(old_path, str) else None
                     item["image_path"] = clean_path
-                    item["image_width"] = int(width or size.width())
-                    item["image_height"] = int(height or size.height())
+                    item["image_width"] = int(width or image_width)
+                    item["image_height"] = int(height or image_height)
                     changed = True
                     break
         if not changed:
@@ -458,6 +733,7 @@ class WorkRecordsService:
                 target_id=str(run.id),
                 detail={"stage_id": stage_id, "item_id": item_id, "has_image": True},
             )
+        self._remove_asset_if_unreferenced(previous_path)
         return updated
 
     def overwrite_template_from_run(self, run_id: int) -> WorkflowTemplateRow:

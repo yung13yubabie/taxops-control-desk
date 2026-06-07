@@ -40,6 +40,10 @@ from typing import Iterator
 from ...core.clock import today_iso
 
 EXPECTED_CSV_NAME: str = "BGMOPEN1.csv"
+MAX_UNCOMPRESSED_CSV_BYTES = 1024 * 1024 * 1024
+MAX_COMPRESSION_RATIO = 100
+MAX_REGISTRY_ROWS = 5_000_000
+MAX_FIELD_CHARS = 20_000
 
 EXPECTED_HEADERS: tuple[str, ...] = (
     "營業地址",
@@ -186,21 +190,31 @@ class BGMOPEN1Reader:
     def header(self) -> ParseHeader:
         if not self._opened:
             self._open()
-        assert self._header is not None
+        if self._header is None:
+            raise BGMOPEN1FormatError("registry.csv.empty")
         return self._header
 
     def entries(self) -> Iterator[TaxRegistryEntry]:
         if not self._opened:
             self._open()
-        assert self._reader is not None
+        if self._reader is None:
+            raise BGMOPEN1FormatError("registry.csv.empty")
         if self._first_row is not None and not self._first_consumed:
             row = self._first_row
             self._first_row = None
             if len(row) == 16 and row[1].strip():
+                if any(len(value) > MAX_FIELD_CHARS for value in row):
+                    raise BGMOPEN1FormatError("registry.csv.field_too_large")
+                self._row_count += 1
                 yield _row_to_entry(row)
         for row in self._reader:
             if not row or len(row) != 16 or not row[1].strip():
                 continue
+            if self._row_count >= MAX_REGISTRY_ROWS:
+                raise BGMOPEN1FormatError("registry.csv.too_many_rows")
+            if any(len(value) > MAX_FIELD_CHARS for value in row):
+                raise BGMOPEN1FormatError("registry.csv.field_too_large")
+            self._row_count += 1
             yield _row_to_entry(row)
 
     def close(self) -> None:
@@ -219,8 +233,15 @@ class BGMOPEN1Reader:
             return
         zf = zipfile.ZipFile(str(self._zip_path))
         try:
-            if EXPECTED_CSV_NAME not in zf.namelist():
+            infos = zf.infolist()
+            if len(infos) != 1 or infos[0].filename != EXPECTED_CSV_NAME:
                 raise BGMOPEN1FormatError("registry.zip.member_missing")
+            info = infos[0]
+            if info.file_size > MAX_UNCOMPRESSED_CSV_BYTES:
+                raise BGMOPEN1FormatError("registry.zip.uncompressed_too_large")
+            ratio = info.file_size / max(info.compress_size, 1)
+            if ratio > MAX_COMPRESSION_RATIO:
+                raise BGMOPEN1FormatError("registry.zip.compression_ratio_invalid")
             raw = zf.open(EXPECTED_CSV_NAME, "r")
             text = io.TextIOWrapper(raw, encoding="utf-8", newline="")
             reader = csv.reader(text)
@@ -247,6 +268,7 @@ class BGMOPEN1Reader:
             self._reader = reader
             self._first_row = first
             self._first_consumed = consumed
+            self._row_count = 0
             self._header = ParseHeader(
                 data_freshness_raw=freshness_raw,
                 data_freshness_iso=freshness_iso,

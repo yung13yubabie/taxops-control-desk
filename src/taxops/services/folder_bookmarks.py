@@ -118,7 +118,8 @@ class FolderBookmarksService:
                 detail={"name": name, "path": path, "category": category},
             )
         row = self._repo.get(new_id)
-        assert row is not None
+        if row is None:
+            raise FolderBookmarkValidationError("folder_bookmark.not_found")
         return row
 
     def update_bookmark(self, payload: UpdateBookmarkInput) -> FolderBookmarkRow:
@@ -148,7 +149,8 @@ class FolderBookmarksService:
                 detail={"name": name, "path": path, "category": category},
             )
         row = self._repo.get(payload.bookmark_id)
-        assert row is not None
+        if row is None:
+            raise FolderBookmarkValidationError("folder_bookmark.not_found")
         return row
 
     def delete_bookmark(self, bookmark_id: int) -> None:

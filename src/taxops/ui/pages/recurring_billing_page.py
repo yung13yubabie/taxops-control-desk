@@ -6,7 +6,7 @@ import datetime
 import logging
 from collections import defaultdict
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -62,6 +62,13 @@ _WINDOW_DAYS = 90
 _SMALL_BTN = BTN_PRIMARY_SM
 _SKIP_BTN = BTN_SECONDARY_SM
 _DANGER_BTN = BTN_DANGER_SM
+_STATUS_COLORS: dict[str, str] = {
+    "pending":   STATUS_PENDING_FG,
+    "confirmed": STATUS_CONFIRMED_FG,
+    "skipped":   STATUS_SKIPPED_FG,
+    "cancelled": STATUS_ARCHIVED_FG,
+}
+
 _PLAN_TOGGLE = (
     "QPushButton { text-align: left; border: none; background: transparent; "
     "font-size: 13px; font-weight: 600; padding: 4px 8px; color: #0F172A; }"
@@ -105,10 +112,12 @@ class _OccRow(QWidget):
         row.setSpacing(12)
 
         date_lbl = QLabel(occ.expected_issue_date)
+        date_lbl.setTextFormat(Qt.TextFormat.PlainText)
         date_lbl.setFixedWidth(92)
         row.addWidget(date_lbl)
 
         bill_lbl = QLabel(line.bill_to_name)
+        bill_lbl.setTextFormat(Qt.TextFormat.PlainText)
         bill_lbl.setMinimumWidth(120)
         row.addWidget(bill_lbl)
 
@@ -116,13 +125,7 @@ class _OccRow(QWidget):
         row.addWidget(QLabel(_fmt(display_amount)))
         row.addStretch()
 
-        _COLORS = {
-            "pending":   STATUS_PENDING_FG,
-            "confirmed": STATUS_CONFIRMED_FG,
-            "skipped":   STATUS_SKIPPED_FG,
-            "cancelled": STATUS_ARCHIVED_FG,
-        }
-        color = _COLORS.get(occ.status, "#6B7280")
+        color = _STATUS_COLORS.get(occ.status, STATUS_SKIPPED_FG)
 
         if occ.status == "pending":
             s = QLabel("● 待確認")
@@ -142,6 +145,7 @@ class _OccRow(QWidget):
             row.addWidget(s)
             if occ.confirmed_invoice_no:
                 inv = QLabel(occ.confirmed_invoice_no)
+                inv.setTextFormat(Qt.TextFormat.PlainText)
                 inv.setStyleSheet(f"color: {color}; font-size: 12px;")
                 row.addWidget(inv)
         else:
@@ -152,6 +156,7 @@ class _OccRow(QWidget):
             row.addWidget(s)
             if occ.skipped_reason:
                 r = QLabel(occ.skipped_reason)
+                r.setTextFormat(Qt.TextFormat.PlainText)
                 r.setStyleSheet(f"color: {color}; font-size: 12px;")
                 row.addWidget(r)
 
@@ -294,12 +299,19 @@ class _PlanSection(QFrame):
     def _on_add_line(self) -> None:
         dlg = LineDialog(self._svc, self._plan.id, parent=self)
         if dlg.exec() == dlg.DialogCode.Accepted:
+            self._page._generate_for_client(self._plan.client_id)
             self._page._refresh()
 
     def _on_archive(self) -> None:
+        pending_warning = (
+            f"\n\n⚠ 此方案目前有 {self.pending_count} 筆待確認紀錄尚未處理，"
+            "建議先確認或跳過後再封存。"
+            if self.pending_count > 0 else ""
+        )
         reply = QMessageBox.question(
             self, "確認封存",
-            f"確定要封存方案「{self._plan.plan_name}」嗎？\n封存後不再產生新的開立紀錄。",
+            f"確定要封存方案「{self._plan.plan_name}」嗎？\n"
+            f"封存後不再產生新的開立紀錄。{pending_warning}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
@@ -364,11 +376,7 @@ class _ClientGroup(QFrame):
             h_row.addWidget(badge)
 
         self._new_plan_btn = QPushButton("+ 新增方案")
-        self._new_plan_btn.setStyleSheet(
-            "QPushButton { font-size: 11px; padding: 3px 10px; min-height: 22px; "
-            "background-color: #2563EB; color: #FFFFFF; border-radius: 4px; }"
-            "QPushButton:hover { background-color: #1D4ED8; }"
-        )
+        self._new_plan_btn.setStyleSheet(_SMALL_BTN)
         self._new_plan_btn.setVisible(False)
         h_row.addWidget(self._new_plan_btn)
 
@@ -402,6 +410,7 @@ class _ClientGroup(QFrame):
     def _on_new_plan(self) -> None:
         dlg = PlanDialog(self._svc, self._client_id, parent=self)
         if dlg.exec() == dlg.DialogCode.Accepted:
+            self._page._generate_for_client(self._client_id)
             self._page._refresh()
 
 
@@ -439,6 +448,9 @@ class RecurringBillingPage(QWidget):
         self._gen_btn = QPushButton("產生待開立紀錄")
         self._gen_btn.setToolTip("根據所有有效方案及明細產生本期預期開立紀錄")
         filter_row.addWidget(self._gen_btn)
+        self._status_lbl = QLabel()
+        self._status_lbl.setStyleSheet("color: #16A34A; font-size: 12px;")
+        filter_row.addWidget(self._status_lbl)
         outer.addWidget(filter_widget)
 
         scroll = QScrollArea()
@@ -465,42 +477,117 @@ class RecurringBillingPage(QWidget):
         self._repopulate_client_combo()
         self._rebuild_accordion()
 
-    def _on_add_plan_global(self) -> None:
-        client_id = self._client_combo.currentData()
-        if client_id == _ALL_CLIENTS or client_id is None:
-            QMessageBox.information(
-                self,
-                "請選擇客戶",
-                "新增方案前，請先在「客戶」下拉選單選擇一個特定客戶。",
-            )
-            return
-        dlg = PlanDialog(self._rb, client_id, parent=self)
-        if dlg.exec() == dlg.DialogCode.Accepted:
-            self._rebuild_accordion()
+    def _generate_for_client(self, client_id: int) -> bool:
+        """Generate occurrences for all active plans of a client (idempotent).
 
-    def _on_generate_occurrences(self) -> None:
-        self._gen_btn.setEnabled(False)
+        Called after plan/line creation from both the toolbar button and per-client
+        group headers, so the accordion shows pending rows immediately.
+        """
         try:
-            plans = self._rb.list_plans(include_archived=False)
-        except Exception:
-            _log.exception("list_plans failed in generate")
-            QMessageBox.warning(self, "錯誤", error_message("system.unexpected"))
-            self._gen_btn.setEnabled(True)
-            return
-
+            plans = self._rb.list_plans(client_id=client_id, include_archived=False)
+        except Exception as err:
+            _log.warning("generate_for_client: list_plans failed cid=%d", client_id, exc_info=True)
+            self._container.system_log.error(
+                "recurring billing auto-generation failed",
+                exc=err,
+                detail={"client_id": client_id, "stage": "list_plans"},
+            )
+            QMessageBox.warning(self, "紀錄產生失敗", error_message("system.unexpected"))
+            return False
         errors: list[str] = []
         for plan in plans:
             try:
                 self._rb.generate_occurrences(plan.id)
             except RecurringBillingError as err:
+                _log.warning("generate_for_client: plan %d failed", plan.id, exc_info=True)
+                self._container.system_log.error(
+                    "recurring billing auto-generation failed",
+                    exc=err,
+                    detail={"client_id": client_id, "plan_id": plan.id, "code": err.code},
+                )
                 errors.append(f"{plan.plan_name}: {error_message(err.code)}")
-            except Exception:
+            except Exception as err:
+                _log.warning("generate_for_client: plan %d failed", plan.id, exc_info=True)
+                self._container.system_log.error(
+                    "recurring billing auto-generation failed",
+                    exc=err,
+                    detail={"client_id": client_id, "plan_id": plan.id},
+                )
+                errors.append(f"{plan.plan_name}: {error_message('system.unexpected')}")
+        if errors:
+            QMessageBox.warning(self, "方案已儲存，但紀錄產生失敗", "\n".join(errors))
+            return False
+        return True
+
+    def _show_status(self, text: str, duration_ms: int = 4000) -> None:
+        """Display a transient status message that auto-clears after duration_ms."""
+        self._status_lbl.setText(text)
+        try:
+            self._status_timer.stop()
+        except AttributeError:
+            pass
+        self._status_timer = QTimer(self)
+        self._status_timer.setSingleShot(True)
+        self._status_timer.timeout.connect(self._status_lbl.clear)
+        self._status_timer.start(duration_ms)
+
+    def _on_add_plan_global(self) -> None:
+        client_id = self._client_combo.currentData()
+        if client_id == _ALL_CLIENTS or client_id is None:
+            return
+        dlg = PlanDialog(self._rb, client_id, parent=self)
+        if dlg.exec() == dlg.DialogCode.Accepted:
+            self._generate_for_client(client_id)
+            self._refresh()
+
+    def _on_generate_occurrences(self) -> None:
+        self._gen_btn.setEnabled(False)
+        self._status_lbl.clear()
+        try:
+            plans = self._rb.list_plans(include_archived=False)
+        except Exception as err:
+            _log.exception("list_plans failed in generate")
+            self._container.system_log.error(
+                "recurring billing generation failed",
+                exc=err,
+                detail={"stage": "list_plans"},
+            )
+            QMessageBox.warning(self, "錯誤", error_message("system.unexpected"))
+            self._gen_btn.setEnabled(True)
+            return
+
+        errors: list[str] = []
+        added_count = 0
+        for plan in plans:
+            try:
+                before_ids = {
+                    row.id for row in self._rb.list_occurrences(plan_id=plan.id)
+                }
+                generated = self._rb.generate_occurrences(plan.id)
+                added_count += sum(row.id not in before_ids for row in generated)
+            except RecurringBillingError as err:
+                self._container.system_log.error(
+                    "recurring billing generation failed",
+                    exc=err,
+                    detail={"plan_id": plan.id, "code": err.code},
+                )
+                errors.append(f"{plan.plan_name}: {error_message(err.code)}")
+            except Exception as err:
                 _log.exception("generate_occurrences failed plan=%d", plan.id)
+                self._container.system_log.error(
+                    "recurring billing generation failed",
+                    exc=err,
+                    detail={"plan_id": plan.id},
+                )
                 errors.append(f"{plan.plan_name}: 未預期錯誤")
 
         self._gen_btn.setEnabled(True)
         if errors:
             QMessageBox.warning(self, "部分方案產生失敗", "\n".join(errors))
+        elif added_count > 0:
+            self._show_status(f"✓ 已新增 {added_count} 筆待確認", 4000)
+        else:
+            self._show_status("✓ 所有方案已是最新", 3000)
         self._rebuild_accordion()
 
     def _repopulate_client_combo(self) -> None:
@@ -516,8 +603,13 @@ class RecurringBillingPage(QWidget):
                     f"{c.client_code} {c.client_name}", userData=c.id
                 )
                 self._clients_map[c.id] = c.client_name
-        except Exception:
+        except Exception as err:
             _log.warning("list_clients failed", exc_info=True)
+            self._container.system_log.error(
+                "recurring billing clients load failed",
+                exc=err,
+            )
+            self._status_lbl.setText("客戶資料載入失敗，請按「重新整理」再試。")
         self._client_combo.blockSignals(False)
 
         if prev_id is not None:
@@ -532,6 +624,11 @@ class RecurringBillingPage(QWidget):
                 item.widget().deleteLater()
 
         selected_client = self._client_combo.currentData()
+        is_all_clients = (selected_client == _ALL_CLIENTS or selected_client is None)
+        self._add_plan_btn.setEnabled(not is_all_clients)
+        self._add_plan_btn.setToolTip(
+            "" if not is_all_clients else "請先在左側選擇特定客戶"
+        )
         include_archived = self._archived_check.isChecked()
         client_id_filter = None if selected_client == _ALL_CLIENTS else selected_client
 
@@ -545,8 +642,13 @@ class RecurringBillingPage(QWidget):
                 client_id=client_id_filter,
                 include_archived=include_archived,
             )
-        except Exception:
+        except Exception as err:
             _log.warning("list_plans failed", exc_info=True)
+            self._container.system_log.error(
+                "recurring billing plans load failed",
+                exc=err,
+            )
+            self._status_lbl.setText("固定開立方案載入失敗，請按「重新整理」再試。")
             return
 
         if not plans:
@@ -571,20 +673,25 @@ class RecurringBillingPage(QWidget):
                     all_occs = self._rb.list_occurrences(
                         plan_id=plan.id, before_date=future_cutoff
                     )
-                except Exception:
+                except Exception as err:
                     _log.warning("load plan data failed plan=%d", plan.id, exc_info=True)
+                    self._container.system_log.error(
+                        "recurring billing plan detail load failed",
+                        exc=err,
+                        detail={"plan_id": plan.id},
+                    )
+                    self._status_lbl.setText(
+                        f"方案「{plan.plan_name}」明細載入失敗，請重新整理。"
+                    )
                     lines, all_occs = [], []
 
-                window_occs = sorted(
-                    (o for o in all_occs if o.expected_issue_date >= past_cutoff),
-                    key=lambda o: o.expected_issue_date,
-                    reverse=True,
-                )
+                # all_occs is already sorted ASC by expected_issue_date (repo ORDER BY)
+                window_occs = [o for o in reversed(all_occs) if o.expected_issue_date >= past_cutoff]
                 pending_count = sum(1 for o in window_occs if o.status == "pending")
                 next_date = next(
                     (
                         o.expected_issue_date
-                        for o in sorted(all_occs, key=lambda o: o.expected_issue_date)
+                        for o in all_occs
                         if o.status == "pending" and o.expected_issue_date >= today_iso
                     ),
                     None,

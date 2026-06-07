@@ -7,6 +7,23 @@ from dataclasses import dataclass
 
 from ..core.clock import now_iso
 
+_ACTIVE_PLAN_OWNER_SQL = (
+    "EXISTS (SELECT 1 FROM clients c"
+    " WHERE c.id = recurring_billing_plans.client_id AND c.deleted_at IS NULL)"
+)
+
+_ACTIVE_LINE_OWNER_SQL = (
+    "EXISTS (SELECT 1 FROM recurring_billing_plans p"
+    " JOIN clients c ON c.id = p.client_id AND c.deleted_at IS NULL"
+    " WHERE p.id = recurring_billing_lines.plan_id)"
+)
+
+_ACTIVE_OCCURRENCE_OWNER_SQL = (
+    "EXISTS (SELECT 1 FROM recurring_billing_plans p"
+    " JOIN clients c ON c.id = p.client_id AND c.deleted_at IS NULL"
+    " WHERE p.id = recurring_billing_occurrences.plan_id)"
+)
+
 
 @dataclass(frozen=True)
 class PlanRow:
@@ -169,42 +186,39 @@ class RecurringBillingRepository:
         from the freshly-inserted plan).
         """
         now = now_iso()
-        try:
-            plan_cur = self._conn.execute(
+        plan_cur = self._conn.execute(
+            """
+            INSERT INTO recurring_billing_plans
+                (client_id, plan_name, contract_ref, frequency, issue_day,
+                 months_json, start_date, end_date, advance_notice_days,
+                 status, notes, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                plan["client_id"], plan["plan_name"], plan.get("contract_ref"),
+                plan["frequency"], plan["issue_day"], plan["months_json"],
+                plan["start_date"], plan.get("end_date"),
+                plan["advance_notice_days"], "active", plan.get("notes"),
+                now, now,
+            ),
+        )
+        plan_id = plan_cur.lastrowid
+        line_ids: list[int] = []
+        for ln in lines:
+            line_cur = self._conn.execute(
                 """
-                INSERT INTO recurring_billing_plans
-                    (client_id, plan_name, contract_ref, frequency, issue_day,
-                     months_json, start_date, end_date, advance_notice_days,
-                     status, notes, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO recurring_billing_lines
+                    (plan_id, bill_to_name, description, amount,
+                     tax_type, sort_order, active, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,1,?,?)
                 """,
                 (
-                    plan["client_id"], plan["plan_name"], plan.get("contract_ref"),
-                    plan["frequency"], plan["issue_day"], plan["months_json"],
-                    plan["start_date"], plan.get("end_date"),
-                    plan["advance_notice_days"], "active", plan.get("notes"),
+                    plan_id, ln["bill_to_name"], ln.get("description"),
+                    ln["amount"], ln.get("tax_type"), ln.get("sort_order", 0),
                     now, now,
                 ),
             )
-            plan_id = plan_cur.lastrowid
-            line_ids: list[int] = []
-            for ln in lines:
-                line_cur = self._conn.execute(
-                    """
-                    INSERT INTO recurring_billing_lines
-                        (plan_id, bill_to_name, description, amount,
-                         tax_type, sort_order, active, created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,1,?,?)
-                    """,
-                    (
-                        plan_id, ln["bill_to_name"], ln.get("description"),
-                        ln["amount"], ln.get("tax_type"), ln.get("sort_order", 0),
-                        now, now,
-                    ),
-                )
-                line_ids.append(line_cur.lastrowid)
-        except Exception:
-            raise
+            line_ids.append(line_cur.lastrowid)
         plan_row = self.get_plan(plan_id)  # type: ignore[arg-type]
         if plan_row is None:
             raise RuntimeError("inserted recurring billing plan could not be read back")
@@ -218,7 +232,9 @@ class RecurringBillingRepository:
 
     def get_plan(self, plan_id: int) -> PlanRow | None:
         r = self._conn.execute(
-            "SELECT * FROM recurring_billing_plans WHERE id = ?", (plan_id,)
+            "SELECT * FROM recurring_billing_plans WHERE id = ?"
+            f" AND {_ACTIVE_PLAN_OWNER_SQL}",
+            (plan_id,),
         ).fetchone()
         return _plan(r) if r else None
 
@@ -265,7 +281,7 @@ class RecurringBillingRepository:
     def list_plans(
         self, client_id: int | None = None, include_archived: bool = False
     ) -> list[PlanRow]:
-        clauses: list[str] = []
+        clauses: list[str] = [_ACTIVE_PLAN_OWNER_SQL]
         params: list[object] = []
         if client_id is not None:
             clauses.append("client_id = ?")
@@ -304,7 +320,9 @@ class RecurringBillingRepository:
 
     def get_line(self, line_id: int) -> LineRow | None:
         r = self._conn.execute(
-            "SELECT * FROM recurring_billing_lines WHERE id = ?", (line_id,)
+            "SELECT * FROM recurring_billing_lines WHERE id = ?"
+            f" AND {_ACTIVE_LINE_OWNER_SQL}",
+            (line_id,),
         ).fetchone()
         return _line(r) if r else None
 
@@ -340,12 +358,17 @@ class RecurringBillingRepository:
     def list_lines(self, plan_id: int, active_only: bool = False) -> list[LineRow]:
         if active_only:
             rows = self._conn.execute(
-                "SELECT * FROM recurring_billing_lines WHERE plan_id=? AND active=1 ORDER BY sort_order, id",
+                "SELECT * FROM recurring_billing_lines"
+                " WHERE plan_id=? AND active=1"
+                f" AND {_ACTIVE_LINE_OWNER_SQL}"
+                " ORDER BY sort_order, id",
                 (plan_id,),
             ).fetchall()
         else:
             rows = self._conn.execute(
-                "SELECT * FROM recurring_billing_lines WHERE plan_id=? ORDER BY sort_order, id",
+                "SELECT * FROM recurring_billing_lines WHERE plan_id=?"
+                f" AND {_ACTIVE_LINE_OWNER_SQL}"
+                " ORDER BY sort_order, id",
                 (plan_id,),
             ).fetchall()
         return [_line(r) for r in rows]
@@ -357,9 +380,9 @@ class RecurringBillingRepository:
         plan_id: int,
         line_id: int,
         expected_issue_date: str,
-    ) -> None:
+    ) -> int:
         now = now_iso()
-        self._conn.execute(
+        cur = self._conn.execute(
             """
             INSERT OR IGNORE INTO recurring_billing_occurrences
                 (plan_id, line_id, expected_issue_date, status, created_at, updated_at)
@@ -367,13 +390,13 @@ class RecurringBillingRepository:
             """,
             (plan_id, line_id, expected_issue_date, now, now),
         )
-
-    def commit(self) -> None:
-        self._conn.commit()
+        return cur.rowcount
 
     def get_occurrence(self, occurrence_id: int) -> OccurrenceRow | None:
         r = self._conn.execute(
-            "SELECT * FROM recurring_billing_occurrences WHERE id = ?", (occurrence_id,)
+            "SELECT * FROM recurring_billing_occurrences WHERE id = ?"
+            f" AND {_ACTIVE_OCCURRENCE_OWNER_SQL}",
+            (occurrence_id,),
         ).fetchone()
         return _occ(r) if r else None
 
@@ -412,7 +435,7 @@ class RecurringBillingRepository:
         status: str | None = None,
         before_date: str | None = None,
     ) -> list[OccurrenceRow]:
-        clauses: list[str] = []
+        clauses: list[str] = [_ACTIVE_OCCURRENCE_OWNER_SQL]
         params: list[object] = []
         if plan_id is not None:
             clauses.append("plan_id = ?")
@@ -435,10 +458,11 @@ class RecurringBillingRepository:
 
     def count_occurrences_by_status(self, plan_id: int) -> dict[str, int]:
         rows = self._conn.execute(
-            """
+            f"""
             SELECT status, COUNT(*) AS cnt
               FROM recurring_billing_occurrences
              WHERE plan_id = ?
+               AND {_ACTIVE_OCCURRENCE_OWNER_SQL}
              GROUP BY status
             """,
             (plan_id,),

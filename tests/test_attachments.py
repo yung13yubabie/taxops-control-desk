@@ -167,6 +167,54 @@ def test_upload_stored_filename_not_original(conn, svc, tmp_path):
     assert "original_name" not in row.stored_filename
 
 
+def test_resolve_file_path_rejects_direct_sql_path_traversal(
+    conn, svc, tmp_path
+):
+    _, eng_id = _seed(conn)
+    source = _make_file(tmp_path)
+    row = svc.upload_attachment(UploadAttachmentInput(
+        engagement_id=eng_id,
+        request_id=None,
+        source_path=source,
+    ))
+    outside = tmp_path / "outside.pdf"
+    outside.write_bytes(b"outside")
+    conn.execute(
+        "UPDATE attachments SET stored_filename = ? WHERE id = ?",
+        ("../outside.pdf", row.id),
+    )
+    conn.commit()
+
+    with pytest.raises(AttachmentValidationError) as exc:
+        svc.resolve_file_path(row.id)
+
+    assert exc.value.code == "attachment.path_traversal"
+
+
+def test_resolve_file_path_requires_existing_regular_file(
+    conn, svc, attachments_dir, tmp_path
+):
+    _, eng_id = _seed(conn)
+    source = _make_file(tmp_path)
+    row = svc.upload_attachment(UploadAttachmentInput(
+        engagement_id=eng_id,
+        request_id=None,
+        source_path=source,
+    ))
+    directory = attachments_dir / "not-a-file"
+    directory.mkdir()
+    conn.execute(
+        "UPDATE attachments SET stored_filename = ? WHERE id = ?",
+        ("not-a-file", row.id),
+    )
+    conn.commit()
+
+    with pytest.raises(AttachmentValidationError) as exc:
+        svc.resolve_file_path(row.id)
+
+    assert exc.value.code == "attachment.not_found"
+
+
 def test_upload_creates_version_record(conn, svc, tmp_path):
     _, eng_id = _seed(conn)
     f = _make_file(tmp_path)

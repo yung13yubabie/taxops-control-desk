@@ -42,6 +42,12 @@ _ALLOWED_TASK_TRANSITIONS: dict[str, frozenset[str]] = {
 }
 
 
+def allowed_task_status_transitions(current_status: str) -> frozenset[str]:
+    return _ALLOWED_TASK_TRANSITIONS.get(current_status, frozenset()) - {
+        current_status
+    }
+
+
 class TaskValidationError(Exception):
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -78,6 +84,10 @@ class TasksService:
         self._conn = repo._conn
 
     def create_task(self, payload: CreateTaskInput) -> TaskRow:
+        with self._conn:
+            return self._create_task_uncommitted(payload)
+
+    def _create_task_uncommitted(self, payload: CreateTaskInput) -> TaskRow:
         if payload.engagement_id is not None:
             if not self._repo.engagement_exists(payload.engagement_id):
                 raise TaskValidationError("task.engagement_not_found")
@@ -110,30 +120,29 @@ class TasksService:
         next_step = sanitize_user_text(payload.next_step, max_length=500) or None
         notes = sanitize_user_text(payload.notes, max_length=2000) or None
 
-        with self._conn:
-            row = self._repo.insert(
-                engagement_id=payload.engagement_id,
-                client_id=effective_client_id,
-                title=title,
-                assignee=assignee,
-                due_date=due_date,
-                priority=payload.priority,
-                status="todo",
-                next_step=next_step,
-                notes=notes,
-            )
-            self._audit.record(
-                action="task.create",
-                target_type="task",
-                target_id=str(row.id),
-                detail={
-                    "engagement_id": payload.engagement_id,
-                    "client_id": effective_client_id,
-                    "title": row.title,
-                    "priority": row.priority,
-                    "due_date": row.due_date,
-                },
-            )
+        row = self._repo.insert(
+            engagement_id=payload.engagement_id,
+            client_id=effective_client_id,
+            title=title,
+            assignee=assignee,
+            due_date=due_date,
+            priority=payload.priority,
+            status="todo",
+            next_step=next_step,
+            notes=notes,
+        )
+        self._audit.record(
+            action="task.create",
+            target_type="task",
+            target_id=str(row.id),
+            detail={
+                "engagement_id": payload.engagement_id,
+                "client_id": effective_client_id,
+                "title": row.title,
+                "priority": row.priority,
+                "due_date": row.due_date,
+            },
+        )
         return row
 
     def complete_task(self, task_id: int, *, completion_note: str | None = None) -> TaskRow:
@@ -182,20 +191,23 @@ class TasksService:
         return row
 
     def delete_task(self, task_id: int) -> None:
+        with self._conn:
+            self._delete_task_uncommitted(task_id)
+
+    def _delete_task_uncommitted(self, task_id: int) -> None:
         existing = self._repo.get(task_id)
         if existing is None:
             raise TaskValidationError("task.not_found")
         # Slice 21D: forbid deleting a parent that still has live children.
         if self._repo.count_children(task_id) > 0:
             raise TaskValidationError("task.delete.has_children")
-        with self._conn:
-            self._repo.delete(task_id)
-            self._audit.record(
-                action="task.delete",
-                target_type="task",
-                target_id=str(task_id),
-                detail={"title": existing.title},
-            )
+        self._repo.delete(task_id)
+        self._audit.record(
+            action="task.delete",
+            target_type="task",
+            target_id=str(task_id),
+            detail={"title": existing.title},
+        )
 
     # ── Slice 21D: parent/child + bulk CRUD ──────────────────────────
 
@@ -289,24 +301,27 @@ class TasksService:
         ``task.create`` audits also fire (one per row).
         """
         created: list[TaskRow] = []
-        for cid in client_ids:
-            try:
-                row = self.create_task(CreateTaskInput(
-                    engagement_id=None,
-                    client_id=cid,
-                    title=template.title,
-                    assignee=template.assignee,
-                    due_date=template.due_date,
-                    priority=template.priority,
-                    next_step=template.next_step,
-                    notes=template.notes,
-                ))
-                created.append(row)
-            except TaskValidationError as exc:
-                _log.warning("create_tasks_bulk: skipped client_id=%r reason=%s", cid, exc.code)
-                continue
-        if created:
-            with self._conn:
+        with self._conn:
+            for cid in client_ids:
+                try:
+                    row = self._create_task_uncommitted(CreateTaskInput(
+                        engagement_id=None,
+                        client_id=cid,
+                        title=template.title,
+                        assignee=template.assignee,
+                        due_date=template.due_date,
+                        priority=template.priority,
+                        next_step=template.next_step,
+                        notes=template.notes,
+                    ))
+                    created.append(row)
+                except TaskValidationError as exc:
+                    _log.warning(
+                        "create_tasks_bulk: skipped client_id=%r reason=%s",
+                        cid,
+                        exc.code,
+                    )
+            if created:
                 self._audit.record(
                     action="task.bulk_create",
                     target_type="task",
@@ -335,13 +350,35 @@ class TasksService:
             return 0
         normalized_fields = self._normalize_bulk_update_fields(fields)
         updated = 0
-        for tid in task_ids:
-            existing = self._repo.get(tid)
-            if existing is None:
-                continue
-            try:
+        with self._conn:
+            for tid in task_ids:
+                existing = self._repo.get(tid)
+                if existing is None:
+                    continue
                 if "status" in normalized_fields:
-                    self.set_status(tid, normalized_fields["status"])
+                    status = normalized_fields["status"]
+                    allowed = _ALLOWED_TASK_TRANSITIONS.get(
+                        existing.status, frozenset()
+                    )
+                    if status not in allowed:
+                        _log.warning(
+                            "update_tasks_bulk: skipped task_id=%r reason=%s",
+                            tid,
+                            "task.status.transition_invalid",
+                        )
+                        continue
+                    row = self._repo.update_status(tid, status)
+                    if row is None:
+                        continue
+                    self._audit.record(
+                        action="task.status_change",
+                        target_type="task",
+                        target_id=str(tid),
+                        detail={
+                            "status": status,
+                            "previous_status": existing.status,
+                        },
+                    )
                 if any(k in normalized_fields for k in ("priority", "assignee", "due_date", "next_step", "notes")):
                     refreshed = self._repo.get(tid) or existing
                     self._repo.update(
@@ -354,20 +391,17 @@ class TasksService:
                         notes=normalized_fields.get("notes", refreshed.notes),
                     )
                 updated += 1
-            except TaskValidationError as exc:
-                _log.warning("update_tasks_bulk: skipped task_id=%r reason=%s", tid, exc.code)
-                continue
-        if updated:
-            self._audit.record(
-                action="task.bulk_update",
-                target_type="task",
-                target_id=",".join(str(i) for i in task_ids),
-                detail={
-                    "updated_count": updated,
-                    "skipped_count": len(task_ids) - updated,
-                    "fields": list(normalized_fields.keys()),
-                },
-            )
+            if updated:
+                self._audit.record(
+                    action="task.bulk_update",
+                    target_type="task",
+                    target_id=",".join(str(i) for i in task_ids),
+                    detail={
+                        "updated_count": updated,
+                        "skipped_count": len(task_ids) - updated,
+                        "fields": list(normalized_fields.keys()),
+                    },
+                )
         return updated
 
     def _normalize_bulk_update_fields(self, fields: dict) -> dict:
@@ -419,23 +453,27 @@ class TasksService:
         children (same protection as single delete). Returns deleted count.
         """
         deleted = 0
-        for tid in task_ids:
-            try:
-                self.delete_task(tid)
-                deleted += 1
-            except TaskValidationError as exc:
-                _log.warning("delete_tasks_bulk: skipped task_id=%r reason=%s", tid, exc.code)
-                continue
-        if deleted:
-            self._audit.record(
-                action="task.bulk_delete",
-                target_type="task",
-                target_id=",".join(str(i) for i in task_ids),
-                detail={
-                    "deleted_count": deleted,
-                    "skipped_count": len(task_ids) - deleted,
-                },
-            )
+        with self._conn:
+            for tid in task_ids:
+                try:
+                    self._delete_task_uncommitted(tid)
+                    deleted += 1
+                except TaskValidationError as exc:
+                    _log.warning(
+                        "delete_tasks_bulk: skipped task_id=%r reason=%s",
+                        tid,
+                        exc.code,
+                    )
+            if deleted:
+                self._audit.record(
+                    action="task.bulk_delete",
+                    target_type="task",
+                    target_id=",".join(str(i) for i in task_ids),
+                    detail={
+                        "deleted_count": deleted,
+                        "skipped_count": len(task_ids) - deleted,
+                    },
+                )
         return deleted
 
     def get_task(self, task_id: int) -> TaskRow | None:

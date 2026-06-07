@@ -218,6 +218,33 @@ def test_list_by_request_multiple(conn, svc):
     assert len(records) == 2
 
 
+def test_distinct_calculation_actions_create_separate_versions_and_audits(conn, svc):
+    req_id = _seed_request(conn, "vat")
+
+    first = svc.calculate_and_save(
+        CalculateLateFeeInput(
+            request_id=req_id, overdue_days=4, base_amount=1000.0
+        )
+    )
+    second = svc.calculate_and_save(
+        CalculateLateFeeInput(
+            request_id=req_id, overdue_days=7, base_amount=2000.0
+        )
+    )
+
+    assert first.id != second.id
+    assert len(svc.list_by_request(req_id)) == 2
+    audit_count = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM audit_logs
+        WHERE action = 'late_fee.calculate'
+          AND target_type = 'late_fee_record'
+        """
+    ).fetchone()[0]
+    assert audit_count == 2
+
+
 def test_list_by_request_empty(conn, svc):
     req_id = _seed_request(conn, "vat")
     assert svc.list_by_request(req_id) == []

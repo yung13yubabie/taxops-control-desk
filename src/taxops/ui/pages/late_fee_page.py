@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -72,10 +74,24 @@ class LateFeePage(QWidget):
         super().__init__(parent)
         self._container = container
         self._history: list = []
+        self._calculating = False
 
-        outer = QVBoxLayout(self)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        root.addWidget(self._scroll)
+
+        self._scroll_body = QWidget()
+        outer = QVBoxLayout(self._scroll_body)
         outer.setContentsMargins(24, 20, 24, 20)
         outer.setSpacing(16)
+        self._scroll.setWidget(self._scroll_body)
 
         title = QLabel("滯納金試算")
         title.setObjectName("PageTitle")
@@ -105,6 +121,7 @@ class LateFeePage(QWidget):
         form_box = QGroupBox("試算參數")
         form_layout = QFormLayout(form_box)
         form_layout.setSpacing(10)
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
 
         self._year_spin = QSpinBox()
         self._year_spin.setRange(2000, 2100)
@@ -159,6 +176,7 @@ class LateFeePage(QWidget):
         )
         self._schedule_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._schedule_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self._schedule_table.setMinimumHeight(160)
         self._schedule_table.setMaximumHeight(240)
         outer.addWidget(self._schedule_table)
         self._schedule_note = QLabel("")
@@ -178,6 +196,7 @@ class LateFeePage(QWidget):
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.setMinimumHeight(180)
         outer.addWidget(self._table)
 
         self._manual_check.toggled.connect(self._on_mode_changed)
@@ -350,6 +369,17 @@ class LateFeePage(QWidget):
             )
 
     def _on_calculate(self) -> None:
+        if self._calculating:
+            return
+        self._calculating = True
+        self._calc_btn.setEnabled(False)
+        try:
+            self._calculate()
+        finally:
+            self._calculating = False
+            self._calc_btn.setEnabled(True)
+
+    def _calculate(self) -> None:
         try:
             last_payment_date = self._last_payment_date.validated_value()
             actual_payment_date = self._actual_payment_date.validated_value()

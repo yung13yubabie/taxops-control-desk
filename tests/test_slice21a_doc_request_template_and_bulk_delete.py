@@ -201,6 +201,36 @@ def test_template_dialog_persists_selection_on_accept(container):
 
 
 @pytest.mark.usefixtures("qapp")
+def test_template_dialog_persist_failure_does_not_accept(
+    container, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+    from taxops.ui.dialogs.document_item_template_dialog import (
+        DocumentItemTemplateDialog,
+    )
+
+    dialog = DocumentItemTemplateDialog(container, tax_type="vat")
+    dialog.show()
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        container.settings,
+        "set_setting",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("disk full")),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda _parent, title, message: warnings.append((title, message)),
+    )
+
+    dialog.accept()
+
+    assert dialog.result() != dialog.DialogCode.Accepted
+    assert dialog.isVisible()
+    assert warnings and warnings[0][0] == "儲存失敗"
+
+
+@pytest.mark.usefixtures("qapp")
 def test_template_dialog_supports_custom_items(container):
     """Custom items added via the input box appear in selected_items() on accept."""
     from taxops.ui.dialogs.document_item_template_dialog import (

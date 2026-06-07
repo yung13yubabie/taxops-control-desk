@@ -49,8 +49,8 @@ class SettingsService:
             raise SettingsValidationError("settings.save.failed")
         if key == "display.local_user_name" and not cleaned:
             cleaned = "local_user"
-        self._repo.upsert(key, cleaned)
         with self._conn:
+            self._repo.upsert(key, cleaned)
             self._audit.record(
                 action="settings.update",
                 target_type="setting",

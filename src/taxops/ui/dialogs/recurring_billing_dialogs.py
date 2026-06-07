@@ -22,6 +22,7 @@ import logging
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -92,17 +93,37 @@ class _BulkPasteDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("批量貼上開立明細")
         self.setModal(True)
-        self.setMinimumWidth(560)
+        self.setMinimumSize(680, 520)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 20, 20, 20)
         outer.setSpacing(12)
 
-        outer.addWidget(QLabel(
-            "請貼上以 Tab 分隔的明細列。每列格式：\n"
-            "開立對象 [Tab] 金額 [Tab] 稅別（可空） [Tab] 說明（可空）\n"
-            "空行會自動跳過；錯誤列會顯示行號，且不會部分寫入。"
-        ))
+        hint = QLabel(
+            "從 Excel / 試算表複製四欄後貼上；每一列是一個開立對象。\n"
+            "欄位順序：開立對象、金額、稅別（可空）、說明（可空）。"
+        )
+        hint.setWordWrap(True)
+        outer.addWidget(hint)
+
+        sample = QLabel(
+            "範例：\n"
+            "台積電\t120000\tvat\t月度顧問費\n"
+            "聯發科\t80000\tservice\t顧問服務"
+        )
+        sample.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        sample.setStyleSheet(
+            "font-family: Consolas, monospace; background: #F8FAFC; "
+            "border: 1px solid #CBD5E1; padding: 8px;"
+        )
+        outer.addWidget(sample)
+
+        tool_row = QHBoxLayout()
+        paste_btn = QPushButton("從剪貼簿貼上")
+        paste_btn.clicked.connect(self._paste_clipboard)
+        tool_row.addWidget(paste_btn)
+        tool_row.addStretch(1)
+        outer.addLayout(tool_row)
 
         self._text = QTextEdit()
         self._text.setPlaceholderText(
@@ -123,6 +144,9 @@ class _BulkPasteDialog(QDialog):
     def text(self) -> str:
         return self._text.toPlainText()
 
+    def _paste_clipboard(self) -> None:
+        self._text.setPlainText(QApplication.clipboard().text())
+
 
 class PlanDialog(QDialog):
     """Create or edit a recurring billing plan."""
@@ -142,7 +166,7 @@ class PlanDialog(QDialog):
 
         self.setWindowTitle("新增方案" if plan is None else "編輯方案")
         self.setModal(True)
-        self.setMinimumWidth(560 if self._create_mode else 480)
+        self.setMinimumWidth(760 if self._create_mode else 560)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 20, 20, 20)
@@ -152,6 +176,7 @@ class PlanDialog(QDialog):
         contract_group = QGroupBox("合約資訊")
         form = QFormLayout(contract_group)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
 
         self._name = QLineEdit()
         self._name.setMaxLength(200)
@@ -230,10 +255,13 @@ class PlanDialog(QDialog):
                 QTableWidget.SelectionBehavior.SelectRows
             )
             header = self._lines_table.horizontalHeader()
+            header.setMinimumSectionSize(96)
             header.setSectionResizeMode(_LINE_COL_BILL_TO, QHeaderView.ResizeMode.Stretch)
-            header.setSectionResizeMode(_LINE_COL_AMOUNT, QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(_LINE_COL_TAX_TYPE, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(_LINE_COL_AMOUNT, QHeaderView.ResizeMode.Fixed)
+            header.setSectionResizeMode(_LINE_COL_TAX_TYPE, QHeaderView.ResizeMode.Fixed)
             header.setSectionResizeMode(_LINE_COL_DESCRIPTION, QHeaderView.ResizeMode.Stretch)
+            self._lines_table.setColumnWidth(_LINE_COL_AMOUNT, 130)
+            self._lines_table.setColumnWidth(_LINE_COL_TAX_TYPE, 120)
             self._lines_table.setMinimumHeight(160)
             lines_layout.addWidget(self._lines_table)
 
@@ -510,7 +538,7 @@ class LineDialog(QDialog):
 
         self.setWindowTitle("新增明細" if line is None else "編輯明細")
         self.setModal(True)
-        self.setMinimumWidth(420)
+        self.setMinimumWidth(560)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 20, 20, 20)
@@ -518,13 +546,16 @@ class LineDialog(QDialog):
 
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
 
         self._bill_to = QLineEdit()
         self._bill_to.setMaxLength(200)
+        self._bill_to.setMinimumWidth(320)
         self._bill_to.setPlaceholderText("必填，例：台積電EDA部")
         form.addRow(QLabel("開立對象 *"), self._bill_to)
 
         self._amount = QLineEdit()
+        self._amount.setMinimumWidth(180)
         self._amount.setPlaceholderText("整數，例：120000")
         form.addRow(QLabel("金額 (NT$) *"), self._amount)
 
@@ -734,6 +765,7 @@ class SkipOccurrenceDialog(QDialog):
         buttons = QDialogButtonBox()
         self._skip_btn = buttons.addButton("確定跳過", QDialogButtonBox.ButtonRole.AcceptRole)
         cancel_btn = buttons.addButton("取消", QDialogButtonBox.ButtonRole.RejectRole)
+        self._skip_btn.setDefault(True)
         outer.addWidget(buttons)
 
         self._skip_btn.clicked.connect(self._on_skip)

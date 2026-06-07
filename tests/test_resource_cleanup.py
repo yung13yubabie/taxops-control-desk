@@ -17,7 +17,7 @@ def test_tempfile_mkdtemp_is_isolated_under_pytest_tmp_path(tmp_path: Path) -> N
 def test_settings_page_worker_is_deleted_after_async_completion() -> None:
     source = Path("src/taxops/ui/pages/settings_page.py").read_text(encoding="utf-8")
 
-    assert "worker.deleteLater()" in source
+    assert "worker.finished.connect(worker.deleteLater)" in source
 
 
 def test_resource_hygiene_script_checks_processes_ports_and_tcp_states() -> None:

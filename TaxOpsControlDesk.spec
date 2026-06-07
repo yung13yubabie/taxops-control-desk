@@ -5,6 +5,9 @@ Output: dist/TaxOpsControlDesk/TaxOpsControlDesk.exe
 Run with:  pyinstaller TaxOpsControlDesk.spec --noconfirm --clean
 """
 
+from PyInstaller.utils.hooks import collect_submodules
+
+
 a = Analysis(
     ["build_tools/pyinstaller_entry.py"],
     pathex=["src"],
@@ -25,24 +28,7 @@ a = Analysis(
         "jinja2.compiler",
         "jinja2.runtime",
         "jinja2.filters",
-        # All taxops migration modules (imported by __init__ by name)
-        "taxops.db.migrations._m0001_initial",
-        "taxops.db.migrations._m0002_tax_cache",
-        "taxops.db.migrations._m0003_soft_delete",
-        "taxops.db.migrations._m0004_engagements",
-        "taxops.db.migrations._m0005_workflow_tasks",
-        "taxops.db.migrations._m0006_message_templates",
-        "taxops.db.migrations._m0007_generated_messages",
-        "taxops.db.migrations._m0008_review_notes",
-        "taxops.db.migrations._m0009_late_fee",
-        "taxops.db.migrations._m0010_attachments",
-        "taxops.db.migrations._m0011_backup",
-        "taxops.db.migrations._m0012_fts5",
-        "taxops.db.migrations._m0013_client_lease",
-        "taxops.db.migrations._m0014_nullable_engagement",
-        "taxops.db.migrations._m0015_recurring_billing",
-        "taxops.db.migrations._m0016_rename_amount_cents",
-    ],
+    ] + collect_submodules("taxops.db.migrations"),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

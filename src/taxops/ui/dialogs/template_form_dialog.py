@@ -38,6 +38,44 @@ _TYPE_CHOICES = [
     ("custom", TEMPLATE_TYPE_LABELS["custom"]),
 ]
 
+_VARIABLES_BY_TYPE: dict[str, tuple[str, ...]] = {
+    "initial_request": (
+        "client_name",
+        "tax_id",
+        "contact_person",
+        "engagement_name",
+        "period_name",
+        "tax_type_name",
+        "missing_items",
+        "invalid_items",
+        "incomplete_items",
+        "due_date",
+        "notes",
+    ),
+    "follow_up": (
+        "client_name",
+        "contact_person",
+        "engagement_name",
+        "period_name",
+        "tax_type_name",
+        "missing_items",
+        "invalid_items",
+        "incomplete_items",
+        "due_date",
+        "notes",
+    ),
+    "payment_follow_up": (
+        "client_name",
+        "tax_id",
+        "contact_person",
+        "payment_records",
+        "outstanding_amount",
+        "overdue_amount",
+        "payment_due_date",
+        "notes",
+    ),
+}
+
 _BODY_FOCUS_ERRORS = frozenset({
     "template.body.required",
     "template.body.syntax_error",
@@ -97,13 +135,10 @@ class TemplateFormDialog(QDialog):
 
         var_col = QVBoxLayout()
         var_col.setSpacing(4)
-        var_col.addWidget(QLabel("可用欄位（雙擊插入）"))
+        self._var_title = QLabel()
+        var_col.addWidget(self._var_title)
         self._var_list = QListWidget()
         self._var_list.setMaximumWidth(180)
-        for key in sorted(ALLOWED_VARIABLES, key=lambda value: VARIABLE_LABELS[value]):
-            item = QListWidgetItem(VARIABLE_LABELS[key])
-            item.setData(Qt.ItemDataRole.UserRole, key)
-            self._var_list.addItem(item)
         var_col.addWidget(self._var_list)
 
         body_area.addLayout(body_col, stretch=3)
@@ -120,6 +155,7 @@ class TemplateFormDialog(QDialog):
         self._save_btn.clicked.connect(self.on_save)
         cancel_btn.clicked.connect(self.reject)
         self._var_list.itemDoubleClicked.connect(self._on_insert_variable)
+        self._type.currentIndexChanged.connect(self._refresh_variable_list)
 
         if is_edit:
             self._name.setText(existing.name)
@@ -137,10 +173,26 @@ class TemplateFormDialog(QDialog):
             idx = self._type.findData("custom")
             if idx >= 0:
                 self._type.setCurrentIndex(idx)
+        self._refresh_variable_list()
 
     def _on_insert_variable(self, item: QListWidgetItem) -> None:
         self._body.insertPlainText(f"【{item.text()}】")
         self._body.setFocus()
+
+    def _refresh_variable_list(self) -> None:
+        template_type = str(self._type.currentData() or "custom")
+        type_label = TEMPLATE_TYPE_LABELS.get(template_type, template_type)
+        keys = _VARIABLES_BY_TYPE.get(
+            template_type,
+            tuple(sorted(ALLOWED_VARIABLES, key=lambda value: VARIABLE_LABELS[value])),
+        )
+        self._var_title.setText(f"可用欄位：{type_label}（雙擊插入）")
+        self._var_list.clear()
+        for key in keys:
+            item = QListWidgetItem(VARIABLE_LABELS[key])
+            item.setData(Qt.ItemDataRole.UserRole, key)
+            item.setToolTip(f"{type_label} 可用欄位：{VARIABLE_LABELS[key]}")
+            self._var_list.addItem(item)
 
     def on_save(self) -> None:
         self._save_btn.setEnabled(False)

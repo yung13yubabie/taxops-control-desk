@@ -19,6 +19,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+pytestmark = pytest.mark.usefixtures("accept_document_item_template_dialog")
+
 
 @pytest.fixture(scope="session")
 def qapp():

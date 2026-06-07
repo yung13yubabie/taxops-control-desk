@@ -25,11 +25,13 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
+from ...i18n import error_message
 from ...services.container import ServiceContainer
 from ...services.document_requests import VAT_ITEMS
 
@@ -197,11 +199,11 @@ class DocumentItemTemplateDialog(QDialog):
         for name in custom:
             self._custom_list.addItem(QListWidgetItem(name))
 
-    def _persist(self) -> None:
+    def _persist(self) -> bool:
         if not self._template_items:
             # No preset key registered for this tax_type — Slice 21A scope is
             # VAT only; other tax types' selections are not persisted.
-            return
+            return True
         checked = [
             name for name in self._template_items if self._checkboxes[name].isChecked()
         ]
@@ -219,7 +221,15 @@ class DocumentItemTemplateDialog(QDialog):
                 "document_item_template_dialog: failed to persist preset",
                 exc_info=True,
             )
+            QMessageBox.warning(
+                self,
+                "儲存失敗",
+                error_message("system.unexpected"),
+            )
+            return False
+        return True
 
     def accept(self) -> None:  # override
-        self._persist()
+        if not self._persist():
+            return
         super().accept()

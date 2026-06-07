@@ -14,7 +14,11 @@ from taxops.db.migrate import apply_migrations
 from taxops.repositories.audit_logs import AuditLogRepository
 from taxops.repositories.templates import TemplatesRepository
 from taxops.services.audit import AuditService
-from taxops.services.templates import CreateTemplateInput, TemplatesService
+from taxops.services.templates import (
+    CreateTemplateInput,
+    TemplatesService,
+    UpdateTemplateInput,
+)
 from taxops.ui.dialogs.template_form_dialog import TemplateFormDialog
 from taxops.ui.pages.templates_page import TemplatesPage
 
@@ -119,6 +123,33 @@ def test_selected_template_id_returns_correct_id(page, container):
     assert page._selected_template_id() == created.id
 
 
+def test_refresh_preserves_selected_template_by_id_after_resort(page, container):
+    first = container.templates.create_template(
+        CreateTemplateInput(name="Alpha", body="first")
+    )
+    selected = container.templates.create_template(
+        CreateTemplateInput(name="Zulu", body="selected")
+    )
+    page._refresh()
+    for row in range(page._table.rowCount()):
+        if page._table.item(row, 0).text() == str(selected.id):
+            page._table.selectRow(row)
+            break
+
+    container.templates.update_template(
+        selected.id,
+        UpdateTemplateInput(
+            name="Aardvark",
+            template_type="custom",
+            body="selected",
+        ),
+    )
+    page._refresh()
+
+    assert page._selected_template_id() == selected.id
+    assert page._selected_template_id() != first.id
+
+
 # ── delete → DB → audit ───────────────────────────────────────────────────────
 
 def test_delete_template_removes_from_list_and_audit(page, container, conn):
@@ -179,3 +210,16 @@ def test_template_form_insert_variable_uses_plain_language_placeholder(container
     body = dialog._body.toPlainText()
     assert body == "【客戶名稱】"
     assert "{{" not in body
+
+
+def test_template_form_variable_list_tracks_template_type(container, qapp):
+    dialog = TemplateFormDialog(container.templates)
+    idx = dialog._type.findData("payment_follow_up")
+    dialog._type.setCurrentIndex(idx)
+
+    labels = [dialog._var_list.item(i).text() for i in range(dialog._var_list.count())]
+
+    assert "可用欄位：欠款催繳" in dialog._var_title.text()
+    assert "款項紀錄" in labels
+    assert "未收款總額" in labels
+    assert "缺少文件" not in labels

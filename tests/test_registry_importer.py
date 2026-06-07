@@ -123,6 +123,42 @@ def test_import_replaces_existing_cache(
     assert meta["row_count"] == "1"
 
 
+def test_import_metadata_failure_rolls_back_cache_and_audit(
+    tmp_path: Path, container: ServiceContainer, monkeypatch
+) -> None:
+    importer = _build_importer(container)
+    original = _make_zip(tmp_path, _csv(_BODY_TWO_ROWS), name="original.zip")
+    importer.import_zip(original)
+    before_audits = container.conn.execute(
+        "SELECT COUNT(*) FROM audit_logs WHERE action = 'tax_cache.import.zip'"
+    ).fetchone()[0]
+
+    replacement_body = (
+        "10-MAY-26,,,,,,,,,,,,,,,\n"
+        "地址A,11111111,,新公司,5000,1100101,獨資,Y,000000,業,,,,,,\n"
+    )
+    replacement = _make_zip(
+        tmp_path, _csv(replacement_body), name="replacement.zip"
+    )
+
+    def fail_metadata(*_args, **_kwargs):
+        raise RuntimeError("metadata unavailable")
+
+    monkeypatch.setattr(importer._metadata, "upsert_many", fail_metadata)
+    with pytest.raises(TaxRegistryImportError) as exc_info:
+        importer.import_zip(replacement)
+
+    repo = TaxRegistryRepository(container.conn)
+    assert exc_info.value.code == "registry.import.failed"
+    assert repo.count() == 2
+    assert repo.find_by_tax_id("38965019") is not None
+    assert repo.find_by_tax_id("11111111") is None
+    after_audits = container.conn.execute(
+        "SELECT COUNT(*) FROM audit_logs WHERE action = 'tax_cache.import.zip'"
+    ).fetchone()[0]
+    assert after_audits == before_audits
+
+
 def test_import_rejects_missing_file(container: ServiceContainer, tmp_path: Path) -> None:
     importer = _build_importer(container)
     with pytest.raises(TaxRegistryImportError) as exc:

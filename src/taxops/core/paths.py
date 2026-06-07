@@ -12,6 +12,7 @@ from pathlib import Path
 PROD_APP_DIR_NAME = "TaxOpsControlDesk"
 DEV_APP_DIR_NAME = "TaxOpsControlDeskDev"
 BACKUPS_DIR_NAME = "TaxOpsBackups"
+DEV_BACKUPS_DIR_NAME = "TaxOpsBackupsDev"
 DB_FILENAME = "taxops.sqlite"
 ATTACHMENTS_DIR_NAME = "attachments"
 
@@ -56,7 +57,8 @@ def resolve_paths(
     else:
         app_dir = DEV_APP_DIR_NAME if is_dev else PROD_APP_DIR_NAME
         data_root = _local_appdata() / app_dir
-        backups = _user_documents() / BACKUPS_DIR_NAME
+        backup_dir = DEV_BACKUPS_DIR_NAME if is_dev else BACKUPS_DIR_NAME
+        backups = _user_documents() / backup_dir
 
     return AppPaths(
         data_root=data_root,

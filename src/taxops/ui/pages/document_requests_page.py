@@ -149,6 +149,7 @@ class DocumentRequestsPage(QWidget):
         # Context banner — visible in both standalone and embedded modes so
         # the user always knows whose doc requests are on screen.
         self._context_banner = QLabel("現在顯示：全部案件")
+        self._context_banner.setTextFormat(Qt.TextFormat.PlainText)
         self._context_banner.setObjectName("DocRequestsContextBanner")
         self._context_banner.setStyleSheet(
             f"QLabel#DocRequestsContextBanner {{"
@@ -289,11 +290,14 @@ class DocumentRequestsPage(QWidget):
         item_layout = QVBoxLayout(item_widget)
         item_layout.setContentsMargins(0, 4, 0, 0)
         self._request_detail_title = QLabel("尚未選取索件批次")
+        self._request_detail_title.setTextFormat(Qt.TextFormat.PlainText)
         self._request_detail_title.setStyleSheet("font-size: 18px; font-weight: 700;")
         self._request_detail_meta = QLabel("請從左側選取一筆批次。")
+        self._request_detail_meta.setTextFormat(Qt.TextFormat.PlainText)
         self._request_detail_meta.setWordWrap(True)
         self._request_detail_meta.setStyleSheet("color: #475569;")
         self._request_detail_status = QLabel("")
+        self._request_detail_status.setTextFormat(Qt.TextFormat.PlainText)
         self._request_detail_status.setWordWrap(True)
         self._request_detail_status.setStyleSheet("color: #334155;")
         item_layout.addWidget(self._request_detail_title)
@@ -488,8 +492,11 @@ class DocumentRequestsPage(QWidget):
         self._load_all_requests()
 
     def _render_engagement_view(self) -> None:
-        assert self._engagement_id is not None
-        eng = self._container.engagements.get_engagement(self._engagement_id)
+        engagement_id = self._engagement_id
+        if engagement_id is None:
+            self._render_global_view()
+            return
+        eng = self._container.engagements.get_engagement(engagement_id)
         if eng is None:
             QMessageBox.warning(
                 self, "找不到案件", error_message("engagement.not_found")

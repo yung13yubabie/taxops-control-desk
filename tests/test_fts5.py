@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import sqlite3
 
 import pytest
@@ -217,15 +216,16 @@ def test_search_default_limit_is_bounded(search_repo):
 
 def test_update_client_rollback_keeps_old_fts_entry_on_insert_failure(conn):
     repo = SearchRepository(conn)
-    repo.add_client(
-        1,
-        client_code="RB001",
-        client_name="RollbackOldName",
-        tax_id=None,
-        short_name=None,
-        contact_name=None,
-        note=None,
-    )
+    with conn:
+        repo.add_client(
+            1,
+            client_code="RB001",
+            client_name="RollbackOldName",
+            tax_id=None,
+            short_name=None,
+            contact_name=None,
+            note=None,
+        )
 
     class _FailingConn:
         def __init__(self, real):
@@ -247,35 +247,36 @@ def test_update_client_rollback_keeps_old_fts_entry_on_insert_failure(conn):
 
     failing_repo = SearchRepository(_FailingConn(conn))  # type: ignore[arg-type]
     with pytest.raises(RuntimeError):
-        failing_repo.update_client(
-            1,
-            client_code="RB001",
-            client_name="RollbackNewName",
-            tax_id=None,
-            short_name=None,
-            contact_name=None,
-            note=None,
-        )
+        with conn:
+            failing_repo.update_client(
+                1,
+                client_code="RB001",
+                client_name="RollbackNewName",
+                tax_id=None,
+                short_name=None,
+                contact_name=None,
+                note=None,
+            )
 
     assert repo.search_client_ids("RollbackOldName") == [1]
     assert repo.search_client_ids("RollbackNewName") == []
 
 
-def test_client_service_logs_fts_failure_without_hiding_it(
-    clients_repo, audit, caplog
+def test_client_service_propagates_fts_failure_and_rolls_back(
+    clients_repo, audit
 ):
     class _FailingSearchRepo:
         def add_client(self, *args, **kwargs):
             raise RuntimeError("simulated FTS add failure")
 
     svc = ClientsService(clients_repo, audit, _FailingSearchRepo())  # type: ignore[arg-type]
-    with caplog.at_level(logging.WARNING):
-        row = svc.create_client(
+    with pytest.raises(RuntimeError, match="simulated FTS add failure"):
+        svc.create_client(
             CreateClientInput(client_code="LOG001", client_name="FTS記錄測試")
         )
 
-    assert row.client_code == "LOG001"
-    assert "client FTS add failed" in caplog.text
+    assert clients_repo.find_by_code("LOG001") is None
+    assert audit._repo.count() == 0
 
 
 # ── engagement FTS ────────────────────────────────────────────────────────────

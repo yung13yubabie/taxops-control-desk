@@ -1,5 +1,9 @@
 """UI action contract registry.
 
+Registered actions declare intended handlers and data boundaries. The legacy
+``test_marker`` value is a coverage scenario hint, not proof that an exact
+same-named test function exists.
+
 Every visible button in the UI must declare a contract here. Tests assert
 that the registry is internally consistent, that enabled actions wire up
 to a service+repository when they change data, and that disabled actions
@@ -66,7 +70,7 @@ class UIActionContract:
     success_text: str
     failure_text: str
     audit_action: str | None
-    test_marker: str
+    test_marker: str  # Legacy coverage scenario identifier, not a test reference.
     enabled: bool
 
 
@@ -722,7 +726,10 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
         button_label="貼上截圖",
         page=PAGE_WORK_RECORDS,
         handler="WorkRecordsPage._on_paste_template_image",
-        service="WorkRecordsService.set_template_image_asset / set_run_step_image_asset",
+        service=(
+            "WorkRecordsService.set_template_image_asset / "
+            "set_template_step_image_asset / set_run_step_image_asset"
+        ),
         repository="WorkRecordsRepository.update_template_context / update_run_stages",
         success_text="流程截圖已保存",
         failure_text="貼上流程截圖失敗，請確認剪貼簿有圖片",
@@ -1121,6 +1128,18 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
         failure_text="新增明細失敗，請確認輸入後再試",
         audit_action="recurring_billing.line.create",
         test_marker="test_recurring_billing_create_line",
+        enabled=True,
+    ),
+    UIActionContract(
+        button_label="產生待開立紀錄",
+        page=PAGE_RECURRING_BILLING,
+        handler="RecurringBillingPage._on_generate_occurrences",
+        service="RecurringBillingService.generate_occurrences",
+        repository="RecurringBillingRepository.insert_occurrence_if_missing",
+        success_text="待開立紀錄已產生",
+        failure_text="部分方案產生失敗，請檢查警告內容",
+        audit_action="recurring_billing.occurrence.generate",
+        test_marker="test_generate_occurrences_preserves_list_contract_and_audits",
         enabled=True,
     ),
     UIActionContract(

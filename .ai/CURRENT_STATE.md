@@ -1,5 +1,44 @@
 # CURRENT_STATE
 
+## 2026-06-07 v0.25.0 release candidate
+
+- Version: `0.25.0`.
+- Final full regression: `python -m pytest -q` => 1108 passed, exit code 0,
+  in 762.02 seconds.
+- Release dependencies are exactly pinned in `requirements-release.txt`.
+- `pip-audit -r requirements-release.txt` => 15 dependencies audited,
+  0 known vulnerabilities.
+- EXE was built from a fresh temporary virtual environment with
+  PyInstaller 6.11.1 and PySide6 6.10.2.
+- Automated EXE smoke passed: process remained alive, an isolated SQLite
+  database was created, and the smoke process was terminated.
+- Release artifact:
+  `dist/TaxOpsControlDesk-v0.25.0-windows.zip` (49,565,977 bytes).
+- SHA-256:
+  `da5e034248867a8c72dcf79b5d2718e062cdd1ae9d1a3bcb93d04ca2ad6aad76`.
+- Old `dist/TaxOpsControlDesk-v0.24.0-windows.zip` was removed only after the
+  new archive passed full ZIP readback.
+- Windows Computer Use acceptance was attempted twice but the connector failed
+  during initialization with `failed to write kernel assets` / OS error 3.
+  Therefore 100/125/150/200 percent DPI remains manual acceptance evidence,
+  not an automated claim.
+- Release closure target: commit and push `main`, then publish tag and GitHub
+  Release `v0.25.0` with the verified ZIP and SHA-256 file.
+
+## 2026-06-07 Security, correctness, and SLOP audit
+
+- Multi-agent UI, security, architecture, test-governance, and spec audits were
+  completed and integrated into the current uncommitted worktree.
+- P0/P1 fixes cover stable-ID UI refresh, backup restore hardening, image
+  resource limits and lifecycle cleanup, deleted-owner isolation, atomic task
+  bulk operations, atomic registry imports, registry redirect allowlisting,
+  recurring-billing contract/error-state fixes, packaging migration discovery,
+  real cross-process single-instance testing, and DPI-aware minimum sizing.
+- Evidence and residual risks: `.ai/AUDIT_2026-06-07.md`.
+- PowerShell command rules: `.ai/COMMAND_EXECUTION_RULES.md`.
+- Final `python -m pytest -q`: 1100 passed, exit code 0, in 825.52 seconds.
+- No EXE packaging, Git push, tag, or release was performed in this audit pass.
+
 ## 2026-06-05 Current Development State - v0.24.0 UI Slop Follow-up
 
 - v0.24.0 UI Slop follow-up is implemented in the current worktree, not committed.

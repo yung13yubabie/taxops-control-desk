@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
     QProgressDialog,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -60,6 +61,7 @@ from ...services.backup import BackupError
 from ...services.settings import SettingsValidationError
 from ..dialogs.mismatch_review_dialog import MismatchItem, MismatchReviewDialog
 from ..action_registry import PAGE_SETTINGS, actions_for_page
+from ..widgets.flow_layout import FlowLayout
 
 _QUERY_MODE_LABELS = {
     "local_only": "僅使用本機快取",
@@ -82,7 +84,7 @@ class _RegistryWorker(QThread):
     closed when the thread finishes.
     """
 
-    finished = Signal(object)
+    succeeded = Signal(object)
     errored = Signal(str)
 
     def __init__(
@@ -104,7 +106,7 @@ class _RegistryWorker(QThread):
             container = build_container(self._paths, conn)
             conn = None  # container now owns the connection
             result = self._task_fn(container)
-            self.finished.emit(result)
+            self.succeeded.emit(result)
         except (TaxRegistryImportError, BundleError, DownloadError) as exc:
             self.errored.emit(exc.code)
         except Exception:
@@ -133,15 +135,22 @@ class SettingsPage(QWidget):
         outer.setSpacing(12)
 
         title = QLabel(NAV_LABELS["settings"])
-        title.setStyleSheet("font-size: 20px; font-weight: 600;")
+        title.setObjectName("PageTitle")
         outer.addWidget(title)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        outer.addWidget(scroll, stretch=1)
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        outer.addWidget(self._scroll, stretch=1)
 
-        body = QWidget()
-        body_layout = QVBoxLayout(body)
+        self._settings_body = QWidget()
+        self._settings_body.setMinimumWidth(0)
+        self._settings_body.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        body_layout = QVBoxLayout(self._settings_body)
         body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setSpacing(16)
 
@@ -151,7 +160,7 @@ class SettingsPage(QWidget):
         body_layout.addWidget(self._build_backup_group())
         body_layout.addStretch(1)
 
-        scroll.setWidget(body)
+        self._scroll.setWidget(self._settings_body)
 
     # ------------------------------------------------------------------
     # Sections
@@ -160,6 +169,8 @@ class SettingsPage(QWidget):
         paths = self._container.paths
         group = QGroupBox("資料路徑")
         form = QFormLayout(group)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
 
         form.addRow(
             QLabel("資料庫路徑"),
@@ -187,6 +198,8 @@ class SettingsPage(QWidget):
     def _build_user_group(self) -> QGroupBox:
         group = QGroupBox("操作者")
         form = QFormLayout(group)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
 
         self._display_name = QLineEdit(
             self._container.settings.get("display.local_user_name") or "local_user"
@@ -196,6 +209,7 @@ class SettingsPage(QWidget):
         save_btn.clicked.connect(self.on_save_display_name)
 
         row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
         row.addWidget(self._display_name, stretch=1)
         row.addWidget(save_btn)
         wrapper = QWidget()
@@ -210,6 +224,8 @@ class SettingsPage(QWidget):
 
         # --- Query mode + URL settings ---
         form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
 
         self._query_mode = QComboBox()
         for mode in VALID_QUERY_MODES:
@@ -223,6 +239,7 @@ class SettingsPage(QWidget):
         save_mode_btn = QPushButton(BUTTON_LABELS["settings.save_query_mode"])
         save_mode_btn.clicked.connect(self.on_save_query_mode)
         mode_row = QHBoxLayout()
+        mode_row.setContentsMargins(0, 0, 0, 0)
         mode_row.addWidget(self._query_mode, stretch=1)
         mode_row.addWidget(save_mode_btn)
         mode_wrap = QWidget()
@@ -237,6 +254,11 @@ class SettingsPage(QWidget):
             value_label = QLabel(self._container.settings.get(key) or "")
             value_label.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextSelectableByMouse
+            )
+            value_label.setWordWrap(True)
+            value_label.setMinimumWidth(0)
+            value_label.setSizePolicy(
+                QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
             )
             form.addRow(QLabel(label), value_label)
 
@@ -266,15 +288,14 @@ class SettingsPage(QWidget):
             (BUTTON_LABELS["tax_cache.regenerate_matches"], self.on_regenerate_matches),
         ]
 
-        enabled_row = QHBoxLayout()
-        enabled_row.setSpacing(8)
+        enabled_wrap = QWidget()
+        enabled_row = FlowLayout(enabled_wrap, h_spacing=8, v_spacing=6)
         for btn_label, handler in enabled_specs:
             btn = QPushButton(btn_label)
             btn.clicked.connect(handler)
             enabled_row.addWidget(btn)
             self._slice2_buttons.append(btn)
-        enabled_row.addStretch(1)
-        layout.addLayout(enabled_row)
+        layout.addWidget(enabled_wrap)
 
         # Download button on its own row (slice 3)
         download_row = QHBoxLayout()
@@ -296,15 +317,14 @@ class SettingsPage(QWidget):
             disabled_notice.setStyleSheet("color: #555;")
             layout.addWidget(disabled_notice)
 
-            disabled_row = QHBoxLayout()
-            disabled_row.setSpacing(8)
+            disabled_wrap = QWidget()
+            disabled_row = FlowLayout(disabled_wrap, h_spacing=8, v_spacing=6)
             for action in disabled_rows:
                 btn = QPushButton(action.button_label)
                 btn.setEnabled(False)
                 btn.setToolTip(DISABLED_TOOLTIP)
                 disabled_row.addWidget(btn)
-            disabled_row.addStretch(1)
-            layout.addLayout(disabled_row)
+            layout.addWidget(disabled_wrap)
 
         return group
 
@@ -346,11 +366,14 @@ class SettingsPage(QWidget):
         label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
+        label.setMinimumWidth(0)
+        label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         open_btn = QPushButton(open_label)
         open_btn.clicked.connect(open_handler)
         copy_btn = QPushButton(copy_label)
         copy_btn.clicked.connect(copy_handler)
         row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
         row.addWidget(label, stretch=1)
         row.addWidget(open_btn)
         row.addWidget(copy_btn)
@@ -364,6 +387,8 @@ class SettingsPage(QWidget):
         label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
+        label.setMinimumWidth(0)
+        label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         return label
 
     def _set_slice2_buttons_enabled(self, enabled: bool) -> None:
@@ -403,10 +428,7 @@ class SettingsPage(QWidget):
             self._active_worker = None
             self._set_slice2_buttons_enabled(True)
             self._refresh_cache_status()
-            try:
-                on_success(result)
-            finally:
-                worker.deleteLater()
+            on_success(result)
 
         def _on_errored(code: str) -> None:
             progress.close()
@@ -414,10 +436,9 @@ class SettingsPage(QWidget):
             self._set_slice2_buttons_enabled(True)
             QMessageBox.warning(self, "操作失敗", error_message(code))
 
-            worker.deleteLater()
-
-        worker.finished.connect(_on_finished)
+        worker.succeeded.connect(_on_finished)
         worker.errored.connect(_on_errored)
+        worker.finished.connect(worker.deleteLater)
         worker.start()
 
     # ------------------------------------------------------------------
@@ -741,10 +762,13 @@ class SettingsPage(QWidget):
     # Window lifecycle
     # ------------------------------------------------------------------
 
+    def has_active_operation(self) -> bool:
+        return bool(self._active_worker and self._active_worker.isRunning())
+
     def closeEvent(self, event: QCloseEvent) -> None:
-        if self._active_worker and self._active_worker.isRunning():
-            self._active_worker.quit()
-            self._active_worker.wait(3000)
+        if self.has_active_operation():
+            event.ignore()
+            return
         super().closeEvent(event)
 
     # ------------------------------------------------------------------
@@ -761,10 +785,13 @@ class SettingsPage(QWidget):
         )
         info.setToolTip(str(self._container.paths.backups_dir))
         info.setStyleSheet("color: #555; font-size: 12px;")
+        info.setWordWrap(True)
+        info.setMinimumWidth(0)
+        info.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout.addWidget(info)
 
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
+        btn_wrap = QWidget()
+        btn_row = FlowLayout(btn_wrap, h_spacing=8, v_spacing=6)
 
         backup_btn = QPushButton("立即備份")
         backup_btn.clicked.connect(self.on_backup)
@@ -774,8 +801,7 @@ class SettingsPage(QWidget):
         restore_btn.clicked.connect(self.on_restore)
         btn_row.addWidget(restore_btn)
 
-        btn_row.addStretch(1)
-        layout.addLayout(btn_row)
+        layout.addWidget(btn_wrap)
         return group
 
     def on_backup(self) -> None:

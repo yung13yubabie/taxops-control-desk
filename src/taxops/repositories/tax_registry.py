@@ -110,6 +110,7 @@ class TaxRegistryRepository:
         *,
         cache_version: str,
         on_progress=None,
+        before_commit=None,
     ) -> int:
         """Atomically replace the formal cache from a stream of entries.
 
@@ -158,6 +159,8 @@ class TaxRegistryRepository:
                 f"INSERT INTO {self.FORMAL_TABLE} SELECT * FROM {self.STAGING_TABLE}"
             )
             conn.execute(f"DROP TABLE {self.STAGING_TABLE}")
+            if before_commit is not None:
+                before_commit(count)
             conn.commit()
             return count
         except BaseException:
@@ -201,7 +204,7 @@ class TaxCacheMetadataRepository:
         )
         self._conn.commit()
 
-    def upsert_many(self, items: dict[str, str]) -> None:
+    def upsert_many(self, items: dict[str, str], *, commit: bool = True) -> None:
         ts = now_iso()
         rows = [(k, v, ts) for k, v in items.items()]
         self._conn.executemany(
@@ -210,7 +213,8 @@ class TaxCacheMetadataRepository:
             f"updated_at = excluded.updated_at",
             rows,
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def clear(self) -> None:
         self._conn.execute(f"DELETE FROM {self.TABLE}")

@@ -10,6 +10,13 @@ from dataclasses import dataclass
 
 from ..core.clock import now_iso
 
+_ACTIVE_MESSAGE_OWNER_SQL = (
+    "EXISTS (SELECT 1 FROM document_requests dr"
+    " JOIN engagements e ON e.id = dr.engagement_id AND e.deleted_at IS NULL"
+    " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+    " WHERE dr.id = generated_messages.request_id AND dr.deleted_at IS NULL)"
+)
+
 
 @dataclass(frozen=True)
 class GeneratedMessageRow:
@@ -53,14 +60,17 @@ class GeneratedMessagesRepository:
 
     def get(self, message_id: int) -> GeneratedMessageRow | None:
         row = self._conn.execute(
-            "SELECT * FROM generated_messages WHERE id = ?",
+            "SELECT * FROM generated_messages WHERE id = ?"
+            f" AND {_ACTIVE_MESSAGE_OWNER_SQL}",
             (message_id,),
         ).fetchone()
         return _row_to_message(row) if row else None
 
     def list_by_request(self, request_id: int) -> list[GeneratedMessageRow]:
         rows = self._conn.execute(
-            "SELECT * FROM generated_messages WHERE request_id = ? ORDER BY id ASC",
+            "SELECT * FROM generated_messages WHERE request_id = ?"
+            f" AND {_ACTIVE_MESSAGE_OWNER_SQL}"
+            " ORDER BY id ASC",
             (request_id,),
         ).fetchall()
         return [_row_to_message(r) for r in rows]

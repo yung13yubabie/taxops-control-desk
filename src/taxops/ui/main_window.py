@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -46,6 +49,23 @@ from .pages.templates_page import TemplatesPage
 _SIDEBAR_EXPANDED_MIN = 200
 _SIDEBAR_EXPANDED_MAX = 240
 _SIDEBAR_COLLAPSED_WIDTH = 32
+_WINDOW_MIN_SIZE = QSize(900, 540)
+_WINDOW_MAX_INITIAL_SIZE = QSize(1280, 720)
+
+
+def _initial_window_size(available: QSize) -> QSize:
+    width = min(_WINDOW_MAX_INITIAL_SIZE.width(), round(available.width() * 0.9))
+    height = min(_WINDOW_MAX_INITIAL_SIZE.height(), round(available.height() * 0.9))
+    width = min(available.width(), max(_WINDOW_MIN_SIZE.width(), width))
+    height = min(available.height(), max(_WINDOW_MIN_SIZE.height(), height))
+    return QSize(width, height)
+
+
+def _minimum_window_size(available: QSize) -> QSize:
+    return QSize(
+        min(_WINDOW_MIN_SIZE.width(), available.width()),
+        min(_WINDOW_MIN_SIZE.height(), available.height()),
+    )
 
 
 class MainWindow(QMainWindow):
@@ -53,7 +73,13 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._container = container
         self.setWindowTitle("TaxOps Control Desk")
-        self.setMinimumSize(1280, 720)
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            available = screen.availableGeometry().size()
+            self.setMinimumSize(_minimum_window_size(available))
+            self.resize(_initial_window_size(available))
+        else:
+            self.setMinimumSize(_WINDOW_MIN_SIZE)
 
         central = QWidget(self)
         layout = QHBoxLayout(central)
@@ -133,7 +159,9 @@ class MainWindow(QMainWindow):
             elif page_id == PAGE_REGISTRY:
                 page = RegistryPage(self._container)
             elif page_id == PAGE_SETTINGS:
-                page = SettingsPage(self._container)
+                settings_page = SettingsPage(self._container)
+                self._settings_page = settings_page
+                page = settings_page
             else:
                 page = PlaceholderPage(page_id)
             index = self._stack.addWidget(page)
@@ -186,6 +214,18 @@ class MainWindow(QMainWindow):
             self._apply_collapsed(save=True)
         else:
             self._apply_expanded(save=True)
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        settings_page = getattr(self, "_settings_page", None)
+        if settings_page is not None and settings_page.has_active_operation():
+            QMessageBox.warning(
+                self,
+                "作業進行中",
+                "資料匯入或下載仍在進行，完成後才能關閉應用程式。",
+            )
+            event.ignore()
+            return
+        super().closeEvent(event)
 
     def _apply_collapsed(self, *, save: bool) -> None:
         self._nav.setVisible(False)

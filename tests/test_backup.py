@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from pathlib import Path
 
@@ -64,6 +65,15 @@ def test_backup_filename_format(svc, paths):
     row = svc.create_backup(paths)
     assert row.filename.startswith("office_desk_")
     assert row.filename.endswith(".sqlite")
+
+
+def test_backups_created_in_same_second_have_unique_names(svc, paths):
+    first = svc.create_backup(paths)
+    second = svc.create_backup(paths)
+
+    assert first.filename != second.filename
+    assert Path(first.backup_path).exists()
+    assert Path(second.backup_path).exists()
 
 
 def test_backup_file_is_readable_sqlite(svc, paths):
@@ -134,6 +144,14 @@ def test_restore_records_audit(conn, svc, paths):
     assert log is not None
 
 
+def test_restore_preserves_before_restore_record(repo, svc, paths):
+    backup_row = svc.create_backup(paths)
+    svc.restore_backup(Path(backup_row.backup_path), paths)
+
+    records = repo.list_all()
+    assert any(row.notes == "before_restore" for row in records)
+
+
 def test_restore_nonexistent_file_rejected(svc, paths):
     missing = paths.backups_dir / "nonexistent.sqlite"
     with pytest.raises(BackupError) as exc_info:
@@ -157,6 +175,95 @@ def test_restore_invalid_sqlite_rejected(svc, paths, tmp_path):
     assert exc_info.value.code == "backup.invalid_file"
 
 
+def test_restore_rejects_non_taxops_sqlite_without_touching_live_db(
+    conn, svc, paths, tmp_path
+):
+    foreign_db = tmp_path / "foreign.sqlite"
+    with sqlite3.connect(foreign_db) as foreign_conn:
+        foreign_conn.execute("CREATE TABLE unrelated (id INTEGER PRIMARY KEY)")
+
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    before_hash = hashlib.sha256(paths.db_path.read_bytes()).hexdigest()
+
+    with pytest.raises(BackupError) as exc_info:
+        svc.restore_backup(foreign_db, paths)
+
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    after_hash = hashlib.sha256(paths.db_path.read_bytes()).hexdigest()
+    assert exc_info.value.code == "backup.invalid_file"
+    assert after_hash == before_hash
+
+
+def test_restore_rejects_unknown_migration_version(svc, paths):
+    backup_row = svc.create_backup(paths)
+    forged = Path(backup_row.backup_path)
+    with sqlite3.connect(forged) as forged_conn:
+        forged_conn.execute(
+            "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+            ("9999_attacker", "2026-06-07T00:00:00"),
+        )
+
+    with pytest.raises(BackupError) as exc_info:
+        svc.restore_backup(forged, paths)
+
+    assert exc_info.value.code == "backup.invalid_file"
+
+
+def test_restore_rejects_unknown_trigger_before_migration(svc, paths):
+    backup_row = svc.create_backup(paths)
+    forged = Path(backup_row.backup_path)
+    with sqlite3.connect(forged) as forged_conn:
+        forged_conn.execute(
+            "CREATE TRIGGER attacker_trigger AFTER INSERT ON schema_migrations"
+            " BEGIN DELETE FROM clients; END"
+        )
+
+    with pytest.raises(BackupError) as exc_info:
+        svc.restore_backup(forged, paths)
+
+    assert exc_info.value.code == "backup.invalid_file"
+
+
+def test_restore_rejects_foreign_key_corruption(svc, paths):
+    backup_row = svc.create_backup(paths)
+    forged = Path(backup_row.backup_path)
+    with sqlite3.connect(forged) as forged_conn:
+        forged_conn.execute("PRAGMA foreign_keys = OFF")
+        forged_conn.execute(
+            "INSERT INTO engagements("
+            " client_id, engagement_name, tax_type, period_name, status,"
+            " created_at, updated_at"
+            ") VALUES (999999, 'orphan', 'vat', '2026', 'draft', ?, ?)",
+            ("2026-06-07T00:00:00", "2026-06-07T00:00:00"),
+        )
+
+    with pytest.raises(BackupError) as exc_info:
+        svc.restore_backup(forged, paths)
+
+    assert exc_info.value.code == "backup.invalid_file"
+
+
+def test_restore_migration_failure_leaves_live_db_hash_unchanged(
+    conn, svc, paths, monkeypatch
+):
+    backup_row = svc.create_backup(paths)
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    before_hash = hashlib.sha256(paths.db_path.read_bytes()).hexdigest()
+
+    def fail_migration(_conn):
+        raise sqlite3.OperationalError("simulated migration failure")
+
+    monkeypatch.setattr("taxops.services.backup.apply_migrations", fail_migration)
+
+    with pytest.raises(BackupError) as exc_info:
+        svc.restore_backup(Path(backup_row.backup_path), paths)
+
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    after_hash = hashlib.sha256(paths.db_path.read_bytes()).hexdigest()
+    assert exc_info.value.code == "backup.restore_migrate_failed"
+    assert after_hash == before_hash
+
+
 def test_before_restore_failure_prevents_restore(conn, svc, repo, paths, monkeypatch):
     """If the before_restore backup fails, the live DB must not be touched."""
     # Seed a sentinel row that is NOT in the backup
@@ -168,19 +275,12 @@ def test_before_restore_failure_prevents_restore(conn, svc, repo, paths, monkeyp
     )
     conn.commit()
 
-    # Monkeypatch sqlite3.connect to raise on the first call inside restore
-    # (which is the before_restore step)
-    call_count = 0
     original_connect = sqlite3.connect
 
-    def patched_connect(path_str, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        # call 1 = _validate_backup_file (must succeed so validation passes)
-        # call 2 = before_restore snapshot write (this is what we want to fail)
-        if call_count == 2:
+    def patched_connect(path_str, *args, **kwargs):
+        if Path(path_str).name.startswith("before_restore_"):
             raise OSError("simulated disk failure")
-        return original_connect(path_str, **kwargs)
+        return original_connect(path_str, *args, **kwargs)
 
     monkeypatch.setattr(sqlite3, "connect", patched_connect)
 

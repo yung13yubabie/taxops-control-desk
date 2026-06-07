@@ -68,4 +68,3 @@ class AppSettingsRepository:
             "updated_at = excluded.updated_at",
             (key, value, now_iso()),
         )
-        self._conn.commit()

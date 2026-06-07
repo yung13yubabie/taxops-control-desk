@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from uuid import uuid4
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QPixmap
@@ -66,6 +65,8 @@ _TREE_STAGE_ID_ROLE = Qt.ItemDataRole.UserRole + 1
 _TREE_ITEM_ID_ROLE = Qt.ItemDataRole.UserRole + 2
 _TREE_DONE_ROLE = Qt.ItemDataRole.UserRole + 3
 _TREE_RUN_ID_ROLE = Qt.ItemDataRole.UserRole + 4
+_TREE_ROW_KIND_ROLE = Qt.ItemDataRole.UserRole + 5
+_TREE_ROW_ID_ROLE = Qt.ItemDataRole.UserRole + 6
 
 
 def _snap(value: float) -> float:
@@ -740,16 +741,26 @@ class WorkRecordsPage(QWidget):
         run = next((r for r in self._container.work_records.list_runs() if r.id == run_id), None)
         return run.template_id if run else None
 
-    def _selected_workflow_step(self) -> tuple[int, str, str, bool] | None:
+    def _selected_workflow_step_ref(self) -> tuple[str, int, str, str, bool] | None:
         item = self._workflow_detail.currentItem()
         if item is None or item.data(0, _TREE_KIND_ROLE) != "step":
             return None
-        run_id = item.data(0, _TREE_RUN_ID_ROLE)
+        row_kind = item.data(0, _TREE_ROW_KIND_ROLE)
+        row_id = item.data(0, _TREE_ROW_ID_ROLE)
         stage_id = item.data(0, _TREE_STAGE_ID_ROLE)
         item_id = item.data(0, _TREE_ITEM_ID_ROLE)
-        if run_id is None or not stage_id or not item_id:
+        if row_kind not in {"template", "run"} or row_id is None or not stage_id or not item_id:
             return None
-        return int(run_id), str(stage_id), str(item_id), bool(item.data(0, _TREE_DONE_ROLE))
+        return str(row_kind), int(row_id), str(stage_id), str(item_id), bool(item.data(0, _TREE_DONE_ROLE))
+
+    def _selected_workflow_step(self) -> tuple[int, str, str, bool] | None:
+        selected = self._selected_workflow_step_ref()
+        if selected is None:
+            return None
+        row_kind, row_id, stage_id, item_id, done = selected
+        if row_kind != "run":
+            return None
+        return row_id, stage_id, item_id, done
 
     def _template_image_path(self, context_snapshot: str | None) -> Path | None:
         if not context_snapshot:
@@ -784,14 +795,17 @@ class WorkRecordsPage(QWidget):
             return None
 
     def _selected_step_image_path(self) -> Path | None:
-        selected = self._selected_workflow_step()
+        selected = self._selected_workflow_step_ref()
         if selected is None:
             return None
-        run_id, stage_id, item_id, _done = selected
-        run = next((r for r in self._container.work_records.list_runs() if r.id == run_id), None)
-        if run is None:
+        row_kind, row_id, stage_id, item_id, _done = selected
+        if row_kind == "run":
+            row = next((r for r in self._container.work_records.list_runs() if r.id == row_id), None)
+        else:
+            row = next((t for t in self._container.work_records.list_templates() if t.id == row_id), None)
+        if row is None:
             return None
-        for stage in self._container.work_records.stages_for_row(run):
+        for stage in self._container.work_records.stages_for_row(row):
             if str(stage.get("id") or "") != stage_id:
                 continue
             for item in stage.get("items", []):
@@ -876,6 +890,8 @@ class WorkRecordsPage(QWidget):
         summary = QTreeWidgetItem([f"{row_kind}：{row.name}", f"{done}/{total} ({percent}%)"])
         summary.setData(0, _TREE_KIND_ROLE, "summary")
         self._workflow_detail.addTopLevelItem(summary)
+        tree_row_kind = "run" if selected_run is not None else "template"
+        tree_row_id = row.id
         tree_run_id = row.id if selected_run is not None else None
         for stage in stages:
             stage_item = QTreeWidgetItem([str(stage.get("title") or "未命名階段"), ""])
@@ -890,6 +906,8 @@ class WorkRecordsPage(QWidget):
                 step_item.setData(0, _TREE_ITEM_ID_ROLE, str(item.get("id") or ""))
                 step_item.setData(0, _TREE_DONE_ROLE, done_flag)
                 step_item.setData(0, _TREE_RUN_ID_ROLE, tree_run_id)
+                step_item.setData(0, _TREE_ROW_KIND_ROLE, tree_row_kind)
+                step_item.setData(0, _TREE_ROW_ID_ROLE, tree_row_id)
                 if done_flag:
                     font = step_item.font(0)
                     font.setStrikeOut(True)
@@ -901,14 +919,29 @@ class WorkRecordsPage(QWidget):
         self._toggle_first_btn.setEnabled(selected_run is not None)
         self._refresh_workflow_image()
 
+    def _select_run_step(self, run_id: int, stage_id: str, item_id: str) -> None:
+        for row in range(self._runs_table.rowCount()):
+            id_item = self._runs_table.item(row, 0)
+            if id_item is not None and id_item.text() == str(run_id):
+                self._runs_table.selectRow(row)
+                break
+        for top_idx in range(self._workflow_detail.topLevelItemCount()):
+            stage_item = self._workflow_detail.topLevelItem(top_idx)
+            if stage_item.data(0, _TREE_STAGE_ID_ROLE) != stage_id:
+                continue
+            for child_idx in range(stage_item.childCount()):
+                step_item = stage_item.child(child_idx)
+                if step_item.data(0, _TREE_ITEM_ID_ROLE) == item_id:
+                    self._workflow_detail.setCurrentItem(step_item)
+                    return
+
     def _on_create_template(self) -> None:
-        dlg = WorkflowTemplateDialog(title="新增流程", parent=self)
+        dlg = WorkflowTemplateDialog(
+            title="新增流程",
+            on_submit=self._container.work_records.create_template,
+            parent=self,
+        )
         if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-        try:
-            self._container.work_records.create_template(dlg.payload())
-        except WorkRecordValidationError as err:
-            QMessageBox.warning(self, "新增失敗", error_message(err.code))
             return
         self.refresh_context()
 
@@ -924,14 +957,12 @@ class WorkRecordsPage(QWidget):
             title="編輯流程",
             name=template.name,
             stages_text=stages_text,
+            on_submit=lambda payload: self._container.work_records.update_template(
+                template_id, payload
+            ),
             parent=self,
         )
         if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-        try:
-            self._container.work_records.update_template(template_id, dlg.payload())
-        except WorkRecordValidationError as err:
-            QMessageBox.warning(self, "編輯失敗", error_message(err.code))
             return
         self.refresh_context()
 
@@ -998,9 +1029,9 @@ class WorkRecordsPage(QWidget):
         self.refresh_context()
 
     def _on_set_template_image(self) -> None:
-        selected_step = self._selected_workflow_step()
+        selected_ref = self._selected_workflow_step_ref()
         template_id = self._selected_image_template_id()
-        if selected_step is None and template_id is None:
+        if selected_ref is None and template_id is None:
             return
         file_name, _ = QFileDialog.getOpenFileName(
             self,
@@ -1011,16 +1042,25 @@ class WorkRecordsPage(QWidget):
         if not file_name:
             return
         try:
-            if selected_step is not None:
-                run_id, stage_id, item_id, _done = selected_step
-                self._container.work_records.set_run_step_image_path(
-                    run_id,
-                    stage_id=stage_id,
-                    item_id=item_id,
-                    image_path=file_name,
-                )
+            if selected_ref is not None:
+                row_kind, row_id, stage_id, item_id, _done = selected_ref
+                if row_kind == "run":
+                    self._container.work_records.set_run_step_image_path(
+                        row_id,
+                        stage_id=stage_id,
+                        item_id=item_id,
+                        image_path=file_name,
+                    )
+                else:
+                    self._container.work_records.set_template_step_image_path(
+                        row_id,
+                        stage_id=stage_id,
+                        item_id=item_id,
+                        image_path=file_name,
+                    )
             else:
-                assert template_id is not None
+                if template_id is None:
+                    return
                 self._container.work_records.set_template_image_path(template_id, file_name)
         except WorkRecordValidationError as err:
             QMessageBox.warning(self, "圖片更新失敗", error_message(err.code))
@@ -1028,37 +1068,38 @@ class WorkRecordsPage(QWidget):
         self.refresh_context()
 
     def _on_paste_template_image(self) -> None:
-        selected_step = self._selected_workflow_step()
+        selected_ref = self._selected_workflow_step_ref()
         template_id = self._selected_image_template_id()
-        if selected_step is None and template_id is None:
+        if selected_ref is None and template_id is None:
             return
         pix = QApplication.clipboard().pixmap()
         if pix.isNull():
             QMessageBox.warning(self, "貼上失敗", "剪貼簿沒有可用圖片")
             return
-        rel = Path("images") / f"{uuid4().hex}.png"
         try:
-            dest = self._container.work_records.workflow_assets_dir / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            if not pix.save(str(dest), "PNG"):
-                raise WorkRecordValidationError("work_record.asset.image_invalid")
-            if selected_step is not None:
-                run_id, stage_id, item_id, _done = selected_step
-                self._container.work_records.set_run_step_image_asset(
-                    run_id,
-                    stage_id=stage_id,
-                    item_id=item_id,
-                    rel_path=rel.as_posix(),
-                    width=pix.width(),
-                    height=pix.height(),
-                )
+            image = pix.toImage()
+            if selected_ref is not None:
+                row_kind, row_id, stage_id, item_id, _done = selected_ref
+                if row_kind == "run":
+                    self._container.work_records.set_run_step_image_data(
+                        row_id,
+                        stage_id=stage_id,
+                        item_id=item_id,
+                        image=image,
+                    )
+                else:
+                    self._container.work_records.set_template_step_image_data(
+                        row_id,
+                        stage_id=stage_id,
+                        item_id=item_id,
+                        image=image,
+                    )
             else:
-                assert template_id is not None
-                self._container.work_records.set_template_image_asset(
+                if template_id is None:
+                    return
+                self._container.work_records.set_template_image_data(
                     template_id,
-                    rel.as_posix(),
-                    width=pix.width(),
-                    height=pix.height(),
+                    image,
                 )
         except WorkRecordValidationError as err:
             QMessageBox.warning(self, "貼上失敗", error_message(err.code))
@@ -1100,7 +1141,8 @@ class WorkRecordsPage(QWidget):
         except WorkRecordValidationError as err:
             QMessageBox.warning(self, "更新失敗", error_message(err.code))
             return
-        self.refresh_context()
+        self._refresh_workflows()
+        self._select_run_step(run_id, stage_id, item_id)
 
     def _on_toggle_first_run_step(self) -> None:
         self._on_toggle_selected_run_step()

@@ -221,7 +221,8 @@ def test_confirm_occurrence_audit_records_confirmed_amount(svc, conn, client_id)
     plan_inp = _plan_input(client_id)
     lines = [CreateLineInput(plan_id=0, bill_to_name="客戶A", amount=10000)]
     plan, _ = svc.create_plan_with_lines(plan_inp, lines)
-    occs = svc.generate_occurrences(plan.id)
+    assert len(svc.generate_occurrences(plan.id)) > 0
+    occs = svc.list_occurrences(plan_id=plan.id)
     assert occs
     first = occs[0]
     confirmed = svc.confirm_occurrence(

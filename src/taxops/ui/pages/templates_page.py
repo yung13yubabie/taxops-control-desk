@@ -154,6 +154,7 @@ class TemplatesPage(QWidget):
     # Private helpers
 
     def _refresh(self) -> None:
+        selected_id = self._selected_template_id()
         try:
             templates = self._container.templates.list_all()
             load_error = False
@@ -180,6 +181,7 @@ class TemplatesPage(QWidget):
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self._table.setItem(row_idx, col_idx, item)
 
+        self._restore_selection(selected_id)
         self._error_label.setVisible(load_error)
         if not load_error:
             has_rows = len(templates) > 0
@@ -189,6 +191,16 @@ class TemplatesPage(QWidget):
             self._table.setVisible(False)
             self._empty_state.setVisible(False)
         self._on_selection_changed()
+
+    def _restore_selection(self, template_id: int | None) -> None:
+        self._table.clearSelection()
+        if template_id is None:
+            return
+        for row in range(self._table.rowCount()):
+            item = self._table.item(row, 0)
+            if item is not None and item.text() == str(template_id):
+                self._table.selectRow(row)
+                return
 
     def _selected_template_id(self) -> int | None:
         if not self._table.selectedItems():

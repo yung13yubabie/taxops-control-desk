@@ -30,6 +30,7 @@ def test_dev_mode_uses_dev_dir(monkeypatch, tmp_path: Path) -> None:
     assert PROD_APP_DIR_NAME in str(prod.data_root)
     assert DEV_APP_DIR_NAME in str(dev.data_root)
     assert prod.data_root != dev.data_root
+    assert prod.backups_dir != dev.backups_dir
 
 
 def test_ensure_paths_creates_directories(tmp_path: Path) -> None:

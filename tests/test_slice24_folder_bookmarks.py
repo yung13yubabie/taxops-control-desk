@@ -158,6 +158,85 @@ def test_page_lists_existing_bookmarks(container):
 
 
 @pytest.mark.usefixtures("qapp")
+def test_page_filters_and_shows_parent_path(container):
+    from taxops.services.folder_bookmarks import CreateBookmarkInput
+    from taxops.ui.pages.folder_bookmarks_page import FolderBookmarksPage
+
+    container.folder_bookmarks.create_bookmark(
+        CreateBookmarkInput(name="A客戶", path=r"C:\Tax\A\2026", category="工作")
+    )
+    container.folder_bookmarks.create_bookmark(
+        CreateBookmarkInput(name="B客戶", path=r"C:\Tax\B\2026", category="共享")
+    )
+    page = FolderBookmarksPage(container)
+
+    parent_col = 2
+    assert page._table.item(0, parent_col).text() == r"C:\Tax\A"
+
+    idx = page._category_filter.findData("共享")
+    page._category_filter.setCurrentIndex(idx)
+    assert page._table.rowCount() == 1
+    assert page._table.item(0, 1).text() == "B客戶"
+
+    page._clear_filters()
+    page._search_edit.setText("A\\2026")
+    assert page._table.rowCount() == 1
+    assert page._table.item(0, 1).text() == "A客戶"
+
+
+@pytest.mark.usefixtures("qapp")
+def test_page_clear_filter_resets_sidebar_context(container):
+    from taxops.services.folder_bookmarks import CreateBookmarkInput
+    from taxops.ui.pages.folder_bookmarks_page import FolderBookmarksPage
+
+    container.folder_bookmarks.create_bookmark(
+        CreateBookmarkInput(name="Alpha", path=r"C:\Tax\Alpha", category="工作")
+    )
+    container.folder_bookmarks.create_bookmark(
+        CreateBookmarkInput(name="Beta", path=r"C:\Tax\Beta", category="共享")
+    )
+    page = FolderBookmarksPage(container)
+    page._search_edit.setText("Alpha")
+    assert page._table.rowCount() == 1
+
+    page.clear_filter()
+
+    assert page._search_edit.text() == ""
+    assert page._category_filter.currentData() == "__all__"
+    assert page._table.rowCount() == 2
+
+
+@pytest.mark.usefixtures("qapp")
+def test_page_refresh_preserves_selected_bookmark_by_id(container):
+    from taxops.services.folder_bookmarks import CreateBookmarkInput, UpdateBookmarkInput
+    from taxops.ui.pages.folder_bookmarks_page import FolderBookmarksPage
+
+    first = container.folder_bookmarks.create_bookmark(
+        CreateBookmarkInput(name="Alpha", path=r"C:\Tax\A")
+    )
+    second = container.folder_bookmarks.create_bookmark(
+        CreateBookmarkInput(name="Zulu", path=r"C:\Tax\Z")
+    )
+    page = FolderBookmarksPage(container)
+    for row in range(page._table.rowCount()):
+        if page._table.item(row, 0).text() == str(second.id):
+            page._table.selectRow(row)
+            break
+
+    container.folder_bookmarks.update_bookmark(
+        UpdateBookmarkInput(
+            bookmark_id=second.id,
+            name="Aardvark",
+            path=r"C:\Tax\0",
+        )
+    )
+    page._refresh()
+
+    assert page._selected_id() == second.id
+    assert page._selected_id() != first.id
+
+
+@pytest.mark.usefixtures("qapp")
 def test_page_toolbar_buttons_initially(container):
     from taxops.ui.pages.folder_bookmarks_page import FolderBookmarksPage
     page = FolderBookmarksPage(container)
