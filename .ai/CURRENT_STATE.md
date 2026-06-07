@@ -26,7 +26,13 @@
   `d32d22aeffcea8077f10038c86c8d9070ac89560be897727d19ce7a542c0003d`.
 - Old `v0.26.0` ZIP and `.sha256` were removed after the new archive passed
   readback verification.
-- Remaining release closure: commit, push, tag, and GitHub Release upload.
+- Release closure completed:
+  - Commit: `3464616 feat: ship v0.27.0 recurring billing line management`.
+  - Branch: `main` pushed to `origin`.
+  - Tag: `v0.27.0` pushed to `origin`.
+  - GitHub Release:
+    https://github.com/yung13yubabie/taxops-control-desk/releases/tag/v0.27.0
+  - Release assets uploaded: ZIP + `.sha256`.
 
 ## 2026-06-07 Template provenance and late-fee layout correction
 

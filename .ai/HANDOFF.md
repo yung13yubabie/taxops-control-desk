@@ -37,7 +37,13 @@
   release requirements finding.
 - Post-smoke process check found no `TaxOpsControlDesk`, `pytest`, or
   `pyinstaller` process residue.
-- Git commit/push/tag/release pending at the time this section was written.
+- Release closure completed:
+  - Commit: `3464616 feat: ship v0.27.0 recurring billing line management`.
+  - Branch: `main` pushed to `origin`.
+  - Tag: `v0.27.0` pushed to `origin`.
+  - GitHub Release:
+    https://github.com/yung13yubabie/taxops-control-desk/releases/tag/v0.27.0
+  - Release assets uploaded: ZIP + `.sha256`.
 
 ## Latest Handoff Update (2026-06-07 - template provenance + late-fee layout)
 
