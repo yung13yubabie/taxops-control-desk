@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...i18n import DISABLED_TOOLTIP, error_message
+from ..style import TEXT_MUTED
 
 _log = logging.getLogger(__name__)
 
@@ -141,7 +142,7 @@ class BulkImportWizard(QDialog):
             "可選欄位：統一編號、簡稱、聯絡人、聯絡電話、聯絡信箱、地址、備註"
         )
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #555; font-size: 12px; padding: 4px 0;")
+        hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; padding: 4px 0;")
         layout.addWidget(hint)
 
         layout.addWidget(QLabel("請選擇資料來源："))

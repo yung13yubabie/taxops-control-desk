@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...i18n import DISABLED_TOOLTIP, NAV_LABELS
+from ..style import TEXT_MUTED
 from ..action_registry import actions_for_page
 
 
@@ -36,7 +37,7 @@ class PlaceholderPage(QWidget):
         layout.addWidget(title)
 
         notice = QLabel(DISABLED_TOOLTIP + "，將於後續切片實作。")
-        notice.setStyleSheet("color: #555; font-size: 14px;")
+        notice.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 14px;")
         notice.setWordWrap(True)
         layout.addWidget(notice)
 

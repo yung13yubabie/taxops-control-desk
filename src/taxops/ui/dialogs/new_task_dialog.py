@@ -133,6 +133,14 @@ class NewTaskDialog(QDialog):
         self._save_btn.setDefault(True)
         outer.addWidget(buttons)
 
+        for a, b in [
+            (self._title, self._assignee),
+            (self._assignee, self._priority),
+            (self._priority, self._next_step),
+            (self._next_step, self._save_btn),
+        ]:
+            self.setTabOrder(a, b)
+
         self._save_btn.clicked.connect(self.on_save)
         cancel_btn.clicked.connect(self.reject)
 

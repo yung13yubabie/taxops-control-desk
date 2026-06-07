@@ -41,9 +41,11 @@ SPACING_LG  = 16
 SPACING_XL  = 24
 
 # ── Text muted (exported for inline use) ────────────────────────────
-TEXT_MUTED   = _TEXT_MUTED   # "#64748B" — alias for external use
-TEXT_MAIN    = _TEXT         # "#0F172A" — alias for external use
-BORDER_COLOR = _BORDER       # "#E2E8F0" — alias for external use
+TEXT_MUTED    = _TEXT_MUTED    # "#64748B" — alias for external use
+TEXT_MAIN     = _TEXT          # "#0F172A" — alias for external use
+BORDER_COLOR  = _BORDER        # "#E2E8F0" — alias for external use
+PRIMARY_COLOR = _PRIMARY       # "#2563EB" — brand blue for inline use
+PRIMARY_HOVER = _PRIMARY_HOVER # "#1D4ED8" — brand blue hover
 
 # Small toolbar buttons embedded inside per-row widgets (e.g. recurring billing
 # plan/line rows). The global QPushButton style is meant for top-level toolbars

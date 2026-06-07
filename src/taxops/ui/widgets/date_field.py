@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..style import DANGER_COLOR
+
 _log = logging.getLogger(__name__)
 
 _ISO_FMT = "yyyy-MM-dd"
@@ -214,7 +216,7 @@ class DateField(QWidget):
 
         self._error_label = QLabel()
         self._error_label.setObjectName("FieldError")
-        self._error_label.setStyleSheet("color: red; font-size: 11px;")
+        self._error_label.setStyleSheet(f"color: {DANGER_COLOR}; font-size: 11px;")
         self._error_label.setVisible(False)
         self._error_label.setWordWrap(True)
         main.addWidget(self._error_label)

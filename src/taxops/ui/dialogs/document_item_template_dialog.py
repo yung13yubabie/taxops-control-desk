@@ -135,6 +135,9 @@ class DocumentItemTemplateDialog(QDialog):
         ok_btn.clicked.connect(self.accept)
         cancel_btn.clicked.connect(self.reject)
 
+        self.setTabOrder(self._custom_input, self._custom_list)
+        self.setTabOrder(self._custom_list, ok_btn)
+
         self._restore_preset()
 
     def selected_items(self) -> tuple[str, ...]:

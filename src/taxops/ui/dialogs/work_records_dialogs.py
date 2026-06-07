@@ -134,9 +134,14 @@ class WorkflowTemplateDialog(QDialog):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
+        _ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        _ok.setDefault(True)
         outer.addWidget(buttons)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+
+        self.setTabOrder(self._name, self._stages)
+        self.setTabOrder(self._stages, _ok)
 
     def accept(self) -> None:
         payload = self.payload()

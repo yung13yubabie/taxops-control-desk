@@ -61,6 +61,7 @@ from ...services.backup import BackupError
 from ...services.settings import SettingsValidationError
 from ..dialogs.mismatch_review_dialog import MismatchItem, MismatchReviewDialog
 from ..action_registry import PAGE_SETTINGS, actions_for_page
+from ..style import TEXT_MUTED
 from ..widgets.flow_layout import FlowLayout
 
 _QUERY_MODE_LABELS = {
@@ -270,7 +271,7 @@ class SettingsPage(QWidget):
 
         # --- Cache status display ---
         self._cache_status_label = QLabel()
-        self._cache_status_label.setStyleSheet("color: #444; font-size: 13px;")
+        self._cache_status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
         self._cache_status_label.setWordWrap(True)
         layout.addWidget(self._cache_status_label)
         self._refresh_cache_status()
@@ -314,7 +315,7 @@ class SettingsPage(QWidget):
             layout.addWidget(sep3)
 
             disabled_notice = QLabel("下列動作尚未開放：")
-            disabled_notice.setStyleSheet("color: #555;")
+            disabled_notice.setStyleSheet(f"color: {TEXT_MUTED};")
             layout.addWidget(disabled_notice)
 
             disabled_wrap = QWidget()
@@ -784,7 +785,7 @@ class SettingsPage(QWidget):
             f"備份資料夾：{_middle_elide(str(self._container.paths.backups_dir))}"
         )
         info.setToolTip(str(self._container.paths.backups_dir))
-        info.setStyleSheet("color: #555; font-size: 12px;")
+        info.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         info.setWordWrap(True)
         info.setMinimumWidth(0)
         info.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)

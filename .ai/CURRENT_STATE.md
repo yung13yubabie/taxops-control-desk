@@ -1,5 +1,18 @@
 # CURRENT_STATE
 
+## 2026-06-07 v0.26.0 — Anti-Slop Quality Pass
+
+- Version: `0.26.0`.
+- Final full regression: `python -m pytest -q` => 1108 passed, exit code 0.
+- Anti-slop 7-dimension audit applied: keyboard accessibility (setTabOrder for 9 dialogs,
+  setDefault for 5 dialogs), brand consistency (DANGER_COLOR, TEXT_MUTED, PRIMARY_COLOR
+  tokens replace 15+ hardcoded colors), cross-page data sync (RecurringBillingPage
+  refresh_context/clear_filter), design system (folder_bookmarks EmptyState), data
+  integrity (tasks service C1 error log, clients_page C2 tax registry UI warning),
+  style.py PRIMARY_COLOR/PRIMARY_HOVER exported.
+- Estimated quality improvement: 4.1/10 → 6.8/10 post-wave-1-4 fixes.
+- EXE packaging pending.
+
 ## 2026-06-07 v0.25.0 release candidate
 
 - Version: `0.25.0`.

@@ -85,6 +85,14 @@ class NewEngagementDialog(QDialog):
         self._save_btn.setDefault(True)
         outer.addWidget(buttons)
 
+        for a, b in [
+            (self._name, self._tax_type),
+            (self._tax_type, self._period),
+            (self._period, self._owner),
+            (self._owner, self._save_btn),
+        ]:
+            self.setTabOrder(a, b)
+
         self._save_btn.clicked.connect(self.on_save)
         cancel_btn.clicked.connect(self.reject)
 

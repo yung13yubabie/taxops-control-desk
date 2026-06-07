@@ -31,7 +31,7 @@ from ...services.container import ServiceContainer
 from ..dialogs.bulk_import_wizard import BulkImportWizard
 from ..dialogs.edit_client_dialog import EditClientDialog
 from ..dialogs.new_client_dialog import NewClientDialog
-from ..style import toolbar_icon
+from ..style import TEXT_MUTED, toolbar_icon
 from ..widgets.empty_state import EmptyState
 from ..widgets.flow_layout import FlowLayout
 
@@ -95,7 +95,7 @@ class ClientsPage(QWidget):
         self._search_btn = QPushButton("搜尋")
         self._clear_btn = QPushButton("清除")
         self._count_label = QLabel("共 0 筆")
-        self._count_label.setStyleSheet("color: #555;")
+        self._count_label.setStyleSheet(f"color: {TEXT_MUTED};")
         self._show_deleted_check = QCheckBox("顯示已刪除客戶")
         search_row.addWidget(self._search_input, 1)
         search_row.addWidget(self._search_btn)
@@ -178,7 +178,7 @@ class ClientsPage(QWidget):
         self._prev_btn = QPushButton("◀ 上一頁")
         self._next_btn = QPushButton("下一頁 ▶")
         self._page_label = QLabel("")
-        self._page_label.setStyleSheet("color: #555;")
+        self._page_label.setStyleSheet(f"color: {TEXT_MUTED};")
         self._prev_btn.setEnabled(False)
         self._next_btn.setEnabled(False)
         page_row.addWidget(self._prev_btn)
@@ -311,6 +311,8 @@ class ClientsPage(QWidget):
 
     def clear_filter(self) -> None:
         self._filter_key = ""
+        self._search_input.clear()
+        self._page = 0
 
     def refresh_context(self) -> None:
         """Reload client rows when the page becomes active."""
@@ -351,6 +353,11 @@ class ClientsPage(QWidget):
             self._container.system_log.warn(
                 "tax_registry.count failed — registry lookup hidden",
                 detail={"exc": type(err).__name__},
+            )
+            QMessageBox.warning(
+                self,
+                "稅務登記查詢不可用",
+                "稅務登記資料載入失敗，新增客戶時無法查詢統編。\n可繼續手動填寫客戶資料。",
             )
         dialog = NewClientDialog(
             self._container.clients,

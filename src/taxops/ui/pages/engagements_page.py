@@ -43,7 +43,7 @@ from ...services.engagements import EngagementValidationError
 from ..action_registry import FilterKey
 from ..dialogs.edit_engagement_dialog import EditEngagementDialog
 from ..dialogs.new_engagement_dialog import NewEngagementDialog
-from ..style import toolbar_icon
+from ..style import PRIMARY_COLOR, PRIMARY_HOVER, TEXT_MUTED, toolbar_icon
 from ..widgets.column_settings import ColumnSettings
 from ..widgets.empty_state import EmptyState
 from ..widgets.flow_layout import FlowLayout
@@ -272,13 +272,13 @@ class EngagementsPage(QWidget):
     # ------------------------------------------------------------------
 
     def _breadcrumb_style(self, *, active: bool = False) -> str:
-        color = "#2563EB" if active else "#64748B"
+        color = PRIMARY_COLOR if active else TEXT_MUTED
         weight = "600" if active else "500"
         return (
             "QPushButton { background: transparent; border: none; "
             f"color: {color}; font-size: 13px; font-weight: {weight}; "
             "padding: 4px 6px; }"
-            "QPushButton:hover { color: #1D4ED8; }"
+            f"QPushButton:hover {{ color: {PRIMARY_HOVER}; }}"
             "QPushButton:disabled { color: #94A3B8; }"
         )
 

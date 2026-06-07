@@ -151,6 +151,19 @@ class NewClientDialog(QDialog):
         self._save_btn.setDefault(True)
         outer.addWidget(self._buttons)
 
+        for a, b in [
+            (self._client_code, self._client_name),
+            (self._client_name, self._tax_id),
+            (self._tax_id, self._short_name),
+            (self._short_name, self._contact_name),
+            (self._contact_name, self._contact_phone),
+            (self._contact_phone, self._contact_email),
+            (self._contact_email, self._address),
+            (self._address, self._note),
+            (self._note, self._save_btn),
+        ]:
+            self.setTabOrder(a, b)
+
         self._save_btn.clicked.connect(self.on_save)
         cancel_btn.clicked.connect(self.on_cancel)
 

@@ -53,6 +53,9 @@ class AddDocumentItemDialog(QDialog):
 
         self._ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
         self._ok_btn.setText("新增")
+        self._ok_btn.setDefault(True)
+
+        self.setTabOrder(self._text_edit, self._ok_btn)
 
     def _on_accept(self) -> None:
         self._ok_btn.setEnabled(False)

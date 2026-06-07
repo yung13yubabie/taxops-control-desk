@@ -34,6 +34,7 @@ from ...services.folder_bookmarks import (
     UpdateBookmarkInput,
 )
 from ..style import toolbar_icon
+from ..widgets.empty_state import EmptyState
 from ..widgets.flow_layout import FlowLayout
 
 _log = logging.getLogger(__name__)
@@ -204,7 +205,17 @@ class FolderBookmarksPage(QWidget):
         )
         outer.addWidget(self._table, stretch=1)
 
+        self._empty_state = EmptyState(
+            "目前沒有資料夾書籤",
+            detail="點選「新增」將常用資料夾路徑加入清單。",
+            action_text="新增書籤",
+        )
+        self._empty_state.hide()
+        outer.addWidget(self._empty_state, stretch=1)
+
         self._new_btn.clicked.connect(self._on_new)
+        if self._empty_state.action_button is not None:
+            self._empty_state.action_button.clicked.connect(self._on_new)
         self._edit_btn.clicked.connect(self._on_edit)
         self._delete_btn.clicked.connect(self._on_delete)
         self._open_btn.clicked.connect(self._on_open)
@@ -262,6 +273,8 @@ class FolderBookmarksPage(QWidget):
         ]
         bookmarks.sort(key=lambda bm: (_parent_path(bm.path).lower(), bm.name.lower()))
         self._table.setRowCount(len(bookmarks))
+        self._table.setVisible(bool(bookmarks))
+        self._empty_state.setVisible(not bookmarks)
         for row_idx, bm in enumerate(bookmarks):
             values = {
                 "id": str(bm.id),

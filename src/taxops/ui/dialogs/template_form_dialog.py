@@ -152,6 +152,13 @@ class TemplateFormDialog(QDialog):
         self._save_btn.setDefault(True)
         outer.addWidget(buttons)
 
+        for a, b in [
+            (self._name, self._type),
+            (self._type, self._body),
+            (self._body, self._save_btn),
+        ]:
+            self.setTabOrder(a, b)
+
         self._save_btn.clicked.connect(self.on_save)
         cancel_btn.clicked.connect(self.reject)
         self._var_list.itemDoubleClicked.connect(self._on_insert_variable)

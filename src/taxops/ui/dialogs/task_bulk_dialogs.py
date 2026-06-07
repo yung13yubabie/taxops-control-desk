@@ -68,9 +68,21 @@ class BulkCreateTasksDialog(QDialog):
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
+        _ok = self._buttons.button(QDialogButtonBox.StandardButton.Ok)
+        _ok.setDefault(True)
         self._buttons.accepted.connect(self.accept)
         self._buttons.rejected.connect(self.reject)
         layout.addWidget(self._buttons)
+
+        for a, b in [
+            (self._clients, self._title),
+            (self._title, self._assignee),
+            (self._assignee, self._priority),
+            (self._priority, self._next_step),
+            (self._next_step, self._notes),
+            (self._notes, _ok),
+        ]:
+            self.setTabOrder(a, b)
 
     def selected_client_ids(self) -> list[int]:
         ids: list[int] = []
@@ -156,9 +168,20 @@ class BulkEditTasksDialog(QDialog):
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
+        _ok = self._buttons.button(QDialogButtonBox.StandardButton.Ok)
+        _ok.setDefault(True)
         self._buttons.accepted.connect(self.accept)
         self._buttons.rejected.connect(self.reject)
         layout.addWidget(self._buttons)
+
+        for a, b in [
+            (self._status, self._priority),
+            (self._priority, self._assignee),
+            (self._assignee, self._next_step),
+            (self._next_step, self._notes),
+            (self._notes, _ok),
+        ]:
+            self.setTabOrder(a, b)
 
     def _line_row(self) -> tuple[QCheckBox, QLineEdit]:
         checkbox = QCheckBox("更新")
@@ -230,9 +253,13 @@ class ParentTaskDialog(QDialog):
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
+        _ok = self._buttons.button(QDialogButtonBox.StandardButton.Ok)
+        _ok.setDefault(True)
         self._buttons.accepted.connect(self.accept)
         self._buttons.rejected.connect(self.reject)
         layout.addWidget(self._buttons)
+
+        self.setTabOrder(self._list, _ok)
 
     def selected_parent_id(self) -> int | None:
         item = self._list.currentItem()

@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 from ...i18n import DISABLED_TOOLTIP
 from ...services.container import ServiceContainer
 from ..dialogs.registry_apply_dialog import RegistryApplyDialog
-from ..style import toolbar_icon
+from ..style import TEXT_MUTED, toolbar_icon
 
 _log = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class RegistryPage(QWidget):
         self._status_label = QLabel("")
         self._status_label.setTextFormat(Qt.TextFormat.PlainText)
         self._status_label.setWordWrap(True)
-        self._status_label.setStyleSheet("color: #555; font-size: 13px;")
+        self._status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
         layout.addWidget(self._status_label)
 
         self._result_group = QGroupBox("查詢結果")

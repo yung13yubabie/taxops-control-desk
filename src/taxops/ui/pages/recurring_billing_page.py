@@ -40,6 +40,7 @@ from ..style import (
     STATUS_CONFIRMED_FG,
     STATUS_PENDING_FG,
     STATUS_SKIPPED_FG,
+    TEXT_MUTED,
 )
 from ..widgets.flow_layout import FlowLayout
 
@@ -213,7 +214,7 @@ class _PlanSection(QFrame):
 
         freq_label = _FREQ_LABELS.get(plan.frequency, plan.frequency)
         freq_lbl = QLabel(f"[{freq_label}]")
-        freq_lbl.setStyleSheet("color: #64748B; font-size: 12px;")
+        freq_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         h_row.addWidget(freq_lbl)
 
         if plan.status == "archived":
@@ -223,7 +224,7 @@ class _PlanSection(QFrame):
 
         if next_date:
             next_lbl = QLabel(f"下次：{next_date}")
-            next_lbl.setStyleSheet("color: #64748B; font-size: 12px;")
+            next_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
             h_row.addWidget(next_lbl)
 
         if pending_count > 0:
@@ -472,6 +473,16 @@ class RecurringBillingPage(QWidget):
     def showEvent(self, event) -> None:  # type: ignore[override]
         super().showEvent(event)
         self._refresh()
+
+    def refresh_context(self) -> None:
+        """Reload data when global state changes (e.g. client deleted)."""
+        self._refresh()
+
+    def clear_filter(self) -> None:
+        self._client_combo.blockSignals(True)
+        self._client_combo.setCurrentIndex(0)
+        self._client_combo.blockSignals(False)
+        self._archived_check.setChecked(False)
 
     def _refresh(self) -> None:
         self._repopulate_client_combo()

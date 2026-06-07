@@ -369,6 +369,11 @@ class TasksService:
                         continue
                     row = self._repo.update_status(tid, status)
                     if row is None:
+                        _log.error(
+                            "update_tasks_bulk: update_status returned None "
+                            "for task_id=%r — row may have been deleted concurrently",
+                            tid,
+                        )
                         continue
                     self._audit.record(
                         action="task.status_change",

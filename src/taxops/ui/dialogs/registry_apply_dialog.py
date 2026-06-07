@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from ...i18n import error_message
 from ...repositories.clients import ClientRow
+from ..style import TEXT_MUTED
 from ...services.clients import UpdateClientInput
 from ...services.container import ServiceContainer
 
@@ -88,7 +89,7 @@ class RegistryApplyDialog(QDialog):
 
             current_lbl = QLabel(f"目前：{client_val or '（空白）'}")
             current_lbl.setTextFormat(Qt.TextFormat.PlainText)
-            current_lbl.setStyleSheet("color: #555;")
+            current_lbl.setStyleSheet(f"color: {TEXT_MUTED};")
             row_layout.addWidget(current_lbl, stretch=1)
 
             arrow_lbl = QLabel("→")
@@ -103,7 +104,7 @@ class RegistryApplyDialog(QDialog):
 
         if not self._checkboxes:
             no_diff_lbl = QLabel("所有可比對欄位均與客戶資料相同，無需更新。")
-            no_diff_lbl.setStyleSheet("color: #555;")
+            no_diff_lbl.setStyleSheet(f"color: {TEXT_MUTED};")
             form.addRow(no_diff_lbl)
 
         layout.addWidget(diff_group)
@@ -113,6 +114,7 @@ class RegistryApplyDialog(QDialog):
         )
         self._ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
         self._ok_btn.setText("確認套用")
+        self._ok_btn.setDefault(True)
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
         buttons.accepted.connect(self._on_save)
         buttons.rejected.connect(self.reject)
