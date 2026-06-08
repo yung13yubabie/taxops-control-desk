@@ -1,5 +1,68 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-06-08 - post-v0.27.0 correctness patches)
+
+### Commits on main, not yet pushed to origin
+
+| Hash | Summary |
+|------|---------|
+| `1c92532` | fix: move FTS operations inside transaction and fix work_records split commit |
+| `e8c9b22` | fix: repo SQL correctness — late_fee missing dr deleted_at, doc_request item update guard, recurring billing get_plan archived filter |
+| `7687385` | fix: blockSignals around setRowCount to prevent mid-refresh signal race conditions |
+| `05ab451` | fix: stable-ID attachment selection, clear_filter for late_fee/tasks pages |
+
+### What changed
+
+1. **FTS transaction safety** (`work_records.py`): FTS index operations now run
+   inside the same `with self._conn:` block as the primary DB write, preventing
+   a split-commit window where the FTS index and data could diverge.
+
+2. **Repo SQL correctness** (`late_fee.py`, `document_requests.py`,
+   `recurring_billing.py`):
+   - `late_fee` JOIN on `document_requests` now filters `dr.deleted_at IS NULL`
+     so soft-deleted requests are excluded from the calculation.
+   - `doc_request` item UPDATE adds a guard to reject writes that target a
+     deleted request.
+   - `recurring_billing.get_plan` archived filter now correctly scopes the
+     `archived` flag to the plan row, not all rows.
+
+3. **Mid-refresh signal race** (7 page files): `setRowCount(0)` calls are now
+   wrapped with `blockSignals(True/False)` to prevent selection-changed signals
+   firing on a partially cleared table, which could trigger downstream handlers
+   before the new data is in place.
+
+4. **Stable-ID attachment selection** (`attachments_page.py`): `_selected_attachment()`
+   now looks up the row ID from `column 0` instead of using a row-index into
+   `self._attachments`, making it safe against table re-ordering.
+   `clear_filter()` also reloads the engagement list so externally added
+   engagements become visible without a full page switch.
+   `late_fee_page.clear_filter()` and `tasks_page.clear_filter()` were added /
+   completed so that `MainWindow.navigate_to(page, "")` can reset these pages
+   consistently.
+
+### Verification
+
+- Targeted (attachments/late_fee/tasks): 81 passed.
+- Full `python -m pytest -q`: **1118 passed** (exit code 0, measured before
+  the final commit; all changes were present in the working tree).
+
+### Remaining
+
+- Push the 4 commits to `origin/main`.
+- Manual Windows UI acceptance across 1366x768 / 1920x1080 / DPI 100%/125%/150%.
+- Consider tagging a v0.27.1 patch release for these correctness fixes.
+
+### Next session start
+
+```
+請接手 C:\Users\LIN\taxops-control-desk
+先讀：.ai/HANDOFF.md .ai/CURRENT_STATE.md
+目前版本：v0.27.0（修復未 bump）
+主要待辦：push 4 commits 到 origin → 考慮 tag v0.27.1 → 真機 UI 驗收
+```
+
+---
+
 ## Latest Handoff Update (2026-06-07 - v0.27.0 recurring billing line management)
 
 ### Implemented

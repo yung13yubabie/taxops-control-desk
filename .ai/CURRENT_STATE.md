@@ -1,5 +1,22 @@
 # CURRENT_STATE
 
+## 2026-06-08 Post-v0.27.0 correctness fixes (unpushed)
+
+- Four commits on `main` are not yet pushed to `origin/main`:
+  - `1c92532` fix: move FTS operations inside transaction and fix work_records
+    split commit
+  - `e8c9b22` fix: repo SQL correctness — late_fee missing dr deleted_at,
+    doc_request item update guard, recurring billing get_plan archived filter
+  - `7687385` fix: blockSignals around setRowCount to prevent mid-refresh
+    signal race conditions
+  - `05ab451` fix: stable-ID attachment selection, clear_filter for
+    late_fee/tasks pages
+- Verification:
+  - Targeted (attachments/late_fee/tasks): 81 passed.
+  - Full `python -m pytest -q` => 1118 passed (exit code 0).
+- Working tree is clean; no EXE rebuild performed for these correctness patches.
+- Push to origin and tag are pending.
+
 ## 2026-06-07 v0.27.0 — Recurring billing line management + template semantics
 
 - Version: `0.27.0`.
