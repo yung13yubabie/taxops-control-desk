@@ -147,6 +147,8 @@ class LateFeeService:
         has_period_code = payload.period_code is not None
         if has_period_year != has_period_code:
             raise LateFeeValidationError("late_fee.period.invalid")
+        if has_period_year and not (1900 <= payload.period_year <= 2200):
+            raise LateFeeValidationError("late_fee.period.invalid")
         if has_period_code and payload.period_code not in PERIOD_CODES:
             raise LateFeeValidationError("late_fee.period.invalid")
 
@@ -162,7 +164,7 @@ class LateFeeService:
             )
         elif overdue_days < 0:
             raise LateFeeValidationError("late_fee.negative_overdue_days")
-        if payload.base_amount < 0:
+        if payload.base_amount <= 0:
             raise LateFeeValidationError("late_fee.negative_base_amount")
 
         request = self._doc_requests_repo.get_request(payload.request_id)

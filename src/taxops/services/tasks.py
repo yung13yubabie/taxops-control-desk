@@ -386,7 +386,7 @@ class TasksService:
                     )
                 if any(k in normalized_fields for k in ("priority", "assignee", "due_date", "next_step", "notes")):
                     refreshed = self._repo.get(tid) or existing
-                    self._repo.update(
+                    field_row = self._repo.update(
                         tid,
                         title=refreshed.title,
                         assignee=normalized_fields.get("assignee", refreshed.assignee),
@@ -394,6 +394,19 @@ class TasksService:
                         priority=normalized_fields.get("priority", refreshed.priority),
                         next_step=normalized_fields.get("next_step", refreshed.next_step),
                         notes=normalized_fields.get("notes", refreshed.notes),
+                    )
+                    if field_row is None:
+                        _log.error(
+                            "update_tasks_bulk: field update returned None "
+                            "for task_id=%r — row may have been deleted concurrently",
+                            tid,
+                        )
+                        continue
+                    self._audit.record(
+                        action="task.bulk_update_fields",
+                        target_type="task",
+                        target_id=str(tid),
+                        detail={"fields": list(k for k in ("priority", "assignee", "due_date", "next_step", "notes") if k in normalized_fields)},
                     )
                 updated += 1
             if updated:

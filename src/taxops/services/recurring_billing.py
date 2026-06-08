@@ -555,6 +555,11 @@ class RecurringBillingService:
             raise RecurringBillingError("recurring_billing.confirmed_amount.non_positive")
         if inp.confirmed_invoice_no and len(inp.confirmed_invoice_no) > 50:
             raise RecurringBillingError("recurring_billing.confirmed_invoice_no.too_long")
+        if inp.confirmed_issue_date is not None:
+            try:
+                datetime.date.fromisoformat(inp.confirmed_issue_date)
+            except ValueError:
+                raise RecurringBillingError("recurring_billing.confirmed_issue_date.invalid")
 
         with self._conn:
             row = self._repo.update_occurrence_status(

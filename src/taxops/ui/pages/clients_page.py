@@ -345,27 +345,31 @@ class ClientsPage(QWidget):
         return int(id_item.text()) if id_item else None
 
     def on_new_client(self) -> None:
-        registry_repo = None
+        self._new_btn.setEnabled(False)
         try:
-            if self._container.tax_registry_repo.count() > 0:
-                registry_repo = self._container.tax_registry_repo
-        except Exception as err:
-            self._container.system_log.warn(
-                "tax_registry.count failed — registry lookup hidden",
-                detail={"exc": type(err).__name__},
+            registry_repo = None
+            try:
+                if self._container.tax_registry_repo.count() > 0:
+                    registry_repo = self._container.tax_registry_repo
+            except Exception as err:
+                self._container.system_log.warn(
+                    "tax_registry.count failed — registry lookup hidden",
+                    detail={"exc": type(err).__name__},
+                )
+                QMessageBox.warning(
+                    self,
+                    "稅務登記查詢不可用",
+                    "稅務登記資料載入失敗，新增客戶時無法查詢統編。\n可繼續手動填寫客戶資料。",
+                )
+            dialog = NewClientDialog(
+                self._container.clients,
+                parent=self,
+                tax_registry_repo=registry_repo,
             )
-            QMessageBox.warning(
-                self,
-                "稅務登記查詢不可用",
-                "稅務登記資料載入失敗，新增客戶時無法查詢統編。\n可繼續手動填寫客戶資料。",
-            )
-        dialog = NewClientDialog(
-            self._container.clients,
-            parent=self,
-            tax_registry_repo=registry_repo,
-        )
-        if dialog.exec() == NewClientDialog.DialogCode.Accepted:
-            self.on_refresh()
+            if dialog.exec() == NewClientDialog.DialogCode.Accepted:
+                self.on_refresh()
+        finally:
+            self._new_btn.setEnabled(True)
 
     def on_edit_client(self) -> None:
         client_id = self._selected_client_id()
@@ -376,9 +380,13 @@ class ClientsPage(QWidget):
             QMessageBox.warning(self, "找不到客戶", error_message("client.not_found"))
             self.on_refresh()
             return
-        dialog = EditClientDialog(self._container.clients, client, parent=self)
-        if dialog.exec() == EditClientDialog.DialogCode.Accepted:
-            self.on_refresh()
+        self._edit_btn.setEnabled(False)
+        try:
+            dialog = EditClientDialog(self._container.clients, client, parent=self)
+            if dialog.exec() == EditClientDialog.DialogCode.Accepted:
+                self.on_refresh()
+        finally:
+            self._edit_btn.setEnabled(True)
 
     def on_delete_client(self) -> None:
         client_id = self._selected_client_id()

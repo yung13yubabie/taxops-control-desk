@@ -151,7 +151,7 @@ ERROR_MESSAGES: dict[str, str] = dict(
             "late_fee.date.required_pair": "最後繳款日與實際繳款日必須同時提供，或同時不填",
             "late_fee.date.range_invalid": "實際繳款日不可早於最後繳款日，請確認日期輸入",
             "late_fee.negative_overdue_days": "逾期天數不可為負數",
-            "late_fee.negative_base_amount": "稅額不可為負數",
+            "late_fee.negative_base_amount": "稅額須為正數",
             "late_fee.date.invalid": "日期格式不正確，請使用有效日期",
             "late_fee.request_not_found": "找不到指定索件批次，無法計算滯納金",
             "late_fee.calculate.failed": "滯納金試算失敗，請稍後再試",
@@ -200,6 +200,7 @@ ERROR_MESSAGES: dict[str, str] = dict(
             "recurring_billing.occurrence.not_pending": "此開立紀錄已確認或跳過，無法再次操作",
             "recurring_billing.confirmed_amount.non_positive": "確認金額必須大於零",
             "recurring_billing.confirmed_invoice_no.too_long": "發票號碼不可超過 50 個字元",
+            "recurring_billing.confirmed_issue_date.invalid": "確認開立日期格式不正確，請使用 YYYY-MM-DD 格式",
             "recurring_billing.occurrence.cannot_cancel_confirmed": "已確認的開立紀錄無法取消，請先取消確認後再操作",
         }
     )
