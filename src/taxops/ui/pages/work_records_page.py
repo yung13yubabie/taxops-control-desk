@@ -377,6 +377,7 @@ class WorkRecordsPage(QWidget):
 
     def _refresh_workflows(self) -> None:
         templates = self._container.work_records.list_templates()
+        self._templates_table.blockSignals(True)
         self._templates_table.setRowCount(len(templates))
         has_templates = len(templates) > 0
         self._templates_table.setVisible(has_templates)
@@ -392,9 +393,11 @@ class WorkRecordsPage(QWidget):
             for col, value in enumerate(values):
                 self._templates_table.setItem(row_idx, col, QTableWidgetItem(value))
             self._template_combo.addItem(template.name, userData=template.id)
+        self._templates_table.blockSignals(False)
         self._template_combo.blockSignals(False)
 
         runs = self._container.work_records.list_runs()
+        self._runs_table.blockSignals(True)
         self._runs_table.setRowCount(len(runs))
         for row_idx, run in enumerate(runs):
             done, total, percent = self._container.work_records.progress_for_stages_json(
@@ -403,6 +406,7 @@ class WorkRecordsPage(QWidget):
             values = [str(run.id), run.name, str(run.template_id or ""), f"{done}/{total} ({percent}%)"]
             for col, value in enumerate(values):
                 self._runs_table.setItem(row_idx, col, QTableWidgetItem(value))
+        self._runs_table.blockSignals(False)
         self._update_workflow_detail()
 
     def _refresh_notes(self) -> None:

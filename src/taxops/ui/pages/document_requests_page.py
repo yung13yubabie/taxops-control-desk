@@ -561,6 +561,7 @@ class DocumentRequestsPage(QWidget):
         self._fill_request_table(reqs, saved_req_id)
 
     def _fill_request_table(self, reqs, saved_req_id: int | None) -> None:
+        self._req_table.blockSignals(True)
         self._req_table.setRowCount(len(reqs))
         has_rows = len(reqs) > 0
         self._req_table.setVisible(has_rows)
@@ -587,6 +588,7 @@ class DocumentRequestsPage(QWidget):
                     row_idx, col_idx, QTableWidgetItem(values[col])
                 )
             self._req_table.setRowHeight(row_idx, 52)
+        self._req_table.blockSignals(False)
         # Banner only updates in global mode (engagement mode set it earlier).
         if self._engagement_id is None:
             self._context_banner.setText(

@@ -272,9 +272,8 @@ class FolderBookmarksPage(QWidget):
             if self._bookmark_matches_filters(bm)
         ]
         bookmarks.sort(key=lambda bm: (_parent_path(bm.path).lower(), bm.name.lower()))
+        self._table.blockSignals(True)
         self._table.setRowCount(len(bookmarks))
-        self._table.setVisible(bool(bookmarks))
-        self._empty_state.setVisible(not bookmarks)
         for row_idx, bm in enumerate(bookmarks):
             values = {
                 "id": str(bm.id),
@@ -288,6 +287,9 @@ class FolderBookmarksPage(QWidget):
                 item = QTableWidgetItem(values[col])
                 item.setToolTip(values[col])
                 self._table.setItem(row_idx, col_idx, item)
+        self._table.blockSignals(False)
+        self._table.setVisible(bool(bookmarks))
+        self._empty_state.setVisible(not bookmarks)
         self._restore_selection(selected_id)
         self._on_selection_changed()
 

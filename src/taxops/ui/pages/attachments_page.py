@@ -307,6 +307,7 @@ class AttachmentsPage(QWidget):
         self._on_selection_changed()
 
     def _render_table(self) -> None:
+        self._table.blockSignals(True)
         self._table.setRowCount(0)
         for att in self._attachments:
             row = self._table.rowCount()
@@ -321,6 +322,7 @@ class AttachmentsPage(QWidget):
             }
             for col, key in enumerate(_COLUMNS):
                 self._table.setItem(row, col, QTableWidgetItem(vals[key]))
+        self._table.blockSignals(False)
 
     def _selected_index(self) -> int | None:
         items = self._table.selectedItems()

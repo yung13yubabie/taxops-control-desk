@@ -498,6 +498,7 @@ class ClientsPage(QWidget):
 
         q = self._search_input.text().strip()
         self._count_label.setText(f"符合 {self._total} 筆" if q else f"共 {self._total} 筆")
+        self._table.blockSignals(True)
         self._table.setRowCount(len(rows))
         for row_idx, client in enumerate(rows):
             is_deleted = client.deleted_at is not None
@@ -524,6 +525,7 @@ class ClientsPage(QWidget):
                 if col == "id":
                     item.setData(Qt.ItemDataRole.UserRole, is_deleted)
                 self._table.setItem(row_idx, col_idx, item)
+        self._table.blockSignals(False)
 
         self._empty_state.setVisible(self._total == 0)
         self._table.setVisible(self._total > 0)

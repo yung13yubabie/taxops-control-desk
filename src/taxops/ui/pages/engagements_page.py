@@ -431,6 +431,7 @@ class EngagementsPage(QWidget):
 
         self._engagement_rows_by_id = {eng.id: eng for eng in rows}
         self._engagement_client_labels = {}
+        self._table.blockSignals(True)
         self._table.setRowCount(len(rows))
         for row_idx, eng in enumerate(rows):
             client = self._container.clients.get_client(eng.client_id)
@@ -452,6 +453,7 @@ class EngagementsPage(QWidget):
                 item.setToolTip(values[col])
                 self._table.setItem(row_idx, col_idx, item)
             self._table.setRowHeight(row_idx, 54)
+        self._table.blockSignals(False)
 
         has_rows = len(rows) > 0
         self._empty_state.setVisible(not has_rows)

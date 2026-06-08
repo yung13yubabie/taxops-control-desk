@@ -600,7 +600,8 @@ class RecurringBillingPage(QWidget):
 
     def showEvent(self, event) -> None:  # type: ignore[override]
         super().showEvent(event)
-        self._refresh()
+        # refresh_context() is called by _activate_page; do not call _refresh()
+        # here to avoid double refresh when the page becomes visible.
 
     def refresh_context(self) -> None:
         """Reload data when global state changes (e.g. client deleted)."""
