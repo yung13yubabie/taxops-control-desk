@@ -233,6 +233,16 @@ class RecurringBillingRepository:
     def get_plan(self, plan_id: int) -> PlanRow | None:
         r = self._conn.execute(
             "SELECT * FROM recurring_billing_plans WHERE id = ?"
+            " AND deleted_at IS NULL"
+            f" AND {_ACTIVE_PLAN_OWNER_SQL}",
+            (plan_id,),
+        ).fetchone()
+        return _plan(r) if r else None
+
+    def _get_plan_including_archived(self, plan_id: int) -> PlanRow | None:
+        """Read a plan regardless of deleted_at; used only after archiving."""
+        r = self._conn.execute(
+            "SELECT * FROM recurring_billing_plans WHERE id = ?"
             f" AND {_ACTIVE_PLAN_OWNER_SQL}",
             (plan_id,),
         ).fetchone()
@@ -276,7 +286,7 @@ class RecurringBillingRepository:
             "UPDATE recurring_billing_plans SET status=?, deleted_at=?, updated_at=? WHERE id=?",
             (status, deleted_at, now, plan_id),
         )
-        return self.get_plan(plan_id)
+        return self._get_plan_including_archived(plan_id)
 
     def list_plans(
         self, client_id: int | None = None, include_archived: bool = False

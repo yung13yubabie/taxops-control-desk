@@ -478,7 +478,7 @@ class RecurringBillingService:
         plan_id: int,
         until_date: datetime.date | None = None,
     ) -> list[OccurrenceRow]:
-        plan = self._repo.get_plan(plan_id)
+        plan = self._repo._get_plan_including_archived(plan_id)
         if plan is None:
             raise RecurringBillingError("recurring_billing.plan.not_found")
         if plan.status == "archived":

@@ -101,7 +101,7 @@ class LateFeeRepository:
             " JOIN document_requests dr ON dr.id = lf.request_id"
             " JOIN engagements e ON e.id = dr.engagement_id"
             " JOIN clients c ON c.id = e.client_id"
-            " WHERE lf.id = ? AND e.deleted_at IS NULL AND c.deleted_at IS NULL",
+            " WHERE lf.id = ? AND dr.deleted_at IS NULL AND e.deleted_at IS NULL AND c.deleted_at IS NULL",
             (record_id,),
         ).fetchone()
         return _row(r) if r else None
@@ -113,7 +113,7 @@ class LateFeeRepository:
             " JOIN engagements e ON e.id = dr.engagement_id"
             " JOIN clients c ON c.id = e.client_id"
             " WHERE lf.request_id = ?"
-            " AND e.deleted_at IS NULL AND c.deleted_at IS NULL"
+            " AND dr.deleted_at IS NULL AND e.deleted_at IS NULL AND c.deleted_at IS NULL"
             " ORDER BY lf.id",
             (request_id,),
         ).fetchall()

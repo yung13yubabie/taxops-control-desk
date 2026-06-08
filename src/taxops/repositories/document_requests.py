@@ -263,7 +263,7 @@ class DocumentRequestsRepository:
         ts = now_iso()
         self._conn.execute(
             "UPDATE document_request_items SET item_name = ?, notes = ?, updated_at = ?"
-            " WHERE id = ?",
+            f" WHERE id = ? AND {_ACTIVE_ITEM_OWNER_SQL}",
             (item_name, notes, ts, item_id),
         )
         return self.get_item(item_id)
@@ -285,7 +285,7 @@ class DocumentRequestsRepository:
         ts = now_iso()
         self._conn.execute(
             "UPDATE document_request_items SET item_status = ?, notes = ?, updated_at = ?"
-            " WHERE id = ?",
+            f" WHERE id = ? AND {_ACTIVE_ITEM_OWNER_SQL}",
             (item_status, notes, ts, item_id),
         )
         return self.get_item(item_id)
