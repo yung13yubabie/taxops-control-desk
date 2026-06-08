@@ -208,6 +208,7 @@ class TasksPage(QWidget):
 
     def clear_filter(self) -> None:
         self._filter_key = ""
+        self._client_combo.setCurrentIndex(0)  # 重置為「全部客戶」；會觸發 _on_client_changed 連帶更新 _eng_combo
 
     def refresh_context(self) -> None:
         """Reload client + engagement choices when data changed elsewhere."""

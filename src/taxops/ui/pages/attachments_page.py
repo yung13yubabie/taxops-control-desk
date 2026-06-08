@@ -260,6 +260,9 @@ class AttachmentsPage(QWidget):
         return panel
 
     def clear_filter(self) -> None:
+        # 重新載入案件清單（更新因外部操作而異動的選項）
+        self._load_engagements()
+        # 強制重置回「全部案件」（index 0），_load_engagements 會保留原選擇
         self._eng_combo.blockSignals(True)
         self._eng_combo.setCurrentIndex(0)
         self._eng_combo.blockSignals(False)
@@ -331,10 +334,18 @@ class AttachmentsPage(QWidget):
         return self._table.row(items[0])
 
     def _selected_attachment(self):
-        idx = self._selected_index()
-        if idx is None or idx >= len(self._attachments):
+        rows = self._table.selectedItems()
+        if not rows:
             return None
-        return self._attachments[idx]
+        row = self._table.row(rows[0])
+        id_item = self._table.item(row, 0)  # column 0 為 "id"
+        if id_item is None:
+            return None
+        try:
+            att_id = int(id_item.text())
+        except ValueError:
+            return None
+        return next((a for a in self._attachments if a.id == att_id), None)
 
     def _resolve_att_file_path(self, att, *, notify: bool) -> Path | None:
         try:

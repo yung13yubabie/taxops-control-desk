@@ -224,6 +224,9 @@ class LateFeePage(QWidget):
         else:
             self._load_history()
 
+    def clear_filter(self) -> None:
+        self._eng_combo.setCurrentIndex(0)  # 重置為「請選擇案件」；會觸發 _on_engagement_changed 連帶清空 _req_combo
+
     def refresh_context(self) -> None:
         """Reload engagement/request choices when the page becomes active."""
         self._load_engagements()
