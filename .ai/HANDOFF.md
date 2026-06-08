@@ -1,6 +1,42 @@
 # HANDOFF
 
-## Latest Handoff Update (2026-06-08 - post-v0.27.0 correctness patches)
+## Latest Handoff Update (2026-06-08 - v0.28.0 deep-bug-fix release)
+
+### Release v0.28.0
+
+- **Tag**: `v0.28.0`
+- **Commits** (6 fix commits + 1 version bump, all from v0.27.0 base):
+  - `1c92532` fix: FTS transaction safety + work_records split-commit
+  - `e8c9b22` fix: repo SQL — late_fee dr soft-delete guard, doc_request item owner guard, recurring_billing archived plan filter
+  - `7687385` fix: blockSignals on 7 page setRowCount calls (signal race)
+  - `05ab451` fix: stable-ID attachment selection, clear_filter late_fee/tasks
+  - `b50bde4` docs: record post-v0.27.0 patches
+  - `531ee15` fix: anti-double-click clients, base_amount>0, confirmed_issue_date ISO, period_year bounds, tasks bulk audit
+  - `547ee00` chore: bump version to v0.28.0
+- **Tests**: 1118 passed
+- **EXE**: Built via `python -m build_tools.package_windows`
+
+### What changed (v0.27.0 → v0.28.0)
+
+1. **FTS transaction safety** — FTS index ops now inside same `with self._conn:` as primary write
+2. **Repo SQL correctness** — late_fee JOIN dr soft-delete, doc_request item update owner guard, recurring_billing get_plan archived filter
+3. **Mid-refresh signal race** — 7 pages wrapped setRowCount with blockSignals
+4. **Stable-ID attachment selection** — ID-based lookup instead of row index
+5. **cross-page clear_filter** — late_fee_page, tasks_page fully reset on navigate
+6. **Anti-double-click** — clients_page new/edit dialogs disable button during exec
+7. **base_amount > 0** — late_fee rejects zero-amount records
+8. **confirmed_issue_date ISO format** — recurring_billing validates YYYY-MM-DD
+9. **period_year bounds** — 1900 ≤ year ≤ 2200 validation
+10. **tasks bulk audit** — update_tasks_bulk field updates now have audit record + None check
+
+### Remaining
+
+- Push `v0.28.0` tag and commits to `origin/main`
+- GitHub Release with ZIP artifact uploaded
+
+---
+
+## Prior Handoff Update (2026-06-08 - post-v0.27.0 correctness patches)
 
 ### Commits on main, not yet pushed to origin
 
