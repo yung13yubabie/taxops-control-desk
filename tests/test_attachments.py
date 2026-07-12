@@ -494,6 +494,28 @@ def test_delete_attachment_archives_and_hides_from_default_list(
     assert archived[0].id == row.id
 
 
+def test_archived_attachment_cannot_be_accepted(conn, svc, repo, tmp_path):
+    _, eng_id = _seed(conn)
+    row = svc.upload_attachment(UploadAttachmentInput(
+        engagement_id=eng_id,
+        request_id=None,
+        source_path=_make_file(tmp_path),
+    ))
+    svc.delete_attachment(row.id)
+
+    with pytest.raises(AttachmentValidationError) as exc:
+        svc.accept_attachment(row.id)
+
+    assert exc.value.code == "attachment.not_found"
+    archived = repo.list_by_engagement(eng_id, include_archived=True)
+    assert archived[0].status == "archived"
+    assert conn.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+        " WHERE action = 'attachment.accept' AND target_id = ?",
+        (str(row.id),),
+    ).fetchone()[0] == 0
+
+
 def test_delete_attachment_records_audit(conn, svc, tmp_path):
     _, eng_id = _seed(conn)
     f = _make_file(tmp_path)

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from taxops.repositories.clients import ClientsRepository
 from taxops.repositories.registry_matches import (
     REGISTRY_SOURCE_MOF,
@@ -136,6 +138,33 @@ def test_matcher_writes_audit_log(container: ServiceContainer) -> None:
     audits = container.audit._repo.list_recent(limit=20)  # type: ignore[attr-defined]
     actions = [a.action for a in audits]
     assert "tax_cache.match.regenerate" in actions
+
+
+def test_matcher_rolls_back_replacement_when_audit_fails(
+    container: ServiceContainer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_cache_directly(container)
+    container.clients.create_client(
+        CreateClientInput(
+            client_code="C-ROLLBACK",
+            client_name="Rollback client",
+            tax_id="11111111",
+        )
+    )
+    matcher = _build_matcher(container)
+    monkeypatch.setattr(
+        matcher._audit,
+        "record",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("audit unavailable")),
+    )
+
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        matcher.regenerate_mof()
+
+    assert RegistryMatchRepository(container.conn).count_for_source(
+        REGISTRY_SOURCE_MOF
+    ) == 0
 
 
 def test_matcher_handles_blank_tax_id_as_needs_manual_review(

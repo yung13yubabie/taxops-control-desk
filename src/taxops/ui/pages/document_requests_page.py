@@ -160,7 +160,7 @@ class DocumentRequestsPage(QWidget):
             " border: 1px solid #93C5FD;"
             " border-radius: 6px;"
             " padding: 8px 12px;"
-            "}}"
+            "}"
         )
         self._context_banner.setWordWrap(True)
         outer.addWidget(self._context_banner)
@@ -681,6 +681,8 @@ class DocumentRequestsPage(QWidget):
             self._container.system_log.error(
                 "doc_request_items.list failed", exc=err
             )
+            self._item_table.setRowCount(0)
+            self._on_item_selection_changed()
             return
 
         self._item_table.setRowCount(len(items))

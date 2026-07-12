@@ -11,6 +11,12 @@ from typing import Literal
 
 _log = logging.getLogger(__name__)
 
+MAX_BULK_ROWS = 10_000
+MAX_BULK_COLUMNS = 100
+MAX_BULK_CELL_CHARS = 10_000
+MAX_BULK_FILE_BYTES = 50 * 1024 * 1024
+MAX_BULK_CLIPBOARD_CHARS = 5_000_000
+
 from ..core.text import sanitize_user_text
 from ..repositories.clients import ClientsRepository
 from .clients import ClientValidationError, ClientsService, CreateClientInput
@@ -110,8 +116,18 @@ class BulkImportResult:
     errors: list[tuple[int, str]]
 
 
+def _validate_bulk_file_size(path: Path) -> None:
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise BulkParseError("client.bulk.parse_failed", str(exc)) from exc
+    if size > MAX_BULK_FILE_BYTES:
+        raise BulkParseError("client.bulk.file_too_large")
+
+
 def parse_excel(path: Path) -> tuple[list[str], list[RawRow]]:
     """Return (headers, rows) from the first sheet of an xlsx file."""
+    _validate_bulk_file_size(path)
     try:
         import openpyxl
     except ImportError as exc:
@@ -132,11 +148,17 @@ def parse_excel(path: Path) -> tuple[list[str], list[RawRow]]:
 
     for i, row in enumerate(rows_iter):
         cells = [str(c).strip() if c is not None else "" for c in row]
+        if any(len(cell) > MAX_BULK_CELL_CHARS for cell in cells):
+            raise BulkParseError("client.bulk.cell_too_large")
         if i == 0:
+            if len(cells) > MAX_BULK_COLUMNS:
+                raise BulkParseError("client.bulk.too_many_columns")
             headers = cells
             continue
         if not any(cells):
             continue
+        if len(raw_rows) >= MAX_BULK_ROWS:
+            raise BulkParseError("client.bulk.too_many_rows")
         data = {headers[j]: cells[j] for j in range(min(len(headers), len(cells)))}
         raw_rows.append(RawRow(row_number=i + 1, data=data))
 
@@ -152,12 +174,15 @@ def parse_excel(path: Path) -> tuple[list[str], list[RawRow]]:
 
 def parse_csv(path: Path) -> tuple[list[str], list[RawRow]]:
     """Return (headers, rows) from a CSV file (auto-detect encoding)."""
+    _validate_bulk_file_size(path)
     for encoding in ("utf-8-sig", "utf-8", "cp950", "big5"):
         try:
             text = path.read_text(encoding=encoding)
             break
         except (UnicodeDecodeError, LookupError):
             continue
+        except OSError as exc:
+            raise BulkParseError("client.bulk.parse_failed", str(exc)) from exc
     else:
         raise BulkParseError("client.bulk.parse_failed", "cannot detect encoding")
 
@@ -166,6 +191,8 @@ def parse_csv(path: Path) -> tuple[list[str], list[RawRow]]:
 
 def parse_clipboard_text(text: str) -> tuple[list[str], list[RawRow]]:
     """Return (headers, rows) from tab- or comma-delimited clipboard text."""
+    if len(text) > MAX_BULK_CLIPBOARD_CHARS:
+        raise BulkParseError("client.bulk.clipboard_too_large")
     if not text.strip():
         raise BulkParseError("client.bulk.no_valid_rows")
     return _parse_delimited_text(text)
@@ -183,11 +210,17 @@ def _parse_delimited_text(text: str) -> tuple[list[str], list[RawRow]]:
 
     for i, row in enumerate(reader):
         cells = [c.strip() for c in row]
+        if any(len(cell) > MAX_BULK_CELL_CHARS for cell in cells):
+            raise BulkParseError("client.bulk.cell_too_large")
         if i == 0:
+            if len(cells) > MAX_BULK_COLUMNS:
+                raise BulkParseError("client.bulk.too_many_columns")
             headers = cells
             continue
         if not any(cells):
             continue
+        if len(raw_rows) >= MAX_BULK_ROWS:
+            raise BulkParseError("client.bulk.too_many_rows")
         data = {headers[j]: cells[j] for j in range(min(len(headers), len(cells)))}
         raw_rows.append(RawRow(row_number=i + 1, data=data))
 

@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QPlainTextEdit,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -54,7 +56,7 @@ _COLUMN_ORDER: tuple[str, ...] = (
 )
 
 # Columns hidden by default; user can toggle them via the "欄位顯示" menu.
-_DEFAULT_HIDDEN: frozenset[str] = frozenset({"id", "address", "note", "lease_start"})
+_DEFAULT_HIDDEN: frozenset[str] = frozenset({"id", "address", "lease_start"})
 _CORE_COLS: frozenset[str] = frozenset({"client_code", "client_name"})
 
 _DEFAULT_SORT_COL = "client_code"
@@ -96,11 +98,14 @@ class ClientsPage(QWidget):
         self._clear_btn = QPushButton("清除")
         self._count_label = QLabel("共 0 筆")
         self._count_label.setStyleSheet(f"color: {TEXT_MUTED};")
+        self._count_label.setMaximumHeight(40)
+        self._notes_only_check = QCheckBox("只看有特殊要求／備註")
         self._show_deleted_check = QCheckBox("顯示已刪除客戶")
         search_row.addWidget(self._search_input, 1)
         search_row.addWidget(self._search_btn)
         search_row.addWidget(self._clear_btn)
         search_row.addWidget(self._show_deleted_check)
+        search_row.addWidget(self._notes_only_check)
         search_row.addStretch(0)
         search_row.addWidget(self._count_label)
         outer.addLayout(search_row)
@@ -165,12 +170,25 @@ class ClientsPage(QWidget):
         header_view.setSectionResizeMode(
             _COLUMN_ORDER.index("client_name"), QHeaderView.ResizeMode.Stretch
         )
+        header_view.setSectionResizeMode(
+            _COLUMN_ORDER.index("note"), QHeaderView.ResizeMode.Stretch
+        )
         header_view.setSectionsClickable(True)
         header_view.setSortIndicatorShown(True)
         header_view.setSortIndicator(
             _COLUMN_ORDER.index(_DEFAULT_SORT_COL), Qt.SortOrder.AscendingOrder
         )
         outer.addWidget(self._table, stretch=1)
+
+        note_group = QGroupBox("客戶特殊要求／備註全文")
+        note_layout = QVBoxLayout(note_group)
+        note_layout.setContentsMargins(10, 10, 10, 10)
+        self._note_detail = QPlainTextEdit()
+        self._note_detail.setReadOnly(True)
+        self._note_detail.setPlaceholderText("選取客戶後，在這裡查看完整換行備註")
+        self._note_detail.setMaximumHeight(150)
+        note_layout.addWidget(self._note_detail)
+        outer.addWidget(note_group)
 
         # Pagination row
         page_row = QHBoxLayout()
@@ -179,6 +197,7 @@ class ClientsPage(QWidget):
         self._next_btn = QPushButton("下一頁 ▶")
         self._page_label = QLabel("")
         self._page_label.setStyleSheet(f"color: {TEXT_MUTED};")
+        self._page_label.setMaximumHeight(40)
         self._prev_btn.setEnabled(False)
         self._next_btn.setEnabled(False)
         page_row.addWidget(self._prev_btn)
@@ -199,6 +218,7 @@ class ClientsPage(QWidget):
         self._cols_btn.clicked.connect(self._on_cols_menu)
         self._refresh_btn.clicked.connect(self.on_refresh)
         self._show_deleted_check.toggled.connect(self._on_show_deleted_toggled)
+        self._notes_only_check.toggled.connect(self._on_notes_only_toggled)
         self._search_btn.clicked.connect(self._on_search)
         self._clear_btn.clicked.connect(self._on_clear_search)
         self._search_input.returnPressed.connect(self._on_search)
@@ -303,6 +323,10 @@ class ClientsPage(QWidget):
         self._page = 0
         self.on_refresh()
 
+    def _on_notes_only_toggled(self) -> None:
+        self._page = 0
+        self.on_refresh()
+
     def set_filter(self, filter_key: str) -> None:
         self._filter_key = filter_key
         self._search_input.clear()
@@ -325,6 +349,7 @@ class ClientsPage(QWidget):
             self._delete_btn.setEnabled(False)
             self._restore_btn.setEnabled(False)
             self._purge_btn.setEnabled(False)
+            self._note_detail.clear()
             return
         rows = self._table.selectedItems()
         row_idx = self._table.row(rows[0])
@@ -334,6 +359,8 @@ class ClientsPage(QWidget):
         self._delete_btn.setEnabled(not is_deleted)
         self._restore_btn.setEnabled(is_deleted)
         self._purge_btn.setEnabled(is_deleted)
+        note_item = self._table.item(row_idx, _COLUMN_ORDER.index("note"))
+        self._note_detail.setPlainText(note_item.toolTip() if note_item else "")
 
     def _selected_client_id(self) -> int | None:
         """Always return client.id from the id column — never row index."""
@@ -474,6 +501,7 @@ class ClientsPage(QWidget):
         selected_client_id = self._selected_client_id()
         query = self._search_input.text()
         include_deleted = self._show_deleted_check.isChecked()
+        notes_only = self._notes_only_check.isChecked()
         try:
             if self._filter_key == FilterKey.LEASE_EXPIRING:
                 today = today_iso()
@@ -484,13 +512,22 @@ class ClientsPage(QWidget):
                 rows = rows[start : start + _PAGE_SIZE]
             else:
                 search_svc = getattr(self._container, "search", None)
-                if not include_deleted and search_svc is not None and search_svc.is_fts_eligible(query):
+                if (
+                    not notes_only
+                    and not include_deleted
+                    and search_svc is not None
+                    and search_svc.is_fts_eligible(query)
+                ):
                     all_rows = search_svc.search_clients(query.strip())
                     self._total = len(all_rows)
                     start = self._page * _PAGE_SIZE
                     rows = all_rows[start : start + _PAGE_SIZE]
                 else:
-                    self._total = self._container.clients.count_clients(query, include_deleted=include_deleted)
+                    self._total = self._container.clients.count_clients(
+                        query,
+                        include_deleted=include_deleted,
+                        has_note=notes_only,
+                    )
                     rows = self._container.clients.search_clients(
                         query,
                         order_by=self._sort_col,
@@ -498,6 +535,7 @@ class ClientsPage(QWidget):
                         limit=_PAGE_SIZE,
                         offset=self._page * _PAGE_SIZE,
                         include_deleted=include_deleted,
+                        has_note=notes_only,
                     )
         except Exception as err:
             self._container.system_log.error("clients.list failed", exc=err)
@@ -526,7 +564,12 @@ class ClientsPage(QWidget):
                 "updated_at": client.updated_at,
             }
             for col_idx, col in enumerate(_COLUMN_ORDER):
-                item = QTableWidgetItem(values[col])
+                display_value = (
+                    values[col].replace("\r\n", "\n").replace("\n", " ／ ")
+                    if col == "note"
+                    else values[col]
+                )
+                item = QTableWidgetItem(display_value)
                 item.setToolTip(values[col])
                 if is_deleted:
                     item.setForeground(_DELETED_FG)

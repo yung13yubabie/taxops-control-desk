@@ -213,16 +213,47 @@ class CanvasNotesService:
     def note_assets_dir(self) -> Path:
         return self._note_assets_dir
 
+    def _resolve_context(
+        self,
+        client_id: int | None,
+        engagement_id: int | None,
+    ) -> tuple[int | None, int | None]:
+        if engagement_id is not None:
+            row = self._conn.execute(
+                "SELECT e.client_id FROM engagements e"
+                " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+                " WHERE e.id = ? AND e.deleted_at IS NULL",
+                (engagement_id,),
+            ).fetchone()
+            if row is None:
+                raise CanvasNoteValidationError("canvas_note.context_not_found")
+            owner_client_id = int(row["client_id"])
+            if client_id is not None and client_id != owner_client_id:
+                raise CanvasNoteValidationError("canvas_note.context_mismatch")
+            return owner_client_id, engagement_id
+        if client_id is not None:
+            row = self._conn.execute(
+                "SELECT 1 FROM clients WHERE id = ? AND deleted_at IS NULL",
+                (client_id,),
+            ).fetchone()
+            if row is None:
+                raise CanvasNoteValidationError("canvas_note.context_not_found")
+        return client_id, None
+
     def create_note(self, payload: CreateCanvasNoteInput) -> CanvasNoteRow:
         title = sanitize_user_text(payload.title, max_length=200)
         if not title:
             raise CanvasNoteValidationError("canvas_note.title.required")
+        client_id, engagement_id = self._resolve_context(
+            payload.client_id,
+            payload.engagement_id,
+        )
         with self._conn:
             row = self._repo.insert(
                 title=title,
                 scene_json=default_scene_json(),
-                client_id=payload.client_id,
-                engagement_id=payload.engagement_id,
+                client_id=client_id,
+                engagement_id=engagement_id,
                 context_snapshot=None,
             )
             self._audit.record(

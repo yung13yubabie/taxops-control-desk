@@ -1,5 +1,112 @@
 # CURRENT_STATE
 
+## 2026-07-12 fixed-billing manual-acceptance EXE (uncommitted)
+
+- Fixed billing now exposes plan edit/add/delete actions before expansion,
+  supports discoverable start-date edits, physically deletes plans without
+  confirmed history, and blocks deletion when confirmed history exists.
+- Editing a plan reconciles mutable pending dates while preserving confirmed,
+  skipped, and cancelled history. Batch reconciliation validates and confirms
+  the exact selection atomically; audit failure rolls back every row.
+- `PlanDialog` is scrollable at 680x500, uses both sides for contract fields,
+  arranges months in a grid, and reuses an existing blank row on repeated
+  `新增列` clicks.
+- Client notes remain multiline in SQLite, are visible by default in the client
+  table, use a compact single-row display, and retain exact newlines in tooltip.
+- Template editor explains that available fields are placeholders populated by
+  client/case/request/fixed-billing data during message generation.
+- Registry page has an official per-tax-id GCIS online fallback for company,
+  business, and branch data. It is separate from MOF BGMOPEN1, does not scrape,
+  and surfaces IP authorization/network/response failures.
+- Fresh branch-coverage gate passes at **90.20%**: 1437 passed, 2 large
+  BGMOPEN1 import smoke tests deselected. Evidence:
+  `.ai/coverage-post-acceptance-final-20260712.json`.
+- Changed-surface regression passes 261/261; native Qt/app lifecycle passes
+  9/9; compileall and `git diff --check` pass.
+- Windows Computer Use visual acceptance is blocked because its native pipe is
+  unavailable. Visible DPI/manual acceptance is not claimed.
+- The corrected worktree is rebuilt from the exact-pinned isolated Python
+  3.11.9 environment. Automated EXE smoke passes: alive after eight seconds,
+  isolated SQLite created, then process terminated without a TaxOps residual.
+- Acceptance artifact:
+  `dist/TaxOpsControlDesk-v0.28.0-acceptance-20260712-r2-win64.zip`
+  (49,769,899 bytes), SHA-256
+  `93530F5181AEA30CFCABF5B5F07E210D713F9D40845FB66999F2B1BF8F3D160C`.
+- ZIP readback passes for all 192 entries with no test, `.ai`, Git, Python
+  source, or bytecode entries. GCIS is present in the PyInstaller module graph.
+- This is an unsigned acceptance build, not a release. No commit, push, tag, or
+  GitHub Release was performed.
+
+## 2026-07-12 v0.28.0 manual-acceptance package (uncommitted)
+
+- The current 90.02%-coverage worktree is packaged as a Windows PyInstaller
+  one-dir EXE from an isolated Python 3.11.9 release environment using the
+  exact versions in `requirements-release.txt`.
+- Isolated `pip check` reports no broken requirements. The first shared-Python
+  build was discarded because its module graph picked up unrelated global
+  packages and emitted a Requests dependency warning.
+- Automated EXE smoke passes: the process remains alive after eight seconds and
+  creates an isolated `TaxOpsControlDeskDev/taxops.sqlite`; the smoke process is
+  then terminated.
+- Acceptance artifact:
+  `dist/TaxOpsControlDesk-v0.28.0-acceptance-20260712-win64.zip` (49,755,794
+  bytes), SHA-256
+  `DE814ABDC9DC4ECAC84E20D3E27BFB99B00946246476A257956D0030F804D1CC`.
+- ZIP readback passes for all 192 entries. The EXE is not digitally signed, so
+  Windows SmartScreen behavior remains an expected manual-acceptance risk.
+- This is an acceptance build, not a release: visible UI workflows, DPI,
+  upgrade/reinstall, and a separate clean/offline Windows machine remain
+  unverified. No commit, push, tag, or GitHub Release was performed.
+
+## 2026-07-12 Happy-path audit and 90% branch-coverage gate (uncommitted)
+
+- The shortened full branch-coverage gate now passes at **90.02%**:
+  `1393 passed, 2 deselected`; the only deselections are the two 65MB real
+  BGMOPEN1 ZIP smoke tests. Evidence is `.ai/coverage-final-20260712.json`.
+- Real-widget/error-path integration regression passed: `479 passed`.
+- Native Qt worker/runtime regression was run without coverage instrumentation:
+  `9 passed`.
+- Work Records no longer constructs hidden canvas/error-review widgets solely
+  for tests. Those unavailable actions are disabled in the action registry;
+  the underlying canvas/error services and security tests remain.
+- Confirmed happy-path defects fixed in this campaign include:
+  - Bulk import no longer advances to the success screen after an import error.
+  - Document-request stale item rows are cleared after load failure, and its
+    context-banner stylesheet is valid.
+  - Attachment stale selections cannot leave action buttons enabled; Windows
+    open failures now show visible feedback.
+  - The unused navigation placeholder fallback was removed so unmapped pages
+    fail fast instead of silently appearing unfinished.
+- Real dialog/button paths now cover clients, tasks, templates, document
+  requests, recurring billing, attachments, Work Records workflows, registry,
+  late fee, settings download/import, bulk import, and canvas PDF/security.
+- `compileall` and `git diff --check` pass. Global `pip check` remains red due
+  unrelated shared-environment conflicts in pip-audit/semgrep/transformers;
+  no global packages were mutated to hide that result.
+- The worktree remains uncommitted. No EXE build, package, tag, push, or release
+  was performed.
+
+## 2026-07-11 Deep bug and branch-coverage campaign (uncommitted)
+
+- The current worktree contains correctness fixes and regression tests; it is
+  not committed or released.
+- Verified full branch-coverage gate: 1191 passed, 1 failed, total 80.60%.
+  The failure was an order-dependent ClientsPage compact-header height breach;
+  both pagination labels now have a 40px maximum height, and the full layout
+  test file subsequently passed 16/16.
+- Verified shortened coverage measurement (excluding two 65MB real-registry
+  import smoke tests and the separately verified Qt worker lifecycle file):
+  1214 passed, 2 deselected, 83.42% branch coverage.
+- The 90% gate is not met. Current shortened-run gap is 1,932 missing lines and
+  818 missing branches; about 1,092 additional coverage points must be covered.
+- Core fixes include task completion timestamps, archived-record mutation
+  guards, client/engagement context consistency, client purge reference guards,
+  registry transaction atomicity, streaming registry bundles, import resource
+  limits, backup DDL validation, stale document-item clearing, bounded text
+  attachment preview, SettingsPage mutation locking, worker diagnostics, and
+  forced app exit after database restore.
+- Latest focused regression set: 223 passed. No build/package/release was run.
+
 ## 2026-06-08 Post-v0.27.0 correctness fixes (unpushed)
 
 - Four commits on `main` are not yet pushed to `origin/main`:
@@ -621,3 +728,12 @@
 1. [建議] 真實 Windows 桌面驗收（Slice 2 五個按鈕 + 客戶管理：編輯、刪除、批量匯入、衝突審查）。
 2. [待驗證] Slice 3（HTTP download + URL allowlist + 兩段確認 + GCIS query）。
 3. [待改善] Dialog 錯誤改寫入 SQLite `system_logs`（目前用 Python `logging`）。
+
+## 2026-07-12 v0.29.0 release candidate state
+
+- 固定開立顯示完整當年度紀錄；確認列可退回待確認，退回前完整確認資料保存至 audit。
+- 客戶管理有特殊要求／備註全文區與「只看有備註」篩選，換行以 plain text 保留。
+- 登記名稱搜尋為背景、最多 50 筆同名選擇、10 秒 deadline、stale-result guard；套用客戶可依代碼／名稱篩選。
+- 模板編輯器已說明欄位來源；帳款欄位目前是待開立排程，不是收款／欠款帳。
+- 最終 fresh branch coverage 90.35%，1,454 tests passed。
+- 已知限制：固定開立全客戶展開仍有同步 N+1；名稱 substring search 無專用索引；真實 Windows 視覺與長時間操作仍需人工驗收。

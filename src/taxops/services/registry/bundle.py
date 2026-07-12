@@ -171,6 +171,24 @@ def _row_dict_to_entry(d: dict[str, str]) -> TaxRegistryEntry:
     )
 
 
+class _HashingReader(io.RawIOBase):
+    def __init__(self, raw, digest) -> None:
+        super().__init__()
+        self._raw = raw
+        self._digest = digest
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer) -> int:
+        chunk = self._raw.read(len(buffer))
+        if not chunk:
+            return 0
+        self._digest.update(chunk)
+        buffer[: len(chunk)] = chunk
+        return len(chunk)
+
+
 # ---------------------------------------------------------------------------
 # Service
 # ---------------------------------------------------------------------------
@@ -198,48 +216,51 @@ class TaxCacheBundleService:
         meta = self._metadata.get_all()
         cache_version = meta.get("cache_version") or today_iso().replace("-", "")
 
-        # Build the CSV in memory. For slice 2 this is acceptable; a fully
-        # streaming variant (write CSV directly into the zip member with
-        # incremental SHA-256) is a follow-up if memory becomes an issue.
-        csv_buffer = io.StringIO(newline="")
-        writer = csv.writer(csv_buffer)
-        writer.writerow(CSV_COLUMNS)
-        row_count = 0
-        for row in self._registry.iter_all():
-            writer.writerow(_row_to_csv_values(row))
-            row_count += 1
-        csv_text = csv_buffer.getvalue()
-        csv_bytes = csv_text.encode("utf-8")
-        bundle_sha = hashlib.sha256(csv_bytes).hexdigest()
-
-        manifest: dict[str, object] = {
-            "format_version": BUNDLE_FORMAT_VERSION,
-            "cache_version": cache_version,
-            "row_count": row_count,
-            "bundle_sha256_of_data": bundle_sha,
-            "exported_at": now_iso(),
-        }
-        for key in ("data_freshness_raw", "data_freshness_iso",
-                    "source_url", "source_sha256", "source_size"):
-            value = meta.get(key)
-            if value:
-                manifest[key] = value
-
-        for key in list(manifest.keys()):
-            if key not in ALLOWED_MANIFEST_KEYS:
-                del manifest[key]
-
-        manifest_bytes = json.dumps(
-            manifest, ensure_ascii=False, sort_keys=True
-        ).encode("utf-8")
-
         dest = Path(dest_path)
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(dest.suffix + ".tmp")
+        row_count = 0
+        digest = hashlib.sha256()
+
+        def _write_csv_row(member, values) -> None:
+            row_buffer = io.StringIO(newline="")
+            csv.writer(row_buffer).writerow(values)
+            encoded = row_buffer.getvalue().encode("utf-8")
+            digest.update(encoded)
+            member.write(encoded)
+
         try:
             with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+                with zf.open(CACHE_CSV_NAME, "w") as cache_member:
+                    _write_csv_row(cache_member, CSV_COLUMNS)
+                    for row in self._registry.iter_all():
+                        _write_csv_row(cache_member, _row_to_csv_values(row))
+                        row_count += 1
+
+                bundle_sha = digest.hexdigest()
+                manifest: dict[str, object] = {
+                    "format_version": BUNDLE_FORMAT_VERSION,
+                    "cache_version": cache_version,
+                    "row_count": row_count,
+                    "bundle_sha256_of_data": bundle_sha,
+                    "exported_at": now_iso(),
+                }
+                for key in (
+                    "data_freshness_raw",
+                    "data_freshness_iso",
+                    "source_url",
+                    "source_sha256",
+                    "source_size",
+                ):
+                    value = meta.get(key)
+                    if value:
+                        manifest[key] = value
+                manifest_bytes = json.dumps(
+                    manifest,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ).encode("utf-8")
                 zf.writestr(MANIFEST_NAME, manifest_bytes)
-                zf.writestr(CACHE_CSV_NAME, csv_bytes)
             tmp.replace(dest)
         except BaseException:
             try:
@@ -282,116 +303,150 @@ class TaxCacheBundleService:
             raise BundleError("registry.bundle.not_found")
 
         try:
-            with zipfile.ZipFile(path, "r") as zf:
-                infos = zf.infolist()
-                names = [info.filename for info in infos]
-                if len(infos) != 2 or set(names) != ALLOWED_BUNDLE_MEMBERS:
-                    raise BundleError("registry.bundle.unexpected_members")
-                info_by_name = {info.filename: info for info in infos}
-                if info_by_name[MANIFEST_NAME].file_size > MAX_MANIFEST_BYTES:
-                    raise BundleError("registry.bundle.bad_manifest")
-                if info_by_name[CACHE_CSV_NAME].file_size > MAX_CACHE_CSV_BYTES:
-                    raise BundleError("registry.bundle.csv_too_large")
-                for info in infos:
-                    ratio = info.file_size / max(info.compress_size, 1)
-                    if ratio > MAX_COMPRESSION_RATIO:
-                        raise BundleError("registry.bundle.compression_ratio_invalid")
-                manifest_raw = zf.read(MANIFEST_NAME)
-                csv_bytes = zf.read(CACHE_CSV_NAME)
+            zf = zipfile.ZipFile(path, "r")
         except zipfile.BadZipFile as exc:
             raise BundleError("registry.bundle.bad_zip") from exc
-
         try:
-            manifest = json.loads(manifest_raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise BundleError("registry.bundle.bad_manifest") from exc
+            infos = zf.infolist()
+            names = [info.filename for info in infos]
+            if len(infos) != 2 or set(names) != ALLOWED_BUNDLE_MEMBERS:
+                raise BundleError("registry.bundle.unexpected_members")
+            info_by_name = {info.filename: info for info in infos}
+            if info_by_name[MANIFEST_NAME].file_size > MAX_MANIFEST_BYTES:
+                raise BundleError("registry.bundle.bad_manifest")
+            if info_by_name[CACHE_CSV_NAME].file_size > MAX_CACHE_CSV_BYTES:
+                raise BundleError("registry.bundle.csv_too_large")
+            for info in infos:
+                ratio = info.file_size / max(info.compress_size, 1)
+                if ratio > MAX_COMPRESSION_RATIO:
+                    raise BundleError("registry.bundle.compression_ratio_invalid")
 
-        if not isinstance(manifest, dict):
-            raise BundleError("registry.bundle.bad_manifest")
-        if manifest.get("format_version") != BUNDLE_FORMAT_VERSION:
-            raise BundleError("registry.bundle.unsupported_version")
-        for key in manifest:
-            if key not in ALLOWED_MANIFEST_KEYS:
-                raise BundleError("registry.bundle.disallowed_manifest_key")
+            manifest_raw = zf.read(MANIFEST_NAME)
+            try:
+                manifest = json.loads(manifest_raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise BundleError("registry.bundle.bad_manifest") from exc
 
-        cache_version = manifest.get("cache_version")
-        if not isinstance(cache_version, str) or not cache_version:
-            raise BundleError("registry.bundle.bad_manifest")
-        expected_sha = manifest.get("bundle_sha256_of_data")
-        if not isinstance(expected_sha, str) or len(expected_sha) != 64:
-            raise BundleError("registry.bundle.bad_manifest")
+            if not isinstance(manifest, dict):
+                raise BundleError("registry.bundle.bad_manifest")
+            if manifest.get("format_version") != BUNDLE_FORMAT_VERSION:
+                raise BundleError("registry.bundle.unsupported_version")
+            for key in manifest:
+                if key not in ALLOWED_MANIFEST_KEYS:
+                    raise BundleError("registry.bundle.disallowed_manifest_key")
 
-        actual_sha = hashlib.sha256(csv_bytes).hexdigest()
-        if actual_sha != expected_sha:
-            raise BundleError("registry.bundle.tampered")
+            cache_version = manifest.get("cache_version")
+            if not isinstance(cache_version, str) or not cache_version:
+                raise BundleError("registry.bundle.bad_manifest")
+            declared_row_count = manifest.get("row_count")
+            if (
+                not isinstance(declared_row_count, int)
+                or isinstance(declared_row_count, bool)
+                or declared_row_count < 0
+            ):
+                raise BundleError("registry.bundle.bad_manifest")
+            expected_sha = manifest.get("bundle_sha256_of_data")
+            if not isinstance(expected_sha, str) or len(expected_sha) != 64:
+                raise BundleError("registry.bundle.bad_manifest")
 
-        text = csv_bytes.decode("utf-8")
-        reader = csv.DictReader(io.StringIO(text))
-        if reader.fieldnames is None or tuple(reader.fieldnames) != CSV_COLUMNS:
-            raise BundleError("registry.bundle.csv_schema_mismatch")
+            digest = hashlib.sha256()
+            imported_at = now_iso()
+            with zf.open(CACHE_CSV_NAME, "r") as cache_member:
+                hashing_reader = _HashingReader(cache_member, digest)
+                with io.TextIOWrapper(
+                    io.BufferedReader(hashing_reader),
+                    encoding="utf-8",
+                    newline="",
+                ) as text_stream:
+                    reader = csv.DictReader(text_stream)
+                    if reader.fieldnames is None or tuple(reader.fieldnames) != CSV_COLUMNS:
+                        raise BundleError("registry.bundle.csv_schema_mismatch")
 
-        def _entries():
-            row_count = 0
-            for row in reader:
-                if not (row.get("tax_id") or "").strip():
-                    continue
-                if row_count >= MAX_BUNDLE_ROWS:
-                    raise BundleError("registry.bundle.too_many_rows")
-                if any(len(value or "") > MAX_FIELD_CHARS for value in row.values()):
-                    raise BundleError("registry.bundle.field_too_large")
-                row_count += 1
-                yield _row_dict_to_entry(row)
+                    def _entries():
+                        imported_rows = 0
+                        for row in reader:
+                            if not (row.get("tax_id") or "").strip():
+                                continue
+                            if imported_rows >= MAX_BUNDLE_ROWS:
+                                raise BundleError("registry.bundle.too_many_rows")
+                            if any(
+                                len(value or "") > MAX_FIELD_CHARS
+                                for value in row.values()
+                            ):
+                                raise BundleError("registry.bundle.field_too_large")
+                            imported_rows += 1
+                            yield _row_dict_to_entry(row)
+                        if digest.hexdigest() != expected_sha:
+                            raise BundleError("registry.bundle.tampered")
 
-        imported_at = now_iso()
-        meta_payload: dict[str, str] = {
-            "cache_version": cache_version,
-            "source": "bundle",
-            "imported_at": imported_at,
-            "last_import_source": "bundle",
-            "bundle_sha256_of_data": actual_sha,
-        }
-        for key in ("data_freshness_raw", "data_freshness_iso",
-                    "source_url", "source_sha256", "source_size"):
-            value = manifest.get(key)
-            if isinstance(value, str) and value:
-                meta_payload[key] = value
-            elif isinstance(value, int):
-                meta_payload[key] = str(value)
+                    meta_payload: dict[str, str] = {
+                        "cache_version": cache_version,
+                        "source": "bundle",
+                        "imported_at": imported_at,
+                        "last_import_source": "bundle",
+                        "bundle_sha256_of_data": expected_sha,
+                    }
+                    for key in (
+                        "data_freshness_raw",
+                        "data_freshness_iso",
+                        "source_url",
+                        "source_sha256",
+                        "source_size",
+                    ):
+                        value = manifest.get(key)
+                        if isinstance(value, str) and value:
+                            meta_payload[key] = value
+                        elif isinstance(value, int):
+                            meta_payload[key] = str(value)
 
-        def _finalize(row_count: int) -> None:
-            meta_payload["row_count"] = str(row_count)
-            self._metadata.upsert_many(meta_payload, commit=False)
-            self._audit.record(
-                action="tax_cache.bundle.import",
-                target_type=_AUDIT_TARGET_TYPE,
-                target_id=cache_version,
-                detail={
-                    "row_count": row_count,
-                    "cache_version": cache_version,
-                    "bundle_sha256_of_data": actual_sha,
-                },
-            )
+                    def _finalize(imported_rows: int) -> None:
+                        if imported_rows != declared_row_count:
+                            raise BundleError("registry.bundle.row_count_mismatch")
+                        meta_payload["row_count"] = str(imported_rows)
+                        self._metadata.upsert_many(meta_payload, commit=False)
+                        self._audit.record(
+                            action="tax_cache.bundle.import",
+                            target_type=_AUDIT_TARGET_TYPE,
+                            target_id=cache_version,
+                            detail={
+                                "row_count": imported_rows,
+                                "cache_version": cache_version,
+                                "bundle_sha256_of_data": expected_sha,
+                            },
+                        )
 
-        try:
-            row_count = self._registry.replace_all_from_entries(
-                _entries(),
+                    try:
+                        row_count = self._registry.replace_all_from_entries(
+                            _entries(),
+                            cache_version=cache_version,
+                            on_progress=on_progress,
+                            before_commit=_finalize,
+                        )
+                    except BundleError as exc:
+                        self._system_log.error(
+                            "tax_cache bundle import failed",
+                            exc=exc,
+                        )
+                        raise
+                    except Exception as exc:
+                        self._system_log.error(
+                            "tax_cache bundle import failed",
+                            exc=exc,
+                        )
+                        raise BundleError("registry.bundle.import_failed") from exc
+
+            actual_sha = digest.hexdigest()
+            return BundleImportResult(
+                bundle_path=path,
+                row_count=row_count,
                 cache_version=cache_version,
-                on_progress=on_progress,
-                before_commit=_finalize,
+                bundle_sha256_of_data=actual_sha,
+                imported_at=imported_at,
+                data_freshness_iso=(
+                    manifest.get("data_freshness_iso")
+                    if isinstance(manifest.get("data_freshness_iso"), str)
+                    else None
+                ),
             )
-        except Exception as exc:
-            self._system_log.error("tax_cache bundle import failed", exc=exc)
-            raise BundleError("registry.bundle.import_failed") from exc
-
-        return BundleImportResult(
-            bundle_path=path,
-            row_count=row_count,
-            cache_version=cache_version,
-            bundle_sha256_of_data=actual_sha,
-            imported_at=imported_at,
-            data_freshness_iso=(
-                manifest.get("data_freshness_iso")
-                if isinstance(manifest.get("data_freshness_iso"), str)
-                else None
-            ),
-        )
+        finally:
+            zf.close()

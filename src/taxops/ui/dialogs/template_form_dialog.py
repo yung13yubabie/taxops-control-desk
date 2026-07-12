@@ -126,6 +126,19 @@ class TemplateFormDialog(QDialog):
         form.addRow(QLabel("模板類型"), self._type)
         outer.addLayout(form)
 
+        self._variable_help = QLabel(
+            "可用欄位不是在此輸入資料；雙擊只會插入欄位標記。\n"
+            "客戶欄位：客戶管理 > 新增／編輯客戶。\n"
+            "帳款欄位：固定開立 > 方案明細與待開立紀錄；目前代表待開立排程，"
+            "不是收款或欠款帳本。\n"
+            "期限欄位：案件管理 > 索件管理 > 索件期限。\n"
+            "備註欄位：案件管理 > 索件管理 > 索件備註。\n"
+            "產生訊息時，系統會依所選客戶／案件／索件自動帶入。"
+        )
+        self._variable_help.setWordWrap(True)
+        self._variable_help.setObjectName("HelpText")
+        outer.addWidget(self._variable_help)
+
         body_area = QHBoxLayout()
         body_area.setSpacing(8)
 

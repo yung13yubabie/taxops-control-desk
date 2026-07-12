@@ -26,6 +26,10 @@ TaxOpsBackups/
 .pytest_cache/
 .coverage
 htmlcov/
+.ai/.coverage-*
+.ai/coverage-*.json
+.ai/coverage-*.log
+.ai/deep-audit-*.log
 
 # IDE
 .vscode/

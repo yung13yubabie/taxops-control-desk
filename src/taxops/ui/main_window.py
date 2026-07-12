@@ -38,7 +38,6 @@ from .pages.clients_page import ClientsPage
 from .pages.engagements_page import EngagementsPage
 from .pages.folder_bookmarks_page import FolderBookmarksPage
 from .pages.late_fee_page import LateFeePage
-from .pages.placeholder_page import PlaceholderPage
 from .pages.settings_page import SettingsPage
 from .pages.tasks_page import TasksPage
 from .pages.work_records_page import WorkRecordsPage
@@ -157,13 +156,15 @@ class MainWindow(QMainWindow):
             elif page_id == PAGE_RECURRING_BILLING:
                 page = RecurringBillingPage(self._container)
             elif page_id == PAGE_REGISTRY:
-                page = RegistryPage(self._container)
+                registry_page = RegistryPage(self._container)
+                self._registry_page = registry_page
+                page = registry_page
             elif page_id == PAGE_SETTINGS:
                 settings_page = SettingsPage(self._container)
                 self._settings_page = settings_page
                 page = settings_page
             else:
-                page = PlaceholderPage(page_id)
+                raise RuntimeError(f"unmapped navigation page: {page_id}")
             index = self._stack.addWidget(page)
             self._page_indices[page_id] = index
 
@@ -217,7 +218,13 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         settings_page = getattr(self, "_settings_page", None)
-        if settings_page is not None and settings_page.has_active_operation():
+        registry_page = getattr(self, "_registry_page", None)
+        operation_active = (
+            settings_page is not None and settings_page.has_active_operation()
+        ) or (
+            registry_page is not None and registry_page.has_active_operation()
+        )
+        if operation_active:
             QMessageBox.warning(
                 self,
                 "作業進行中",

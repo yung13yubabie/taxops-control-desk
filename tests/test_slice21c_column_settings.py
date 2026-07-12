@@ -172,3 +172,119 @@ def test_clients_page_keeps_core_identity_columns_visible(container):
 
     assert not page._table.isColumnHidden(_COLUMN_ORDER.index("client_code"))
     assert not page._table.isColumnHidden(_COLUMN_ORDER.index("client_name"))
+
+
+@pytest.mark.usefixtures("qapp")
+@pytest.mark.parametrize(
+    "raw",
+    ["not-json", "[]", '{"id": "bad", "owner": 0}'],
+)
+def test_invalid_width_settings_are_ignored_without_breaking_table(
+    qapp, container, raw
+):
+    from taxops.ui.widgets.column_settings import ColumnSettings
+
+    container.settings.set_setting("ui.engagements.column_widths", raw)
+    table = _make_table(qapp)
+    original = [table.columnWidth(i) for i in range(table.columnCount())]
+    settings = ColumnSettings(
+        table, "engagements", _TEST_COLS, _TEST_CORE, _TEST_HEADERS, container.settings
+    )
+
+    settings.install()
+
+    assert [table.columnWidth(i) for i in range(table.columnCount())] == original
+
+
+@pytest.mark.usefixtures("qapp")
+def test_resize_and_auto_resize_persist_only_visible_columns(qapp, container):
+    from taxops.ui.widgets.column_settings import ColumnSettings
+
+    table = _make_table(qapp)
+    settings = ColumnSettings(
+        table, "engagements", _TEST_COLS, _TEST_CORE, _TEST_HEADERS, container.settings
+    )
+    settings.install()
+    table.setColumnHidden(_TEST_COLS.index("owner"), True)
+    table.setColumnWidth(_TEST_COLS.index("id"), 155)
+    settings._on_section_resized(0, 100, 155)
+    settings._on_auto_resize_all()
+
+    stored = json.loads(container.settings.get("ui.engagements.column_widths"))
+    assert "owner" not in stored
+    assert stored["id"] > 0
+
+
+@pytest.mark.usefixtures("qapp")
+def test_persistence_failures_are_contained_and_do_not_change_ui(
+    qapp, container, monkeypatch, caplog
+):
+    from taxops.ui.widgets.column_settings import ColumnSettings
+
+    table = _make_table(qapp)
+    settings = ColumnSettings(
+        table, "engagements", _TEST_COLS, _TEST_CORE, _TEST_HEADERS, container.settings
+    )
+    settings.install()
+    monkeypatch.setattr(
+        container.settings,
+        "set_setting",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("settings locked")),
+    )
+
+    settings._on_toggle_col(_TEST_COLS.index("owner"), False)
+    settings._on_reset()
+
+    assert not table.isColumnHidden(_TEST_COLS.index("owner"))
+    assert "failed to persist hidden cols" in caplog.text
+    assert "failed to persist widths" in caplog.text
+    assert "failed to clear presets" in caplog.text
+
+
+@pytest.mark.usefixtures("qapp")
+def test_suspended_save_does_not_write_settings(qapp, container, monkeypatch):
+    from taxops.ui.widgets.column_settings import ColumnSettings
+
+    table = _make_table(qapp)
+    settings = ColumnSettings(
+        table, "engagements", _TEST_COLS, _TEST_CORE, _TEST_HEADERS, container.settings
+    )
+    writes: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        container.settings,
+        "set_setting",
+        lambda key, value: writes.append((key, value)),
+    )
+    settings._suspend_save = True
+
+    settings._save_hidden()
+    settings._save_widths()
+
+    assert writes == []
+
+
+@pytest.mark.usefixtures("qapp")
+def test_oversized_width_payload_is_not_persisted(qapp, container, monkeypatch, caplog):
+    from taxops.ui.widgets.column_settings import ColumnSettings
+
+    columns = tuple(f"very_long_column_name_{index:03d}" for index in range(40))
+    table = QTableWidget(0, len(columns))
+    writes: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        container.settings,
+        "set_setting",
+        lambda key, value: writes.append((key, value)),
+    )
+    settings = ColumnSettings(
+        table,
+        "oversized",
+        columns,
+        frozenset(),
+        {column: column for column in columns},
+        container.settings,
+    )
+
+    settings._save_widths()
+
+    assert writes == []
+    assert "widths JSON too long" in caplog.text

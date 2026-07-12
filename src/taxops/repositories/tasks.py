@@ -196,9 +196,12 @@ class TasksRepository:
     def update_status(self, task_id: int, status: str) -> TaskRow | None:
         ts = now_iso()
         self._conn.execute(
-            "UPDATE workflow_tasks SET status = ?, updated_at = ?"
+            "UPDATE workflow_tasks"
+            " SET status = ?,"
+            "     completed_at = CASE WHEN ? = 'done' THEN ? ELSE completed_at END,"
+            "     updated_at = ?"
             " WHERE id = ? AND deleted_at IS NULL",
-            (status, ts, task_id),
+            (status, status, ts, ts, task_id),
         )
         return self.get(task_id)
 

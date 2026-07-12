@@ -1,5 +1,67 @@
 # TASKS
 
+## 2026-07-12 Branch coverage and happy-path hardening
+
+### DOING
+
+- None.
+
+### VERIFIED
+
+- [x] Fix fixed-billing date-edit discoverability and two-column contract layout.
+- [x] Replace plan archive UI with guarded physical delete and rollback tests.
+- [x] Prevent repeated `新增列` clicks from creating swallowed blank editors.
+- [x] Add atomic batch reconciliation for selected pending occurrences.
+- [x] Explain message-template placeholder provenance in the editor.
+- [x] Make client notes visible while preserving exact multiline SQLite values.
+- [x] Add bounded official GCIS per-tax-id online fallback without scraping.
+- [x] Block app close while a GCIS QThread is active.
+- [x] Fresh post-acceptance branch coverage: 1437 passed, 2 deselected, 90.20%.
+- [x] Changed-surface integration: 261 passed; native Qt/app lifecycle: 9 passed.
+- [x] Rebuild corrected EXE from exact-pinned isolated Python 3.11.9.
+- [x] Pass isolated EXE startup/SQLite smoke and resource-hygiene check.
+- [x] Create non-overwriting r2 acceptance ZIP, verify all 192 entries, verify
+  SHA-256 readback, and confirm GCIS inclusion in the PyInstaller graph.
+
+- [x] Add a fail-under-90 branch coverage configuration and pytest-cov dev pin.
+- [x] Fix confirmed data-integrity, transaction, stale-UI, resource-bound, and
+  restore lifecycle defects with regression tests.
+- [x] Add real button user paths for settings, folder bookmarks, recurring
+  billing, clients, tasks, templates, attachments, work records, and bulk import.
+- [x] Shortened full measurement: 1214 passed, 2 deselected, 83.42%.
+- [x] Focused changed-surface regression: 223 passed in 91.51s.
+- [x] Raise real project branch coverage to 90.02% without pragma/omit score
+  inflation: 1393 passed, 2 large real-ZIP smoke tests deselected.
+- [x] Replace fake service-writing dialog tests with real widget/save paths for
+  clients, tasks, templates, folder bookmarks, document items, recurring
+  billing, registry apply, and bulk import.
+- [x] Remove Work Records hidden UI that existed only for handlers/tests; mark
+  its unavailable canvas/error actions disabled while retaining service and
+  security coverage.
+- [x] Fix Bulk Import Wizard false-success navigation after import failure.
+- [x] Fix stale document-item and attachment selection/error-feedback defects.
+- [x] Run changed-surface integration regression: 479 passed.
+- [x] Run native QThread/app runtime regression without coverage: 9 passed.
+- [x] Verify compileall and git diff check.
+- [x] Build v0.28.0 EXE from an isolated exact-pinned release environment.
+- [x] Pass automated EXE startup/SQLite smoke, package-content checks, ZIP
+  readback, and SHA-256 generation.
+
+### BLOCKED
+
+- [ ] Windows Computer Use visible acceptance is blocked because the native
+  control pipe is unavailable in this environment. Do not claim DPI/manual UI
+  acceptance from widget tests alone.
+
+- [ ] Global `pip check` is blocked by unrelated shared-Python conflicts in
+  pip-audit, semgrep, transformers, and their transitive dependencies. Use an
+  isolated project environment before treating dependency health as green.
+- [ ] Manually accept the packaged EXE across the visible high-risk workflows,
+  1366x768, and Windows scaling 100/125/150/200% before any release claim.
+- [ ] Validate the unsigned ZIP on a separate clean/offline Windows account or
+  VM; record SmartScreen, first/second launch, persistence, and uninstall or
+  folder-removal behavior.
+
 ## 2026-06-07 v0.25.0 release closure
 
 ### VERIFIED
@@ -844,3 +906,15 @@
 ## Notes
 
 - [已確認] 2026-05-10 更新：稅籍查詢帶入、錯誤保護、prefill audit、批量匯入 QScrollArea、軟刪除文案修正 → **143/143 passed**。下一步建議：真實 Windows 桌面驗收（稅籍查詢帶入流程、批量匯入視窗捲動、停用確認文案）。
+
+## 2026-07-12 v0.29.0 closeout
+
+- [DONE] 固定開立當年度歷史、確認退回完整 audit 快照與退回後刪除流程。
+- [DONE] 客戶特殊要求／備註全文與篩選。
+- [DONE] 登記同名多筆、背景查詢、deadline、stale-result guard、客戶篩選套用。
+- [DONE] 模板欄位來源說明與 README 實況更新。
+- [DONE] 最終 fresh branch coverage 90.35%，1,454 tests passed。
+- [TODO] 固定開立大量客戶／方案改為分頁或展開 lazy-load，消除同步 N+1。
+- [TODO] 名稱索引改由有進度、可取消的登記資料維護流程建立。
+- [TODO] 規格化並實作 client-linked「申報期限與異常工作」。
+- [TODO] 人工驗收 Windows EXE：DPI、RWD、連續搜尋、固定開立完整流程與長時間記憶體。

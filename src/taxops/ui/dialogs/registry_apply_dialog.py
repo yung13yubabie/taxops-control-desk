@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from collections.abc import Mapping
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -44,7 +45,7 @@ class RegistryApplyDialog(QDialog):
 
     def __init__(
         self,
-        registry_row: sqlite3.Row,
+        registry_row: sqlite3.Row | Mapping[str, object],
         client_row: ClientRow,
         container: ServiceContainer,
         parent: QWidget | None = None,

@@ -54,4 +54,4 @@ A handoff must include:
 - Unimplemented features must be disabled and show `此功能尚未開放`.
 - Keep implementation grounded in `docs/implementation_spec.md` and `docs/registry_cache_workflow.md`.
 - For UI work, follow `.ai/DESIGN.md` before consulting external design references.
-- The source specification at `C:\Users\LIN\Downloads\codex_readable_taxops_spec_compact.md` is reference material and should not be modified.
+- The owner-provided external compact specification is reference material and should not be modified or copied into the repository.

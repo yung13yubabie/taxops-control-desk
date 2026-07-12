@@ -1,15 +1,14 @@
-"""工商 / 稅籍查詢頁 — 本地快取查詢 + 套用至客戶主檔.
-
-GCIS 線上查詢尚未開放（需官方 API 驗證），按鈕保持 disabled。
-查詢不到時只顯示「本地快取無資料」，絕不顯示「公司不存在」。
-"""
+"""工商 / 稅籍查詢頁 — MOF 本地快取 + 官方 GCIS 單筆補查."""
 
 from __future__ import annotations
 
 import logging
 import sqlite3
+import time
+from collections.abc import Mapping
+from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
@@ -19,26 +18,83 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QHeaderView,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from ...i18n import DISABLED_TOOLTIP
+from ...i18n import error_message
+from ...services.gcis import GCISQueryError, query_gcis_by_tax_id
 from ...services.container import ServiceContainer
+from ...repositories.tax_registry import TaxRegistryRepository
 from ..dialogs.registry_apply_dialog import RegistryApplyDialog
 from ..style import TEXT_MUTED, toolbar_icon
 
 _log = logging.getLogger(__name__)
-
 _RESULT_FIELDS: tuple[tuple[str, str], ...] = (
     ("tax_id", "統一編號"),
     ("business_name", "公司名稱"),
     ("business_address", "地址"),
     ("organization_type", "組織型態"),
     ("registered_date_roc", "設立日期（民國）"),
+    ("business_status", "登記狀態"),
+    ("source", "資料來源"),
 )
 
 _NOT_FOUND_MSG = "本地快取查無此統一編號，可能是快取未更新或資料來源未涵蓋。"
+
+
+class _GCISWorker(QThread):
+    succeeded = Signal(object)
+    errored = Signal(str)
+
+    def __init__(self, tax_id: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._tax_id = tax_id
+
+    def run(self) -> None:
+        try:
+            self.succeeded.emit(query_gcis_by_tax_id(self._tax_id))
+        except GCISQueryError as err:
+            self.errored.emit(err.code)
+        except Exception:
+            _log.exception("unexpected GCIS lookup failure")
+            self.errored.emit("system.unexpected")
+
+
+class _LocalRegistryWorker(QThread):
+    succeeded = Signal(object)
+    errored = Signal(str)
+
+    def __init__(self, db_path: str, query: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._db_path = db_path
+        self._query = query
+
+    def run(self) -> None:
+        connection: sqlite3.Connection | None = None
+        try:
+            uri = f"{Path(self._db_path).resolve().as_uri()}?mode=ro"
+            connection = sqlite3.connect(uri, uri=True, timeout=10)
+            connection.row_factory = sqlite3.Row
+            deadline = time.monotonic() + 10
+            connection.set_progress_handler(
+                lambda: int(time.monotonic() > deadline),
+                10_000,
+            )
+            rows = TaxRegistryRepository(connection).search(self._query, limit=50)
+            self.succeeded.emit([dict(row) for row in rows])
+        except sqlite3.Error:
+            _log.exception("local registry background search failed")
+            self.errored.emit("registry.search.failed")
+        except Exception:
+            _log.exception("unexpected local registry background search failure")
+            self.errored.emit("system.unexpected")
+        finally:
+            if connection is not None:
+                connection.close()
 
 
 class RegistryPage(QWidget):
@@ -49,7 +105,9 @@ class RegistryPage(QWidget):
     ) -> None:
         super().__init__(parent)
         self._container = container
-        self._result: sqlite3.Row | None = None
+        self._result: sqlite3.Row | Mapping[str, object] | None = None
+        self._gcis_worker: _GCISWorker | None = None
+        self._local_worker: _LocalRegistryWorker | None = None
 
         layout = QVBoxLayout(self)
         layout.setSpacing(16)
@@ -75,8 +133,8 @@ class RegistryPage(QWidget):
         search_layout.addWidget(self._search_btn)
 
         self._gcis_btn = QPushButton("GCIS 工商查詢")
-        self._gcis_btn.setEnabled(False)
-        self._gcis_btn.setToolTip(DISABLED_TOOLTIP)
+        self._gcis_btn.setToolTip("依統一編號向經濟部 GCIS 官方 API 單筆補查")
+        self._gcis_btn.clicked.connect(self._on_search_gcis)
         search_layout.addWidget(self._gcis_btn)
 
         layout.addWidget(search_group)
@@ -86,6 +144,20 @@ class RegistryPage(QWidget):
         self._status_label.setWordWrap(True)
         self._status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
         layout.addWidget(self._status_label)
+
+        self._results_table = QTableWidget(0, 3)
+        self._results_table.setHorizontalHeaderLabels(["統一編號", "登記名稱", "地址"])
+        self._results_table.verticalHeader().setVisible(False)
+        self._results_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._results_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._results_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self._results_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
+        self._results_table.setMaximumHeight(180)
+        self._results_table.setVisible(False)
+        self._results_table.itemSelectionChanged.connect(self._on_result_selected)
+        layout.addWidget(self._results_table)
 
         self._result_group = QGroupBox("查詢結果")
         result_form = QFormLayout(self._result_group)
@@ -104,38 +176,73 @@ class RegistryPage(QWidget):
         layout.addWidget(self._result_group)
 
         apply_group = QGroupBox("套用至客戶主檔")
-        apply_layout = QHBoxLayout(apply_group)
+        apply_layout = QVBoxLayout(apply_group)
         apply_layout.setSpacing(8)
+
+        client_search_row = QHBoxLayout()
+        client_search_label = QLabel("搜尋客戶：")
+        client_search_label.setTextFormat(Qt.TextFormat.PlainText)
+        client_search_row.addWidget(client_search_label)
+        self._client_filter_edit = QLineEdit()
+        self._client_filter_edit.setPlaceholderText("輸入客戶代碼或名稱，可找到前 500 筆以外的客戶")
+        client_search_row.addWidget(self._client_filter_edit, stretch=1)
+        self._client_filter_btn = QPushButton("篩選")
+        client_search_row.addWidget(self._client_filter_btn)
+        apply_layout.addLayout(client_search_row)
+
+        client_select_row = QHBoxLayout()
 
         client_label = QLabel("選擇客戶：")
         client_label.setTextFormat(Qt.TextFormat.PlainText)
-        apply_layout.addWidget(client_label)
+        client_select_row.addWidget(client_label)
 
         self._client_combo = QComboBox()
         self._client_combo.setMinimumWidth(240)
-        apply_layout.addWidget(self._client_combo, stretch=1)
+        client_select_row.addWidget(self._client_combo, stretch=1)
 
         self._apply_btn = QPushButton("套用至客戶主檔")
         self._apply_btn.setIcon(toolbar_icon("save"))
         self._apply_btn.setEnabled(False)
         self._apply_btn.clicked.connect(self._on_apply_to_client)
-        apply_layout.addWidget(self._apply_btn)
+        client_select_row.addWidget(self._apply_btn)
+        apply_layout.addLayout(client_select_row)
 
         layout.addWidget(apply_group)
         layout.addStretch()
 
+        self._client_filter_btn.clicked.connect(self._on_filter_clients)
+        self._client_filter_edit.returnPressed.connect(self._on_filter_clients)
         self._load_clients()
 
     def refresh_context(self) -> None:
         """Reload client choices when the page becomes active."""
         self._load_clients()
 
-    def _load_clients(self) -> None:
+    def has_active_operation(self) -> bool:
+        """Return whether an official or large local lookup owns a live thread."""
+        # Ownership ends only after the queued result/error signals and Qt's
+        # deferred deletion have completed, not merely when run() returns.
+        return self._gcis_worker is not None or self._local_worker is not None
+
+    def _set_search_busy(self, busy: bool) -> None:
+        """Keep local and online searches mutually exclusive."""
+        self._query_edit.setEnabled(not busy)
+        self._search_btn.setEnabled(not busy)
+        self._gcis_btn.setEnabled(not busy)
+
+    def _load_clients(self, query: str = "") -> None:
         selected_id = self._client_combo.currentData()
         self._client_combo.clear()
         self._client_combo.addItem("— 請選擇客戶 —", None)
         try:
-            clients = self._container.clients.list_clients(limit=500, offset=0)
+            if query:
+                clients = self._container.clients.search_clients(
+                    query,
+                    limit=100,
+                    offset=0,
+                )
+            else:
+                clients = self._container.clients.list_clients(limit=500, offset=0)
         except Exception:
             _log.warning("failed to load clients into registry page combo")
             self._client_combo.addItem("（客戶資料載入失敗，請重新整理）", None)
@@ -148,20 +255,28 @@ class RegistryPage(QWidget):
                     self._client_combo.setCurrentIndex(i)
                     break
 
+    def _on_filter_clients(self) -> None:
+        query = self._client_filter_edit.text().strip()
+        self._load_clients(query)
+        if query and self._client_combo.count() == 1:
+            self._status_label.setText("找不到符合的客戶，請改用客戶代碼或名稱關鍵字。")
+
     def _clear_result(self, status_msg: str) -> None:
         self._status_label.setText(status_msg)
         self._result_group.setVisible(False)
         self._apply_btn.setEnabled(False)
         self._result = None
+        self._results_table.setRowCount(0)
+        self._results_table.setVisible(False)
 
-    def _on_search_local(self) -> None:
+    def _on_search_local_sync(self) -> None:
         query = self._query_edit.text().strip()
         if not query:
             self._clear_result("請輸入統一編號或公司名稱後再查詢。")
             return
 
         try:
-            rows = self._container.tax_registry_repo.search(query, limit=1)
+            rows = self._container.tax_registry_repo.search(query, limit=50)
         except Exception:
             _log.error("local registry search failed", exc_info=True)
             self._clear_result("查詢失敗，請稍後再試。")
@@ -174,12 +289,162 @@ class RegistryPage(QWidget):
         self._result = rows[0]
         self._status_label.setText("查詢完成。")
 
+        result_keys = set(self._result.keys())
         for field_key, _ in _RESULT_FIELDS:
-            val = self._result[field_key] if self._result[field_key] else ""
+            val = self._result[field_key] if field_key in result_keys else ""
             self._result_labels[field_key].setText(str(val))
 
         self._result_group.setVisible(True)
         self._apply_btn.setEnabled(True)
+        self._populate_results_table([dict(row) for row in rows])
+
+    def _on_search_local(self) -> None:
+        query = self._query_edit.text().strip()
+        if not query:
+            self._on_search_local_sync()
+            return
+        if self._local_worker is not None or self._gcis_worker is not None:
+            return
+        if len(query) == 8 and query.isdigit():
+            self._on_search_local_sync()
+            return
+        self._clear_result("正在搜尋大量本機登記資料，請稍候…")
+        self._set_search_busy(True)
+        worker = _LocalRegistryWorker(str(self._container.paths.db_path), query, self)
+        self._local_worker = worker
+
+        def on_error(code: str) -> None:
+            self._container.system_log.warn(
+                "Local registry lookup failed",
+                detail={"code": code, "query_length": len(query)},
+            )
+            self._clear_result(error_message(code))
+
+        def on_destroyed() -> None:
+            if self._local_worker is worker:
+                self._local_worker = None
+                try:
+                    self._set_search_busy(self.has_active_operation())
+                except RuntimeError:
+                    # Parent page may already be destroyed during app shutdown.
+                    pass
+
+        worker.succeeded.connect(
+            lambda rows, expected=query: self._show_local_results(rows, expected)
+        )
+        worker.errored.connect(on_error)
+        worker.finished.connect(worker.deleteLater)
+        worker.destroyed.connect(on_destroyed)
+        worker.start()
+
+    def _show_local_results(
+        self,
+        rows: list[dict[str, object]],
+        expected_query: str | None = None,
+    ) -> None:
+        if (
+            expected_query is not None
+            and self._query_edit.text().strip() != expected_query
+        ):
+            self._clear_result("查詢條件已變更，舊的搜尋結果已忽略。")
+            return
+        if not rows:
+            self._clear_result(_NOT_FOUND_MSG)
+            return
+        self._populate_results_table(rows)
+        self._status_label.setText(
+            f"查詢完成，共 {len(rows)} 筆；請選擇正確登記主體"
+        )
+
+    def _populate_results_table(self, rows: list[dict[str, object]]) -> None:
+        self._results_table.blockSignals(True)
+        self._results_table.setRowCount(len(rows))
+        for row_index, result in enumerate(rows):
+            for column, key in enumerate(("tax_id", "business_name", "business_address")):
+                item = QTableWidgetItem(str(result.get(key) or ""))
+                if column == 0:
+                    item.setData(Qt.ItemDataRole.UserRole, result)
+                self._results_table.setItem(row_index, column, item)
+        self._results_table.blockSignals(False)
+        self._results_table.setVisible(True)
+        self._results_table.selectRow(0)
+        self._set_result(rows[0])
+
+    def _on_result_selected(self) -> None:
+        row = self._results_table.currentRow()
+        if row < 0:
+            return
+        item = self._results_table.item(row, 0)
+        result = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if isinstance(result, dict):
+            self._set_result(result)
+
+    def _set_result(self, result: Mapping[str, object]) -> None:
+        self._result = result
+        for field_key, _ in _RESULT_FIELDS:
+            self._result_labels[field_key].setText(str(result.get(field_key) or ""))
+        self._result_group.setVisible(True)
+        self._apply_btn.setEnabled(True)
+
+    def _on_search_gcis(self) -> None:
+        tax_id = self._query_edit.text().strip()
+        if len(tax_id) != 8 or not tax_id.isdigit():
+            self._clear_result("GCIS 線上補查僅支援 8 位數統一編號。")
+            return
+        if self._gcis_worker is not None or self._local_worker is not None:
+            return
+        self._clear_result("正在查詢經濟部 GCIS 官方資料…")
+        self._set_search_busy(True)
+
+        worker = _GCISWorker(tax_id, self)
+        self._gcis_worker = worker
+
+        def on_error(code: str) -> None:
+            self._container.system_log.warn(
+                "GCIS official lookup failed",
+                detail={"code": code, "tax_id_suffix": tax_id[-3:]},
+            )
+            self._clear_result(error_message(code))
+
+        def on_destroyed() -> None:
+            if self._gcis_worker is worker:
+                self._gcis_worker = None
+                try:
+                    self._set_search_busy(self.has_active_operation())
+                except RuntimeError:
+                    # Parent page may already be destroyed during app shutdown.
+                    pass
+
+        worker.succeeded.connect(
+            lambda result, expected=tax_id: self._show_gcis_result(result, expected)
+        )
+        worker.errored.connect(on_error)
+        worker.finished.connect(worker.deleteLater)
+        worker.destroyed.connect(on_destroyed)
+        worker.start()
+
+    def _show_gcis_result(
+        self,
+        result: dict[str, str] | None,
+        expected_tax_id: str | None = None,
+    ) -> None:
+        if (
+            expected_tax_id is not None
+            and self._query_edit.text().strip() != expected_tax_id
+        ):
+            self._clear_result("查詢條件已變更，舊的 GCIS 結果已忽略。")
+            return
+        if result is None:
+            self._clear_result(
+                "GCIS 官方查無可用資料；這不代表該統編不存在，可能是資料類型或介接權限未涵蓋。"
+            )
+            return
+        self._result = result
+        for field_key, _ in _RESULT_FIELDS:
+            self._result_labels[field_key].setText(str(result.get(field_key) or ""))
+        self._result_group.setVisible(True)
+        self._apply_btn.setEnabled(True)
+        self._status_label.setText("GCIS 官方線上補查完成。")
 
     def _on_apply_to_client(self) -> None:
         if self._result is None:
@@ -210,4 +475,4 @@ class RegistryPage(QWidget):
         )
         if dlg.exec() == RegistryApplyDialog.DialogCode.Accepted:
             self._load_clients()
-            QMessageBox.information(self, "套用完成", "客戶資料已依稅籍快取更新。")
+            QMessageBox.information(self, "套用完成", "客戶資料已依官方登記資料更新。")

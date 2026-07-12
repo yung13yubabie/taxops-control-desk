@@ -1,5 +1,127 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-07-12 - fixed-billing acceptance corrections)
+
+- Implemented guarded physical plan delete, schedule reconciliation, atomic
+  batch confirmation, always-visible plan actions, scrollable/two-column plan
+  dialog, and repeated-add-row protection.
+- Clarified template placeholder provenance, exposed client notes by default
+  without losing stored newlines, and added official GCIS per-tax-id lookup.
+- Fixed GCIS QThread ownership and blocked main-window close while it is active.
+- Verification:
+  - changed surface: 261 passed;
+  - fresh full branch gate: 1437 passed, 2 large real-ZIP tests deselected,
+    90.20%;
+  - native Qt/app lifecycle: 9 passed;
+  - compileall and `git diff --check`: passed.
+- Coverage evidence:
+  `.ai/coverage-post-acceptance-final-20260712.json`.
+- Windows Computer Use could not connect to its native pipe, so visible EXE and
+  DPI acceptance remain manual and must not be described as verified.
+- Rebuilt artifact:
+  `dist/TaxOpsControlDesk-v0.28.0-acceptance-20260712-r2-win64.zip`
+  (49,769,899 bytes), SHA-256
+  `93530F5181AEA30CFCABF5B5F07E210D713F9D40845FB66999F2B1BF8F3D160C`.
+- Isolated release `pip check`, EXE startup/SQLite smoke, resource hygiene, ZIP
+  192-entry readback, forbidden-entry scan, checksum readback, PyInstaller GCIS
+  graph check, and 13 packaging/runtime contract tests pass.
+- Next: perform the checklist below on a visible Windows desktop. No commit,
+  push, tag, or release was performed.
+
+### Manual acceptance focus for r2
+
+- Fixed billing: create a plan, edit its start date, click `新增列` twice, and
+  verify only one blank row/editor remains and the 680x500 dialog scrolls.
+- Fixed billing: select multiple pending rows, run batch reconciliation, reopen
+  history, and verify each selected row appears exactly once.
+- Delete a plan without confirmed history and verify it disappears after
+  restart; verify a plan with confirmed history visibly refuses deletion.
+- Clients: enter a multiline note, save/restart, verify the table shows a note
+  summary and the tooltip preserves exact line breaks.
+- Templates: verify the available-field help says values come from client/case/
+  request/fixed-billing data rather than being entered in the template editor.
+- Registry: query a known company/business tax id through GCIS, apply the result
+  to a test client, and verify IP-authorization/network failure never displays
+  success or not-found.
+- Repeat at 1366x768 and Windows scaling 100/125/150/200%; record any clipped
+  labels, hidden buttons, horizontal overflow, or modal behind the main window.
+
+## Latest Handoff Update (2026-07-12 - v0.28.0 acceptance EXE)
+
+- Built the current uncommitted 90.02%-coverage worktree with Python 3.11.9 and
+  exact `requirements-release.txt` pins in an isolated temp environment.
+- Discarded an initial global-Python build after its graph pulled unrelated
+  `requests/numpy/psutil/lxml/PIL` packages and emitted a dependency warning.
+  The isolated build removes that environment-pollution root cause.
+- Verified:
+  - isolated `pip check`: no broken requirements;
+  - `compileall`, `git diff --check`, and packaging/runtime/version tests:
+    52 passed;
+  - EXE remained alive after 8 seconds and created isolated SQLite;
+  - no packaged `.ai`, test, Git, Python source, or bytecode files;
+  - ZIP readback: 192 entries, no corrupt entry;
+  - stale pytest processes from the earlier coverage campaign were identified
+    by full command line and terminated; EXE smoke left no TaxOps process.
+- Artifact:
+  `dist/TaxOpsControlDesk-v0.28.0-acceptance-20260712-win64.zip`
+  (49,755,794 bytes).
+- SHA-256:
+  `DE814ABDC9DC4ECAC84E20D3E27BFB99B00946246476A257956D0030F804D1CC`.
+- The EXE is unsigned. Manual visible UI, DPI, clean/offline machine,
+  upgrade/reinstall, and SmartScreen acceptance remain unverified.
+- No commit, push, tag, or release was performed.
+
+## Latest Handoff Update (2026-07-12 - 90% coverage and happy-path audit)
+
+- Goal achieved in the uncommitted worktree: `.ai/coverage-final-20260712.json`
+  reports **90.02% branch coverage**, `1393 passed / 2 deselected`.
+- The two deselections are only the 65MB real BGMOPEN1 ZIP smoke tests; keep
+  them for long-form/release verification, not routine coverage loops.
+- Additional verification:
+  - Real changed-surface UI/error regression: `479 passed`.
+  - Native QThread + app runtime (without pytest-cov): `9 passed`.
+  - `python -m compileall -q src tests`: passed.
+  - `git diff --check`: passed.
+- Important product corrections:
+  - Removed hidden Work Records canvas/error UI and disabled its unreachable
+    action contracts; retained services/repositories/security tests.
+  - Fixed Bulk Import Wizard advancing to success after failed import.
+  - Fixed Document Requests stale item rows and invalid context-banner CSS.
+  - Fixed attachment stale-selection actions and silent Windows open failures.
+  - Removed unreachable PlaceholderPage fallback; new unmapped navigation now
+    fails fast.
+- Test credibility rule: fake dialogs may provide controlled values for handler
+  isolation, but must not directly write services while being labelled a user
+  path. Full user-path evidence must manipulate production widgets/buttons and
+  assert exact SQLite/output/audit results.
+- Known non-project environment failure: `python -m pip check` reports conflicts
+  in globally installed pip-audit/semgrep/transformers dependencies. Do not fix
+  those by mutating the user's global environment; verify dependencies in an
+  isolated project environment.
+- No commit, push, EXE build, package, tag, or release was performed.
+
+## Latest Handoff Update (2026-07-11 - branch coverage hardening in progress)
+
+- Read first: `.ai/spec-kit.md`, `.ai/CURRENT_STATE.md`, `.ai/TASKS.md`, then
+  this handoff and `.ai/DECISIONS.md`.
+- Goal remains unmet: shortened full branch coverage is 83.42%, target 90%.
+- Evidence:
+  - `.ai/coverage-current.json`: full run 80.60%, 1191 passed / 1 layout fail.
+  - `.ai/coverage-fast.json`: post-test-wave run 83.42%, 1214 passed / 2
+    intentionally deselected large-registry tests.
+  - Full layout regression after the fix: 16 passed.
+  - Latest changed-surface regression: 223 passed.
+- Do not rerun Qt native QThread lifecycle under pytest-cov in a small isolated
+  process: it reproduced a PySide native abort. Run that test file normally;
+  measure SettingsPage UI branches separately. The full original coverage run
+  did complete without a native abort.
+- Do not combine the two 65MB BGMOPEN1 smoke tests with routine coverage loops;
+  they dominate runtime. Keep them in final long-form verification.
+- Next highest-value work is WorkRecordsPage error/selection/image branches,
+  DocumentRequestsPage CRUD failures, recurring-billing dialog submit failures,
+  and TasksPage bulk/error paths.
+- No commit, push, EXE build, packaging, tag, or release was performed.
+
 ## Latest Handoff Update (2026-06-08 - v0.28.0 deep-bug-fix release)
 
 ### Release v0.28.0
@@ -91,7 +213,7 @@
 ### Next session start
 
 ```
-請接手 C:\Users\LIN\taxops-control-desk
+請接手本專案根目錄
 先讀：.ai/HANDOFF.md .ai/CURRENT_STATE.md
 目前版本：v0.27.0（修復未 bump）
 主要待辦：push 4 commits 到 origin → 考慮 tag v0.27.1 → 真機 UI 驗收
@@ -360,7 +482,7 @@
 ### 下一個 Session 的啟動指令
 
 ```
-請接手 C:\Users\LIN\taxops-control-desk
+請接手本專案根目錄
 先讀：.ai/HANDOFF.md .ai/TASKS.md
 目前版本：v0.24.0（本輪修復未 bump），1015 passed, 1 skipped（已確認）
 主要待辦：bump v0.25.0 → 打包 EXE → 真機驗收
@@ -427,7 +549,7 @@
 ### 下一個 Session 的啟動指令
 
 ```
-請接手 C:\Users\LIN\taxops-control-desk
+請接手本專案根目錄
 先讀：.ai/HANDOFF.md .ai/TASKS.md
 目前版本：v0.24.0，1013 passed, 1 skipped（已確認）
 Git：commit 89d62d5，tag v0.24.0，已 push + GitHub Release 完成
@@ -531,7 +653,7 @@ def build_standard_table(
 ### 下一個 Session 的啟動指令
 
 ```
-請接手 C:\Users\LIN\taxops-control-desk
+請接手本專案根目錄
 先讀：.ai/HANDOFF.md .ai/TASKS.md
 目前版本：v0.23.0，1012 passed, 1 skipped（已確認）
 目標：v0.24.0 UI Slop 修復
@@ -639,7 +761,7 @@ def build_standard_table(
 ### 下一個 session 的啟動指令
 
 ```
-請接手 C:\Users\LIN\taxops-control-desk
+請接手本專案根目錄
 先讀：.ai/BUG_AUDIT_2026-06-04.md .ai/TASKS.md .ai/HANDOFF.md
 按照 BUG_AUDIT 的「推薦修復順序」，從第一批開始修復（C1 + H3 + H4 + H5 + H13），
 修完後跑 python -m pytest -q 確認不退步，再繼續第二批。
@@ -2783,3 +2905,11 @@ python -m pytest -x --tb=short
 ```
 
 Slice 2 後端：1,705,060 筆真實 BGMOPEN1.zip smoke 匯入成功，cache_version=20260509。
+
+## 2026-07-12 - v0.29.0 release handoff
+
+本輪完成固定開立歷史／退回、客戶備註總覽、登記同名背景查詢、模板欄位來源說明與 README。code review 另外修正退回 audit 資料遺失、stale-result 競態、UI-thread 大表 count、無期限 LIKE 查詢與客戶清單 500 筆截斷。
+
+驗證證據：`python -m coverage run -m pytest -q` 正常退出，1,454 passed；`python -m coverage report --precision=2` 正常退出，TOTAL 90.35%。自動化證據不等於人工桌面驗收。
+
+下一步優先處理固定開立 lazy-load、登記索引維護工作與 client-linked 申報期限／異常工作規格。

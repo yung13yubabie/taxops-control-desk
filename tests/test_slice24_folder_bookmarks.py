@@ -254,6 +254,283 @@ def test_main_window_routes_to_folder_bookmarks(container):
     assert PAGE_FOLDER_BOOKMARKS in win._page_indices
 
 
+@pytest.mark.usefixtures("qapp")
+def test_new_button_click_creates_bookmark_and_refreshes_table(
+    container, monkeypatch
+):
+    from taxops.ui.pages.folder_bookmarks_page import (
+        FolderBookmarksPage,
+        _BookmarkDialog as RealBookmarkDialog,
+    )
+
+    class AcceptedDialog(RealBookmarkDialog):
+        def exec(self):
+            self._name_edit.setText("Click-created")
+            self._path_edit.setText(r"C:\Tax\Click")
+            self._category_edit.setText("UI")
+            self.accept()
+            return self.result()
+
+    monkeypatch.setattr(
+        "taxops.ui.pages.folder_bookmarks_page._BookmarkDialog", AcceptedDialog
+    )
+    page = FolderBookmarksPage(container)
+
+    page._new_btn.click()
+
+    assert page._table.rowCount() == 1
+    assert page._table.item(0, 1).text() == "Click-created"
+    assert container.folder_bookmarks.list_bookmarks()[0].path == r"C:\Tax\Click"
+
+
+@pytest.mark.usefixtures("qapp")
+def test_edit_button_click_updates_selected_bookmark(container, monkeypatch):
+    from taxops.services.folder_bookmarks import CreateBookmarkInput
+    from taxops.ui.pages.folder_bookmarks_page import (
+        FolderBookmarksPage,
+        _BookmarkDialog as RealBookmarkDialog,
+    )
+
+    bookmark = container.folder_bookmarks.create_bookmark(
+        CreateBookmarkInput(name="Before", path=r"C:\Tax\Before")
+    )
+
+    class AcceptedDialog(RealBookmarkDialog):
+        def exec(self):
+            assert self._name_edit.text() == "Before"
+            self._name_edit.setText("After")
+            self._path_edit.setText(r"C:\Tax\After")
+            self._category_edit.setText("Edited")
+            self._sort_order = 7
+            self.accept()
+            return self.result()
+
+    monkeypatch.setattr(
+        "taxops.ui.pages.folder_bookmarks_page._BookmarkDialog", AcceptedDialog
+    )
+    page = FolderBookmarksPage(container)
+    page._table.selectRow(0)
+    assert page._edit_btn.isEnabled()
+
+    page._edit_btn.click()
+
+    updated = container.folder_bookmarks.get_bookmark(bookmark.id)
+    assert updated is not None
+    assert (updated.name, updated.path, updated.category, updated.sort_order) == (
+        "After",
+        r"C:\Tax\After",
+        "Edited",
+        7,
+    )
+    assert page._table.item(0, 1).text() == "After"
+
+
+@pytest.mark.usefixtures("qapp")
+def test_delete_button_click_requires_confirmation_and_removes_row(
+    container, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    from taxops.services.folder_bookmarks import CreateBookmarkInput
+    from taxops.ui.pages.folder_bookmarks_page import FolderBookmarksPage
+
+    container.folder_bookmarks.create_bookmark(
+        CreateBookmarkInput(name="Delete me", path=r"C:\Tax\Delete")
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.folder_bookmarks_page.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    page = FolderBookmarksPage(container)
+    page._table.selectRow(0)
+
+    page._delete_btn.click()
+
+    assert page._table.rowCount() == 0
+    assert container.folder_bookmarks.list_bookmarks() == []
+
+
+@pytest.mark.usefixtures("qapp")
+def test_open_button_click_reports_missing_directory(container, monkeypatch):
+    from taxops.services.folder_bookmarks import CreateBookmarkInput
+    from taxops.ui.pages.folder_bookmarks_page import FolderBookmarksPage
+
+    container.folder_bookmarks.create_bookmark(
+        CreateBookmarkInput(name="Missing", path=r"Z:\definitely-missing\taxops")
+    )
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "taxops.ui.pages.folder_bookmarks_page.QMessageBox.warning",
+        lambda _parent, title, body: warnings.append((title, body)),
+    )
+    page = FolderBookmarksPage(container)
+    page._table.selectRow(0)
+
+    page._open_btn.click()
+
+    assert len(warnings) == 1
+    assert warnings[0][1].strip()
+
+
+@pytest.mark.usefixtures("qapp")
+def test_bookmark_dialog_browse_and_values(monkeypatch):
+    from taxops.ui.pages.folder_bookmarks_page import _BookmarkDialog
+
+    monkeypatch.setattr(
+        "taxops.ui.pages.folder_bookmarks_page.QFileDialog.getExistingDirectory",
+        lambda *_args: r"C:\Tax\Chosen",
+    )
+    dialog = _BookmarkDialog(
+        title="Bookmark", name="Name", path=r"C:\Tax\Start", category="Cat",
+        sort_order=3,
+    )
+
+    dialog._on_browse()
+
+    assert dialog.values() == ("Name", r"C:\Tax\Chosen", "Cat", 3)
+
+
+@pytest.mark.usefixtures("qapp")
+def test_refresh_failure_preserves_page_and_shows_warning(container, monkeypatch):
+    from taxops.ui.pages.folder_bookmarks_page import FolderBookmarksPage
+
+    page = FolderBookmarksPage(container)
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        container.folder_bookmarks,
+        "list_bookmarks",
+        lambda: (_ for _ in ()).throw(RuntimeError("database unavailable")),
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.folder_bookmarks_page.QMessageBox.warning",
+        lambda _parent, _title, body: warnings.append(body),
+    )
+
+    page._refresh_btn.click()
+
+    assert len(warnings) == 1
+    assert warnings[0].strip()
+
+
+@pytest.mark.usefixtures("qapp")
+def test_new_button_validation_failure_keeps_dialog_open(container, monkeypatch):
+    from taxops.ui.pages.folder_bookmarks_page import (
+        FolderBookmarksPage,
+        _BookmarkDialog as RealBookmarkDialog,
+    )
+
+    class RetryDialog(RealBookmarkDialog):
+        calls = 0
+
+        def exec(self):
+            type(self).calls += 1
+            if type(self).calls == 1:
+                self._name_edit.clear()
+                self._path_edit.setText(r"C:\Tax\Invalid")
+                self.accept()
+            else:
+                self.reject()
+            return self.result()
+
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        "taxops.ui.pages.folder_bookmarks_page._BookmarkDialog", RetryDialog
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.folder_bookmarks_page.QMessageBox.warning",
+        lambda _parent, _title, body: warnings.append(body),
+    )
+    page = FolderBookmarksPage(container)
+
+    page._new_btn.click()
+
+    assert RetryDialog.calls == 2
+    assert len(warnings) == 1
+    assert container.folder_bookmarks.list_bookmarks() == []
+
+
+@pytest.mark.usefixtures("qapp")
+def test_edit_stale_selection_warns_and_refreshes(container, monkeypatch):
+    from taxops.services.folder_bookmarks import CreateBookmarkInput
+    from taxops.ui.pages.folder_bookmarks_page import FolderBookmarksPage
+
+    bookmark = container.folder_bookmarks.create_bookmark(
+        CreateBookmarkInput(name="Stale", path=r"C:\Tax\Stale")
+    )
+    page = FolderBookmarksPage(container)
+    page._table.selectRow(0)
+    container.folder_bookmarks.delete_bookmark(bookmark.id)
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        "taxops.ui.pages.folder_bookmarks_page.QMessageBox.warning",
+        lambda _parent, _title, body: warnings.append(body),
+    )
+
+    page._edit_btn.click()
+
+    assert len(warnings) == 1
+    assert page._table.rowCount() == 0
+
+
+@pytest.mark.usefixtures("qapp")
+def test_delete_button_no_confirmation_keeps_bookmark(container, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from taxops.services.folder_bookmarks import CreateBookmarkInput
+    from taxops.ui.pages.folder_bookmarks_page import FolderBookmarksPage
+
+    container.folder_bookmarks.create_bookmark(
+        CreateBookmarkInput(name="Keep", path=r"C:\Tax\Keep")
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.folder_bookmarks_page.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.No,
+    )
+    page = FolderBookmarksPage(container)
+    page._table.selectRow(0)
+
+    page._delete_btn.click()
+
+    assert len(container.folder_bookmarks.list_bookmarks()) == 1
+
+
+@pytest.mark.usefixtures("qapp")
+def test_open_button_success_and_desktop_rejection(
+    container, monkeypatch, tmp_path
+):
+    from pathlib import Path
+
+    from taxops.services.folder_bookmarks import CreateBookmarkInput
+    from taxops.ui.pages.folder_bookmarks_page import FolderBookmarksPage
+
+    container.folder_bookmarks.create_bookmark(
+        CreateBookmarkInput(name="Existing", path=str(tmp_path))
+    )
+    warnings: list[str] = []
+    opened_urls: list[str] = []
+
+    def reject_open(url):
+        opened_urls.append(url.toLocalFile())
+        return False
+
+    monkeypatch.setattr(
+        "taxops.ui.pages.folder_bookmarks_page.QDesktopServices.openUrl",
+        reject_open,
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.folder_bookmarks_page.QMessageBox.warning",
+        lambda _parent, _title, body: warnings.append(body),
+    )
+    page = FolderBookmarksPage(container)
+    page._table.selectRow(0)
+
+    page._open_btn.click()
+
+    assert len(opened_urls) == 1
+    assert Path(opened_urls[0]) == tmp_path
+    assert len(warnings) == 1
+
+
 def test_review_notes_table_dropped(db_conn):
     rows = db_conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='review_notes'"

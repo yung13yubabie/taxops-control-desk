@@ -219,6 +219,20 @@ class ClientsRepository:
         ).fetchone()
         return int(row["c"]) if row else 0
 
+    def count_purge_blocking_refs(self, client_id: int) -> int:
+        """Return direct non-cascading references that block client purge."""
+        row = self._conn.execute(
+            "SELECT"
+            " (SELECT COUNT(*) FROM workflow_tasks WHERE client_id = ?) +"
+            " (SELECT COUNT(*) FROM recurring_billing_plans WHERE client_id = ?) +"
+            " (SELECT COUNT(*) FROM workflow_templates_v2 WHERE client_id = ?) +"
+            " (SELECT COUNT(*) FROM workflow_runs WHERE client_id = ?) +"
+            " (SELECT COUNT(*) FROM error_reviews WHERE client_id = ?) +"
+            " (SELECT COUNT(*) FROM canvas_notes WHERE client_id = ?) AS c",
+            (client_id,) * 6,
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
     def purge(self, client_id: int) -> bool:
         """Permanently delete a soft-deleted client row."""
         cur = self._conn.execute(
@@ -248,11 +262,15 @@ class ClientsRepository:
         limit: int = 50,
         offset: int = 0,
         include_deleted: bool = False,
+        has_note: bool = False,
     ) -> list[ClientRow]:
         """Return paginated, optionally filtered + sorted clients."""
         col = order_by if order_by in self._SORT_COLUMNS else "client_code"
         direction = "DESC" if order_dir.upper() == "DESC" else "ASC"
         base_filter, cond = self._deleted_filter(include_deleted)
+        if has_note:
+            base_filter += f" {cond} note IS NOT NULL AND TRIM(note) != ''"
+            cond = "AND"
         if query.strip():
             q = f"%{query.strip()}%"
             rows = self._conn.execute(
@@ -269,9 +287,18 @@ class ClientsRepository:
             ).fetchall()
         return [_row_to_client(row) for row in rows]
 
-    def count_clients(self, query: str = "", *, include_deleted: bool = False) -> int:
+    def count_clients(
+        self,
+        query: str = "",
+        *,
+        include_deleted: bool = False,
+        has_note: bool = False,
+    ) -> int:
         """Return total count of clients matching optional query."""
         base_filter, cond = self._deleted_filter(include_deleted)
+        if has_note:
+            base_filter += f" {cond} note IS NOT NULL AND TRIM(note) != ''"
+            cond = "AND"
         if query.strip():
             q = f"%{query.strip()}%"
             row = self._conn.execute(

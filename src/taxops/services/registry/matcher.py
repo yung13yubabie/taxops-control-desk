@@ -68,8 +68,12 @@ class RegistryMatcher:
         cache_version = self._metadata.get("cache_version")
         clients = self._clients.list_clients(limit=1_000_000)
         items = list(self._build_items(clients, cache_version))
-        histogram = self._matches.replace_for_source(REGISTRY_SOURCE_MOF, items)
         with self._conn:
+            histogram = self._matches.replace_for_source(
+                REGISTRY_SOURCE_MOF,
+                items,
+                commit=False,
+            )
             self._audit.record(
                 action="tax_cache.match.regenerate",
                 target_type=_AUDIT_TARGET_TYPE,

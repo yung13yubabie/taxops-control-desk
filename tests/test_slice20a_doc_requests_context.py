@@ -363,3 +363,33 @@ def test_clear_filter_returns_to_global_mode(container, two_clients):
     page.refresh_context()
     assert page._engagement_id is None
     assert page._engagement_combo.currentData() == _ALL_ENGAGEMENTS
+
+
+@pytest.mark.usefixtures("qapp")
+def test_item_load_failure_clears_stale_rows(container, two_clients, monkeypatch):
+    from taxops.services.document_requests import CreateDocumentRequestInput
+    from taxops.ui.pages.document_requests_page import DocumentRequestsPage
+
+    _, _, engagement, _ = two_clients
+    request, _ = container.doc_requests.create_request(
+        CreateDocumentRequestInput(
+            engagement_id=engagement.id,
+            tax_type="cit",
+            period_name="2026",
+        )
+    )
+    container.doc_requests.add_item(request.id, "stale item")
+    page = DocumentRequestsPage(container)
+    page.load_engagement(engagement.id)
+    page._req_table.selectRow(0)
+    assert page._item_table.rowCount() == 1
+
+    monkeypatch.setattr(
+        container.doc_requests,
+        "list_items",
+        lambda _request_id: (_ for _ in ()).throw(RuntimeError("database lost")),
+    )
+
+    page._load_items_for_selected()
+
+    assert page._item_table.rowCount() == 0

@@ -1,5 +1,21 @@
 # RESOURCE CLEANUP AUDIT
 
+## 2026-07-12 - GCIS worker and official network lifecycle
+
+- GCIS lookup uses a bounded 1 MB response, a finite timeout, HTTPS official
+  domain allowlisting, and validates the final redirect URL.
+- `RegistryPage` retains its `_GCISWorker` until QObject destruction, re-enables
+  the button on native thread finish, and clears the reference on `destroyed`.
+- `MainWindow.closeEvent` blocks application close while either the settings
+  worker or GCIS worker is active, preventing `QThread: Destroyed while thread
+  is still running`.
+- Native lifecycle verification outside coverage instrumentation: 9 passed.
+- Full fresh coverage verification: 1437 passed, 2 large real-ZIP tests
+  deselected, 90.20% branch coverage.
+- Rebuilt EXE smoke used isolated `LOCALAPPDATA`, stayed alive for eight
+  seconds, created SQLite, and was terminated. The follow-up hygiene report
+  listed only the diagnostic command's own Python processes, not TaxOps.
+
 ## 2026-05-17 - Development/Test Resource Hygiene Closeout
 
 ### Scope
@@ -131,3 +147,11 @@
 - [已確認] Slice 3 HTTP download path is acceptable after this remediation.
 - [待驗證] Real Windows UI interaction for QFileDialog / QProgressDialog / QMessageBox and actual online download with official BGMOPEN1.zip still requires manual desktop acceptance.
 - [已確認] GCIS query remains separate TODO and is not completed by Slice 3 HTTP download.
+
+## 2026-07-12 - Large registry benchmark and final coverage
+
+- 正式資料庫唯讀檢查確認約 456 MB、登記快取約 170 萬筆。
+- 名稱索引在資料庫副本建立超過三分鐘未完成；已放棄啟動 migration，避免首次啟動假死。
+- timeout 後殘留程序均以 PID、啟動時間、可執行檔與命令列驗證後終止；benchmark 暫存檔 remaining=0。
+- 最終 fresh coverage 正常退出：1,454 passed，TOTAL 90.35%。
+- 打包後仍需執行 `python -m build_tools.check_resource_hygiene`。

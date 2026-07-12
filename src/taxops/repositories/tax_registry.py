@@ -91,8 +91,16 @@ class TaxRegistryRepository:
             ).fetchall()
             if rows:
                 return rows
+        exact = self._conn.execute(
+            f"SELECT * FROM {self.FORMAL_TABLE}"
+            " WHERE business_name = ? ORDER BY tax_id LIMIT ?",
+            (q, limit),
+        ).fetchall()
+        if exact:
+            return exact
         return self._conn.execute(
-            f"SELECT * FROM {self.FORMAL_TABLE} WHERE business_name LIKE ? LIMIT ?",
+            f"SELECT * FROM {self.FORMAL_TABLE}"
+            " WHERE business_name LIKE ? ORDER BY business_name, tax_id LIMIT ?",
             (f"%{q}%", limit),
         ).fetchall()
 

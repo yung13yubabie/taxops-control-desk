@@ -124,17 +124,48 @@ class WorkRecordsService:
             raise WorkRecordValidationError("work_record.asset.storage_unavailable")
         return self._workflow_assets_dir
 
+    def _resolve_context(
+        self,
+        client_id: int | None,
+        engagement_id: int | None,
+    ) -> tuple[int | None, int | None]:
+        if engagement_id is not None:
+            row = self._conn.execute(
+                "SELECT e.client_id FROM engagements e"
+                " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+                " WHERE e.id = ? AND e.deleted_at IS NULL",
+                (engagement_id,),
+            ).fetchone()
+            if row is None:
+                raise WorkRecordValidationError("work_record.context_not_found")
+            owner_client_id = int(row["client_id"])
+            if client_id is not None and client_id != owner_client_id:
+                raise WorkRecordValidationError("work_record.context_mismatch")
+            return owner_client_id, engagement_id
+        if client_id is not None:
+            row = self._conn.execute(
+                "SELECT 1 FROM clients WHERE id = ? AND deleted_at IS NULL",
+                (client_id,),
+            ).fetchone()
+            if row is None:
+                raise WorkRecordValidationError("work_record.context_not_found")
+        return client_id, None
+
     def create_template(self, payload: CreateWorkflowTemplateInput) -> WorkflowTemplateRow:
         name = sanitize_user_text(payload.name, max_length=200)
         if not name:
             raise WorkRecordValidationError("work_record.template.name.required")
         stages = self._normalize_stage_inputs(payload.stages)
+        client_id, engagement_id = self._resolve_context(
+            payload.client_id,
+            payload.engagement_id,
+        )
         with self._conn:
             row = self._repo.insert_template(
                 name=name,
                 stages_json=_dumps_stages(stages),
-                client_id=payload.client_id,
-                engagement_id=payload.engagement_id,
+                client_id=client_id,
+                engagement_id=engagement_id,
                 context_snapshot=None,
             )
             self._audit.record(
@@ -795,6 +826,10 @@ class WorkRecordsService:
         if not title or not phenomenon or not root_cause:
             raise WorkRecordValidationError("work_record.error.required")
         guard_step = sanitize_user_text(payload.guard_step_text, max_length=500) or None
+        client_id, engagement_id = self._resolve_context(
+            payload.client_id,
+            payload.engagement_id,
+        )
         with self._conn:
             if payload.workflow_template_id and guard_step:
                 self._append_guard_step_uncommitted(
@@ -812,8 +847,8 @@ class WorkRecordsService:
                 workflow_template_id=payload.workflow_template_id,
                 guard_stage_id=payload.guard_stage_id,
                 guard_step_text=guard_step,
-                client_id=payload.client_id,
-                engagement_id=payload.engagement_id,
+                client_id=client_id,
+                engagement_id=engagement_id,
                 context_snapshot=None,
             )
             self._audit.record(

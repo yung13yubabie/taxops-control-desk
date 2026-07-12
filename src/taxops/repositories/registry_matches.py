@@ -65,6 +65,8 @@ class RegistryMatchRepository:
         self,
         source: str,
         items: Iterable[MatchInsert],
+        *,
+        commit: bool = True,
     ) -> dict[str, int]:
         """Atomically delete all rows for ``source`` and insert the new set.
 
@@ -72,7 +74,8 @@ class RegistryMatchRepository:
         """
         ts = now_iso()
         conn = self._conn
-        conn.execute("BEGIN IMMEDIATE")
+        if commit:
+            conn.execute("BEGIN IMMEDIATE")
         try:
             conn.execute(
                 f"DELETE FROM {self.TABLE} WHERE registry_source = ?",
@@ -111,10 +114,12 @@ class RegistryMatchRepository:
                     ),
                 )
                 histogram[item.match_status] += 1
-            conn.commit()
+            if commit:
+                conn.commit()
             return histogram
         except BaseException:
-            conn.rollback()
+            if commit:
+                conn.rollback()
             raise
 
     def list_for_client(self, client_id: int) -> list[MatchResultRow]:

@@ -213,3 +213,143 @@ def test_calculate_failure_restores_button(
 
     assert enabled_during_call == [False]
     assert page._calc_btn.isEnabled()
+
+
+def test_mode_toggle_clears_result_and_switches_filter_visibility(qapp, container) -> None:
+    page = LateFeePage(container)
+    page._result_label.setText("stale result")
+    page._table.setRowCount(1)
+
+    page._manual_check.setChecked(True)
+    assert page._filter_widget.isHidden()
+    assert page._result_label.text() == ""
+    assert page._table.rowCount() == 0
+
+    page._manual_check.setChecked(False)
+    assert not page._filter_widget.isHidden()
+
+
+def test_load_failures_are_visible_and_clear_stale_history(
+    qapp, container, monkeypatch
+) -> None:
+    request_id = _seed_request(container)
+    page = LateFeePage(container)
+    monkeypatch.setattr(
+        container.engagements,
+        "list_all",
+        lambda: (_ for _ in ()).throw(RuntimeError("engagements locked")),
+    )
+    page.refresh_context()
+    assert page._eng_combo.itemText(1) == "（載入案件失敗，請重新整理）"
+
+    engagement_id = container.conn.execute(
+        "SELECT engagement_id FROM document_requests WHERE id = ?", (request_id,)
+    ).fetchone()[0]
+    page._eng_combo.addItem("broken engagement", engagement_id)
+    monkeypatch.setattr(
+        container.doc_requests,
+        "list_by_engagement",
+        lambda _eng_id: (_ for _ in ()).throw(RuntimeError("requests locked")),
+    )
+    page._eng_combo.setCurrentIndex(page._eng_combo.count() - 1)
+    assert page._req_combo.itemText(1) == "（載入批次失敗，請重新整理）"
+
+    page._req_combo.addItem("broken request", request_id)
+    page._history = [object()]
+    monkeypatch.setattr(
+        container.late_fee,
+        "list_by_request",
+        lambda _request_id: (_ for _ in ()).throw(RuntimeError("history locked")),
+    )
+    page._req_combo.setCurrentIndex(page._req_combo.count() - 1)
+    assert page._history == []
+    assert page._table.rowCount() == 0
+    assert page._result_label.text() == "試算記錄載入失敗，請重新整理頁面"
+
+
+def test_calculate_missing_inputs_and_request_show_exact_guidance(
+    qapp, container, monkeypatch
+) -> None:
+    page = LateFeePage(container)
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        late_fee_page_module.QMessageBox,
+        "warning",
+        lambda _parent, _title, body: warnings.append(body),
+    )
+
+    page._calc_btn.click()
+    assert warnings[-1] == "請輸入最後繳款日與實際繳款日"
+
+    page._last_payment_date.set_value("2026-03-15")
+    page._actual_payment_date.set_value("2026-03-20")
+    page._calc_btn.click()
+    assert warnings[-1] == "請先選擇索件批次，或切換為手動試算模式"
+
+
+def test_manual_calculation_real_button_renders_exact_result(qapp, container) -> None:
+    page = LateFeePage(container)
+    page._manual_check.setChecked(True)
+    page._last_payment_date.set_value("2026-03-15")
+    page._actual_payment_date.set_value("2026-03-20")
+    page._base_spin.setValue(10_000)
+
+    page._calc_btn.click()
+
+    assert page._result_label.text() == (
+        "試算結果（未儲存）：滯納金率 1.0%，滯納金 100.00 元"
+        "（稅額 10,000.00 元，逾期 5 天）"
+    )
+
+
+def test_manual_calculation_domain_failure_is_visible(
+    qapp, container, monkeypatch
+) -> None:
+    from taxops.services.late_fee import LateFeeValidationError
+
+    page = LateFeePage(container)
+    page._manual_check.setChecked(True)
+    page._last_payment_date.set_value("2026-03-15")
+    page._actual_payment_date.set_value("2026-03-20")
+    criticals: list[str] = []
+    monkeypatch.setattr(
+        late_fee_page_module,
+        "calculate_overdue_days",
+        lambda *_args: (_ for _ in ()).throw(LateFeeValidationError("late_fee.date.invalid")),
+    )
+    monkeypatch.setattr(
+        late_fee_page_module.QMessageBox,
+        "critical",
+        lambda _parent, _title, body: criticals.append(body),
+    )
+
+    page._calc_btn.click()
+
+    assert len(criticals) == 1
+    assert criticals[0].strip()
+
+
+def test_persisted_calculation_domain_failure_is_visible(
+    qapp, container, monkeypatch
+) -> None:
+    from taxops.services.late_fee import LateFeeValidationError
+
+    request_id = _seed_request(container)
+    page = LateFeePage(container)
+    _prepare_persisted_calculation(page, request_id)
+    criticals: list[str] = []
+    monkeypatch.setattr(
+        container.late_fee,
+        "calculate_and_save",
+        lambda *_args: (_ for _ in ()).throw(LateFeeValidationError("late_fee.date.invalid")),
+    )
+    monkeypatch.setattr(
+        late_fee_page_module.QMessageBox,
+        "critical",
+        lambda _parent, _title, body: criticals.append(body),
+    )
+
+    page._calc_btn.click()
+
+    assert len(criticals) == 1
+    assert criticals[0].strip()

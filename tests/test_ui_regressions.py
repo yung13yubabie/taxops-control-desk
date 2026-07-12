@@ -192,7 +192,7 @@ def test_engagements_refresh_preserves_selection_by_engagement_id(
     assert page._requests_page._engagement_id == selected.id
 
 
-def test_main_window_refuses_close_while_registry_worker_is_active(
+def test_main_window_refuses_close_while_settings_worker_is_active(
     qapp: QApplication,
     container: ServiceContainer,
     monkeypatch: pytest.MonkeyPatch,
@@ -202,6 +202,32 @@ def test_main_window_refuses_close_while_registry_worker_is_active(
     window = MainWindow(container)
     monkeypatch.setattr(
         window._settings_page,
+        "has_active_operation",
+        lambda: True,
+    )
+    warnings = []
+    monkeypatch.setattr(
+        "taxops.ui.main_window.QMessageBox.warning",
+        lambda *args: warnings.append(args),
+    )
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    assert not event.isAccepted()
+    assert len(warnings) == 1
+
+
+def test_main_window_refuses_close_while_gcis_worker_is_active(
+    qapp: QApplication,
+    container: ServiceContainer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from taxops.ui.main_window import MainWindow
+
+    window = MainWindow(container)
+    monkeypatch.setattr(
+        window._registry_page,
         "has_active_operation",
         lambda: True,
     )

@@ -177,6 +177,52 @@ def test_export_then_import_roundtrip_into_fresh_db(
         other.close()
 
 
+def test_export_streams_cache_member_without_writestr(
+    tmp_path: Path,
+    container: ServiceContainer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_cache(container, tmp_path)
+    svc = _build_bundle_service(container)
+    original_writestr = zipfile.ZipFile.writestr
+
+    def reject_full_cache_write(self, zinfo_or_arcname, data, *args, **kwargs):
+        name = getattr(zinfo_or_arcname, "filename", zinfo_or_arcname)
+        if name == CACHE_CSV_NAME:
+            raise AssertionError("cache CSV must be streamed")
+        return original_writestr(self, zinfo_or_arcname, data, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile.ZipFile, "writestr", reject_full_cache_write)
+
+    result = svc.export_bundle(tmp_path / "streamed.taxops-cache.zip")
+
+    assert result.row_count == 2
+
+
+def test_import_streams_cache_member_without_reading_all_bytes(
+    tmp_path: Path,
+    container: ServiceContainer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_cache(container, tmp_path)
+    svc = _build_bundle_service(container)
+    bundle = tmp_path / "stream-import.taxops-cache.zip"
+    svc.export_bundle(bundle)
+    original_read = zipfile.ZipFile.read
+
+    def reject_full_cache_read(self, name, *args, **kwargs):
+        member_name = getattr(name, "filename", name)
+        if member_name == CACHE_CSV_NAME:
+            raise AssertionError("cache CSV must be streamed")
+        return original_read(self, name, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile.ZipFile, "read", reject_full_cache_read)
+
+    result = svc.import_bundle(bundle)
+
+    assert result.row_count == 2
+
+
 def test_import_rejects_unexpected_member(
     tmp_path: Path, container: ServiceContainer
 ) -> None:
@@ -248,6 +294,35 @@ def test_import_rejects_disallowed_manifest_key(
     with pytest.raises(BundleError) as exc:
         svc.import_bundle(bad)
     assert exc.value.code == "registry.bundle.disallowed_manifest_key"
+
+
+def test_import_rejects_manifest_row_count_mismatch(
+    tmp_path: Path,
+    container: ServiceContainer,
+) -> None:
+    _seed_cache(container, tmp_path)
+    svc = _build_bundle_service(container)
+    good = tmp_path / "row-count-good.taxops-cache.zip"
+    svc.export_bundle(good)
+
+    with zipfile.ZipFile(good) as zin:
+        manifest = json.loads(zin.read(MANIFEST_NAME))
+        csv_bytes = zin.read(CACHE_CSV_NAME)
+    manifest["row_count"] = manifest["row_count"] + 1
+
+    bad = tmp_path / "row-count-bad.taxops-cache.zip"
+    with zipfile.ZipFile(bad, "w", zipfile.ZIP_DEFLATED) as zout:
+        zout.writestr(
+            MANIFEST_NAME,
+            json.dumps(manifest, ensure_ascii=False).encode("utf-8"),
+        )
+        zout.writestr(CACHE_CSV_NAME, csv_bytes)
+
+    with pytest.raises(BundleError) as exc:
+        svc.import_bundle(bad)
+
+    assert exc.value.code == "registry.bundle.row_count_mismatch"
+    assert TaxRegistryRepository(container.conn).count() == 2
 
 
 def test_export_empty_cache_rejected(

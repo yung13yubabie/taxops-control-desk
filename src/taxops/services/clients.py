@@ -287,6 +287,8 @@ class ClientsService:
             raise ClientValidationError("client.purge.requires_deleted")
         if self._repo.count_engagement_refs(client_id) > 0:
             raise ClientValidationError("client.purge.has_engagements")
+        if self._repo.count_purge_blocking_refs(client_id) > 0:
+            raise ClientValidationError("client.purge.has_references")
 
         with self._conn:
             purged = self._repo.purge(client_id)
@@ -316,6 +318,7 @@ class ClientsService:
         limit: int = 50,
         offset: int = 0,
         include_deleted: bool = False,
+        has_note: bool = False,
     ) -> list[ClientRow]:
         return self._repo.search_clients(
             query,
@@ -324,10 +327,21 @@ class ClientsService:
             limit=limit,
             offset=offset,
             include_deleted=include_deleted,
+            has_note=has_note,
         )
 
-    def count_clients(self, query: str = "", *, include_deleted: bool = False) -> int:
-        return self._repo.count_clients(query, include_deleted=include_deleted)
+    def count_clients(
+        self,
+        query: str = "",
+        *,
+        include_deleted: bool = False,
+        has_note: bool = False,
+    ) -> int:
+        return self._repo.count_clients(
+            query,
+            include_deleted=include_deleted,
+            has_note=has_note,
+        )
 
     def get_client(self, client_id: int) -> ClientRow | None:
         return self._repo.get(client_id)

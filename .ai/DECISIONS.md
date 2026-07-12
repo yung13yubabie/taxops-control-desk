@@ -1,5 +1,63 @@
 # DECISIONS
 
+## 2026-07-12 - Fixed-billing plan delete preserves issued history
+
+### Decision
+
+The UI exposes a physical `刪除方案` action. A plan may be physically deleted
+only when it has no confirmed occurrence. The plan, its lines, pending rows,
+and audit record are one SQLite transaction. Confirmed history blocks deletion
+instead of being silently removed or converted to an archive.
+
+### Rationale
+
+The user explicitly wants delete rather than archive, while issued history is
+accounting evidence and must remain immutable. Transactional deletion prevents
+partial data and false success.
+
+### Impact
+
+Schedule edits reconcile only mutable pending occurrences. Confirmed, skipped,
+and cancelled rows are preserved. A future force-delete feature requires a new
+explicit retention decision.
+
+## 2026-07-12 - Batch reconciliation confirms exact pending selections
+
+### Decision
+
+Batch reconciliation validates every selected pending occurrence before any
+write, then confirms all rows atomically using the line amount and scheduled
+issue date. Any invalid row or audit failure rolls back the whole batch.
+
+### Rationale
+
+Partial confirmation would create duplicate work and a false-success state.
+
+### Impact
+
+This feature records that invoices were checked as issued; it is not an
+accounts-receivable or payment reconciliation ledger.
+
+## 2026-07-12 - GCIS is an official per-tax-id online fallback
+
+### Decision
+
+GCIS online lookup remains separate from the MOF BGMOPEN1 offline cache. It is
+an HTTPS/domain-allowlisted, bounded, per-tax-id lookup for company, business,
+and branch registration. The application does not scrape public query pages.
+
+### Rationale
+
+GCIS and MOF have different coverage and semantics. Some GCIS detail endpoints
+require agency IP authorization, which must be shown as an authorization error
+instead of being misreported as not found.
+
+### Impact
+
+Full nationwide offline GCIS data still requires a separate schema/importer.
+Network, malformed response, redirect, size, and authorization failures remain
+visible and never produce a success result.
+
 ## 2026-06-07 - Recurring billing line delete semantics
 
 - A recurring billing line delete is a soft deactivation, not a physical delete.
@@ -466,4 +524,46 @@ UI 驗收後使用者認為該功能不符合當前優先順序；客戶列表�
 - 影響範圍：[已確認] 所有 UI slice 需先讀 `.ai/DESIGN.md`。
 - 不應再重複討論的內容：[已確認] 不要直接複製品牌名稱、logo 或品牌識別。
 - 待驗證風險：[待驗證] 真實 UI 尚未完成桌面視覺驗收。
-- 證據來源：[已確認] 使用者對話；`.ai/DESIGN.md`; 本機 reference path `C:\Users\LIN\.codex\references\awesome-design-md`.
+- 證據來源：[已確認] 使用者對話；`.ai/DESIGN.md`; 開發環境提供的設計參考資料。
+
+## 2026-07-12 - 固定開立確認紀錄可退回但保留完整稽核快照
+
+### 決策
+
+已確認紀錄可由使用者明確退回待確認；退回會清除目前紀錄上的確認欄位，但必須先把原發票號碼、確認日期、金額、時間與備註完整寫入 audit。方案只有在目前不存在 confirmed 紀錄時才可永久刪除。
+
+### 理由
+
+事務所需要更正誤確認並刪除錯誤方案，但不能讓「確認 → 退回 → 刪除」成為抹去發票歷史的捷徑。
+
+### 影響
+
+任何未來的會計狀態回退都必須保存回退前快照；不得只記錄 target id 或結果狀態。
+
+## 2026-07-12 - 大型登記名稱查詢不得在 UI thread 執行
+
+### 決策
+
+非 8 位統編的本機名稱查詢一律使用獨立 read-only SQLite worker，設定 10 秒 deadline，搜尋期間鎖住輸入並驗證 callback 的原查詢。GCIS 與本機查詢互斥。
+
+### 理由
+
+正式資料約 170 萬筆；同步 count、LIKE 或排序即使測試資料很快，也會在正式機造成假死。名稱索引在正式資料副本建立超過三分鐘未完成，因此不放入啟動 migration。
+
+### 影響
+
+未來名稱索引只能放在有進度、可取消的資料維護流程，不得於啟動時無提示建立。
+
+## 2026-07-12 - 申報期限與異常工作以客戶為主體
+
+### 決策
+
+未來功能以 `client_id` 為必要歸屬，並可選擇連到案件或索件；異常狀態採事件／工作紀錄，不把所有流程欄位塞回客戶主檔。
+
+### 理由
+
+期限與例外需要在客戶總覽追蹤，同時保留案件脈絡、責任與歷史。
+
+### 影響
+
+功能尚未實作；後續規格需包含到期提醒、異常原因、處理人、解除時間、客戶篩選與 audit。

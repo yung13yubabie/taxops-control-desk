@@ -311,6 +311,36 @@ def test_purge_deleted_client_with_engagement_is_blocked(
     assert raw["deleted_at"] is not None
 
 
+def test_purge_deleted_client_with_client_only_task_is_blocked(
+    container: ServiceContainer,
+) -> None:
+    from taxops.services.tasks import CreateTaskInput
+
+    client = container.clients.create_client(
+        CreateClientInput(client_code="P004", client_name="Client-only task owner")
+    )
+    container.tasks.create_task(CreateTaskInput(
+        engagement_id=None,
+        client_id=client.id,
+        title="Retained client-only task",
+    ))
+    container.clients.delete_client(client.id)
+
+    with pytest.raises(ClientValidationError) as exc:
+        container.clients.purge_client(client.id)
+
+    assert exc.value.code == "client.purge.has_references"
+    assert container.conn.execute(
+        "SELECT deleted_at FROM clients WHERE id = ?",
+        (client.id,),
+    ).fetchone() is not None
+    assert container.conn.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+        " WHERE action = 'client.purge' AND target_id = ?",
+        (str(client.id),),
+    ).fetchone()[0] == 0
+
+
 # ---------------------------------------------------------------------------
 # Bulk service
 # ---------------------------------------------------------------------------

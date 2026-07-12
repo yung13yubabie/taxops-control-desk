@@ -7,7 +7,7 @@ TaxOps Control Desk uses a premium, simple, and highly legible desktop operation
 Reference library:
 
 ```text
-C:\Users\LIN\.codex\references\awesome-design-md\design-md
+開發環境提供的 `awesome-design-md/design-md` 參考資料
 ```
 
 Primary references:

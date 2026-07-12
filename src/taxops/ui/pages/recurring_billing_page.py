@@ -212,8 +212,18 @@ class _OccRow(QWidget):
         row.addStretch()
 
         color = _STATUS_COLORS.get(occ.status, STATUS_SKIPPED_FG)
+        self._select_box: QCheckBox | None = None
+        self._reopen_btn: QPushButton | None = None
 
         if occ.status == "pending":
+            self._select_box = QCheckBox("選取")
+            self._select_box.setToolTip("勾選後可使用頁面上方的「批量核對選取」")
+            self._select_box.toggled.connect(
+                lambda checked: self._page._toggle_occurrence_selection(
+                    self._occ.id, checked
+                )
+            )
+            row.insertWidget(0, self._select_box)
             s = QLabel("● 待確認")
             s.setStyleSheet(f"color: {color}; font-weight: 600;")
             row.addWidget(s)
@@ -234,6 +244,11 @@ class _OccRow(QWidget):
                 inv.setTextFormat(Qt.TextFormat.PlainText)
                 inv.setStyleSheet(f"color: {color}; font-size: 12px;")
                 row.addWidget(inv)
+            self._reopen_btn = QPushButton("退回待確認")
+            self._reopen_btn.setStyleSheet(_SMALL_BTN)
+            self._reopen_btn.setToolTip("清除本筆確認資料並退回待確認；操作會留下稽核紀錄")
+            self._reopen_btn.clicked.connect(self._on_reopen)
+            row.addWidget(self._reopen_btn)
         else:
             icon = "✗" if occ.status == "skipped" else "—"
             label = {"skipped": "已跳過", "cancelled": "已取消"}.get(occ.status, occ.status)
@@ -255,6 +270,28 @@ class _OccRow(QWidget):
         dlg = SkipOccurrenceDialog(self._svc, self._occ, self._line, parent=self)
         if dlg.exec() == dlg.DialogCode.Accepted:
             self._page._refresh()
+
+    def _on_reopen(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            "退回待確認",
+            "確定將這筆已確認紀錄退回待確認？\n"
+            "原確認金額、發票號碼與確認日期會清除，但系統會保留稽核紀錄。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._svc.reopen_occurrence(self._occ.id)
+        except RecurringBillingError as err:
+            QMessageBox.warning(self, "退回失敗", error_message(err.code))
+            return
+        except Exception:
+            _log.exception("reopen occurrence failed occurrence=%d", self._occ.id)
+            QMessageBox.warning(self, "退回失敗", error_message("system.unexpected"))
+            return
+        self._page._refresh()
 
 
 # ── plan section ──────────────────────────────────────────────────────────────
@@ -325,18 +362,15 @@ class _PlanSection(QFrame):
             edit_btn.setStyleSheet(_SMALL_BTN)
             add_line_btn = QPushButton("新增明細")
             add_line_btn.setStyleSheet(_SMALL_BTN)
-            archive_btn = QPushButton("封存")
-            archive_btn.setStyleSheet(_DANGER_BTN)
+            delete_btn = QPushButton("刪除方案")
+            delete_btn.setStyleSheet(_DANGER_BTN)
             h_row.addWidget(edit_btn)
             h_row.addWidget(add_line_btn)
-            h_row.addWidget(archive_btn)
-            edit_btn.setVisible(False)
-            add_line_btn.setVisible(False)
-            archive_btn.setVisible(False)
-            self._action_btns = [edit_btn, add_line_btn, archive_btn]
+            h_row.addWidget(delete_btn)
+            self._action_btns = [edit_btn, add_line_btn, delete_btn]
             edit_btn.clicked.connect(self._on_edit)
             add_line_btn.clicked.connect(self._on_add_line)
-            archive_btn.clicked.connect(self._on_archive)
+            delete_btn.clicked.connect(self._on_delete_plan)
 
         outer.addWidget(header)
 
@@ -407,8 +441,6 @@ class _PlanSection(QFrame):
     def _toggle(self) -> None:
         self._expanded = not self._expanded
         self._body.setVisible(self._expanded)
-        for btn in self._action_btns:
-            btn.setVisible(self._expanded)
         icon = "▼" if self._expanded else "▶"
         self._toggle_btn.setText(f"{icon}  {self._plan.plan_name}")
         self._page._remember_plan_expanded(self._plan.id, self._expanded)
@@ -428,28 +460,30 @@ class _PlanSection(QFrame):
             self._page._generate_for_client(self._plan.client_id)
             self._page._refresh()
 
-    def _on_archive(self) -> None:
+    def _on_delete_plan(self) -> None:
         pending_warning = (
-            f"\n\n⚠ 此方案目前有 {self.pending_count} 筆待確認紀錄尚未處理，"
-            "建議先確認或跳過後再封存。"
+            f"\n\n此方案目前有 {self.pending_count} 筆未確認紀錄，刪除後會一併移除。"
             if self.pending_count > 0 else ""
         )
         reply = QMessageBox.question(
-            self, "確認封存",
-            f"確定要封存方案「{self._plan.plan_name}」嗎？\n"
-            f"封存後不再產生新的開立紀錄。{pending_warning}",
+            self, "永久刪除固定開立方案",
+            f"確定要永久刪除方案「{self._plan.plan_name}」嗎？\n"
+            "方案、明細及未確認紀錄都會刪除，且無法復原。\n"
+            "若已有確認開立歷史，系統會阻止刪除。"
+            f"{pending_warning}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
         try:
-            self._svc.archive_plan(self._plan.id)
+            self._svc.delete_plan(self._plan.id)
         except RecurringBillingError as err:
-            QMessageBox.warning(self, "封存失敗", error_message(err.code))
+            QMessageBox.warning(self, "刪除失敗", error_message(err.code))
             return
         except Exception:
-            _log.exception("archive_plan failed")
-            QMessageBox.warning(self, "封存失敗", error_message("system.unexpected"))
+            _log.exception("delete_plan failed")
+            QMessageBox.warning(self, "刪除失敗", error_message("system.unexpected"))
             return
         self._page._refresh()
 
@@ -553,6 +587,7 @@ class RecurringBillingPage(QWidget):
         self._clients_map: dict[int, str] = {}
         self._expanded_client_ids: set[int] = set()
         self._expanded_plan_ids: set[int] = set()
+        self._selected_occurrence_ids: set[int] = set()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 24, 20)
@@ -577,6 +612,12 @@ class RecurringBillingPage(QWidget):
         self._gen_btn = QPushButton("產生待開立紀錄")
         self._gen_btn.setToolTip("根據所有有效方案及明細產生本期預期開立紀錄")
         filter_row.addWidget(self._gen_btn)
+        self._bulk_confirm_btn = QPushButton("批量核對選取（0）")
+        self._bulk_confirm_btn.setToolTip(
+            "將勾選的待開立紀錄，以預定日期與方案金額確認；發票號碼可再逐筆補充"
+        )
+        self._bulk_confirm_btn.setEnabled(False)
+        filter_row.addWidget(self._bulk_confirm_btn)
         self._status_lbl = QLabel()
         self._status_lbl.setStyleSheet("color: #16A34A; font-size: 12px;")
         filter_row.addWidget(self._status_lbl)
@@ -597,6 +638,7 @@ class RecurringBillingPage(QWidget):
         self._archived_check.stateChanged.connect(lambda _: self._rebuild_accordion())
         self._add_plan_btn.clicked.connect(self._on_add_plan_global)
         self._gen_btn.clicked.connect(self._on_generate_occurrences)
+        self._bulk_confirm_btn.clicked.connect(self._on_bulk_confirm)
 
     def showEvent(self, event) -> None:  # type: ignore[override]
         super().showEvent(event)
@@ -742,6 +784,52 @@ class RecurringBillingPage(QWidget):
             self._show_status("✓ 所有方案已是最新", 3000)
         self._rebuild_accordion()
 
+    def _toggle_occurrence_selection(self, occurrence_id: int, checked: bool) -> None:
+        if checked:
+            self._selected_occurrence_ids.add(occurrence_id)
+        else:
+            self._selected_occurrence_ids.discard(occurrence_id)
+        count = len(self._selected_occurrence_ids)
+        self._bulk_confirm_btn.setText(f"批量核對選取（{count}）")
+        self._bulk_confirm_btn.setEnabled(count > 0)
+
+    def _on_bulk_confirm(self) -> None:
+        ids = sorted(self._selected_occurrence_ids)
+        if not ids:
+            return
+        reply = QMessageBox.question(
+            self,
+            "批量核對待開立紀錄",
+            f"確定將選取的 {len(ids)} 筆紀錄標記為已確認？\n\n"
+            "系統會採用各筆方案金額與預定開立日；發票號碼不會自動填入。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._bulk_confirm_btn.setEnabled(False)
+        try:
+            confirmed = self._rb.confirm_occurrences_bulk(ids)
+        except RecurringBillingError as err:
+            QMessageBox.warning(self, "批量核對失敗", error_message(err.code))
+            self._bulk_confirm_btn.setEnabled(True)
+            return
+        except Exception as err:
+            _log.exception("bulk confirm occurrences failed")
+            self._container.system_log.error(
+                "recurring billing bulk confirm failed",
+                exc=err,
+                detail={"selected_count": len(ids)},
+            )
+            QMessageBox.warning(
+                self, "批量核對失敗", error_message("system.unexpected")
+            )
+            self._bulk_confirm_btn.setEnabled(True)
+            return
+        self._selected_occurrence_ids.clear()
+        self._show_status(f"✓ 已批量核對 {len(confirmed)} 筆", 4000)
+        self._rebuild_accordion()
+
     def _repopulate_client_combo(self) -> None:
         prev_id = self._client_combo.currentData()
         self._clients_map.clear()
@@ -770,6 +858,9 @@ class RecurringBillingPage(QWidget):
                 self._client_combo.setCurrentIndex(idx)
 
     def _rebuild_accordion(self) -> None:
+        self._selected_occurrence_ids.clear()
+        self._bulk_confirm_btn.setText("批量核對選取（0）")
+        self._bulk_confirm_btn.setEnabled(False)
         while self._content_layout.count() > 1:
             item = self._content_layout.takeAt(0)
             if item.widget():
@@ -785,8 +876,8 @@ class RecurringBillingPage(QWidget):
         client_id_filter = None if selected_client == _ALL_CLIENTS else selected_client
 
         today = datetime.date.fromisoformat(project_today_iso())
-        past_cutoff = (today - datetime.timedelta(days=_WINDOW_DAYS)).isoformat()
-        future_cutoff = (today + datetime.timedelta(days=_WINDOW_DAYS)).isoformat()
+        history_start = datetime.date(today.year, 1, 1).isoformat()
+        future_cutoff = datetime.date(today.year, 12, 31).isoformat()
         today_iso = today.isoformat()
 
         try:
@@ -838,7 +929,13 @@ class RecurringBillingPage(QWidget):
                     lines, all_occs = [], []
 
                 # all_occs is already sorted ASC by expected_issue_date (repo ORDER BY)
-                window_occs = [o for o in reversed(all_occs) if o.expected_issue_date >= past_cutoff]
+                # Show the complete current accounting year, rather than a
+                # rolling 90-day window. Generation remains separately bounded.
+                window_occs = [
+                    occurrence
+                    for occurrence in reversed(all_occs)
+                    if occurrence.expected_issue_date >= history_start
+                ]
                 pending_count = sum(1 for o in window_occs if o.status == "pending")
                 next_date = next(
                     (

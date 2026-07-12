@@ -86,6 +86,15 @@ class TestRegistrySearch:
         assert len(rows) == 1
         assert rows[0]["tax_id"] == "87654321"
 
+    def test_search_exact_same_name_returns_all_matching_businesses(self):
+        container = _fresh_container()
+        _seed_registry(container, tax_id="11111111", business_name="同名商號")
+        _seed_registry(container, tax_id="22222222", business_name="同名商號")
+
+        rows = container.tax_registry_repo.search("同名商號", limit=20)
+
+        assert [row["tax_id"] for row in rows] == ["11111111", "22222222"]
+
     def test_search_not_found_returns_empty(self):
         container = _fresh_container()
         rows = container.tax_registry_repo.search("99999999")
@@ -164,10 +173,171 @@ class TestRegistryPageUI:
         page._on_search_local()
         assert not page._result_group.isVisible()
 
-    def test_gcis_button_disabled(self):
+    def test_gcis_button_is_enabled_official_online_fallback(self):
         container = _fresh_container()
         page = self._make_page(container)
+        assert page._gcis_btn.isEnabled()
+
+    def test_gcis_button_queries_official_service_and_displays_result(self, monkeypatch):
+        import time
+        from PySide6.QtWidgets import QApplication
+
+        container = _fresh_container()
+        page = self._make_page(container)
+        monkeypatch.setattr(
+            "taxops.ui.pages.registry_page.query_gcis_by_tax_id",
+            lambda tax_id: {
+                "tax_id": tax_id,
+                "business_name": "GCIS 補查公司",
+                "business_address": "臺北市官方路1號",
+                "organization_type": "公司",
+                "registered_date_roc": "1150101",
+                "business_status": "核准設立",
+                "source": "GCIS 官方線上查詢",
+            },
+        )
+        page._query_edit.setText("20828393")
+
+        page._gcis_btn.click()
+
+        deadline = time.monotonic() + 2
+        while page._gcis_worker is not None and time.monotonic() < deadline:
+            QApplication.processEvents()
+            time.sleep(0.01)
+
+        assert page._result["business_name"] == "GCIS 補查公司"
+        assert not page._result_group.isHidden()
+        assert "GCIS" in page._status_label.text()
+
+    def test_local_name_search_runs_in_worker_and_offers_multiple_results(self, monkeypatch):
+        import time
+        from PySide6.QtWidgets import QApplication
+
+        container = _fresh_container()
+        _seed_registry(container, tax_id="11111111", business_name="同名商號")
+        _seed_registry(container, tax_id="22222222", business_name="同名商號")
+        page = self._make_page(container)
+        page._query_edit.setText("同名商號")
+
+        page._search_btn.click()
+        deadline = time.monotonic() + 3
+        while page.has_active_operation() and time.monotonic() < deadline:
+            QApplication.processEvents()
+            time.sleep(0.01)
+
+        assert not page.has_active_operation()
+        assert page._results_table.rowCount() == 2
+        page._results_table.selectRow(1)
+        QApplication.processEvents()
+        assert page._result["tax_id"] == "22222222"
+
+    def test_background_result_is_ignored_if_query_changed_programmatically(self):
+        container = _fresh_container()
+        page = self._make_page(container)
+        page._query_edit.setText("新的查詢")
+
+        page._show_local_results(
+            [
+                {
+                    "tax_id": "11111111",
+                    "business_name": "舊結果",
+                    "business_address": "舊地址",
+                }
+            ],
+            expected_query="舊的查詢",
+        )
+
+        assert page._result is None
+        assert page._results_table.rowCount() == 0
+        assert "已忽略" in page._status_label.text()
+
+    def test_background_searches_are_mutually_exclusive_and_disable_both_buttons(
+        self, monkeypatch
+    ):
+        container = _fresh_container()
+        page = self._make_page(container)
+        sentinel = object()
+        page._gcis_worker = sentinel
+        page._query_edit.setText("同名企業")
+
+        page._on_search_local()
+
+        assert page._local_worker is None
+        page._gcis_worker = None
+
+        class FakeLocalWorker:
+            pass
+
+        page._local_worker = FakeLocalWorker()
+        page._query_edit.setText("20828393")
+        page._on_search_gcis()
+        assert page._gcis_worker is None
+
+    def test_gcis_search_clears_stale_local_choices(self, monkeypatch):
+        container = _fresh_container()
+        page = self._make_page(container)
+        page._populate_results_table(
+            [
+                {
+                    "tax_id": "11111111",
+                    "business_name": "舊的本機結果",
+                    "business_address": "舊地址",
+                }
+            ]
+        )
+        monkeypatch.setattr(
+            "taxops.ui.pages.registry_page._GCISWorker.start", lambda _worker: None
+        )
+        page._query_edit.setText("20828393")
+
+        page._on_search_gcis()
+
+        assert page._results_table.rowCount() == 0
+        assert page._results_table.isHidden()
+        assert not page._query_edit.isEnabled()
+        assert not page._search_btn.isEnabled()
         assert not page._gcis_btn.isEnabled()
+
+    def test_gcis_invalid_busy_not_found_and_error_paths_are_visible(self, monkeypatch):
+        import time
+        from PySide6.QtWidgets import QApplication
+        from taxops.services.gcis import GCISQueryError
+
+        container = _fresh_container()
+        page = self._make_page(container)
+
+        page._query_edit.setText("bad")
+        page._on_search_gcis()
+        assert page._result is None
+        assert "8" in page._status_label.text()
+
+        sentinel = object()
+        page._gcis_worker = sentinel
+        page._query_edit.setText("20828393")
+        page._on_search_gcis()
+        assert page._gcis_worker is sentinel
+        assert page.has_active_operation()
+
+        page._gcis_worker = None
+        page._show_gcis_result(None)
+        assert page._result is None
+        assert not page._apply_btn.isEnabled()
+        assert not page.has_active_operation()
+
+        monkeypatch.setattr(
+            "taxops.ui.pages.registry_page.query_gcis_by_tax_id",
+            lambda _tax_id: (_ for _ in ()).throw(GCISQueryError("gcis.network_error")),
+        )
+        page._on_search_gcis()
+        deadline = time.monotonic() + 2
+        while page._gcis_worker is not None and time.monotonic() < deadline:
+            QApplication.processEvents()
+            time.sleep(0.01)
+
+        assert page._gcis_worker is None
+        assert page._gcis_btn.isEnabled()
+        assert page._result is None
+        assert page._status_label.text()
 
     def test_apply_btn_disabled_before_search(self):
         container = _fresh_container()
@@ -179,6 +349,159 @@ class TestRegistryPageUI:
         _seed_client(container, client_code="LOAD01", client_name="載入測試客戶")
         page = self._make_page(container)
         assert page._client_combo.count() >= 2
+
+    def test_client_filter_can_find_customer_outside_initial_dropdown(self, monkeypatch):
+        container = _fresh_container()
+        target_id = _seed_client(
+            container,
+            client_code="FIND501",
+            client_name="篩選才能找到的客戶",
+        )
+        page = self._make_page(container)
+        monkeypatch.setattr(
+            container.clients,
+            "list_clients",
+            lambda **_kwargs: [],
+        )
+        page._load_clients()
+        assert page._client_combo.findData(target_id) == -1
+
+        page._client_filter_edit.setText("FIND501")
+        page._client_filter_btn.click()
+
+        assert page._client_combo.findData(target_id) >= 0
+
+    def test_search_button_failure_clears_stale_result_and_shows_status(self, monkeypatch):
+        container = _fresh_container()
+        _seed_registry(container, tax_id="11223344", business_name="先前結果")
+        page = self._make_page(container)
+        page._query_edit.setText("11223344")
+        page._search_btn.click()
+        assert page._result is not None
+        monkeypatch.setattr(
+            container.tax_registry_repo,
+            "search",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("db locked")),
+        )
+
+        page._query_edit.setText("55667788")
+        page._search_btn.click()
+
+        assert page._result is None
+        assert page._result_group.isHidden()
+        assert page._status_label.text() == "查詢失敗，請稍後再試。"
+
+    def test_load_clients_failure_is_visible_in_combo(self, monkeypatch):
+        container = _fresh_container()
+        page = self._make_page(container)
+        monkeypatch.setattr(
+            container.clients,
+            "list_clients",
+            lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("db locked")),
+        )
+
+        page.refresh_context()
+
+        assert page._client_combo.itemText(1) == "（客戶資料載入失敗，請重新整理）"
+
+    def test_apply_guards_no_result_no_client_and_missing_client(self, monkeypatch):
+        container = _fresh_container()
+        _seed_registry(container, tax_id="55667788", business_name="套用公司")
+        page = self._make_page(container)
+        warnings: list[str] = []
+        monkeypatch.setattr(
+            "taxops.ui.pages.registry_page.QMessageBox.warning",
+            lambda _parent, _title, body: warnings.append(body),
+        )
+
+        page._on_apply_to_client()
+        page._query_edit.setText("55667788")
+        page._search_btn.click()
+        page._apply_btn.click()
+        assert warnings == [
+            "請先查詢稅籍資料後再套用。",
+            "請先選擇要更新的客戶。",
+        ]
+
+        page._client_combo.addItem("已刪除客戶", 99999)
+        page._client_combo.setCurrentIndex(page._client_combo.count() - 1)
+        page._apply_btn.click()
+        assert warnings[-1] == "找不到選取的客戶資料。"
+
+    def test_apply_real_dialog_updates_exact_client_and_reports_success(self, monkeypatch):
+        from taxops.ui.dialogs.registry_apply_dialog import RegistryApplyDialog as RealDialog
+
+        container = _fresh_container()
+        client_id = _seed_client(
+            container, client_code="APPLY01", client_name="舊公司名", address="舊地址"
+        )
+        _seed_registry(
+            container,
+            tax_id="87654321",
+            business_name="新公司名",
+        )
+
+        class SubmitDialog(RealDialog):
+            def exec(self):
+                for checkbox in self._checkboxes.values():
+                    checkbox.setChecked(True)
+                self._on_save()
+                return self.result()
+
+        monkeypatch.setattr("taxops.ui.pages.registry_page.RegistryApplyDialog", SubmitDialog)
+        infos: list[str] = []
+        monkeypatch.setattr(
+            "taxops.ui.pages.registry_page.QMessageBox.information",
+            lambda _parent, _title, body: infos.append(body),
+        )
+        page = self._make_page(container)
+        page._query_edit.setText("87654321")
+        page._search_btn.click()
+        page._client_combo.setCurrentIndex(page._client_combo.findData(client_id))
+
+        page._apply_btn.click()
+
+        updated = container.clients.get_client(client_id)
+        assert (updated.client_name, updated.tax_id, updated.address) == (
+            "新公司名",
+            "87654321",
+            "台北市中正區測試路1號",
+        )
+        assert infos == ["客戶資料已依官方登記資料更新。"]
+
+    def test_refresh_preserves_client_selection(self):
+        container = _fresh_container()
+        _seed_client(container, client_code="KEEP01", client_name="第一位")
+        selected_id = _seed_client(container, client_code="KEEP02", client_name="保留選取")
+        page = self._make_page(container)
+        page._client_combo.setCurrentIndex(page._client_combo.findData(selected_id))
+
+        page.refresh_context()
+
+        assert page._client_combo.currentData() == selected_id
+
+    def test_apply_client_load_failure_is_critical_and_dialog_does_not_open(self, monkeypatch):
+        container = _fresh_container()
+        client_id = _seed_client(container, client_code="BROKEN01", client_name="讀取失敗")
+        _seed_registry(container, tax_id="33445566", business_name="查詢成功")
+        page = self._make_page(container)
+        page._query_edit.setText("33445566")
+        page._search_btn.click()
+        page._client_combo.setCurrentIndex(page._client_combo.findData(client_id))
+        criticals: list[str] = []
+        monkeypatch.setattr(
+            container.clients,
+            "get_client",
+            lambda _client_id: (_ for _ in ()).throw(RuntimeError("db locked")),
+        )
+        monkeypatch.setattr(
+            "taxops.ui.pages.registry_page.QMessageBox.critical",
+            lambda _parent, _title, body: criticals.append(body),
+        )
+
+        page._apply_btn.click()
+
+        assert criticals == ["無法載入客戶資料，請稍後再試。"]
 
 
 # ---------------------------------------------------------------------------
@@ -288,12 +611,16 @@ class TestRegistryActionContracts:
         labels = [a.button_label for a in contracts]
         assert "套用至客戶主檔" in labels
 
-    def test_gcis_button_disabled_in_registry(self):
+    def test_gcis_button_has_enabled_official_query_contract(self):
         from taxops.ui.action_registry import ACTION_REGISTRY, PAGE_REGISTRY
 
-        disabled = [a for a in ACTION_REGISTRY if a.page == PAGE_REGISTRY and not a.enabled]
-        labels = [a.button_label for a in disabled]
-        assert any("GCIS" in lbl or "工商查詢" in lbl for lbl in labels)
+        contract = next(
+            a for a in ACTION_REGISTRY
+            if a.page == PAGE_REGISTRY and a.button_label == "GCIS 工商查詢"
+        )
+        assert contract.enabled
+        assert contract.handler == "RegistryPage._on_search_gcis"
+        assert contract.service == "query_gcis_by_tax_id"
 
     def test_search_contract_has_correct_service(self):
         from taxops.ui.action_registry import ACTION_REGISTRY, PAGE_REGISTRY

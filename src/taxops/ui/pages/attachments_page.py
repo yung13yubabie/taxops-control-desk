@@ -327,12 +327,6 @@ class AttachmentsPage(QWidget):
                 self._table.setItem(row, col, QTableWidgetItem(vals[key]))
         self._table.blockSignals(False)
 
-    def _selected_index(self) -> int | None:
-        items = self._table.selectedItems()
-        if not items:
-            return None
-        return self._table.row(items[0])
-
     def _selected_attachment(self):
         rows = self._table.selectedItems()
         if not rows:
@@ -373,14 +367,15 @@ class AttachmentsPage(QWidget):
         return QUrl.fromLocalFile(str(path)).toString()
 
     def _on_selection_changed(self) -> None:
-        has = self._selected_index() is not None
+        selected_attachment = self._selected_attachment()
+        has = selected_attachment is not None
         self._accept_btn.setEnabled(has)
         self._reject_btn.setEnabled(has)
         self._delete_btn.setEnabled(has)
         self._info_btn.setEnabled(has)
         self._open_btn.setEnabled(has)
         self._location_btn.setEnabled(has)
-        self._update_preview(self._selected_attachment())
+        self._update_preview(selected_attachment)
 
     def _update_preview(self, att) -> None:
         if att is None:
@@ -431,7 +426,10 @@ class AttachmentsPage(QWidget):
 
         if ext in _TEXT_EXTS:
             try:
-                text = file_path.read_text(encoding="utf-8", errors="replace")[:4096]
+                with file_path.open(
+                    "r", encoding="utf-8", errors="replace"
+                ) as handle:
+                    text = handle.read(4096)
                 self._preview_text.setPlainText(text)
                 self._preview_stack.setCurrentIndex(_PREVIEW_TEXT)
                 return
@@ -542,7 +540,13 @@ class AttachmentsPage(QWidget):
         file_path = self._resolve_att_file_path(att, notify=True)
         if file_path is None:
             return
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(file_path)))
+        opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(file_path)))
+        if not opened:
+            QMessageBox.warning(
+                self,
+                "開啟失敗",
+                "系統無法開啟附件，請確認檔案關聯與存取權限",
+            )
 
     def _show_location_menu(self, pos) -> None:
         att = self._selected_attachment()
@@ -568,4 +572,10 @@ class AttachmentsPage(QWidget):
         if file_path is None:
             return
         folder = file_path.parent
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+        opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+        if not opened:
+            QMessageBox.warning(
+                self,
+                "開啟失敗",
+                "系統無法開啟附件資料夾，請確認存取權限",
+            )

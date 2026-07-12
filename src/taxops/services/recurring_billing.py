@@ -318,6 +318,8 @@ class RecurringBillingService:
             inp.plan_name, inp.frequency, inp.issue_day, inp.months_json,
             inp.start_date, inp.end_date, inp.advance_notice_days,
         )
+        if not self._repo.client_exists(inp.client_id):
+            raise RecurringBillingError("recurring_billing.client_not_found")
         with self._conn:
             plan = self._repo.insert_plan(
                 client_id=inp.client_id,
@@ -365,13 +367,48 @@ class RecurringBillingService:
             )
             if plan is None:
                 raise RecurringBillingError("recurring_billing.plan.not_found")
+            removed_pending, added_pending = self._reconcile_pending_occurrences(plan)
             self._audit.record(
                 action="recurring_billing.plan.update",
                 target_type="recurring_billing_plan",
                 target_id=str(plan_id),
-                detail={"plan_name": inp.plan_name},
+                detail={
+                    "plan_name": inp.plan_name,
+                    "removed_pending_count": removed_pending,
+                    "added_pending_count": added_pending,
+                },
             )
         return plan
+
+    def _reconcile_pending_occurrences(self, plan: PlanRow) -> tuple[int, int]:
+        """Align only mutable pending rows with the edited schedule.
+
+        Confirmed/skipped/cancelled history is immutable.  Pending rows that no
+        longer belong to the edited schedule are deleted, which also avoids the
+        UNIQUE(line_id, expected_issue_date) tombstone problem on later edits.
+        """
+        pending = self._repo.list_occurrences(plan_id=plan.id, status="pending")
+        horizon = datetime.date.fromisoformat(today_iso()) + datetime.timedelta(
+            days=_MAX_GENERATE_YEARS * 365
+        )
+        if pending:
+            horizon = max(
+                horizon,
+                max(datetime.date.fromisoformat(row.expected_issue_date) for row in pending),
+            )
+        valid_dates = {date.isoformat() for date in _billing_dates(plan, horizon)}
+        active_lines = self._repo.list_lines(plan.id, active_only=True)
+        valid_pairs = {(line.id, date) for line in active_lines for date in valid_dates}
+
+        removed = 0
+        for row in pending:
+            if (row.line_id, row.expected_issue_date) not in valid_pairs:
+                removed += int(self._repo.delete_pending_occurrence(row.id))
+
+        added = 0
+        for line_id, date in sorted(valid_pairs):
+            added += self._repo.insert_occurrence_if_missing(plan.id, line_id, date)
+        return removed, added
 
     def archive_plan(self, plan_id: int) -> PlanRow:
         existing = self._repo.get_plan(plan_id)
@@ -387,6 +424,27 @@ class RecurringBillingService:
                 target_id=str(plan_id),
             )
         return plan
+
+    def delete_plan(self, plan_id: int) -> None:
+        existing = self._repo.get_plan(plan_id)
+        if existing is None:
+            raise RecurringBillingError("recurring_billing.plan.not_found")
+        statuses = self._repo.count_occurrences_by_status(plan_id)
+        if statuses.get("confirmed", 0) > 0:
+            raise RecurringBillingError("recurring_billing.plan.has_confirmed_history")
+        with self._conn:
+            line_count, occurrence_count = self._repo.delete_plan_cascade(plan_id)
+            self._audit.record(
+                action="recurring_billing.plan.delete",
+                target_type="recurring_billing_plan",
+                target_id=str(plan_id),
+                detail={
+                    "plan_name": existing.plan_name,
+                    "client_id": existing.client_id,
+                    "deleted_line_count": line_count,
+                    "deleted_occurrence_count": occurrence_count,
+                },
+            )
 
     def list_plans(
         self, client_id: int | None = None, include_archived: bool = False
@@ -580,6 +638,79 @@ class RecurringBillingService:
                 detail={"confirmed_amount": inp.confirmed_amount},
             )
         return row
+
+    def confirm_occurrences_bulk(self, occurrence_ids: list[int]) -> list[OccurrenceRow]:
+        ids = list(dict.fromkeys(occurrence_ids))
+        if not ids:
+            raise RecurringBillingError("recurring_billing.bulk_selection.empty")
+
+        prepared: list[tuple[OccurrenceRow, LineRow]] = []
+        for occurrence_id in ids:
+            occ = self._repo.get_occurrence(occurrence_id)
+            if occ is None:
+                raise RecurringBillingError("recurring_billing.occurrence.not_found")
+            if occ.status != "pending":
+                raise RecurringBillingError("recurring_billing.occurrence.not_pending")
+            if self._repo.get_plan(occ.plan_id) is None:
+                raise RecurringBillingError("recurring_billing.plan.not_found")
+            line = self._repo.get_line(occ.line_id)
+            if line is None or not line.active:
+                raise RecurringBillingError("recurring_billing.line.not_found")
+            prepared.append((occ, line))
+
+        confirmed: list[OccurrenceRow] = []
+        with self._conn:
+            for occ, line in prepared:
+                row = self._repo.update_occurrence_status(
+                    occurrence_id=occ.id,
+                    status="confirmed",
+                    confirmed_issue_date=occ.expected_issue_date,
+                    confirmed_amount=line.amount,
+                    confirmed_at=now_iso(),
+                )
+                if row is None:
+                    raise RecurringBillingError("recurring_billing.occurrence.not_found")
+                confirmed.append(row)
+            self._audit.record(
+                action="recurring_billing.occurrence.bulk_confirm",
+                target_type="recurring_billing_occurrence",
+                target_id=",".join(str(row.id) for row in confirmed),
+                detail={
+                    "confirmed_count": len(confirmed),
+                    "occurrence_ids": [row.id for row in confirmed],
+                },
+            )
+        return confirmed
+
+    def reopen_occurrence(self, occurrence_id: int) -> OccurrenceRow:
+        """Return a confirmed occurrence to pending while retaining an audit trail."""
+        occurrence = self._repo.get_occurrence(occurrence_id)
+        if occurrence is None:
+            raise RecurringBillingError("recurring_billing.occurrence.not_found")
+        if occurrence.status != "confirmed":
+            raise RecurringBillingError("recurring_billing.occurrence.reopen_not_confirmed")
+        with self._conn:
+            reopened = self._repo.update_occurrence_status(
+                occurrence_id=occurrence_id,
+                status="pending",
+            )
+            if reopened is None:
+                raise RecurringBillingError("recurring_billing.occurrence.not_found")
+            self._audit.record(
+                action="recurring_billing.occurrence.reopen",
+                target_type="recurring_billing_occurrence",
+                target_id=str(occurrence_id),
+                detail={
+                    "plan_id": occurrence.plan_id,
+                    "previous_status": occurrence.status,
+                    "previous_confirmed_invoice_no": occurrence.confirmed_invoice_no,
+                    "previous_confirmed_issue_date": occurrence.confirmed_issue_date,
+                    "previous_confirmed_amount": occurrence.confirmed_amount,
+                    "previous_confirmed_at": occurrence.confirmed_at,
+                    "previous_notes": occurrence.notes,
+                },
+            )
+        return reopened
 
     def skip_occurrence(self, occurrence_id: int, reason: str) -> OccurrenceRow:
         if not reason.strip():

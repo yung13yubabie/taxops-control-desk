@@ -288,6 +288,37 @@ class RecurringBillingRepository:
         )
         return self._get_plan_including_archived(plan_id)
 
+    def delete_plan_cascade(self, plan_id: int) -> tuple[int, int]:
+        """Physically delete a plan and its dependent, unconfirmed workflow rows.
+
+        The service must verify that no confirmed occurrence exists before
+        calling this method.  Child rows are removed explicitly because the
+        original migration intentionally did not declare ON DELETE CASCADE.
+        """
+        occurrence_count = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM recurring_billing_occurrences WHERE plan_id = ?",
+            (plan_id,),
+        ).fetchone()["c"]
+        line_count = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM recurring_billing_lines WHERE plan_id = ?",
+            (plan_id,),
+        ).fetchone()["c"]
+        self._conn.execute(
+            "DELETE FROM recurring_billing_occurrences WHERE plan_id = ?",
+            (plan_id,),
+        )
+        self._conn.execute(
+            "DELETE FROM recurring_billing_lines WHERE plan_id = ?",
+            (plan_id,),
+        )
+        cur = self._conn.execute(
+            "DELETE FROM recurring_billing_plans WHERE id = ? AND deleted_at IS NULL",
+            (plan_id,),
+        )
+        if cur.rowcount != 1:
+            raise RuntimeError("recurring billing plan disappeared during delete")
+        return int(line_count), int(occurrence_count)
+
     def list_plans(
         self, client_id: int | None = None, include_archived: bool = False
     ) -> list[PlanRow]:
@@ -346,15 +377,28 @@ class RecurringBillingRepository:
         sort_order: int,
     ) -> LineRow | None:
         now = now_iso()
-        self._conn.execute(
+        cur = self._conn.execute(
             """
             UPDATE recurring_billing_lines
                SET bill_to_name=?, description=?, amount=?,
                    tax_type=?, sort_order=?, updated_at=?
              WHERE id=?
+               AND active=1
+               AND EXISTS (
+                   SELECT 1
+                     FROM recurring_billing_plans p
+                     JOIN clients c
+                       ON c.id = p.client_id
+                      AND c.deleted_at IS NULL
+                    WHERE p.id = recurring_billing_lines.plan_id
+                      AND p.deleted_at IS NULL
+                      AND p.status != 'archived'
+               )
             """,
             (bill_to_name, description, amount, tax_type, sort_order, now, line_id),
         )
+        if cur.rowcount == 0:
+            return None
         return self.get_line(line_id)
 
     def set_line_active(self, line_id: int, active: bool) -> LineRow | None:
@@ -449,6 +493,14 @@ class RecurringBillingRepository:
             (now, line_id),
         )
         return cur.rowcount
+
+    def delete_pending_occurrence(self, occurrence_id: int) -> bool:
+        cur = self._conn.execute(
+            "DELETE FROM recurring_billing_occurrences"
+            " WHERE id = ? AND status = 'pending'",
+            (occurrence_id,),
+        )
+        return cur.rowcount > 0
 
     def list_occurrences(
         self,

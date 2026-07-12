@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -240,6 +241,61 @@ def test_template_form_shows_selected_variable_source(container, qapp):
     assert "所選索件批次" in detail
 
 
+def test_template_toolbar_click_path_creates_edits_trials_and_deletes(
+    page, container, monkeypatch
+):
+    from PySide6.QtWidgets import QDialog, QMessageBox
+
+    class FormDialog(TemplateFormDialog):
+        def exec(self):
+            if self._existing is None:
+                self._name.setText("Toolbar template")
+                self._body.setPlainText("Hello 【客戶名稱】")
+            else:
+                self._name.setText("Toolbar edited")
+                self._body.setPlainText("Edited 【客戶名稱】")
+            self._save_btn.click()
+            return self.result()
+
+    monkeypatch.setattr(
+        "taxops.ui.pages.templates_page.TemplateFormDialog", FormDialog
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.templates_page.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+
+    page._new_btn.click()
+    created = next(
+        row for row in container.templates.list_all() if row.name == "Toolbar template"
+    )
+    for row in range(page._table.rowCount()):
+        if page._table.item(row, 0).text() == str(created.id):
+            page._table.selectRow(row)
+            break
+    page._edit_btn.click()
+    edited = container.templates.get_template(created.id)
+    assert edited.name == "Toolbar edited"
+    assert edited.body == "Edited 【客戶名稱】"
+    assert container.templates.render_template(
+        created.id, {"client_name": "王小明會計師事務所"}
+    ) == "Edited 王小明會計師事務所"
+
+    for row in range(page._table.rowCount()):
+        if page._table.item(row, 0).text() == str(created.id):
+            page._table.selectRow(row)
+            break
+    monkeypatch.setattr(QDialog, "exec", lambda _dialog: QDialog.DialogCode.Rejected)
+    page._trial_btn.click()
+
+    for row in range(page._table.rowCount()):
+        if page._table.item(row, 0).text() == str(created.id):
+            page._table.selectRow(row)
+            break
+    page._delete_btn.click()
+    assert container.templates.get_template(created.id) is None
+
+
 def test_template_form_warns_payment_fields_are_not_receivables(container, qapp):
     dialog = TemplateFormDialog(container.templates)
     dialog._type.setCurrentIndex(dialog._type.findData("payment_follow_up"))
@@ -253,3 +309,85 @@ def test_template_form_warns_payment_fields_are_not_receivables(container, qapp)
 
     assert "固定開立" in dialog._var_detail.text()
     assert "不代表客戶欠款" in dialog._var_detail.text()
+
+
+def test_template_page_load_failure_clears_stale_rows_and_shows_error(
+    page, container, monkeypatch
+):
+    container.system_log = SimpleNamespace(warn=lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        container.templates,
+        "list_all",
+        lambda: (_ for _ in ()).throw(RuntimeError("templates locked")),
+    )
+
+    page._refresh_btn.click()
+
+    assert page._table.rowCount() == 0
+    assert not page._error_label.isHidden()
+    assert page._table.isHidden()
+    assert page._empty_state.isHidden()
+
+
+def test_template_edit_missing_target_warns_and_refreshes(page, container, monkeypatch):
+    warnings: list[str] = []
+    page._table.selectRow(0)
+    monkeypatch.setattr(
+        container.templates,
+        "get_template",
+        lambda _template_id: (_ for _ in ()).throw(RuntimeError("stale id")),
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.templates_page.QMessageBox.warning",
+        lambda _parent, _title, body: warnings.append(body),
+    )
+
+    page._edit_btn.click()
+
+    assert len(warnings) == 1
+    assert warnings[0].strip()
+
+
+@pytest.mark.parametrize("operation,unexpected", [("delete", False), ("delete", True), ("trial", False), ("trial", True)])
+def test_template_action_failures_are_visible_and_do_not_mutate(
+    page, container, monkeypatch, operation, unexpected
+):
+    from PySide6.QtWidgets import QMessageBox
+    from taxops.services.templates import TemplateValidationError
+
+    custom = container.templates.create_template(
+        CreateTemplateInput(name=f"{operation} failure", body="Hello 【客戶名稱】")
+    )
+    container.system_log = SimpleNamespace(warn=lambda *_args, **_kwargs: None)
+    page._refresh()
+    for row in range(page._table.rowCount()):
+        if page._table.item(row, 0).text() == str(custom.id):
+            page._table.selectRow(row)
+            break
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        "taxops.ui.pages.templates_page.QMessageBox.warning",
+        lambda _parent, _title, body: warnings.append(body),
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.templates_page.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    error = RuntimeError("secret template detail") if unexpected else TemplateValidationError(
+        "template.not_found"
+    )
+    method, button = {
+        "delete": ("delete_template", page._delete_btn),
+        "trial": ("render_template", page._trial_btn),
+    }[operation]
+    monkeypatch.setattr(
+        container.templates,
+        method,
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(error),
+    )
+
+    button.click()
+
+    assert len(warnings) == 1
+    assert "secret template detail" not in warnings[0]
+    assert container.templates.get_template(custom.id) is not None

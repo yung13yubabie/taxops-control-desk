@@ -29,6 +29,7 @@ _log = logging.getLogger(__name__)
 from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtGui import QCloseEvent, QGuiApplication
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -111,6 +112,7 @@ class _RegistryWorker(QThread):
         except (TaxRegistryImportError, BundleError, DownloadError) as exc:
             self.errored.emit(exc.code)
         except Exception:
+            _log.exception("Registry worker failed unexpectedly")
             self.errored.emit("system.unexpected")
         finally:
             if container is not None:
@@ -130,6 +132,10 @@ class SettingsPage(QWidget):
         self._active_worker: _RegistryWorker | None = None
         self._slice2_buttons: list[QPushButton] = []
         self._download_btn: QPushButton | None = None
+        self._save_display_name_btn: QPushButton | None = None
+        self._save_query_mode_btn: QPushButton | None = None
+        self._backup_btn: QPushButton | None = None
+        self._restore_btn: QPushButton | None = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 24, 24, 24)
@@ -207,6 +213,7 @@ class SettingsPage(QWidget):
         )
         self._display_name.setMaxLength(100)
         save_btn = QPushButton(BUTTON_LABELS["settings.save_display_name"])
+        self._save_display_name_btn = save_btn
         save_btn.clicked.connect(self.on_save_display_name)
 
         row = QHBoxLayout()
@@ -238,6 +245,7 @@ class SettingsPage(QWidget):
         if idx >= 0:
             self._query_mode.setCurrentIndex(idx)
         save_mode_btn = QPushButton(BUTTON_LABELS["settings.save_query_mode"])
+        self._save_query_mode_btn = save_mode_btn
         save_mode_btn.clicked.connect(self.on_save_query_mode)
         mode_row = QHBoxLayout()
         mode_row.setContentsMargins(0, 0, 0, 0)
@@ -397,6 +405,14 @@ class SettingsPage(QWidget):
             btn.setEnabled(enabled)
         if self._download_btn is not None:
             self._download_btn.setEnabled(enabled)
+        for btn in (
+            self._save_display_name_btn,
+            self._save_query_mode_btn,
+            self._backup_btn,
+            self._restore_btn,
+        ):
+            if btn is not None:
+                btn.setEnabled(enabled)
 
     def _run_async(
         self,
@@ -423,22 +439,26 @@ class SettingsPage(QWidget):
 
         worker = _RegistryWorker(self._container.paths, task_fn, parent=self)
         self._active_worker = worker
+        outcome: dict[str, Any] = {}
 
-        def _on_finished(result: Any) -> None:
-            progress.close()
-            self._active_worker = None
-            self._set_slice2_buttons_enabled(True)
-            self._refresh_cache_status()
-            on_success(result)
+        def _on_succeeded(result: Any) -> None:
+            outcome["result"] = result
 
         def _on_errored(code: str) -> None:
+            outcome["error"] = code
+            QMessageBox.warning(self, "操作失敗", error_message(code))
+
+        def _on_thread_finished() -> None:
             progress.close()
             self._active_worker = None
             self._set_slice2_buttons_enabled(True)
-            QMessageBox.warning(self, "操作失敗", error_message(code))
+            if "error" not in outcome and "result" in outcome:
+                self._refresh_cache_status()
+                on_success(outcome["result"])
 
-        worker.succeeded.connect(_on_finished)
+        worker.succeeded.connect(_on_succeeded)
         worker.errored.connect(_on_errored)
+        worker.finished.connect(_on_thread_finished)
         worker.finished.connect(worker.deleteLater)
         worker.start()
 
@@ -796,10 +816,12 @@ class SettingsPage(QWidget):
 
         backup_btn = QPushButton("立即備份")
         backup_btn.clicked.connect(self.on_backup)
+        self._backup_btn = backup_btn
         btn_row.addWidget(backup_btn)
 
         restore_btn = QPushButton("還原備份")
         restore_btn.clicked.connect(self.on_restore)
+        self._restore_btn = restore_btn
         btn_row.addWidget(restore_btn)
 
         layout.addWidget(btn_wrap)
@@ -853,6 +875,7 @@ class SettingsPage(QWidget):
             self._container.backup.restore_backup(
                 Path(path), self._container.paths
             )
+            QApplication.quit()
         except BackupError as err:
             QMessageBox.critical(self, "還原失敗", error_message(err.code))
             return

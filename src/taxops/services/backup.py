@@ -109,6 +109,9 @@ class BackupService:
             apply_migrations(stage_conn)
             self._assert_integrity(stage_conn)
             self._assert_taxops_database(stage_conn, require_current=True)
+        except BackupError:
+            stage_conn.close()
+            raise
         except Exception as exc:
             _log.error("backup.restore: staging migration failed", exc_info=True)
             stage_conn.close()
@@ -242,18 +245,20 @@ class BackupService:
             Path(f"{db_path}{suffix}").unlink(missing_ok=True)
 
 
-def _schema_objects(conn: sqlite3.Connection) -> frozenset[tuple[str, str]]:
+def _schema_objects(
+    conn: sqlite3.Connection,
+) -> frozenset[tuple[str, str, str | None]]:
     placeholders = ",".join("?" for _ in _SCHEMA_OBJECT_TYPES)
     rows = conn.execute(
-        f"SELECT type, name FROM sqlite_master WHERE type IN ({placeholders})"
+        f"SELECT type, name, sql FROM sqlite_master WHERE type IN ({placeholders})"
         " AND name NOT LIKE 'sqlite_%'",
         _SCHEMA_OBJECT_TYPES,
     ).fetchall()
-    return frozenset((row[0], row[1]) for row in rows)
+    return frozenset((row[0], row[1], row[2]) for row in rows)
 
 
 @lru_cache(maxsize=1)
-def _expected_schema_objects() -> frozenset[tuple[str, str]]:
+def _expected_schema_objects() -> frozenset[tuple[str, str, str | None]]:
     reference = sqlite3.connect(":memory:")
     reference.row_factory = sqlite3.Row
     try:

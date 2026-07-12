@@ -37,6 +37,12 @@ a = Analysis(
         "pytest",
         "_pytest",
         "pyinstaller",
+        # Runtime networking uses urllib; do not bundle unrelated environment
+        # packages whose versions may be mutually incompatible.
+        "requests",
+        "urllib3",
+        "chardet",
+        "charset_normalizer",
     ],
     noarchive=False,
 )

@@ -224,6 +224,29 @@ def test_restore_rejects_unknown_trigger_before_migration(svc, paths):
     assert exc_info.value.code == "backup.invalid_file"
 
 
+def test_restore_rejects_same_object_names_with_modified_table_ddl(
+    conn,
+    svc,
+    paths,
+):
+    backup_row = svc.create_backup(paths)
+    forged = Path(backup_row.backup_path)
+    with sqlite3.connect(forged) as forged_conn:
+        forged_conn.execute(
+            "ALTER TABLE app_settings ADD COLUMN unexpected_payload TEXT"
+        )
+
+    with pytest.raises(BackupError) as exc_info:
+        svc.restore_backup(forged, paths)
+
+    assert exc_info.value.code == "backup.invalid_file"
+    live_columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(app_settings)").fetchall()
+    }
+    assert "unexpected_payload" not in live_columns
+
+
 def test_restore_rejects_foreign_key_corruption(svc, paths):
     backup_row = svc.create_backup(paths)
     forged = Path(backup_row.backup_path)

@@ -292,7 +292,8 @@ class BulkImportWizard(QDialog):
             self._dup_policy = "overwrite" if self._rb_overwrite.isChecked() else "skip"
             self._populate_confirm()
         elif step == 4:
-            self._run_import()
+            if not self._run_import():
+                return
         elif step == 5:
             self.accept()
             return
@@ -445,7 +446,7 @@ class BulkImportWizard(QDialog):
             "按「下一步」確認寫入資料庫。"
         )
 
-    def _run_import(self) -> None:
+    def _run_import(self) -> bool:
         self._next_btn.setEnabled(False)
         try:
             self._result = import_validated(
@@ -457,12 +458,12 @@ class BulkImportWizard(QDialog):
             _log.error("bulk import failed: code=%s detail=%s", exc.code, exc.detail)
             QMessageBox.critical(self, "匯入失敗", error_message(exc.code))
             self._next_btn.setEnabled(True)
-            return
+            return False
         except Exception as exc:
             _log.error("bulk import unexpected error: %s", exc, exc_info=True)
             QMessageBox.critical(self, "匯入失敗", error_message("system.unexpected"))
             self._next_btn.setEnabled(True)
-            return
+            return False
         finally:
             self._next_btn.setEnabled(True)
 
@@ -479,3 +480,4 @@ class BulkImportWizard(QDialog):
                 lines.append(f"  第 {row_num} 列：{error_message(code)}")
         self._result_label.setText("\n".join(lines))
         self._cancel_btn.setText("關閉")
+        return True

@@ -29,7 +29,7 @@ The product is not:
 Primary source specification:
 
 ```text
-C:\Users\LIN\Downloads\codex_readable_taxops_spec_compact.md
+專案擁有者提供的外部 compact specification（不納入 repo）
 ```
 
 This file consolidates implementation decisions confirmed on 2026-05-08. If this file conflicts with the source specification, follow the newer confirmed decision recorded in `.ai/DECISIONS.md`.

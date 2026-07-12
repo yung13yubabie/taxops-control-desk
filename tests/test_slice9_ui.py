@@ -10,16 +10,21 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox, QPushButton
 
 from taxops.core.paths import resolve_paths
 from taxops.db.connection import open_connection
 from taxops.db.migrate import apply_migrations
+from taxops.i18n import error_message
 from taxops.repositories.attachments import AttachmentsRepository
 from taxops.repositories.audit_logs import AuditLogRepository
 from taxops.repositories.engagements import EngagementsRepository
 from taxops.repositories.system_logs import SystemLogRepository
-from taxops.services.attachments import AttachmentsService, UploadAttachmentInput
+from taxops.services.attachments import (
+    AttachmentValidationError,
+    AttachmentsService,
+    UploadAttachmentInput,
+)
 from taxops.services.audit import AuditService
 from taxops.services.engagements import EngagementsService
 from taxops.services.system_log import SystemLogService
@@ -501,6 +506,61 @@ def test_malicious_stored_filename_cannot_preview_open_or_copy(
     conn.close()
 
 
+def test_attachment_toolbar_click_path_uploads_reviews_opens_and_deletes(
+    qapp, tmp_path, monkeypatch
+):
+    from PySide6.QtWidgets import QDialog, QMessageBox
+
+    conn, attachments_dir = _make_conn(tmp_path)
+    engagement_id = _seed(conn)
+    container = _FakeContainer(conn, attachments_dir)
+    source = tmp_path / "使用者路徑.txt"
+    source.write_text("附件預覽內容", encoding="utf-8")
+    opened = []
+    info_calls = []
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QFileDialog.getOpenFileName",
+        lambda *_args, **_kwargs: (str(source), ""),
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QDesktopServices.openUrl",
+        lambda url: opened.append(url) or True,
+    )
+    monkeypatch.setattr(
+        _AttachmentInfoDialog,
+        "exec",
+        lambda _dialog: info_calls.append(True) or QDialog.DialogCode.Accepted,
+    )
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(page._eng_combo.findData(engagement_id))
+
+    page._upload_btn.click()
+    assert page._table.rowCount() == 1
+    page._table.selectRow(0)
+    assert "附件預覽內容" in page._preview_text.toPlainText()
+
+    page._accept_btn.click()
+    page._table.selectRow(0)
+    assert page._selected_attachment().status == "accepted"
+    page._reject_btn.click()
+    page._table.selectRow(0)
+    assert page._selected_attachment().status == "rejected"
+
+    page._info_btn.click()
+    page._open_btn.click()
+    page._location_btn.click()
+    assert info_calls == [True]
+    assert len(opened) == 2
+
+    page._delete_btn.click()
+    assert page._table.rowCount() == 0
+    conn.close()
+
+
 def test_location_button_has_context_menu_policy(qapp, tmp_path):
     conn, attachments_dir = _make_conn(tmp_path)
     _seed(conn)
@@ -521,3 +581,484 @@ def test_attachment_location_contract_is_registered():
     assert len(location) == 1
     assert location[0].handler == "AttachmentsPage._on_open_location"
     assert location[0].enabled
+
+
+def test_text_preview_reads_only_bounded_prefix(qapp, tmp_path, monkeypatch):
+    conn, attachments_dir = _make_conn(tmp_path)
+    container = _FakeContainer(conn, attachments_dir)
+    page = AttachmentsPage(container)
+    source = tmp_path / "large.txt"
+    source.write_text("A" * 5000, encoding="utf-8")
+    attachment = SimpleNamespace(
+        id=999,
+        extension=".txt",
+        original_filename="large.txt",
+        file_size=source.stat().st_size,
+        mime_type="text/plain",
+        status="uploaded",
+        uploaded_at="2026-07-11T00:00:00",
+    )
+    monkeypatch.setattr(
+        page, "_resolve_att_file_path", lambda *_args, **_kwargs: source
+    )
+    monkeypatch.setattr(
+        Path,
+        "read_text",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("preview must not load the complete file")
+        ),
+    )
+
+    page._update_preview(attachment)
+
+    assert page._preview_text.toPlainText() == "A" * 4096
+    conn.close()
+
+
+def test_upload_button_without_engagement_warns_before_opening_picker(
+    qapp, tmp_path, monkeypatch
+):
+    conn, attachments_dir = _make_conn(tmp_path)
+    container = _FakeContainer(conn, attachments_dir)
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QFileDialog.getOpenFileName",
+        lambda *_args, **_kwargs: pytest.fail("file picker must not open"),
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QMessageBox.warning",
+        lambda _parent, title, message: warnings.append((title, message)),
+    )
+    page = AttachmentsPage(container)
+
+    page._upload_btn.click()
+
+    assert warnings == [("提示", "請先選擇案件")]
+    assert conn.execute("SELECT COUNT(*) FROM attachments").fetchone()[0] == 0
+    conn.close()
+
+
+def test_upload_picker_cancel_leaves_database_and_audit_unchanged(
+    qapp, tmp_path, monkeypatch
+):
+    conn, attachments_dir = _make_conn(tmp_path)
+    engagement_id = _seed(conn)
+    container = _FakeContainer(conn, attachments_dir)
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QFileDialog.getOpenFileName",
+        lambda *_args, **_kwargs: ("", ""),
+    )
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(page._eng_combo.findData(engagement_id))
+    audit_before = conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+
+    page._upload_btn.click()
+
+    assert page._table.rowCount() == 0
+    assert conn.execute("SELECT COUNT(*) FROM attachments").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0] == audit_before
+    conn.close()
+
+
+def test_upload_invalid_file_shows_domain_error_and_writes_nothing(
+    qapp, tmp_path, monkeypatch
+):
+    conn, attachments_dir = _make_conn(tmp_path)
+    engagement_id = _seed(conn)
+    container = _FakeContainer(conn, attachments_dir)
+    source = tmp_path / "惡意程式.exe"
+    source.write_bytes(b"not allowed")
+    criticals: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QFileDialog.getOpenFileName",
+        lambda *_args, **_kwargs: (str(source), ""),
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QMessageBox.critical",
+        lambda _parent, title, message: criticals.append((title, message)),
+    )
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(page._eng_combo.findData(engagement_id))
+
+    page._upload_btn.click()
+
+    assert criticals == [("上傳失敗", error_message("attachment.extension_not_allowed"))]
+    assert conn.execute("SELECT COUNT(*) FROM attachments").fetchone()[0] == 0
+    assert not [path for path in attachments_dir.rglob("*") if path.is_file()]
+    conn.close()
+
+
+def test_upload_unexpected_failure_shows_generic_error_and_preserves_database(
+    qapp, tmp_path, monkeypatch
+):
+    conn, attachments_dir = _make_conn(tmp_path)
+    engagement_id = _seed(conn)
+    container = _FakeContainer(conn, attachments_dir)
+    source = tmp_path / "申報資料.txt"
+    source.write_text("內容", encoding="utf-8")
+    criticals: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QFileDialog.getOpenFileName",
+        lambda *_args, **_kwargs: (str(source), ""),
+    )
+    monkeypatch.setattr(
+        container.attachments,
+        "upload_attachment",
+        lambda _data: (_ for _ in ()).throw(RuntimeError("disk offline")),
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QMessageBox.critical",
+        lambda _parent, title, message: criticals.append((title, message)),
+    )
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(page._eng_combo.findData(engagement_id))
+
+    page._upload_btn.click()
+
+    assert criticals == [("上傳失敗", error_message("attachment.upload.failed"))]
+    assert conn.execute("SELECT COUNT(*) FROM attachments").fetchone()[0] == 0
+    conn.close()
+
+
+@pytest.mark.parametrize(
+    ("button_name", "service_name", "error_code"),
+    [
+        ("_accept_btn", "accept_attachment", "attachment.not_found"),
+        ("_reject_btn", "reject_attachment", "attachment.not_found"),
+        ("_delete_btn", "delete_attachment", "attachment.not_found"),
+    ],
+)
+def test_selected_attachment_domain_failure_is_visible_and_does_not_mutate_row(
+    qapp, tmp_path, monkeypatch, button_name, service_name, error_code
+):
+    conn, attachments_dir = _make_conn(tmp_path)
+    engagement_id = _seed(conn)
+    source = tmp_path / "待審附件.txt"
+    source.write_text("待審", encoding="utf-8")
+    container = _FakeContainer(conn, attachments_dir)
+    row = container.attachments.upload_attachment(
+        UploadAttachmentInput(engagement_id=engagement_id, request_id=None, source_path=source)
+    )
+    criticals: list[str] = []
+    monkeypatch.setattr(
+        container.attachments,
+        service_name,
+        lambda _attachment_id: (_ for _ in ()).throw(
+            AttachmentValidationError(error_code)
+        ),
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QMessageBox.critical",
+        lambda _parent, _title, message: criticals.append(message),
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(page._eng_combo.findData(engagement_id))
+    page._table.selectRow(0)
+
+    getattr(page, button_name).click()
+
+    assert criticals == [error_message(error_code)]
+    db_row = conn.execute(
+        "SELECT status FROM attachments WHERE id = ?", (row.id,)
+    ).fetchone()
+    assert db_row["status"] == "uploaded"
+    conn.close()
+
+
+@pytest.mark.parametrize(
+    ("button_name", "service_name", "error_code"),
+    [
+        ("_accept_btn", "accept_attachment", "attachment.accept.failed"),
+        ("_reject_btn", "reject_attachment", "attachment.reject.failed"),
+        ("_delete_btn", "delete_attachment", "attachment.delete.failed"),
+    ],
+)
+def test_selected_attachment_unexpected_failure_is_visible_and_does_not_mutate_row(
+    qapp, tmp_path, monkeypatch, button_name, service_name, error_code
+):
+    conn, attachments_dir = _make_conn(tmp_path)
+    engagement_id = _seed(conn)
+    source = tmp_path / "待審附件.txt"
+    source.write_text("待審", encoding="utf-8")
+    container = _FakeContainer(conn, attachments_dir)
+    row = container.attachments.upload_attachment(
+        UploadAttachmentInput(engagement_id=engagement_id, request_id=None, source_path=source)
+    )
+    criticals: list[str] = []
+    monkeypatch.setattr(
+        container.attachments,
+        service_name,
+        lambda _attachment_id: (_ for _ in ()).throw(RuntimeError("sqlite unavailable")),
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QMessageBox.critical",
+        lambda _parent, _title, message: criticals.append(message),
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(page._eng_combo.findData(engagement_id))
+    page._table.selectRow(0)
+
+    getattr(page, button_name).click()
+
+    assert criticals == [error_message(error_code)]
+    db_row = conn.execute(
+        "SELECT status FROM attachments WHERE id = ?", (row.id,)
+    ).fetchone()
+    assert db_row["status"] == "uploaded"
+    conn.close()
+
+
+def test_delete_confirmation_cancel_preserves_attachment_and_audit(
+    qapp, tmp_path, monkeypatch
+):
+    conn, attachments_dir = _make_conn(tmp_path)
+    engagement_id = _seed(conn)
+    source = tmp_path / "不可誤刪.txt"
+    source.write_text("保留", encoding="utf-8")
+    container = _FakeContainer(conn, attachments_dir)
+    row = container.attachments.upload_attachment(
+        UploadAttachmentInput(engagement_id=engagement_id, request_id=None, source_path=source)
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.No,
+    )
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(page._eng_combo.findData(engagement_id))
+    page._table.selectRow(0)
+
+    page._delete_btn.click()
+
+    db_row = conn.execute(
+        "SELECT status FROM attachments WHERE id = ?", (row.id,)
+    ).fetchone()
+    assert db_row["status"] == "uploaded"
+    assert conn.execute(
+        "SELECT COUNT(*) FROM audit_logs WHERE action = 'attachment.delete'"
+    ).fetchone()[0] == 0
+    assert page._table.rowCount() == 1
+    conn.close()
+
+
+def test_stale_selected_row_disables_actions_instead_of_silent_noop(qapp, tmp_path):
+    conn, attachments_dir = _make_conn(tmp_path)
+    engagement_id = _seed(conn)
+    source = tmp_path / "稍後被移除.txt"
+    source.write_text("內容", encoding="utf-8")
+    container = _FakeContainer(conn, attachments_dir)
+    container.attachments.upload_attachment(
+        UploadAttachmentInput(engagement_id=engagement_id, request_id=None, source_path=source)
+    )
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(page._eng_combo.findData(engagement_id))
+    page._table.selectRow(0)
+    page._attachments = []
+
+    page._on_selection_changed()
+
+    assert not page._accept_btn.isEnabled()
+    assert not page._reject_btn.isEnabled()
+    assert not page._delete_btn.isEnabled()
+    assert not page._open_btn.isEnabled()
+    conn.close()
+
+
+def test_failed_system_open_is_reported_to_user(qapp, tmp_path, monkeypatch):
+    conn, attachments_dir = _make_conn(tmp_path)
+    engagement_id = _seed(conn)
+    source = tmp_path / "無關聯程式.txt"
+    source.write_text("內容", encoding="utf-8")
+    container = _FakeContainer(conn, attachments_dir)
+    container.attachments.upload_attachment(
+        UploadAttachmentInput(engagement_id=engagement_id, request_id=None, source_path=source)
+    )
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QDesktopServices.openUrl", lambda _url: False
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QMessageBox.warning",
+        lambda _parent, title, message: warnings.append((title, message)),
+    )
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(page._eng_combo.findData(engagement_id))
+    page._table.selectRow(0)
+
+    page._open_btn.click()
+    page._location_btn.click()
+
+    assert warnings == [
+        ("開啟失敗", "系統無法開啟附件，請確認檔案關聯與存取權限"),
+        ("開啟失敗", "系統無法開啟附件資料夾，請確認存取權限"),
+    ]
+    conn.close()
+
+
+def test_info_dialog_renders_optional_review_fields_and_real_close_button(qapp):
+    att = AttachmentRow(
+        id=7,
+        engagement_id=1,
+        request_id=None,
+        original_filename="已驗收附件.pdf",
+        stored_filename="2026/07/reviewed.pdf",
+        file_hash_sha256="b" * 64,
+        file_size=2048,
+        mime_type="application/pdf",
+        extension=".pdf",
+        uploaded_by="會計甲",
+        uploaded_at="2026-07-12T08:00:00",
+        source="manual",
+        status="accepted",
+        notes="已核對申報期間",
+        accepted_by="覆核乙",
+        accepted_at="2026-07-12T09:00:00",
+    )
+    dialog = _AttachmentInfoDialog(att)
+    values = [label.text() for label in dialog.findChildren(QLabel)]
+    close_button = next(
+        button for button in dialog.findChildren(QPushButton) if button.text() == "關閉"
+    )
+
+    close_button.click()
+
+    assert "覆核乙" in values
+    assert "2026-07-12T09:00:00" in values
+    assert "已核對申報期間" in values
+    assert dialog.result() == QDialog.DialogCode.Accepted
+
+
+def test_page_builds_metadata_preview_when_qtpdf_is_unavailable(
+    qapp, tmp_path, monkeypatch
+):
+    conn, attachments_dir = _make_conn(tmp_path)
+    container = _FakeContainer(conn, attachments_dir)
+    monkeypatch.setattr("taxops.ui.pages.attachments_page.QPdfDocument", None)
+    monkeypatch.setattr("taxops.ui.pages.attachments_page.QPdfView", None)
+
+    page = AttachmentsPage(container)
+
+    assert page._preview_pdf_doc is None
+    assert page._preview_pdf is None
+    conn.close()
+
+
+def test_refresh_preserves_engagement_and_clear_filter_returns_to_all(qapp, tmp_path):
+    conn, attachments_dir = _make_conn(tmp_path)
+    engagement_id = _seed(conn)
+    container = _FakeContainer(conn, attachments_dir)
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(page._eng_combo.findData(engagement_id))
+
+    page.refresh_context()
+
+    assert page._eng_combo.currentData() == engagement_id
+    page.clear_filter()
+    assert page._eng_combo.currentData() == -1
+    conn.close()
+
+
+def test_refresh_engagement_failure_is_logged_and_leaves_safe_all_filter(
+    qapp, tmp_path, monkeypatch
+):
+    conn, attachments_dir = _make_conn(tmp_path)
+    _seed(conn)
+    container = _FakeContainer(conn, attachments_dir)
+    page = AttachmentsPage(container)
+    monkeypatch.setattr(
+        container.engagements,
+        "list_all",
+        lambda: (_ for _ in ()).throw(RuntimeError("database locked")),
+    )
+
+    page.refresh_context()
+
+    assert page._eng_combo.count() == 1
+    assert page._eng_combo.currentData() == -1
+    log = conn.execute(
+        "SELECT level, message, detail_json FROM system_logs ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert (log["level"], log["message"]) == (
+        "WARN",
+        "attachments: failed to load engagements",
+    )
+    assert "RuntimeError" in log["detail_json"]
+    conn.close()
+
+
+def test_attachment_list_failure_is_logged_and_clears_stale_rows(
+    qapp, tmp_path, monkeypatch
+):
+    conn, attachments_dir = _make_conn(tmp_path)
+    engagement_id = _seed(conn)
+    source = tmp_path / "原本可見.txt"
+    source.write_text("內容", encoding="utf-8")
+    container = _FakeContainer(conn, attachments_dir)
+    container.attachments.upload_attachment(
+        UploadAttachmentInput(engagement_id=engagement_id, request_id=None, source_path=source)
+    )
+    page = AttachmentsPage(container)
+    assert page._table.rowCount() == 1
+    monkeypatch.setattr(
+        container.attachments,
+        "list_all",
+        lambda: (_ for _ in ()).throw(RuntimeError("database locked")),
+    )
+
+    page.clear_filter()
+
+    assert page._table.rowCount() == 0
+    assert page._attachments == []
+    log = conn.execute(
+        "SELECT level, message, detail_json FROM system_logs ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert (log["level"], log["message"]) == (
+        "WARN",
+        "attachments: failed to load attachments",
+    )
+    assert "database locked" in log["detail_json"]
+    conn.close()
+
+
+def test_unexpected_file_resolution_failure_is_logged_and_visible(
+    qapp, tmp_path, monkeypatch
+):
+    conn, attachments_dir = _make_conn(tmp_path)
+    engagement_id = _seed(conn)
+    source = tmp_path / "稍後離線.txt"
+    source.write_text("內容", encoding="utf-8")
+    container = _FakeContainer(conn, attachments_dir)
+    row = container.attachments.upload_attachment(
+        UploadAttachmentInput(engagement_id=engagement_id, request_id=None, source_path=source)
+    )
+    warnings: list[str] = []
+    page = AttachmentsPage(container)
+    page._eng_combo.setCurrentIndex(page._eng_combo.findData(engagement_id))
+    page._table.selectRow(0)
+    monkeypatch.setattr(
+        container.attachments,
+        "resolve_file_path",
+        lambda _attachment_id: (_ for _ in ()).throw(OSError("volume offline")),
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.attachments_page.QMessageBox.warning",
+        lambda _parent, _title, message: warnings.append(message),
+    )
+
+    page._open_btn.click()
+
+    assert warnings == [error_message("attachment.not_found")]
+    log = conn.execute(
+        "SELECT message, detail_json FROM system_logs ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert log["message"] == "attachments: failed to resolve stored file"
+    assert f'"attachment_id": {row.id}' in log["detail_json"]
+    assert "OSError" in log["detail_json"]
+    conn.close()

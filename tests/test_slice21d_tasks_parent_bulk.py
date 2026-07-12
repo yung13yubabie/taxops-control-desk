@@ -237,6 +237,24 @@ def test_update_tasks_bulk_changes_only_specified_fields(container, two_clients)
     assert container.tasks.get_task(t1.id).title == "T1"
 
 
+def test_update_tasks_bulk_to_done_sets_completed_at(container, two_clients):
+    from taxops.services.tasks import CreateTaskInput
+
+    c1, _ = two_clients
+    task = container.tasks.create_task(CreateTaskInput(
+        engagement_id=None,
+        client_id=c1.id,
+        title="Bulk completion timestamp",
+    ))
+    container.tasks.set_status(task.id, "doing")
+
+    assert container.tasks.update_tasks_bulk([task.id], {"status": "done"}) == 1
+
+    updated = container.tasks.get_task(task.id)
+    assert updated.status == "done"
+    assert updated.completed_at is not None
+
+
 def test_update_tasks_bulk_persists_for_independent_connection(container, two_clients):
     from taxops.db.connection import open_connection
     from taxops.services.tasks import CreateTaskInput

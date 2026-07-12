@@ -33,6 +33,30 @@ def _qt_app():
     return QApplication.instance() or QApplication(sys.argv)
 
 
+def test_template_available_fields_explain_where_values_come_from(container):
+    from taxops.ui.dialogs.template_form_dialog import TemplateFormDialog
+
+    _qt_app()
+    dialog = TemplateFormDialog(container.templates)
+
+    help_text = dialog._variable_help.text()
+    assert "不是在此輸入資料" in help_text
+    assert "客戶／案件／索件" in help_text
+    assert "雙擊" in help_text
+
+
+def test_template_dialog_names_exact_input_pages_for_accounts_dates_and_notes(container):
+    from taxops.ui.dialogs.template_form_dialog import TemplateFormDialog
+
+    _qt_app()
+    dialog = TemplateFormDialog(container.templates)
+    help_text = dialog._variable_help.text()
+
+    assert "帳款欄位：固定開立" in help_text
+    assert "期限欄位：案件管理 > 索件管理" in help_text
+    assert "備註欄位：案件管理 > 索件管理 > 索件備註" in help_text
+
+
 def _make_match_row(
     client_id: int,
     tax_id: str,
@@ -60,6 +84,119 @@ def _make_match_row(
         review_status="pending",
         generated_at="2026-01-01T00:00:00Z",
     )
+
+
+def _document_request(container: ServiceContainer):
+    from taxops.services.document_requests import CreateDocumentRequestInput
+    from taxops.services.engagements import CreateEngagementInput
+
+    client = container.clients.create_client(
+        CreateClientInput(client_code="DOC-DLG", client_name="索件對話框客戶")
+    )
+    engagement = container.engagements.create_engagement(
+        CreateEngagementInput(
+            client_id=client.id,
+            engagement_name="2026 營業稅",
+            tax_type="vat",
+            period_name="2026-05",
+        )
+    )
+    request, _items = container.doc_requests.create_request(
+        CreateDocumentRequestInput(
+            engagement_id=engagement.id,
+            tax_type="vat",
+            period_name="2026-05",
+            request_name="五月索件",
+        )
+    )
+    return request
+
+
+# ---------------------------------------------------------------------------
+# AddDocumentItemDialog
+# ---------------------------------------------------------------------------
+
+
+def test_add_document_item_dialog_real_button_persists_exact_chinese_rows(
+    container: ServiceContainer,
+) -> None:
+    _qt_app()
+    from taxops.ui.dialogs.add_document_item_dialog import AddDocumentItemDialog
+
+    request = _document_request(container)
+    dialog = AddDocumentItemDialog(container.doc_requests, request.id)
+    dialog._text_edit.setPlainText("  進項憑證  \n\n銀行對帳單\n")
+
+    dialog._ok_btn.click()
+
+    assert dialog.result() == dialog.DialogCode.Accepted
+    assert [item.item_name for item in container.doc_requests.list_items(request.id)] == [
+        "進項憑證",
+        "銀行對帳單",
+    ]
+    actions = [
+        row[0]
+        for row in container.conn.execute(
+            "SELECT action FROM audit_logs WHERE target_type = 'document_request_item'"
+        ).fetchall()
+    ]
+    assert actions.count("doc_request_item.create") == 2
+    dialog.destroy()
+
+
+def test_add_document_item_dialog_validation_failure_stays_open_and_visible(
+    container: ServiceContainer, monkeypatch
+) -> None:
+    _qt_app()
+    from taxops.ui.dialogs.add_document_item_dialog import AddDocumentItemDialog
+
+    request = _document_request(container)
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        "taxops.ui.dialogs.add_document_item_dialog.QMessageBox.warning",
+        lambda _parent, _title, body: warnings.append(body),
+    )
+    dialog = AddDocumentItemDialog(container.doc_requests, request.id)
+    dialog._text_edit.setPlainText("  \n  ")
+
+    dialog._ok_btn.click()
+
+    assert dialog.result() != dialog.DialogCode.Accepted
+    assert dialog._ok_btn.isEnabled()
+    assert len(warnings) == 1
+    assert warnings[0].strip()
+    assert container.doc_requests.list_items(request.id) == []
+    dialog.destroy()
+
+
+def test_add_document_item_dialog_unexpected_failure_stays_open_and_visible(
+    container: ServiceContainer, monkeypatch, caplog
+) -> None:
+    _qt_app()
+    from taxops.ui.dialogs.add_document_item_dialog import AddDocumentItemDialog
+
+    request = _document_request(container)
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        container.doc_requests,
+        "add_items_bulk",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("database locked")),
+    )
+    monkeypatch.setattr(
+        "taxops.ui.dialogs.add_document_item_dialog.QMessageBox.warning",
+        lambda _parent, _title, body: warnings.append(body),
+    )
+    dialog = AddDocumentItemDialog(container.doc_requests, request.id)
+    dialog._text_edit.setPlainText("銀行對帳單")
+
+    dialog._ok_btn.click()
+
+    assert dialog.result() != dialog.DialogCode.Accepted
+    assert dialog._ok_btn.isEnabled()
+    assert len(warnings) == 1
+    assert "database locked" not in warnings[0]
+    assert "add_items_bulk unexpected error" in caplog.text
+    dialog.destroy()
 
 
 # ---------------------------------------------------------------------------

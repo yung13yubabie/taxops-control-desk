@@ -6,7 +6,13 @@ import pathlib
 
 import pytest
 
-from taxops.services.clients_bulk import BulkParseError, parse_csv, parse_excel
+import taxops.services.clients_bulk as clients_bulk
+from taxops.services.clients_bulk import (
+    BulkParseError,
+    parse_clipboard_text,
+    parse_csv,
+    parse_excel,
+)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -85,6 +91,13 @@ def test_parse_excel_file_not_found_raises(tmp_path: pathlib.Path) -> None:
 # ── parse_csv ─────────────────────────────────────────────────────────────────
 
 
+def test_parse_csv_file_not_found_raises_bulk_error(tmp_path: pathlib.Path) -> None:
+    with pytest.raises(BulkParseError) as exc_info:
+        parse_csv(tmp_path / "nonexistent.csv")
+
+    assert exc_info.value.code == "client.bulk.parse_failed"
+
+
 def test_parse_csv_utf8sig(tmp_path: pathlib.Path) -> None:
     content = "client_code,client_name,tax_id\nC001,台灣公司,12345678\n"
     path = _make_csv_file(tmp_path, content, "utf8sig.csv", "utf-8-sig")
@@ -122,3 +135,91 @@ def test_parse_csv_header_only_raises(tmp_path: pathlib.Path) -> None:
     with pytest.raises(BulkParseError) as exc_info:
         parse_csv(path)
     assert exc_info.value.code == "client.bulk.no_valid_rows"
+
+
+def test_parse_csv_rejects_rows_over_limit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(clients_bulk, "MAX_BULK_ROWS", 2, raising=False)
+    path = _make_csv_file(
+        tmp_path,
+        "client_code,client_name\nC1,A\nC2,B\nC3,C\n",
+        "too-many.csv",
+        "utf-8",
+    )
+
+    with pytest.raises(BulkParseError) as exc_info:
+        parse_csv(path)
+
+    assert exc_info.value.code == "client.bulk.too_many_rows"
+
+
+def test_parse_csv_rejects_columns_over_limit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(clients_bulk, "MAX_BULK_COLUMNS", 2, raising=False)
+    path = _make_csv_file(
+        tmp_path,
+        "client_code,client_name,tax_id\nC1,A,12345678\n",
+        "too-wide.csv",
+        "utf-8",
+    )
+
+    with pytest.raises(BulkParseError) as exc_info:
+        parse_csv(path)
+
+    assert exc_info.value.code == "client.bulk.too_many_columns"
+
+
+def test_parse_csv_rejects_cell_over_limit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(clients_bulk, "MAX_BULK_CELL_CHARS", 5, raising=False)
+    path = _make_csv_file(
+        tmp_path,
+        "client_code,client_name\nC1,Name-too-long\n",
+        "long-cell.csv",
+        "utf-8",
+    )
+
+    with pytest.raises(BulkParseError) as exc_info:
+        parse_csv(path)
+
+    assert exc_info.value.code == "client.bulk.cell_too_large"
+
+
+def test_parse_csv_rejects_file_over_limit_before_reading(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(clients_bulk, "MAX_BULK_FILE_BYTES", 10, raising=False)
+    path = _make_csv_file(
+        tmp_path,
+        "client_code,client_name\nC1,A\n",
+        "oversized.csv",
+        "utf-8",
+    )
+
+    with pytest.raises(BulkParseError) as exc_info:
+        parse_csv(path)
+
+    assert exc_info.value.code == "client.bulk.file_too_large"
+
+
+def test_parse_clipboard_rejects_text_over_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        clients_bulk,
+        "MAX_BULK_CLIPBOARD_CHARS",
+        10,
+        raising=False,
+    )
+
+    with pytest.raises(BulkParseError) as exc_info:
+        parse_clipboard_text("client_code\tclient_name\nC1\tA")
+
+    assert exc_info.value.code == "client.bulk.clipboard_too_large"

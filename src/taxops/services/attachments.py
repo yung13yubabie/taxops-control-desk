@@ -194,7 +194,8 @@ class AttachmentsService:
     def _update_status_or_raise(
         self, attachment_id: int, **kwargs
     ) -> AttachmentRow:
-        if self._repo.get(attachment_id) is None:
+        existing = self._repo.get(attachment_id)
+        if existing is None or existing.status == "archived":
             raise AttachmentValidationError("attachment.not_found")
         updated = self._repo.update_status(attachment_id=attachment_id, **kwargs)
         if updated is None:

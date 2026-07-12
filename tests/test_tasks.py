@@ -232,6 +232,7 @@ def test_set_status_doing_to_done(svc, eng_id):
     svc.set_status(row.id, "doing")
     updated = svc.set_status(row.id, "done")
     assert updated.status == "done"
+    assert updated.completed_at is not None
 
 
 def test_set_status_todo_to_done_is_invalid(svc, eng_id):

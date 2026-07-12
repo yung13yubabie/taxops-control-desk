@@ -208,6 +208,143 @@ def test_engagements_page_edit_handler_updates_db_and_audit() -> None:
     container.close()
 
 
+@pytest.mark.parametrize("operation,unexpected", [("status", False), ("status", True), ("delete", False), ("delete", True)])
+def test_engagement_buttons_keep_service_failures_visible_and_state_unchanged(
+    monkeypatch, operation, unexpected
+) -> None:
+    from PySide6.QtWidgets import QMessageBox
+    from taxops.i18n.status_labels import status_to_label
+    from taxops.services.engagements import (
+        CreateEngagementInput,
+        EngagementValidationError,
+    )
+    from taxops.ui.pages.engagements_page import EngagementsPage
+
+    _make_app()
+    container = _fresh_container()
+    client_id = _seed_client(container)
+    engagement = container.engagements.create_engagement(
+        CreateEngagementInput(
+            client_id=client_id,
+            engagement_name=f"{operation} 失敗案件",
+            tax_type="vat",
+            period_name="2026Q1",
+        )
+    )
+    page = EngagementsPage(container)
+    page._table.selectRow(0)
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        "taxops.ui.pages.engagements_page.QMessageBox.warning",
+        lambda _parent, _title, body: warnings.append(body),
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.engagements_page.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.engagements_page.QInputDialog.getItem",
+        lambda *_args, **_kwargs: (status_to_label("in_progress"), True),
+    )
+    error = RuntimeError("secret engagement detail") if unexpected else EngagementValidationError(
+        "engagement.not_found"
+    )
+    method, button = {
+        "status": ("set_status", page._status_btn),
+        "delete": ("delete_engagement", page._delete_btn),
+    }[operation]
+    monkeypatch.setattr(
+        container.engagements,
+        method,
+        lambda *_args: (_ for _ in ()).throw(error),
+    )
+
+    button.click()
+
+    assert len(warnings) == 1
+    assert "secret engagement detail" not in warnings[0]
+    unchanged = container.engagements.get_engagement(engagement.id)
+    assert unchanged is not None
+    assert unchanged.status == "draft"
+    container.close()
+
+
+def test_engagement_page_load_failures_are_logged_and_visible(monkeypatch) -> None:
+    from taxops.ui.pages.engagements_page import EngagementsPage
+
+    _make_app()
+    container = _fresh_container()
+    page = EngagementsPage(container)
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        "taxops.ui.pages.engagements_page.QMessageBox.warning",
+        lambda _parent, _title, body: warnings.append(body),
+    )
+    monkeypatch.setattr(
+        container.clients,
+        "search_clients",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("clients locked")),
+    )
+    page._on_load_and_refresh()
+    assert page._client_combo.count() == 1
+
+    monkeypatch.setattr(
+        container.engagements,
+        "list_all",
+        lambda: (_ for _ in ()).throw(RuntimeError("engagements locked")),
+    )
+    page._refresh_engagements()
+    assert len(warnings) == 1
+    assert warnings[0].strip()
+    logs = container.conn.execute(
+        "SELECT message FROM system_logs ORDER BY id DESC LIMIT 2"
+    ).fetchall()
+    assert {row[0] for row in logs} == {
+        "clients.list in engagements failed",
+        "engagements.list failed",
+    }
+    container.close()
+
+
+def test_engagement_missing_selection_targets_warn_and_refresh(monkeypatch) -> None:
+    from taxops.services.engagements import CreateEngagementInput
+    from taxops.ui.pages.engagements_page import EngagementsPage
+
+    _make_app()
+    container = _fresh_container()
+    client_id = _seed_client(container)
+    container.engagements.create_engagement(
+        CreateEngagementInput(
+            client_id=client_id,
+            engagement_name="讀取時消失",
+            tax_type="vat",
+            period_name="2026Q1",
+        )
+    )
+    page = EngagementsPage(container)
+    page._table.selectRow(0)
+    warnings: list[str] = []
+    original_get = container.engagements.get_engagement
+    calls = 0
+
+    def disappear_once(engagement_id):
+        nonlocal calls
+        calls += 1
+        return None if calls == 1 else original_get(engagement_id)
+
+    monkeypatch.setattr(container.engagements, "get_engagement", disappear_once)
+    monkeypatch.setattr(
+        "taxops.ui.pages.engagements_page.QMessageBox.warning",
+        lambda _parent, _title, body: warnings.append(body),
+    )
+
+    page._edit_btn.click()
+
+    assert len(warnings) == 1
+    assert warnings[0].strip()
+    container.close()
+
+
 # ---------------------------------------------------------------------------
 # DocumentRequestsPage — item status switching
 # ---------------------------------------------------------------------------

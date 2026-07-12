@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -166,69 +168,91 @@ class PlanDialog(QDialog):
 
         self.setWindowTitle("新增方案" if plan is None else "編輯方案")
         self.setModal(True)
-        self.setMinimumWidth(760 if self._create_mode else 560)
+        self.setMinimumSize(680, 480)
+        self.resize(900 if self._create_mode else 760, 680)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 20, 20, 20)
         outer.setSpacing(12)
 
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll_body = QWidget()
+        content = QVBoxLayout(scroll_body)
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(12)
+        self._scroll.setWidget(scroll_body)
+
         # ── Section 1: contract metadata ─────────────────────────────────
         contract_group = QGroupBox("合約資訊")
-        form = QFormLayout(contract_group)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+        form = QGridLayout(contract_group)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+        form.setColumnStretch(3, 1)
 
         self._name = QLineEdit()
         self._name.setMaxLength(200)
         self._name.setPlaceholderText("必填")
-        form.addRow(QLabel("方案名稱 *"), self._name)
+        form.addWidget(QLabel("方案名稱 *"), 0, 0)
+        form.addWidget(self._name, 0, 1)
 
         self._freq = QComboBox()
         for val, lbl in _FREQ_CHOICES:
             self._freq.addItem(lbl, userData=val)
-        form.addRow(QLabel("週期"), self._freq)
+        form.addWidget(QLabel("週期"), 1, 0)
+        form.addWidget(self._freq, 1, 1)
 
         self._issue_day = QSpinBox()
         self._issue_day.setRange(1, 31)
         self._issue_day.setSuffix(" 日")
-        form.addRow(QLabel("開立日"), self._issue_day)
+        form.addWidget(QLabel("開立日"), 1, 2)
+        form.addWidget(self._issue_day, 1, 3)
 
         self._months_label = QLabel("指定月份")
         self._months_widget = QWidget()
-        months_row = QHBoxLayout(self._months_widget)
+        months_row = QGridLayout(self._months_widget)
         months_row.setContentsMargins(0, 0, 0, 0)
-        months_row.setSpacing(4)
+        months_row.setHorizontalSpacing(4)
+        months_row.setVerticalSpacing(2)
         self._month_checks: list[QCheckBox] = []
-        for name in _MONTH_NAMES:
+        for index, name in enumerate(_MONTH_NAMES):
             cb = QCheckBox(name)
             cb.setFixedWidth(52)
             self._month_checks.append(cb)
-            months_row.addWidget(cb)
-        months_row.addStretch()
-        form.addRow(self._months_label, self._months_widget)
+            months_row.addWidget(cb, index // 6, index % 6)
+        form.addWidget(self._months_label, 2, 0)
+        form.addWidget(self._months_widget, 2, 1, 1, 3)
 
         self._start_date = DateField(required=True)
-        form.addRow(QLabel("開始日期 *"), self._start_date)
+        form.addWidget(QLabel("開始日期 *"), 3, 0)
+        form.addWidget(self._start_date, 3, 1)
 
         self._end_date = DateField(required=False)
-        form.addRow(QLabel("結束日期"), self._end_date)
+        form.addWidget(QLabel("結束日期"), 3, 2)
+        form.addWidget(self._end_date, 3, 3)
 
         self._notice_days = QSpinBox()
         self._notice_days.setRange(0, 365)
         self._notice_days.setSuffix(" 天")
         self._notice_days.setValue(7)
-        form.addRow(QLabel("提前通知天數"), self._notice_days)
+        form.addWidget(QLabel("提前通知天數"), 4, 0)
+        form.addWidget(self._notice_days, 4, 1)
 
         self._contract_ref = QLineEdit()
         self._contract_ref.setMaxLength(200)
         self._contract_ref.setPlaceholderText("選填")
-        form.addRow(QLabel("合約編號"), self._contract_ref)
+        form.addWidget(QLabel("合約編號"), 0, 2)
+        form.addWidget(self._contract_ref, 0, 3)
 
         self._notes = QTextEdit()
         self._notes.setFixedHeight(56)
-        form.addRow(QLabel("備註"), self._notes)
+        form.addWidget(QLabel("備註"), 5, 0)
+        form.addWidget(self._notes, 5, 1, 1, 3)
 
-        outer.addWidget(contract_group)
+        content.addWidget(contract_group)
 
         # ── Section 2: line table (CREATE mode only) ─────────────────────
         if self._create_mode:
@@ -265,13 +289,16 @@ class PlanDialog(QDialog):
             self._lines_table.setMinimumHeight(160)
             lines_layout.addWidget(self._lines_table)
 
-            outer.addWidget(lines_group)
+            content.addWidget(lines_group)
 
             self._add_line_btn.clicked.connect(self._on_add_line_row)
             self._remove_line_btn.clicked.connect(self._on_remove_line_row)
             self._bulk_paste_btn.clicked.connect(self._on_bulk_paste)
         else:
             self._lines_table = None
+
+        content.addStretch()
+        outer.addWidget(self._scroll, stretch=1)
 
         # ── buttons ──────────────────────────────────────────────────────
         buttons = QDialogButtonBox()
@@ -338,10 +365,25 @@ class PlanDialog(QDialog):
     def _on_add_line_row(self) -> None:
         if self._lines_table is None:
             return
+        if self._lines_table.rowCount() > 0:
+            last = self._lines_table.rowCount() - 1
+            if all(
+                not (self._lines_table.item(last, col).text().strip()
+                     if self._lines_table.item(last, col) else "")
+                for col in range(self._lines_table.columnCount())
+            ):
+                self._lines_table.setCurrentCell(last, _LINE_COL_BILL_TO)
+                self._lines_table.setFocus()
+                self._lines_table.editItem(
+                    self._lines_table.item(last, _LINE_COL_BILL_TO)
+                )
+                return
         row = self._lines_table.rowCount()
         self._lines_table.insertRow(row)
         for col in range(self._lines_table.columnCount()):
             self._lines_table.setItem(row, col, QTableWidgetItem(""))
+        self._lines_table.setCurrentCell(row, _LINE_COL_BILL_TO)
+        self._lines_table.setFocus()
 
     def _on_remove_line_row(self) -> None:
         if self._lines_table is None:
