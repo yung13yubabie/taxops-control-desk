@@ -17,6 +17,8 @@ from ..repositories.app_settings import AppSettingsRepository
 from ..repositories.attachments import AttachmentsRepository
 from ..repositories.audit_logs import AuditLogRepository
 from ..repositories.clients import ClientsRepository
+from ..repositories.client_leases import ClientLeasesRepository
+from ..repositories.client_industries import ClientIndustriesRepository
 from ..repositories.document_requests import DocumentRequestsRepository
 from ..repositories.engagements import EngagementsRepository
 from ..repositories.registry_matches import RegistryMatchRepository
@@ -37,6 +39,8 @@ from ..repositories.tax_registry import (
 )
 from .audit import AuditService
 from .clients import ClientsService
+from .client_leases import ClientLeasesService
+from .client_industries import ClientIndustriesService
 from .document_requests import DocumentRequestsService
 from .engagements import EngagementsService
 from .registry.bundle import TaxCacheBundleService
@@ -65,6 +69,8 @@ class ServiceContainer:
     settings: SettingsService
     clients: ClientsService
     clients_repo: ClientsRepository
+    client_leases: ClientLeasesService
+    client_industries: ClientIndustriesService
     audit: AuditService
     system_log: SystemLogService
     tax_cache_importer: TaxRegistryImporter
@@ -102,6 +108,8 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
     system_log_repo = SystemLogRepository(conn)
     settings_repo = AppSettingsRepository(conn)
     clients_repo = ClientsRepository(conn)
+    client_leases_repo = ClientLeasesRepository(conn)
+    client_industries_repo = ClientIndustriesRepository(conn)
     tax_registry_repo = TaxRegistryRepository(conn)
     tax_cache_metadata_repo = TaxCacheMetadataRepository(conn)
     match_repo = RegistryMatchRepository(conn)
@@ -119,6 +127,10 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
     settings_service = SettingsService(settings_repo, audit_service)
     search_repo = SearchRepository(conn)
     clients_service = ClientsService(clients_repo, audit_service, search_repo)
+    client_leases_service = ClientLeasesService(client_leases_repo, audit_service)
+    client_industries_service = ClientIndustriesService(
+        client_industries_repo, audit_service
+    )
     engagements_service = EngagementsService(engagements_repo, audit_service, search_repo)
     doc_requests_service = DocumentRequestsService(doc_requests_repo, audit_service)
     tasks_service = TasksService(tasks_repo, audit_service)
@@ -208,6 +220,8 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         settings=settings_service,
         clients=clients_service,
         clients_repo=clients_repo,
+        client_leases=client_leases_service,
+        client_industries=client_industries_service,
         audit=audit_service,
         system_log=system_log_service,
         tax_cache_importer=tax_cache_importer,
