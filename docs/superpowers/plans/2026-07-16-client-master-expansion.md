@@ -16,22 +16,23 @@
 - Create: `src/taxops/db/migrations/_m0027_client_master_expansion.py`
 - Modify: `src/taxops/db/migrations/__init__.py`
 - Test: `tests/test_client_master_migration.py`
+- Modify: `tests/test_db_migrations.py`
 
 - [ ] **Step 1: Write migration tests that fail before migration 0027 exists**
 
 ```python
-def test_client_master_migration_backfills_registered_address_and_legacy_lease(conn):
-    client_id = conn.execute(
+def test_client_master_migration_backfills_addresses_and_legacy_lease(v029_conn):
+    client_id = v029_conn.execute(
         "INSERT INTO clients(client_code, client_name, address, lease_start, lease_end, created_at, updated_at) "
         "VALUES ('C1', '測試公司', '臺北市舊址', '2025-01-01', '2026-12-31', 't', 't')"
     ).lastrowid
-    run_all_migrations(conn)
-    client = conn.execute(
-        "SELECT registered_address, contact_address_same FROM clients WHERE id = ?",
+    apply_migrations(v029_conn)
+    client = v029_conn.execute(
+        "SELECT registered_address, contact_address, contact_address_same FROM clients WHERE id = ?",
         (client_id,),
     ).fetchone()
-    assert tuple(client) == ("臺北市舊址", 1)
-    leases = conn.execute(
+    assert tuple(client) == ("臺北市舊址", "臺北市舊址", 1)
+    leases = v029_conn.execute(
         "SELECT lease_name, start_date, end_date FROM client_leases WHERE client_id = ?",
         (client_id,),
     ).fetchall()
@@ -40,7 +41,7 @@ def test_client_master_migration_backfills_registered_address_and_legacy_lease(c
 def test_client_master_migration_preserves_existing_attachment_versions(v029_conn):
     attachment_before = tuple(v029_conn.execute("SELECT * FROM attachments").fetchone())
     version_before = tuple(v029_conn.execute("SELECT * FROM attachment_versions").fetchone())
-    run_all_migrations(v029_conn)
+    apply_migrations(v029_conn)
     attachment_after = tuple(
         v029_conn.execute(
             "SELECT id, engagement_id, request_id, original_filename, stored_filename, "
@@ -51,7 +52,27 @@ def test_client_master_migration_preserves_existing_attachment_versions(v029_con
     version_after = tuple(v029_conn.execute("SELECT * FROM attachment_versions").fetchone())
     assert attachment_after == attachment_before
     assert version_after == version_before
+
+def test_client_master_migration_preserves_attachment_sequence_high_water(v029_conn):
+    # Arrange sqlite_sequence above MAX(id), migrate, then verify the next IDs
+    # remain above the pre-migration high-water mark so audit target IDs cannot
+    # become ambiguous through ID reuse.
+    ...
+
+def test_lease_attachment_owner_is_enforced_by_database(v029_conn):
+    apply_migrations(v029_conn)
+    # A lease belonging to client A cannot be inserted as an attachment owned
+    # by client B, even through direct SQL that bypasses the service layer.
+    ...
 ```
+
+Build `v029_conn` explicitly with `open_connection()` and
+`MIGRATIONS[:26]`, then insert realistic v0.29 rows. Do not reuse the global
+`db_conn` fixture because it immediately applies every migration. Cover a
+request-owned attachment, a multi-row `supersedes_id` chain, partial legacy
+lease dates, `NULL` address, an empty database, `PRAGMA foreign_key_check`, no
+temporary migration tables, all required indexes, and a second
+`apply_migrations()` no-op.
 
 - [ ] **Step 2: Run the migration tests and verify the missing-column/table failure**
 
@@ -69,8 +90,9 @@ ALTER TABLE clients ADD COLUMN contact_address_same INTEGER NOT NULL DEFAULT 1
     CHECK(contact_address_same IN (0, 1));
 
 UPDATE clients
-   SET registered_address = address
- WHERE registered_address IS NULL AND address IS NOT NULL;
+   SET registered_address = address,
+       contact_address = address
+ WHERE address IS NOT NULL;
 
 CREATE TABLE client_leases (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,7 +109,8 @@ CREATE TABLE client_leases (
     notes TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    deleted_at TEXT
+    deleted_at TEXT,
+    UNIQUE(id, client_id)
 );
 CREATE INDEX idx_client_leases_client ON client_leases(client_id);
 CREATE INDEX idx_client_leases_end_date ON client_leases(end_date);
@@ -113,14 +136,27 @@ CREATE TABLE client_industries (
 );
 CREATE INDEX idx_client_industries_client ON client_industries(client_id, sort_order);
 
-ALTER TABLE attachment_versions RENAME TO attachment_versions_v029_legacy;
-ALTER TABLE attachments RENAME TO attachments_v029_legacy;
-CREATE TABLE attachments (
+CREATE TEMP TABLE _m0027_sequence_high_water (
+    name TEXT PRIMARY KEY,
+    seq INTEGER NOT NULL
+);
+INSERT INTO _m0027_sequence_high_water(name, seq)
+SELECT 'attachments', MAX(
+    COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'attachments'), 0),
+    COALESCE((SELECT MAX(id) FROM attachments), 0)
+);
+INSERT INTO _m0027_sequence_high_water(name, seq)
+SELECT 'attachment_versions', MAX(
+    COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'attachment_versions'), 0),
+    COALESCE((SELECT MAX(id) FROM attachment_versions), 0)
+);
+
+CREATE TABLE attachments_v030_new (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     engagement_id INTEGER REFERENCES engagements(id),
     request_id INTEGER REFERENCES document_requests(id),
     client_id INTEGER REFERENCES clients(id),
-    lease_id INTEGER REFERENCES client_leases(id),
+    lease_id INTEGER,
     original_filename TEXT NOT NULL,
     stored_filename TEXT NOT NULL,
     file_hash_sha256 TEXT NOT NULL,
@@ -134,13 +170,14 @@ CREATE TABLE attachments (
     notes TEXT,
     accepted_by TEXT,
     accepted_at TEXT,
+    FOREIGN KEY(lease_id, client_id) REFERENCES client_leases(id, client_id),
     CHECK(
       (engagement_id IS NOT NULL AND client_id IS NULL AND lease_id IS NULL)
       OR
       (engagement_id IS NULL AND request_id IS NULL AND client_id IS NOT NULL AND lease_id IS NOT NULL)
     )
 );
-INSERT INTO attachments(
+INSERT INTO attachments_v030_new(
     id, engagement_id, request_id, original_filename, stored_filename,
     file_hash_sha256, file_size, mime_type, extension, uploaded_by,
     uploaded_at, source, status, notes, accepted_by, accepted_at
@@ -148,18 +185,26 @@ INSERT INTO attachments(
 SELECT id, engagement_id, request_id, original_filename, stored_filename,
        file_hash_sha256, file_size, mime_type, extension, uploaded_by,
        uploaded_at, source, status, notes, accepted_by, accepted_at
-  FROM attachments_v029_legacy;
-CREATE TABLE attachment_versions (
+  FROM attachments;
+CREATE TABLE attachment_versions_v030_new (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    attachment_id INTEGER NOT NULL REFERENCES attachments(id),
-    supersedes_id INTEGER REFERENCES attachments(id),
+    attachment_id INTEGER NOT NULL REFERENCES attachments_v030_new(id),
+    supersedes_id INTEGER REFERENCES attachments_v030_new(id),
     created_at TEXT NOT NULL
 );
-INSERT INTO attachment_versions SELECT * FROM attachment_versions_v029_legacy;
-DROP TABLE attachment_versions_v029_legacy;
-DROP TABLE attachments_v029_legacy;
+INSERT INTO attachment_versions_v030_new SELECT * FROM attachment_versions;
+DROP TABLE attachment_versions;
+DROP TABLE attachments;
+ALTER TABLE attachments_v030_new RENAME TO attachments;
+ALTER TABLE attachment_versions_v030_new RENAME TO attachment_versions;
+DELETE FROM sqlite_sequence
+ WHERE name IN ('attachments', 'attachment_versions');
+INSERT INTO sqlite_sequence(name, seq)
+SELECT name, seq FROM _m0027_sequence_high_water;
+DROP TABLE _m0027_sequence_high_water;
 CREATE INDEX idx_attachments_engagement ON attachments(engagement_id);
 CREATE INDEX idx_attachments_request ON attachments(request_id);
+CREATE INDEX idx_attachments_client ON attachments(client_id);
 CREATE INDEX idx_attachments_lease ON attachments(lease_id);
 CREATE INDEX idx_attachments_status ON attachments(status);
 CREATE INDEX idx_attachment_versions_attachment ON attachment_versions(attachment_id);
@@ -170,9 +215,11 @@ Register `("0027_client_master_expansion", _m0027_client_master_expansion.SQL)` 
 
 - [ ] **Step 4: Run migration and full migration-regression tests**
 
-Run: `python -m pytest tests/test_client_master_migration.py tests/test_migrations.py -q`
+Run: `python -m pytest tests/test_client_master_migration.py tests/test_db_migrations.py -q`
 
-Expected: PASS, including a second application of `run_all_migrations()` without a duplicate lease.
+Expected: PASS, including updated 27-version expectations, clean foreign-key
+checks, preserved attachment/version sequences, and a second application of
+`apply_migrations()` without a duplicate lease.
 
 - [ ] **Step 5: Commit the migration slice**
 
