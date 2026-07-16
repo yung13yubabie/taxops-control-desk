@@ -1,5 +1,21 @@
 # CURRENT_STATE
 
+## 2026-07-16 v0.30 implementation worktree
+
+- Active work is isolated in `.worktrees/v030-annual-workbench` on
+  `feature/v030-annual-workbench`; it targets a real offline Windows EXE.
+- The accepted design uses one annual parent per client and operation year,
+  with independent work, filing, document, tax, and service-fee states.
+- The clean pre-feature baseline passes 1454 tests in 939.71 seconds.
+- Migration 0027 is implemented and independently approved. It backfills
+  registered/contact addresses, adds multiple leases and client industries,
+  preserves attachment/version data and AUTOINCREMENT high-water marks, and
+  enforces lease/client ownership with a composite foreign key.
+- Repository/service work for leases, industries, and guarded lease
+  attachments is currently in progress. Client UI, annual domain/UI,
+  full coverage measurement, DPI acceptance, and EXE packaging are not yet
+  verified and must not be reported as complete.
+
 ## 2026-07-12 fixed-billing manual-acceptance EXE (uncommitted)
 
 - Fixed billing now exposes plan edit/add/delete actions before expansion,

@@ -1,5 +1,37 @@
 # TASKS
 
+## 2026-07-16 v0.30 annual workbench and client master
+
+### TODO
+
+- [ ] Add registered/contact address editing, multiple-lease UI, industry
+  search/display/apply, and scaling-safe client layouts.
+- [ ] Build the annual accounting/tax workbench with one client-year parent,
+  independent work/filing/document/tax/fee states, ledger-derived balances,
+  and bidirectional links to existing engagements and document requests.
+- [ ] Complete real user-path and 1366x768 plus 100/125/150% scaling checks.
+- [ ] Run the full branch-coverage gate at 90% or higher without exclusions or
+  pragma inflation, then build and smoke-test the offline Windows EXE.
+
+### DOING
+
+- [ ] Implement and independently review the client lease, industry, and lease
+  attachment repository/service slice.
+
+### BLOCKED
+
+- None.
+
+### DONE
+
+- [x] Confirm the annual-workbench domain decisions and formal design.
+- [x] Create the isolated `feature/v030-annual-workbench` worktree and three
+  task-by-task implementation plans.
+- [x] Fix the date-dependent task-filter regression; independent review passed.
+- [x] Verify the clean baseline: 1454 passed in 939.71 seconds.
+- [x] Add migration 0027 for address/lease/industry schema and safe attachment
+  ownership rebuild; spec review and five-axis quality review both passed.
+
 ## 2026-07-12 Branch coverage and happy-path hardening
 
 ### DOING
