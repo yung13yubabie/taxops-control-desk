@@ -48,15 +48,14 @@ _COLUMN_ORDER: tuple[str, ...] = (
     "contact_name",
     "contact_phone",
     "contact_email",
-    "address",
+    "registered_address",
+    "contact_address",
     "note",
-    "lease_start",
-    "lease_end",
     "updated_at",
 )
 
 # Columns hidden by default; user can toggle them via the "欄位顯示" menu.
-_DEFAULT_HIDDEN: frozenset[str] = frozenset({"id", "address", "lease_start"})
+_DEFAULT_HIDDEN: frozenset[str] = frozenset({"id"})
 _CORE_COLS: frozenset[str] = frozenset({"client_code", "client_name"})
 
 _DEFAULT_SORT_COL = "client_code"
@@ -113,6 +112,7 @@ class ClientsPage(QWidget):
         # Action toolbar
         self._new_btn = QPushButton(BUTTON_LABELS["clients.new"])
         self._edit_btn = QPushButton("編輯客戶")
+        self._leases_btn = QPushButton("租約管理")
         self._delete_btn = QPushButton("刪除客戶")
         self._restore_btn = QPushButton("復原客戶")
         self._purge_btn = QPushButton("永久刪除")
@@ -122,6 +122,7 @@ class ClientsPage(QWidget):
 
         self._new_btn.setIcon(toolbar_icon("new"))
         self._edit_btn.setIcon(toolbar_icon("edit"))
+        self._leases_btn.setIcon(toolbar_icon("edit"))
         self._delete_btn.setIcon(toolbar_icon("delete"))
         self._restore_btn.setIcon(toolbar_icon("refresh"))
         self._purge_btn.setIcon(toolbar_icon("delete"))
@@ -129,6 +130,7 @@ class ClientsPage(QWidget):
         self._refresh_btn.setIcon(toolbar_icon("refresh"))
 
         self._edit_btn.setEnabled(False)
+        self._leases_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
         self._restore_btn.setEnabled(False)
         self._purge_btn.setEnabled(False)
@@ -138,6 +140,7 @@ class ClientsPage(QWidget):
         for btn in (
             self._new_btn,
             self._edit_btn,
+            self._leases_btn,
             self._delete_btn,
             self._restore_btn,
             self._purge_btn,
@@ -165,6 +168,7 @@ class ClientsPage(QWidget):
         self._table.verticalHeader().setVisible(False)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
         header_view = self._table.horizontalHeader()
         header_view.setStretchLastSection(False)
         header_view.setSectionResizeMode(
@@ -211,6 +215,7 @@ class ClientsPage(QWidget):
         if self._empty_state.action_button is not None:
             self._empty_state.action_button.clicked.connect(self.on_new_client)
         self._edit_btn.clicked.connect(self.on_edit_client)
+        self._leases_btn.clicked.connect(self.on_edit_client)
         self._delete_btn.clicked.connect(self.on_delete_client)
         self._restore_btn.clicked.connect(self.on_restore_client)
         self._purge_btn.clicked.connect(self.on_purge_client)
@@ -346,6 +351,7 @@ class ClientsPage(QWidget):
         client_id = self._selected_client_id()
         if client_id is None:
             self._edit_btn.setEnabled(False)
+            self._leases_btn.setEnabled(False)
             self._delete_btn.setEnabled(False)
             self._restore_btn.setEnabled(False)
             self._purge_btn.setEnabled(False)
@@ -356,6 +362,7 @@ class ClientsPage(QWidget):
         deleted_item = self._table.item(row_idx, _ID_COL_IDX)
         is_deleted = bool(deleted_item.data(Qt.ItemDataRole.UserRole)) if deleted_item else False
         self._edit_btn.setEnabled(not is_deleted)
+        self._leases_btn.setEnabled(not is_deleted)
         self._delete_btn.setEnabled(not is_deleted)
         self._restore_btn.setEnabled(is_deleted)
         self._purge_btn.setEnabled(is_deleted)
@@ -389,7 +396,7 @@ class ClientsPage(QWidget):
                     "稅務登記資料載入失敗，新增客戶時無法查詢統編。\n可繼續手動填寫客戶資料。",
                 )
             dialog = NewClientDialog(
-                self._container.clients,
+                self._container,
                 parent=self,
                 tax_registry_repo=registry_repo,
             )
@@ -409,7 +416,7 @@ class ClientsPage(QWidget):
             return
         self._edit_btn.setEnabled(False)
         try:
-            dialog = EditClientDialog(self._container.clients, client, parent=self)
+            dialog = EditClientDialog(self._container, client, parent=self)
             if dialog.exec() == EditClientDialog.DialogCode.Accepted:
                 self.on_refresh()
         finally:
@@ -557,10 +564,9 @@ class ClientsPage(QWidget):
                 "contact_name": client.contact_name or "",
                 "contact_phone": client.contact_phone or "",
                 "contact_email": client.contact_email or "",
-                "address": client.address or "",
+                "registered_address": client.registered_address or "",
+                "contact_address": client.contact_address or "",
                 "note": client.note or "",
-                "lease_start": client.lease_start or "",
-                "lease_end": client.lease_end or "",
                 "updated_at": client.updated_at,
             }
             for col_idx, col in enumerate(_COLUMN_ORDER):

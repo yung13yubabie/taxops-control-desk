@@ -1,5 +1,31 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-07-17 - client profile and multiple-lease UI)
+
+- New and edit client dialogs share a fixed-order scrollable profile form with
+  separate multiline registered/contact addresses and multiline special notes.
+- Full production entry points receive `ServiceContainer` and save the client,
+  FTS/audit rows, and staged lease create/update/archive changes through the
+  atomic client-profile service. Legacy direct-service constructors remain
+  compatible but visibly disable multiple-lease editing.
+- Persisted leases expose real attachment upload/list actions. Unsaved leases
+  visibly explain why attachment actions are disabled.
+- Client management shows registered and contact addresses with exact tooltips,
+  preserves full note newlines in the detail panel, and exposes a clear
+  `租約管理` action without issuing per-row lease queries.
+- Lease-expiry filtering uses one active-client/active-lease query, returns a
+  client once even when multiple leases match, and ignores archived leases,
+  non-active lease statuses, soft-deleted clients, and legacy scalar dates.
+- Reopening a client includes archived leases as read-only history. The history
+  dialog exposes complete lease data and all attachment filenames through an
+  active-client and client/lease ownership guard; it has no edit, archive, or
+  upload action.
+- Verification: new real-widget paths 15 passed; expanded client/profile/lease/
+  attachment/dialog regression 278 passed; compileall and `git diff --check`
+  pass. This is focused evidence only, not full-suite, coverage, DPI, or EXE
+  acceptance.
+- Next: independent Task 4B spec/quality review, then registry-industry Task 5.
+
 ## Latest Handoff Update (2026-07-12 - fixed-billing acceptance corrections)
 
 - Implemented guarded physical plan delete, schedule reconciliation, atomic

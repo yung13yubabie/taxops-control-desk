@@ -272,6 +272,18 @@ class AttachmentsRepository:
         ).fetchone()
         return row is not None
 
+    def lease_history_belongs_to_active_client(
+        self, client_id: int, lease_id: int
+    ) -> bool:
+        """Guard historical reads while allowing an archived lease row."""
+        row = self._conn.execute(
+            "SELECT 1 FROM client_leases l"
+            " JOIN clients c ON c.id = l.client_id AND c.deleted_at IS NULL"
+            " WHERE l.id = ? AND l.client_id = ?",
+            (lease_id, client_id),
+        ).fetchone()
+        return row is not None
+
     def insert_for_lease(
         self,
         *,

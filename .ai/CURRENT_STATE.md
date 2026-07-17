@@ -16,8 +16,12 @@
   their existing attachment evidence readable, while archived leases cannot
   receive new files and deleted clients remain isolated. Registered/contact
   address behavior is separated across CRUD, bulk import, and registry
-  matching. The shared client profile and multiple-lease UI is currently in
-  progress. Annual domain/UI,
+  matching. The shared client profile and multiple-lease UI is implemented
+  with atomic profile saves and focused widget regression coverage; independent
+  review is still pending. Lease-expiry reminders now query active,
+  non-archived client leases in one deduplicated query rather than reading
+  legacy client scalar dates. Archived leases remain visible as read-only
+  history with owner-guarded attachment evidence. Annual domain/UI,
   full coverage measurement, DPI acceptance, and EXE packaging are not yet
   verified and must not be reported as complete.
 

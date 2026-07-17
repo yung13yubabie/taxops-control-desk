@@ -4,8 +4,7 @@
 
 ### TODO
 
-- [ ] Add registered/contact address editing, multiple-lease UI, industry
-  search/display/apply, and scaling-safe client layouts.
+- [ ] Add industry search/display/apply to the registry workflow.
 - [ ] Build the annual accounting/tax workbench with one client-year parent,
   independent work/filing/document/tax/fee states, ledger-derived balances,
   and bidirectional links to existing engagements and document requests.
@@ -15,8 +14,7 @@
 
 ### DOING
 
-- [ ] Build the shared client profile form and multiple-lease CRUD UI with
-  atomic saves and scaling-safe scroll behavior.
+- [ ] Independently review the shared client profile and multiple-lease UI.
 
 ### BLOCKED
 
@@ -36,6 +34,9 @@
   overlength validation without silent truncation.
 - [x] Separate registered/contact addresses across client CRUD, bulk import,
   and registry matching while preserving the legacy address mirror.
+- [x] Add the fixed-order, scroll-safe shared client profile form, atomic staged
+  multiple-lease create/update/archive UI, persisted-lease attachment actions,
+  exact multiline table tooltips, and explicit registered/contact columns.
 
 ## 2026-07-12 Branch coverage and happy-path hardening
 

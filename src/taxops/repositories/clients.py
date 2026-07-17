@@ -289,7 +289,8 @@ class ClientsRepository:
 
     _SORT_COLUMNS = frozenset({
         "id", "client_code", "tax_id", "client_name", "short_name",
-        "contact_name", "contact_phone", "contact_email", "updated_at",
+        "contact_name", "contact_phone", "contact_email", "registered_address",
+        "contact_address", "updated_at",
     })
 
     @staticmethod
@@ -373,13 +374,23 @@ class ClientsRepository:
         return int(row["c"]) if row else 0
 
     def list_lease_expiring_soon(self, today: str, until: str) -> list["ClientRow"]:
+        """List each active client once when an active lease ends in the window.
+
+        client_leases is authoritative after migration 0027. The scalar
+        clients.lease_end remains migration compatibility data only.
+        """
         rows = self._conn.execute(
-            "SELECT * FROM clients"
-            " WHERE deleted_at IS NULL"
-            "   AND lease_end IS NOT NULL"
-            "   AND lease_end >= ?"
-            "   AND lease_end <= ?"
-            " ORDER BY lease_end ASC",
+            "SELECT c.* FROM clients AS c"
+            " JOIN client_leases AS l"
+            "   ON l.client_id = c.id"
+            "  AND l.deleted_at IS NULL"
+            "  AND l.status = 'active'"
+            " WHERE c.deleted_at IS NULL"
+            "   AND l.end_date IS NOT NULL"
+            "   AND l.end_date >= ?"
+            "   AND l.end_date <= ?"
+            " GROUP BY c.id"
+            " ORDER BY MIN(l.end_date) ASC, c.id ASC",
             (today, until),
         ).fetchall()
         return [_row_to_client(r) for r in rows]

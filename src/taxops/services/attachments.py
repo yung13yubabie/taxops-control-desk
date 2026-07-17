@@ -264,6 +264,16 @@ class AttachmentsService:
             lease_id, include_archived=include_archived
         )
 
+    def list_lease_history_attachments(
+        self, client_id: int, lease_id: int
+    ) -> list[AttachmentRow]:
+        """Return all attachment history for an owned active-client lease."""
+        if not self._repo.lease_history_belongs_to_active_client(
+            client_id, lease_id
+        ):
+            raise AttachmentValidationError("attachment.lease_not_found")
+        return self._repo.list_by_lease(lease_id, include_archived=True)
+
     def _update_status_or_raise(
         self, attachment_id: int, **kwargs
     ) -> AttachmentRow:

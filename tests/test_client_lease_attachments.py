@@ -81,6 +81,24 @@ def test_archived_lease_keeps_existing_attachment_readable_and_manageable(
     ) == [archived_attachment]
 
 
+def test_archived_lease_history_listing_is_owner_guarded(container, tmp_path):
+    client, lease = _client_and_lease(container, code="HISTORY-OWNER")
+    attachment = container.attachments.upload_lease_attachment(
+        client.id, lease.id, _source(tmp_path, name="封存租約.pdf")
+    )
+    container.client_leases.archive_lease(lease.id)
+    other = container.clients.create_client(
+        CreateClientInput(client_code="HISTORY-OTHER", client_name="其他客戶")
+    )
+
+    assert container.attachments.list_lease_history_attachments(
+        client.id, lease.id
+    ) == [attachment]
+    with pytest.raises(AttachmentValidationError) as mismatch:
+        container.attachments.list_lease_history_attachments(other.id, lease.id)
+    assert mismatch.value.code == "attachment.lease_not_found"
+
+
 def test_same_original_filename_never_overwrites(container, tmp_path):
     client, lease = _client_and_lease(container)
     first = container.attachments.upload_lease_attachment(
