@@ -118,6 +118,40 @@ def test_lease_input_boundaries(container, changes, code):
     assert exc.value.code == code
 
 
+@pytest.mark.parametrize("operation", ["create", "update"])
+@pytest.mark.parametrize(
+    ("changes", "code"),
+    [
+        ({"lease_name": "名" * 201}, "client_lease.name.too_long"),
+        ({"premises_address": "址" * 501}, "client_lease.address.too_long"),
+        ({"landlord_name": "房" * 201}, "client_lease.landlord.too_long"),
+        ({"notes": "註" * 2001}, "client_lease.notes.too_long"),
+        ({"status": "active" + "x" * 15}, "client_lease.status.too_long"),
+        ({"start_date": "2026-01-01garbage"}, "client_lease.date.too_long"),
+        ({"end_date": "2026-12-31garbage"}, "client_lease.date.too_long"),
+    ],
+)
+def test_lease_text_fields_reject_overlong_input_without_mutation(
+    container, operation, changes, code
+):
+    client = _client(container)
+    existing = None
+    if operation == "update":
+        existing = container.client_leases.create_lease(client.id, _lease())
+
+    with pytest.raises(ClientLeaseValidationError) as exc:
+        if operation == "create":
+            container.client_leases.create_lease(client.id, _lease(**changes))
+        else:
+            container.client_leases.update_lease(existing.id, _lease(**changes))
+
+    assert exc.value.code == code
+    if operation == "create":
+        assert container.client_leases.list_for_client(client.id) == []
+    else:
+        assert container.client_leases.get_lease(existing.id) == existing
+
+
 def test_lease_boundary_values_are_allowed(container):
     client = _client(container)
     zero = container.client_leases.create_lease(

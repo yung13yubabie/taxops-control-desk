@@ -39,15 +39,28 @@ class ClientLeasesService:
         self._audit = audit
         self._conn = repo._conn
 
+    @staticmethod
+    def _bounded(value: str | None, *, maximum: int, field: str) -> str:
+        cleaned = sanitize_user_text(value, max_length=maximum + 1)
+        if len(cleaned) > maximum:
+            raise ClientLeaseValidationError(f"client_lease.{field}.too_long")
+        return cleaned
+
     def _validated(self, payload: LeaseInput) -> dict[str, object]:
-        lease_name = sanitize_user_text(payload.lease_name, max_length=200)
+        lease_name = self._bounded(payload.lease_name, maximum=200, field="name")
         if not lease_name:
             raise ClientLeaseValidationError("client_lease.name.required")
-        premises_address = sanitize_user_text(payload.premises_address, max_length=500) or None
-        landlord_name = sanitize_user_text(payload.landlord_name, max_length=200) or None
-        notes = sanitize_user_text(payload.notes, max_length=2000) or None
-        start_date = sanitize_user_text(payload.start_date, max_length=10) or None
-        end_date = sanitize_user_text(payload.end_date, max_length=10) or None
+        premises_address = (
+            self._bounded(payload.premises_address, maximum=500, field="address")
+            or None
+        )
+        landlord_name = (
+            self._bounded(payload.landlord_name, maximum=200, field="landlord")
+            or None
+        )
+        notes = self._bounded(payload.notes, maximum=2000, field="notes") or None
+        start_date = self._bounded(payload.start_date, maximum=10, field="date") or None
+        end_date = self._bounded(payload.end_date, maximum=10, field="date") or None
         try:
             start = parse_optional_iso_date(start_date)
             end = parse_optional_iso_date(end_date)
@@ -64,7 +77,7 @@ class ClientLeasesService:
             or not 0 <= payload.reminder_days <= 3650
         ):
             raise ClientLeaseValidationError("client_lease.reminder_days.invalid")
-        status = sanitize_user_text(payload.status, max_length=20).lower()
+        status = self._bounded(payload.status, maximum=20, field="status").lower()
         if status not in _VALID_STATUSES:
             raise ClientLeaseValidationError("client_lease.status.invalid")
         return {
