@@ -33,65 +33,69 @@ class LeaseInput:
 _VALID_STATUSES = frozenset({"active", "expired", "terminated"})
 
 
+def validate_lease_input(payload: LeaseInput) -> dict[str, object]:
+    """Validate and normalize a lease without mutating the database."""
+    def bounded(value: str | None, *, maximum: int, field: str) -> str:
+        cleaned = sanitize_user_text(value, max_length=maximum + 1)
+        if len(cleaned) > maximum:
+            raise ClientLeaseValidationError(f"client_lease.{field}.too_long")
+        return cleaned
+
+    lease_name = bounded(payload.lease_name, maximum=200, field="name")
+    if not lease_name:
+        raise ClientLeaseValidationError("client_lease.name.required")
+    premises_address = bounded(
+        payload.premises_address, maximum=500, field="address"
+    ) or None
+    landlord_name = bounded(
+        payload.landlord_name, maximum=200, field="landlord"
+    ) or None
+    notes = bounded(payload.notes, maximum=2000, field="notes") or None
+    start_date = bounded(payload.start_date, maximum=10, field="date") or None
+    end_date = bounded(payload.end_date, maximum=10, field="date") or None
+    try:
+        start = parse_optional_iso_date(start_date)
+        end = parse_optional_iso_date(end_date)
+    except ValueError as exc:
+        raise ClientLeaseValidationError("client_lease.date.invalid") from exc
+    if not date_range_is_valid(start, end):
+        raise ClientLeaseValidationError("client_lease.date_range.invalid")
+    for amount in (payload.monthly_rent, payload.deposit_amount):
+        if amount is not None and (
+            not isinstance(amount, int) or isinstance(amount, bool) or amount < 0
+        ):
+            raise ClientLeaseValidationError("client_lease.amount.invalid")
+    if (
+        not isinstance(payload.reminder_days, int)
+        or isinstance(payload.reminder_days, bool)
+        or not 0 <= payload.reminder_days <= 3650
+    ):
+        raise ClientLeaseValidationError("client_lease.reminder_days.invalid")
+    status = bounded(payload.status, maximum=20, field="status").lower()
+    if status not in _VALID_STATUSES:
+        raise ClientLeaseValidationError("client_lease.status.invalid")
+    return {
+        "lease_name": lease_name,
+        "premises_address": premises_address,
+        "landlord_name": landlord_name,
+        "start_date": start_date,
+        "end_date": end_date,
+        "monthly_rent": payload.monthly_rent,
+        "deposit_amount": payload.deposit_amount,
+        "reminder_days": payload.reminder_days,
+        "status": status,
+        "notes": notes,
+    }
+
+
 class ClientLeasesService:
     def __init__(self, repo: ClientLeasesRepository, audit: AuditService) -> None:
         self._repo = repo
         self._audit = audit
         self._conn = repo._conn
 
-    @staticmethod
-    def _bounded(value: str | None, *, maximum: int, field: str) -> str:
-        cleaned = sanitize_user_text(value, max_length=maximum + 1)
-        if len(cleaned) > maximum:
-            raise ClientLeaseValidationError(f"client_lease.{field}.too_long")
-        return cleaned
-
     def _validated(self, payload: LeaseInput) -> dict[str, object]:
-        lease_name = self._bounded(payload.lease_name, maximum=200, field="name")
-        if not lease_name:
-            raise ClientLeaseValidationError("client_lease.name.required")
-        premises_address = (
-            self._bounded(payload.premises_address, maximum=500, field="address")
-            or None
-        )
-        landlord_name = (
-            self._bounded(payload.landlord_name, maximum=200, field="landlord")
-            or None
-        )
-        notes = self._bounded(payload.notes, maximum=2000, field="notes") or None
-        start_date = self._bounded(payload.start_date, maximum=10, field="date") or None
-        end_date = self._bounded(payload.end_date, maximum=10, field="date") or None
-        try:
-            start = parse_optional_iso_date(start_date)
-            end = parse_optional_iso_date(end_date)
-        except ValueError as exc:
-            raise ClientLeaseValidationError("client_lease.date.invalid") from exc
-        if not date_range_is_valid(start, end):
-            raise ClientLeaseValidationError("client_lease.date_range.invalid")
-        for amount in (payload.monthly_rent, payload.deposit_amount):
-            if amount is not None and (not isinstance(amount, int) or isinstance(amount, bool) or amount < 0):
-                raise ClientLeaseValidationError("client_lease.amount.invalid")
-        if (
-            not isinstance(payload.reminder_days, int)
-            or isinstance(payload.reminder_days, bool)
-            or not 0 <= payload.reminder_days <= 3650
-        ):
-            raise ClientLeaseValidationError("client_lease.reminder_days.invalid")
-        status = self._bounded(payload.status, maximum=20, field="status").lower()
-        if status not in _VALID_STATUSES:
-            raise ClientLeaseValidationError("client_lease.status.invalid")
-        return {
-            "lease_name": lease_name,
-            "premises_address": premises_address,
-            "landlord_name": landlord_name,
-            "start_date": start_date,
-            "end_date": end_date,
-            "monthly_rent": payload.monthly_rent,
-            "deposit_amount": payload.deposit_amount,
-            "reminder_days": payload.reminder_days,
-            "status": status,
-            "notes": notes,
-        }
+        return validate_lease_input(payload)
 
     def _require_active_client(self, client_id: int) -> None:
         if not self._repo.active_client_exists(client_id):

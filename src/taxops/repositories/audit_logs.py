@@ -25,6 +25,10 @@ class AuditLogRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self._conn
+
     def append(
         self,
         *,

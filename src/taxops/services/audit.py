@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from typing import Any
 
 from ..repositories.audit_logs import AuditLogRepository, AuditLogRow
@@ -19,6 +20,10 @@ class AuditService:
     @property
     def actor(self) -> str:
         return self._actor
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self._repo.connection
 
     def set_actor(self, actor: str) -> None:
         self._actor = actor or DEFAULT_ACTOR

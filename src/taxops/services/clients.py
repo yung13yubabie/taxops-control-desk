@@ -152,6 +152,127 @@ def _resolve_address_state(
     return registered, contact, same
 
 
+def prepare_client_create(
+    payload: CreateClientInput,
+    repo: ClientsRepository,
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Validate a create payload without opening or committing a transaction."""
+    client_code = sanitize_user_text(payload.client_code, max_length=50)
+    if not client_code:
+        raise ClientValidationError("client.client_code.required")
+
+    client_name = sanitize_user_text(payload.client_name, max_length=200)
+    if not client_name:
+        raise ClientValidationError("client.client_name.required")
+
+    tax_id = _normalize_tax_id(payload.tax_id)
+    registered_address, contact_address, contact_address_same = (
+        _resolve_address_state(payload)
+    )
+    if repo.find_by_code(client_code) is not None:
+        raise ClientValidationError("client.client_code.duplicate")
+
+    lease_start = sanitize_user_text(payload.lease_start, max_length=10) or None
+    lease_end = sanitize_user_text(payload.lease_end, max_length=10) or None
+    try:
+        parsed_start = parse_optional_iso_date(lease_start)
+        parsed_end = parse_optional_iso_date(lease_end)
+    except ValueError as exc:
+        raise ClientValidationError("client.lease_date.invalid") from exc
+    if not date_range_is_valid(parsed_start, parsed_end):
+        raise ClientValidationError("client.lease_range.invalid")
+
+    values: dict[str, object] = {
+        "client_code": client_code,
+        "client_name": client_name,
+        "tax_id": tax_id,
+        "short_name": sanitize_user_text(payload.short_name, max_length=100) or None,
+        "contact_name": sanitize_user_text(payload.contact_name, max_length=100) or None,
+        "contact_phone": sanitize_user_text(payload.contact_phone, max_length=50) or None,
+        "contact_email": sanitize_user_text(payload.contact_email, max_length=200) or None,
+        "registered_address": registered_address,
+        "contact_address": contact_address,
+        "contact_address_same": contact_address_same,
+        "note": sanitize_user_text(payload.note, max_length=2000) or None,
+        "lease_start": lease_start,
+        "lease_end": lease_end,
+    }
+    audit_detail: dict[str, object] = {
+        "client_code": client_code,
+        "client_name": client_name,
+        "tax_id": tax_id,
+    }
+    if payload.registry_source_tax_id:
+        audit_detail.update(
+            {
+                "registry_prefill_used": True,
+                "source_tax_id": payload.registry_source_tax_id,
+                "cache_version": payload.registry_cache_version or "",
+                "prefill_time_note": (
+                    "source_tax_id/cache_version recorded at fill time; "
+                    "user may have edited fields before saving"
+                ),
+            }
+        )
+    return values, audit_detail
+
+
+def prepare_client_update(
+    client_id: int,
+    payload: UpdateClientInput,
+    repo: ClientsRepository,
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Validate an update payload without opening or committing a transaction."""
+    current = repo.get(client_id)
+    if current is None:
+        raise ClientValidationError("client.not_found")
+
+    client_code = sanitize_user_text(payload.client_code, max_length=50)
+    if not client_code:
+        raise ClientValidationError("client.client_code.required")
+    client_name = sanitize_user_text(payload.client_name, max_length=200)
+    if not client_name:
+        raise ClientValidationError("client.client_name.required")
+    tax_id = _normalize_tax_id(payload.tax_id)
+    registered_address, contact_address, contact_address_same = (
+        _resolve_address_state(payload, current)
+    )
+    lease_start = sanitize_user_text(payload.lease_start, max_length=10) or None
+    lease_end = sanitize_user_text(payload.lease_end, max_length=10) or None
+    try:
+        parsed_start = parse_optional_iso_date(lease_start)
+        parsed_end = parse_optional_iso_date(lease_end)
+    except ValueError as exc:
+        raise ClientValidationError("client.lease_date.invalid") from exc
+    if not date_range_is_valid(parsed_start, parsed_end):
+        raise ClientValidationError("client.lease_range.invalid")
+
+    existing = repo.find_by_code(client_code)
+    if existing is not None and existing.id != client_id:
+        raise ClientValidationError("client.client_code.duplicate")
+
+    values: dict[str, object] = {
+        "client_code": client_code,
+        "client_name": client_name,
+        "tax_id": tax_id,
+        "short_name": sanitize_user_text(payload.short_name, max_length=100) or None,
+        "contact_name": sanitize_user_text(payload.contact_name, max_length=100) or None,
+        "contact_phone": sanitize_user_text(payload.contact_phone, max_length=50) or None,
+        "contact_email": sanitize_user_text(payload.contact_email, max_length=200) or None,
+        "registered_address": registered_address,
+        "contact_address": contact_address,
+        "contact_address_same": contact_address_same,
+        "note": sanitize_user_text(payload.note, max_length=2000) or None,
+        "lease_start": lease_start,
+        "lease_end": lease_end,
+    }
+    return values, {
+        "client_code": client_code,
+        "client_name": client_name,
+        "tax_id": tax_id,
+    }
+
+
 class ClientsService:
     def __init__(
         self,
@@ -196,63 +317,10 @@ class ClientsService:
         self._search_repo.delete_client(client_id)
 
     def create_client(self, payload: CreateClientInput) -> ClientRow:
-        client_code = sanitize_user_text(payload.client_code, max_length=50)
-        if not client_code:
-            raise ClientValidationError("client.client_code.required")
-
-        client_name = sanitize_user_text(payload.client_name, max_length=200)
-        if not client_name:
-            raise ClientValidationError("client.client_name.required")
-
-        tax_id = _normalize_tax_id(payload.tax_id)
-        short_name = sanitize_user_text(payload.short_name, max_length=100) or None
-        contact_name = sanitize_user_text(payload.contact_name, max_length=100) or None
-        contact_phone = sanitize_user_text(payload.contact_phone, max_length=50) or None
-        contact_email = sanitize_user_text(payload.contact_email, max_length=200) or None
-        registered_address, contact_address, contact_address_same = (
-            _resolve_address_state(payload)
-        )
-        note = sanitize_user_text(payload.note, max_length=2000) or None
-
-        if self._repo.find_by_code(client_code) is not None:
-            raise ClientValidationError("client.client_code.duplicate")
-
-        lease_start = sanitize_user_text(payload.lease_start, max_length=10) or None
-        lease_end = sanitize_user_text(payload.lease_end, max_length=10) or None
-        try:
-            ls = parse_optional_iso_date(lease_start)
-            le = parse_optional_iso_date(lease_end)
-        except ValueError:
-            raise ClientValidationError("client.lease_date.invalid")
-        if not date_range_is_valid(ls, le):
-            raise ClientValidationError("client.lease_range.invalid")
-
-        audit_detail: dict = {"client_code": client_code, "client_name": client_name, "tax_id": tax_id}
-        if payload.registry_source_tax_id:
-            audit_detail["registry_prefill_used"] = True
-            audit_detail["source_tax_id"] = payload.registry_source_tax_id
-            audit_detail["cache_version"] = payload.registry_cache_version or ""
-            audit_detail["prefill_time_note"] = (
-                "source_tax_id/cache_version recorded at fill time; "
-                "user may have edited fields before saving"
-            )
+        values, audit_detail = prepare_client_create(payload, self._repo)
         try:
             with self._conn:
-                row = self._repo.insert(
-                    client_code=client_code,
-                    client_name=client_name,
-                    tax_id=tax_id,
-                    short_name=short_name,
-                    contact_name=contact_name,
-                    contact_phone=contact_phone,
-                    contact_email=contact_email,
-                    registered_address=registered_address,
-                    contact_address=contact_address,
-                    contact_address_same=contact_address_same,
-                    note=note,
-                    lease_start=lease_start,
-                    lease_end=lease_end,
-                )
+                row = self._repo.insert(**values)
                 self._audit.record(
                     action="client.create",
                     target_type="client",
@@ -267,70 +335,18 @@ class ClientsService:
         return row
 
     def update_client(self, client_id: int, payload: UpdateClientInput) -> ClientRow:
-        current = self._repo.get(client_id)
-        if current is None:
-            raise ClientValidationError("client.not_found")
-
-        client_code = sanitize_user_text(payload.client_code, max_length=50)
-        if not client_code:
-            raise ClientValidationError("client.client_code.required")
-
-        client_name = sanitize_user_text(payload.client_name, max_length=200)
-        if not client_name:
-            raise ClientValidationError("client.client_name.required")
-
-        tax_id = _normalize_tax_id(payload.tax_id)
-        short_name = sanitize_user_text(payload.short_name, max_length=100) or None
-        contact_name = sanitize_user_text(payload.contact_name, max_length=100) or None
-        contact_phone = sanitize_user_text(payload.contact_phone, max_length=50) or None
-        contact_email = sanitize_user_text(payload.contact_email, max_length=200) or None
-        registered_address, contact_address, contact_address_same = (
-            _resolve_address_state(payload, current)
-        )
-        note = sanitize_user_text(payload.note, max_length=2000) or None
-        lease_start_u = sanitize_user_text(payload.lease_start, max_length=10) or None
-        lease_end_u = sanitize_user_text(payload.lease_end, max_length=10) or None
-        try:
-            ls_u = parse_optional_iso_date(lease_start_u)
-            le_u = parse_optional_iso_date(lease_end_u)
-        except ValueError:
-            raise ClientValidationError("client.lease_date.invalid")
-        if not date_range_is_valid(ls_u, le_u):
-            raise ClientValidationError("client.lease_range.invalid")
-
-        existing = self._repo.find_by_code(client_code)
-        if existing is not None and existing.id != client_id:
-            raise ClientValidationError("client.client_code.duplicate")
+        values, audit_detail = prepare_client_update(client_id, payload, self._repo)
 
         try:
             with self._conn:
-                row = self._repo.update(
-                    client_id,
-                    client_code=client_code,
-                    client_name=client_name,
-                    tax_id=tax_id,
-                    short_name=short_name,
-                    contact_name=contact_name,
-                    contact_phone=contact_phone,
-                    contact_email=contact_email,
-                    registered_address=registered_address,
-                    contact_address=contact_address,
-                    contact_address_same=contact_address_same,
-                    note=note,
-                    lease_start=lease_start_u,
-                    lease_end=lease_end_u,
-                )
+                row = self._repo.update(client_id, **values)
                 if row is None:
                     raise ClientValidationError("client.not_found")
                 self._audit.record(
                     action="client.update",
                     target_type="client",
                     target_id=str(client_id),
-                    detail={
-                        "client_code": row.client_code,
-                        "client_name": row.client_name,
-                        "tax_id": row.tax_id,
-                    },
+                    detail=audit_detail,
                 )
                 self._fts_update(row)
         except sqlite3.IntegrityError as exc:

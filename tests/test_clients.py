@@ -90,6 +90,25 @@ def test_duplicate_client_code_rejected(container: ServiceContainer) -> None:
     assert exc.value.code == "client.client_code.duplicate"
 
 
+def test_duplicate_client_code_precedes_legacy_lease_date_validation(
+    container: ServiceContainer,
+) -> None:
+    container.clients.create_client(
+        CreateClientInput(client_code="DUP-PRECEDENCE", client_name="既有客戶")
+    )
+
+    with pytest.raises(ClientValidationError) as exc:
+        container.clients.create_client(
+            CreateClientInput(
+                client_code="DUP-PRECEDENCE",
+                client_name="重複客戶",
+                lease_start="not-a-date",
+            )
+        )
+
+    assert exc.value.code == "client.client_code.duplicate"
+
+
 def test_invalid_tax_id_rejected(container: ServiceContainer) -> None:
     with pytest.raises(ClientValidationError) as exc:
         container.clients.create_client(

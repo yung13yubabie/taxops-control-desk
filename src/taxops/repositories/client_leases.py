@@ -35,6 +35,10 @@ class ClientLeasesRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self._conn
+
     def active_client_exists(self, client_id: int) -> bool:
         return self._conn.execute(
             "SELECT 1 FROM clients WHERE id = ? AND deleted_at IS NULL", (client_id,)
@@ -90,7 +94,7 @@ class ClientLeasesRepository:
         return [_row(row) for row in rows]
 
     def update(self, lease_id: int, **values: object) -> ClientLeaseRow | None:
-        self._conn.execute(
+        cur = self._conn.execute(
             """
             UPDATE client_leases
                SET lease_name = ?, premises_address = ?, landlord_name = ?,
@@ -114,13 +118,62 @@ class ClientLeasesRepository:
                 lease_id,
             ),
         )
+        if cur.rowcount == 0:
+            return None
+        return self.get(lease_id)
+
+    def update_for_client(
+        self, lease_id: int, client_id: int, **values: object
+    ) -> ClientLeaseRow | None:
+        cur = self._conn.execute(
+            """
+            UPDATE client_leases
+               SET lease_name = ?, premises_address = ?, landlord_name = ?,
+                   start_date = ?, end_date = ?, monthly_rent = ?,
+                   deposit_amount = ?, reminder_days = ?, status = ?, notes = ?,
+                   updated_at = ?
+             WHERE id = ? AND client_id = ? AND deleted_at IS NULL
+            """,
+            (
+                values["lease_name"],
+                values["premises_address"],
+                values["landlord_name"],
+                values["start_date"],
+                values["end_date"],
+                values["monthly_rent"],
+                values["deposit_amount"],
+                values["reminder_days"],
+                values["status"],
+                values["notes"],
+                now_iso(),
+                lease_id,
+                client_id,
+            ),
+        )
+        if cur.rowcount == 0:
+            return None
         return self.get(lease_id)
 
     def archive(self, lease_id: int) -> ClientLeaseRow | None:
         timestamp = now_iso()
-        self._conn.execute(
+        cur = self._conn.execute(
             "UPDATE client_leases SET deleted_at = ?, updated_at = ?"
             " WHERE id = ? AND deleted_at IS NULL",
             (timestamp, timestamp, lease_id),
         )
+        if cur.rowcount == 0:
+            return None
+        return self.get(lease_id, include_deleted=True)
+
+    def archive_for_client(
+        self, lease_id: int, client_id: int
+    ) -> ClientLeaseRow | None:
+        timestamp = now_iso()
+        cur = self._conn.execute(
+            "UPDATE client_leases SET deleted_at = ?, updated_at = ?"
+            " WHERE id = ? AND client_id = ? AND deleted_at IS NULL",
+            (timestamp, timestamp, lease_id, client_id),
+        )
+        if cur.rowcount == 0:
+            return None
         return self.get(lease_id, include_deleted=True)

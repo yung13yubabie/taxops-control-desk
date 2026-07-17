@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from taxops.services.client_leases import ClientLeaseValidationError, LeaseInput
+from taxops.services.client_leases import (
+    ClientLeaseValidationError,
+    LeaseInput,
+    validate_lease_input,
+)
 from taxops.services.clients import CreateClientInput
 
 
@@ -191,3 +195,30 @@ def test_create_rolls_back_when_audit_fails(container, monkeypatch):
         container.client_leases.create_lease(client.id, _lease())
 
     assert container.client_leases.list_for_client(client.id) == []
+
+
+def test_repository_archive_reports_zero_row_mutation_as_not_found(container):
+    client = _client(container)
+    lease = container.client_leases.create_lease(client.id, _lease())
+    container.client_leases.archive_lease(lease.id)
+
+    assert container.client_leases._repo.archive(lease.id) is None
+
+
+def test_repository_owner_guard_blocks_foreign_update_and_archive(container):
+    owner = _client(container, "OWNER-GUARD-A")
+    foreign = _client(container, "OWNER-GUARD-B")
+    lease = container.client_leases.create_lease(owner.id, _lease())
+    values = validate_lease_input(_lease(lease_name="不可越權更新"))
+
+    assert (
+        container.client_leases._repo.update_for_client(
+            lease.id, foreign.id, **values
+        )
+        is None
+    )
+    assert (
+        container.client_leases._repo.archive_for_client(lease.id, foreign.id)
+        is None
+    )
+    assert container.client_leases.get_lease(lease.id) == lease

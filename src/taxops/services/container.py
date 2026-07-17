@@ -39,6 +39,7 @@ from ..repositories.tax_registry import (
 )
 from .audit import AuditService
 from .clients import ClientsService
+from .client_profiles import ClientProfilesService
 from .client_leases import ClientLeasesService
 from .client_industries import ClientIndustriesService
 from .document_requests import DocumentRequestsService
@@ -69,6 +70,7 @@ class ServiceContainer:
     settings: SettingsService
     clients: ClientsService
     clients_repo: ClientsRepository
+    client_profiles: ClientProfilesService
     client_leases: ClientLeasesService
     client_industries: ClientIndustriesService
     audit: AuditService
@@ -127,6 +129,13 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
     settings_service = SettingsService(settings_repo, audit_service)
     search_repo = SearchRepository(conn)
     clients_service = ClientsService(clients_repo, audit_service, search_repo)
+    client_profiles_service = ClientProfilesService(
+        conn,
+        clients_repo,
+        client_leases_repo,
+        audit_service,
+        search_repo,
+    )
     client_leases_service = ClientLeasesService(client_leases_repo, audit_service)
     client_industries_service = ClientIndustriesService(
         client_industries_repo, audit_service
@@ -220,6 +229,7 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         settings=settings_service,
         clients=clients_service,
         clients_repo=clients_repo,
+        client_profiles=client_profiles_service,
         client_leases=client_leases_service,
         client_industries=client_industries_service,
         audit=audit_service,
