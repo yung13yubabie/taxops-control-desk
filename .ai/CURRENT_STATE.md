@@ -12,7 +12,10 @@
   preserves attachment/version data and AUTOINCREMENT high-water marks, and
   enforces lease/client ownership with a composite foreign key.
 - Repository/service work for leases, industries, and guarded lease
-  attachments is currently in progress. Client UI, annual domain/UI,
+  attachments is implemented and independently approved. Archived leases keep
+  their existing attachment evidence readable, while archived leases cannot
+  receive new files and deleted clients remain isolated. Client address-domain
+  migration is currently in progress. Client UI, annual domain/UI,
   full coverage measurement, DPI acceptance, and EXE packaging are not yet
   verified and must not be reported as complete.
 

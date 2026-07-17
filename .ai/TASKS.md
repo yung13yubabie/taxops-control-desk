@@ -15,8 +15,8 @@
 
 ### DOING
 
-- [ ] Implement and independently review the client lease, industry, and lease
-  attachment repository/service slice.
+- [ ] Separate registered/contact address behavior across client CRUD, bulk
+  import, and registry matching while keeping the legacy address mirror.
 
 ### BLOCKED
 
@@ -31,6 +31,9 @@
 - [x] Verify the clean baseline: 1454 passed in 939.71 seconds.
 - [x] Add migration 0027 for address/lease/industry schema and safe attachment
   ownership rebuild; spec review and five-axis quality review both passed.
+- [x] Add and independently review lease/industry repositories and services,
+  guarded lease attachments, historical attachment visibility, and explicit
+  overlength validation without silent truncation.
 
 ## 2026-07-12 Branch coverage and happy-path hardening
 
