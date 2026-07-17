@@ -359,7 +359,8 @@ git commit -m "feat: manage client leases and industries"
 - Modify: `src/taxops/services/clients_bulk.py`
 - Modify: `src/taxops/services/registry/matcher.py`
 - Modify: `tests/test_clients.py`
-- Modify: `tests/test_clients_bulk.py`
+- Modify: `tests/test_clients_bulk_parse.py`
+- Verify: `tests/test_bulk_import_wizard_user_path.py`
 - Modify: `tests/test_registry_matcher.py`
 
 - [ ] **Step 1: Add failing address preservation and registry matching tests**
@@ -374,7 +375,7 @@ def test_registry_address_updates_registered_address_without_touching_contact(co
 
 - [ ] **Step 2: Run address tests and confirm dataclass/input failures**
 
-Run: `python -m pytest tests/test_clients.py tests/test_clients_bulk.py tests/test_registry_matcher.py -q`
+Run: `python -m pytest tests/test_clients.py tests/test_clients_bulk_parse.py tests/test_bulk_import_wizard_user_path.py tests/test_registry_matcher.py -q`
 
 Expected: FAIL because the new fields are not exposed.
 
@@ -397,7 +398,7 @@ Map `設籍地址` and legacy `地址` to `registered_address`; add `聯絡地�
 
 - [ ] **Step 5: Run focused tests and commit**
 
-Run: `python -m pytest tests/test_clients.py tests/test_clients_bulk.py tests/test_registry_matcher.py -q`
+Run: `python -m pytest tests/test_clients.py tests/test_clients_bulk_parse.py tests/test_bulk_import_wizard_user_path.py tests/test_registry_matcher.py -q`
 
 Expected: PASS.
 
@@ -414,8 +415,12 @@ git commit -m "feat: separate registered and contact addresses"
 - Modify: `src/taxops/ui/dialogs/new_client_dialog.py`
 - Modify: `src/taxops/ui/dialogs/edit_client_dialog.py`
 - Modify: `src/taxops/ui/pages/clients_page.py`
+- Modify: `src/taxops/services/clients.py`
+- Modify: `src/taxops/services/client_leases.py`
+- Modify: `src/taxops/services/container.py`
 - Create: `tests/test_client_profile_ui.py`
 - Create: `tests/test_client_leases_ui.py`
+- Create: `tests/test_client_profile_atomic.py`
 
 - [ ] **Step 1: Write failing real-widget tests**
 
@@ -447,7 +452,15 @@ Use `QPlainTextEdit` for both addresses and notes, `setMinimumHeight(72)`, `setW
 
 - [ ] **Step 4: Implement staged lease rows and atomic client save**
 
-New-client leases remain in memory until the client and leases can be created in one service transaction. Edit-client changes use an explicit `save_client_with_leases()` orchestration method. The dialog stays open and preserves inputs on any validation or persistence error.
+New-client leases remain in memory until the client and leases can be created in
+one service transaction. Edit-client staged create/update/archive operations use
+an explicit orchestration method on a real service boundary. Refactor the
+existing client and lease services to expose validation plus uncommitted
+repository/audit helpers; do not nest their public `with connection:` methods,
+because an inner SQLite context may commit a half-finished profile. Tests must
+inject a failure in the second lease mutation and prove the client row, every
+lease row, audit rows, and FTS state all roll back. The dialog stays open and
+preserves inputs on any validation or persistence error.
 
 - [ ] **Step 5: Run UI tests at normal and constrained geometry**
 

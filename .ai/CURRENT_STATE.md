@@ -14,8 +14,10 @@
 - Repository/service work for leases, industries, and guarded lease
   attachments is implemented and independently approved. Archived leases keep
   their existing attachment evidence readable, while archived leases cannot
-  receive new files and deleted clients remain isolated. Client address-domain
-  migration is currently in progress. Client UI, annual domain/UI,
+  receive new files and deleted clients remain isolated. Registered/contact
+  address behavior is separated across CRUD, bulk import, and registry
+  matching. The shared client profile and multiple-lease UI is currently in
+  progress. Annual domain/UI,
   full coverage measurement, DPI acceptance, and EXE packaging are not yet
   verified and must not be reported as complete.
 

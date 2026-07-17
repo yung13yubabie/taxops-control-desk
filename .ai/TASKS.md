@@ -15,8 +15,8 @@
 
 ### DOING
 
-- [ ] Separate registered/contact address behavior across client CRUD, bulk
-  import, and registry matching while keeping the legacy address mirror.
+- [ ] Build the shared client profile form and multiple-lease CRUD UI with
+  atomic saves and scaling-safe scroll behavior.
 
 ### BLOCKED
 
@@ -34,6 +34,8 @@
 - [x] Add and independently review lease/industry repositories and services,
   guarded lease attachments, historical attachment visibility, and explicit
   overlength validation without silent truncation.
+- [x] Separate registered/contact addresses across client CRUD, bulk import,
+  and registry matching while preserving the legacy address mirror.
 
 ## 2026-07-12 Branch coverage and happy-path hardening
 
