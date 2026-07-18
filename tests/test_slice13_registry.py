@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import pathlib
 import tempfile
+import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -27,6 +28,24 @@ def _make_app():
     if app is None:
         app = QApplication([])
     return app
+
+
+def _wait_for_local_search(page, timeout: float = 5.0) -> None:
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    app = _make_app()
+    deadline = time.monotonic() + timeout
+    worker = page._local_worker
+    assert worker is not None
+    while worker.isRunning() and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.005)
+    assert not worker.isRunning()
+    assert worker.wait(1_000)
+    app.processEvents()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    app.processEvents()
+    assert page._local_worker is None
 
 
 def _fresh_container():
@@ -148,6 +167,7 @@ class TestRegistryPageUI:
         page = self._make_page(container)
         page._query_edit.setText("00000000")
         page._on_search_local()
+        _wait_for_local_search(page)
         assert page._result_group.isHidden()
         assert not page._apply_btn.isEnabled()
         assert page._result is None
@@ -157,6 +177,7 @@ class TestRegistryPageUI:
         page = self._make_page(container)
         page._query_edit.setText("00000000")
         page._on_search_local()
+        _wait_for_local_search(page)
         assert "公司不存在" not in page._status_label.text()
 
     def test_search_not_found_shows_cache_message(self):
@@ -164,6 +185,7 @@ class TestRegistryPageUI:
         page = self._make_page(container)
         page._query_edit.setText("00000000")
         page._on_search_local()
+        _wait_for_local_search(page)
         assert "快取" in page._status_label.text()
 
     def test_empty_query_does_not_crash(self):
@@ -380,7 +402,7 @@ class TestRegistryPageUI:
         assert page._result is not None
         monkeypatch.setattr(
             container.tax_registry_repo,
-            "search",
+            "find_by_tax_id",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("db locked")),
         )
 

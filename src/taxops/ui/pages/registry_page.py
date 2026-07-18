@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-import time
 from collections.abc import Mapping
-from pathlib import Path
 
 from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import (
@@ -27,20 +25,25 @@ from PySide6.QtWidgets import (
 
 from ...i18n import error_message
 from ...services.gcis import GCISQueryError, query_gcis_by_tax_id
+from ...services.registry.industries import (
+    industry_display_lines,
+    primary_industry_display,
+)
 from ...services.container import ServiceContainer
-from ...repositories.tax_registry import TaxRegistryRepository
 from ..dialogs.registry_apply_dialog import RegistryApplyDialog
 from ..style import TEXT_MUTED, toolbar_icon
+from ..workers.local_registry_search import LocalRegistrySearchWorker
 
 _log = logging.getLogger(__name__)
 _RESULT_FIELDS: tuple[tuple[str, str], ...] = (
     ("tax_id", "統一編號"),
     ("business_name", "公司名稱"),
-    ("business_address", "地址"),
+    ("business_address", "登記地址"),
     ("organization_type", "組織型態"),
     ("registered_date_roc", "設立日期（民國）"),
     ("business_status", "登記狀態"),
     ("source", "資料來源"),
+    ("industries", "行業資料"),
 )
 
 _NOT_FOUND_MSG = "本地快取查無此統一編號，可能是快取未更新或資料來源未涵蓋。"
@@ -64,39 +67,6 @@ class _GCISWorker(QThread):
             self.errored.emit("system.unexpected")
 
 
-class _LocalRegistryWorker(QThread):
-    succeeded = Signal(object)
-    errored = Signal(str)
-
-    def __init__(self, db_path: str, query: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._db_path = db_path
-        self._query = query
-
-    def run(self) -> None:
-        connection: sqlite3.Connection | None = None
-        try:
-            uri = f"{Path(self._db_path).resolve().as_uri()}?mode=ro"
-            connection = sqlite3.connect(uri, uri=True, timeout=10)
-            connection.row_factory = sqlite3.Row
-            deadline = time.monotonic() + 10
-            connection.set_progress_handler(
-                lambda: int(time.monotonic() > deadline),
-                10_000,
-            )
-            rows = TaxRegistryRepository(connection).search(self._query, limit=50)
-            self.succeeded.emit([dict(row) for row in rows])
-        except sqlite3.Error:
-            _log.exception("local registry background search failed")
-            self.errored.emit("registry.search.failed")
-        except Exception:
-            _log.exception("unexpected local registry background search failure")
-            self.errored.emit("system.unexpected")
-        finally:
-            if connection is not None:
-                connection.close()
-
-
 class RegistryPage(QWidget):
     def __init__(
         self,
@@ -107,7 +77,7 @@ class RegistryPage(QWidget):
         self._container = container
         self._result: sqlite3.Row | Mapping[str, object] | None = None
         self._gcis_worker: _GCISWorker | None = None
-        self._local_worker: _LocalRegistryWorker | None = None
+        self._local_worker: LocalRegistrySearchWorker | None = None
 
         layout = QVBoxLayout(self)
         layout.setSpacing(16)
@@ -123,7 +93,9 @@ class RegistryPage(QWidget):
         search_layout.setSpacing(8)
 
         self._query_edit = QLineEdit()
-        self._query_edit.setPlaceholderText("輸入統一編號（8位數）或公司名稱關鍵字")
+        self._query_edit.setPlaceholderText(
+            "輸入統一編號（8位數）、公司名稱或行業代碼／名稱"
+        )
         self._query_edit.returnPressed.connect(self._on_search_local)
         search_layout.addWidget(self._query_edit, stretch=1)
 
@@ -145,12 +117,17 @@ class RegistryPage(QWidget):
         self._status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
         layout.addWidget(self._status_label)
 
-        self._results_table = QTableWidget(0, 3)
-        self._results_table.setHorizontalHeaderLabels(["統一編號", "登記名稱", "地址"])
+        self._results_table = QTableWidget(0, 4)
+        self._results_table.setHorizontalHeaderLabels(
+            ["統一編號", "登記名稱", "登記地址", "主要行業"]
+        )
         self._results_table.verticalHeader().setVisible(False)
         self._results_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._results_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._results_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self._results_table.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
         self._results_table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch
         )
@@ -269,48 +246,29 @@ class RegistryPage(QWidget):
         self._results_table.setRowCount(0)
         self._results_table.setVisible(False)
 
-    def _on_search_local_sync(self) -> None:
-        query = self._query_edit.text().strip()
-        if not query:
-            self._clear_result("請輸入統一編號或公司名稱後再查詢。")
-            return
-
-        try:
-            rows = self._container.tax_registry_repo.search(query, limit=50)
-        except Exception:
-            _log.error("local registry search failed", exc_info=True)
-            self._clear_result("查詢失敗，請稍後再試。")
-            return
-
-        if not rows:
-            self._clear_result(_NOT_FOUND_MSG)
-            return
-
-        self._result = rows[0]
-        self._status_label.setText("查詢完成。")
-
-        result_keys = set(self._result.keys())
-        for field_key, _ in _RESULT_FIELDS:
-            val = self._result[field_key] if field_key in result_keys else ""
-            self._result_labels[field_key].setText(str(val))
-
-        self._result_group.setVisible(True)
-        self._apply_btn.setEnabled(True)
-        self._populate_results_table([dict(row) for row in rows])
-
     def _on_search_local(self) -> None:
         query = self._query_edit.text().strip()
         if not query:
-            self._on_search_local_sync()
+            self._clear_result("請輸入統一編號、公司名稱或行業關鍵字後再查詢。")
             return
         if self._local_worker is not None or self._gcis_worker is not None:
             return
         if len(query) == 8 and query.isdigit():
-            self._on_search_local_sync()
-            return
+            try:
+                exact_row = self._container.tax_registry_repo.find_by_tax_id(query)
+            except Exception:
+                _log.error("exact local registry lookup failed", exc_info=True)
+                self._clear_result("查詢失敗，請稍後再試。")
+                return
+            if exact_row is not None:
+                self._populate_results_table([dict(exact_row)])
+                self._status_label.setText("查詢完成，共 1 筆。")
+                return
         self._clear_result("正在搜尋大量本機登記資料，請稍候…")
         self._set_search_busy(True)
-        worker = _LocalRegistryWorker(str(self._container.paths.db_path), query, self)
+        worker = LocalRegistrySearchWorker(
+            str(self._container.paths.db_path), query, limit=50, parent=self
+        )
         self._local_worker = worker
 
         def on_error(code: str) -> None:
@@ -360,8 +318,15 @@ class RegistryPage(QWidget):
         self._results_table.blockSignals(True)
         self._results_table.setRowCount(len(rows))
         for row_index, result in enumerate(rows):
-            for column, key in enumerate(("tax_id", "business_name", "business_address")):
-                item = QTableWidgetItem(str(result.get(key) or ""))
+            values = (
+                str(result.get("tax_id") or ""),
+                str(result.get("business_name") or ""),
+                str(result.get("business_address") or ""),
+                primary_industry_display(result) or "此來源未提供主要行業",
+            )
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                item.setToolTip(value)
                 if column == 0:
                     item.setData(Qt.ItemDataRole.UserRole, result)
                 self._results_table.setItem(row_index, column, item)
@@ -382,7 +347,13 @@ class RegistryPage(QWidget):
     def _set_result(self, result: Mapping[str, object]) -> None:
         self._result = result
         for field_key, _ in _RESULT_FIELDS:
-            self._result_labels[field_key].setText(str(result.get(field_key) or ""))
+            if field_key == "industries":
+                lines = industry_display_lines(result)
+                value = "\n".join(lines) if lines else "此來源未提供行業資料"
+            else:
+                value = str(result.get(field_key) or "")
+            self._result_labels[field_key].setText(value)
+            self._result_labels[field_key].setToolTip(value)
         self._result_group.setVisible(True)
         self._apply_btn.setEnabled(True)
 
@@ -439,11 +410,7 @@ class RegistryPage(QWidget):
                 "GCIS 官方查無可用資料；這不代表該統編不存在，可能是資料類型或介接權限未涵蓋。"
             )
             return
-        self._result = result
-        for field_key, _ in _RESULT_FIELDS:
-            self._result_labels[field_key].setText(str(result.get(field_key) or ""))
-        self._result_group.setVisible(True)
-        self._apply_btn.setEnabled(True)
+        self._set_result(result)
         self._status_label.setText("GCIS 官方線上補查完成。")
 
     def _on_apply_to_client(self) -> None:

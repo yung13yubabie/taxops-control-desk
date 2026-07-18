@@ -1,5 +1,40 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-07-18 - registry industries and bounded lookup)
+
+- Local registry search uses a separate parameterized tax-ID index lookup
+  before any LIKE query, then covers business identity plus all four official
+  industry code/name slots while preserving exact-name precedence and treating
+  LIKE wildcard characters literally. SQL trace and query-plan regression
+  require one exact-hit SELECT using `idx_tax_registry_cache_tax_id`, without
+  CTE, LIKE, table scan, or temporary B-tree work.
+- Registry and new-client UI show a primary industry only when the source's
+  complete primary slot exists. Complete secondary rows remain visible and can
+  be persisted without being promoted to a fabricated primary industry.
+- Applying registry data changes registered address only. Existing contact
+  address text, including line breaks, remains exact; a formerly same-address
+  profile becomes separately managed when the registered address changes.
+- Existing-client application updates client, FTS, industry rows, and all audit
+  rows in one immediate transaction. A failure at the final
+  `client.registry.apply` audit restores byte-for-byte row snapshots. New
+  client, staged lease, industries, FTS, and audits also roll back together.
+- Non-eight-digit company/industry searches in `RegistryPage` and
+  `NewClientDialog` share a fresh read-only SQLite QThread worker with finite
+  busy timeout and a ten-second progress deadline. The new-client dialog shows
+  busy/error/stale states, prevents close/accept while the worker runs, restores
+  controls on finish, and schedules the worker for deferred deletion.
+- Eight-digit UI searches synchronously call only the indexed
+  `find_by_tax_id`. A direct hit is displayed immediately; a miss starts the
+  same background worker for name/industry fallback, so no broad LIKE work can
+  run on the GUI thread.
+- Verification so far: async/lifecycle RED 4 failed then GREEN 6 passed;
+  primary/contact/rollback RED 3 failed then GREEN 6 passed; expanded focused
+  post-review registry/profile regression 126 passed; worker/lifecycle
+  regression 9 passed separately; compileall and
+  `git diff --check` pass. Independent re-review remains required; this is not
+  full-suite, coverage, DPI, or EXE evidence.
+- Next: independent Task 5 spec/quality re-review, then proceed to annual core.
+
 ## Latest Handoff Update (2026-07-17 - client profile and multiple-lease UI)
 
 - New and edit client dialogs share a fixed-order scrollable profile form with

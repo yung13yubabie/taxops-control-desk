@@ -71,6 +71,7 @@ ERROR_MESSAGES: dict[str, str] = dict(
             "gcis.response.invalid": "GCIS 回傳格式不符預期，未套用任何資料",
             "gcis.response.too_large": "GCIS 回傳資料超過安全限制，已停止處理",
             "registry.search.failed": "本機工商登記查詢失敗，請稍後重試；未套用任何資料",
+            "registry.search.timeout": "本機工商登記查詢逾時，請縮短關鍵字後重試；未套用任何資料",
             "engagement.due_date.invalid": "案件到期日格式不正確，請使用 YYYY-MM-DD 格式",
             "engagement.name.required": "請輸入案件名稱",
             "engagement.tax_type.invalid": "稅種格式不正確，請重新選擇",

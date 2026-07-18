@@ -42,6 +42,7 @@ from .clients import ClientsService
 from .client_profiles import ClientProfilesService
 from .client_leases import ClientLeasesService
 from .client_industries import ClientIndustriesService
+from .registry_client import RegistryClientService
 from .document_requests import DocumentRequestsService
 from .engagements import EngagementsService
 from .registry.bundle import TaxCacheBundleService
@@ -73,6 +74,7 @@ class ServiceContainer:
     client_profiles: ClientProfilesService
     client_leases: ClientLeasesService
     client_industries: ClientIndustriesService
+    registry_client: RegistryClientService
     audit: AuditService
     system_log: SystemLogService
     tax_cache_importer: TaxRegistryImporter
@@ -135,10 +137,14 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         client_leases_repo,
         audit_service,
         search_repo,
+        client_industries_repo,
     )
     client_leases_service = ClientLeasesService(client_leases_repo, audit_service)
     client_industries_service = ClientIndustriesService(
         client_industries_repo, audit_service
+    )
+    registry_client_service = RegistryClientService(
+        conn, clients_repo, client_industries_repo, audit_service, search_repo
     )
     engagements_service = EngagementsService(engagements_repo, audit_service, search_repo)
     doc_requests_service = DocumentRequestsService(doc_requests_repo, audit_service)
@@ -232,6 +238,7 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         client_profiles=client_profiles_service,
         client_leases=client_leases_service,
         client_industries=client_industries_service,
+        registry_client=registry_client_service,
         audit=audit_service,
         system_log=system_log_service,
         tax_cache_importer=tax_cache_importer,

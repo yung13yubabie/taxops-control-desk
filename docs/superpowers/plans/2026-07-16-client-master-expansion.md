@@ -482,8 +482,10 @@ git commit -m "feat: edit client addresses and multiple leases"
 - Modify: `src/taxops/ui/pages/registry_page.py`
 - Modify: `src/taxops/ui/dialogs/registry_apply_dialog.py`
 - Modify: `src/taxops/ui/dialogs/new_client_dialog.py`
-- Modify: `tests/test_tax_registry.py`
+- Verify: `tests/test_slice13_registry.py`
 - Create: `tests/test_registry_industry_ui.py`
+- Create: `tests/test_registry_local_search_worker.py`
+- Verify: `tests/test_gcis_query.py`
 
 - [ ] **Step 1: Write failing industry search and apply tests**
 
@@ -503,7 +505,7 @@ def test_registry_apply_industries_does_not_clear_contact_address(qtbot, contain
 
 - [ ] **Step 2: Run registry tests and verify they fail for missing industry behavior**
 
-Run: `python -m pytest tests/test_tax_registry.py tests/test_registry_industry_ui.py -q`
+Run: `python -m pytest tests/test_registry_industry_ui.py tests/test_slice13_registry.py -q`
 
 Expected: FAIL because search only covers names and the UI omits industry fields.
 
@@ -521,11 +523,11 @@ Registry apply first updates selected client scalar fields, then replaces indust
 
 - [ ] **Step 6: Run focused tests and commit**
 
-Run: `python -m pytest tests/test_tax_registry.py tests/test_registry_industry_ui.py tests/test_gcis.py -q`
+Run: `python -m pytest tests/test_registry_industry_ui.py tests/test_registry_local_search_worker.py tests/test_slice13_registry.py tests/test_gcis_query.py -q`
 
 Expected: PASS.
 
 ```powershell
-git add src/taxops/repositories/tax_registry.py src/taxops/ui tests/test_tax_registry.py tests/test_registry_industry_ui.py
+git add src/taxops/repositories/tax_registry.py src/taxops/services src/taxops/ui tests/test_registry_industry_ui.py tests/test_registry_local_search_worker.py docs/superpowers/plans/2026-07-16-client-master-expansion.md
 git commit -m "feat: search and apply registry industries"
 ```

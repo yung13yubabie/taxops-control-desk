@@ -9,10 +9,13 @@ from dataclasses import dataclass
 from typing import Iterator, Literal
 
 from ..repositories.client_leases import ClientLeaseRow, ClientLeasesRepository
+from ..repositories.client_industries import ClientIndustriesRepository
+from ..core.clock import now_iso
 from ..repositories.clients import ClientRow, ClientsRepository
 from ..repositories.search import SearchRepository
 from .audit import AuditService
 from .client_leases import LeaseInput, validate_lease_input
+from .client_industries import IndustryInput, prepare_industry_replace
 from .clients import (
     ClientValidationError,
     CreateClientInput,
@@ -95,6 +98,7 @@ class ClientProfilesService:
         leases_repo: ClientLeasesRepository,
         audit: AuditService,
         search_repo: SearchRepository,
+        industries_repo: ClientIndustriesRepository | None = None,
     ) -> None:
         connections = {
             "clients_repo": clients_repo.connection,
@@ -102,6 +106,8 @@ class ClientProfilesService:
             "audit_repo": audit.connection,
             "search_repo": search_repo.connection,
         }
+        if industries_repo is not None:
+            connections["industries_repo"] = industries_repo.connection
         mismatched = [
             name
             for name, repository_conn in connections.items()
@@ -116,11 +122,16 @@ class ClientProfilesService:
         self._leases_repo = leases_repo
         self._audit = audit
         self._search_repo = search_repo
+        self._industries_repo = industries_repo
 
     def create_client_with_leases(
         self,
         client_payload: CreateClientInput,
         lease_inputs: Sequence[LeaseInput],
+        *,
+        industries: Sequence[IndustryInput] | None = None,
+        industry_source: str | None = None,
+        industry_source_version: str | None = None,
     ) -> ClientProfileSaveResult:
         _require_typed_sequence(
             lease_inputs, LeaseInput, "client_profile.lease_inputs.invalid"
@@ -133,6 +144,20 @@ class ClientProfilesService:
                 lease_values = [
                     validate_lease_input(payload) for payload in lease_inputs
                 ]
+                prepared_industries = (
+                    prepare_industry_replace(
+                        industries,
+                        industry_source or "",
+                        industry_source_version,
+                        allow_no_primary=True,
+                    )
+                    if industries is not None
+                    else None
+                )
+                if prepared_industries is not None and self._industries_repo is None:
+                    raise ClientProfileValidationError(
+                        "client_profile.industries.unavailable"
+                    )
                 client = self._clients_repo.insert(**client_values)
                 self._search_repo.add_client(
                     client.id,
@@ -159,6 +184,25 @@ class ClientProfilesService:
                         detail={"client_id": client.id, "status": lease.status},
                     )
                     leases.append(lease)
+                if prepared_industries is not None and self._industries_repo is not None:
+                    normalized, source, source_version = prepared_industries
+                    industry_rows = self._industries_repo.insert_many(
+                        client.id,
+                        normalized,
+                        source=source,
+                        source_version=source_version,
+                        applied_at=now_iso(),
+                    )
+                    self._audit.record(
+                        action="client.industries.replace",
+                        target_type="client",
+                        target_id=str(client.id),
+                        detail={
+                            "count": len(industry_rows),
+                            "source": source,
+                            "source_version": source_version or "",
+                        },
+                    )
         except sqlite3.IntegrityError as exc:
             if "clients.client_code" in str(exc):
                 raise ClientValidationError("client.client_code.duplicate") from exc

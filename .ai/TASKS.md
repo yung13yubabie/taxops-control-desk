@@ -4,7 +4,6 @@
 
 ### TODO
 
-- [ ] Add industry search/display/apply to the registry workflow.
 - [ ] Build the annual accounting/tax workbench with one client-year parent,
   independent work/filing/document/tax/fee states, ledger-derived balances,
   and bidirectional links to existing engagements and document requests.
@@ -15,6 +14,7 @@
 ### DOING
 
 - [ ] Independently review the shared client profile and multiple-lease UI.
+- [ ] Independently re-review the registry industry search/display/apply slice.
 
 ### BLOCKED
 
@@ -37,6 +37,9 @@
 - [x] Add the fixed-order, scroll-safe shared client profile form, atomic staged
   multiple-lease create/update/archive UI, persisted-lease attachment actions,
   exact multiline table tooltips, and explicit registered/contact columns.
+- [x] Implement industry search across primary/secondary slots, source-faithful
+  primary display and persistence, atomic registry application, exact contact
+  preservation, and bounded shared local-search worker lifecycle handling.
 
 ## 2026-07-12 Branch coverage and happy-path hardening
 

@@ -45,6 +45,10 @@ class ClientIndustriesRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self._conn
+
     def active_client_exists(self, client_id: int) -> bool:
         return self._conn.execute(
             "SELECT 1 FROM clients WHERE id = ? AND deleted_at IS NULL", (client_id,)

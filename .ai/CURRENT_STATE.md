@@ -21,7 +21,14 @@
   review is still pending. Lease-expiry reminders now query active,
   non-archived client leases in one deduplicated query rather than reading
   legacy client scalar dates. Archived leases remain visible as read-only
-  history with owner-guarded attachment evidence. Annual domain/UI,
+  history with owner-guarded attachment evidence. Registry search uses the
+  tax-ID index before any broad LIKE work, covers all four official industry
+  slots, and presents only a source-declared primary
+  industry. Registry application updates registered address without replacing
+  exact contact-address text, and applies client fields, industries, FTS, and
+  audit rows atomically. Non-tax-id searches in both registry entry points use
+  a shared bounded read-only SQLite worker; focused regression passes, while
+  independent review is still pending. Annual domain/UI,
   full coverage measurement, DPI acceptance, and EXE packaging are not yet
   verified and must not be reported as complete.
 

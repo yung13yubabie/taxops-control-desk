@@ -1,5 +1,27 @@
 # RESOURCE CLEANUP AUDIT
 
+## 2026-07-18 - Shared local registry search worker
+
+- Company-name and industry searches no longer execute the multi-column SQLite
+  query on the GUI thread. Both registry entry points use one shared QThread
+  implementation with a fresh `mode=ro` connection, ten-second connect/busy
+  limits, a ten-second SQLite progress deadline, and explicit connection close.
+- New-client search keeps its worker reference until native finish, restores
+  disabled controls in the finish path, then uses `deleteLater`. Stale results
+  are ignored. Dialog reject, accept, and close are visibly refused while the
+  worker is running, preventing parent destruction from destroying a live
+  QThread.
+- Native lifecycle regression holds the worker open, attempts a real dialog
+  close, releases it, processes deferred cleanup, and observes no
+  `QThread: Destroyed while thread is still running` message. Worker success,
+  timeout mapping, owned-connection close, stale-result, error recovery, and
+  exact-tax synchronous behavior are covered by six focused tests.
+- Post-review worker/lifecycle regression passes 9 tests in its isolated Qt
+  run; the non-lifecycle registry/profile regression passes 126 tests. The
+  post-test hygiene command lists only its own Python process under suspicious
+  TaxOps/PyTest/PyInstaller processes. It reports TCP states and pre-existing
+  listeners without attributing or terminating unknown processes.
+
 ## 2026-07-12 - GCIS worker and official network lifecycle
 
 - GCIS lookup uses a bounded 1 MB response, a finite timeout, HTTPS official
