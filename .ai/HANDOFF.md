@@ -1,5 +1,41 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-07-18 - compliance profiles and period rules)
+
+- `compliance_rules` now builds immutable, stable-key drafts for monthly
+  bookkeeping, monthly/bimonthly VAT, monthly withholding payments, annual
+  withholding statements, corporate income tax, undistributed earnings,
+  provisional tax, optional payroll/insurance, and optional company annual
+  work. Mapping order cannot affect item order or keys.
+- Ordinary calendar-year suggestions are explicit fixed-date rules only:
+  VAT next-period day 15, monthly withholding next-month day 10, annual
+  withholding January 31, corporate tax May 31, and provisional tax September
+  30. No clock, network, holiday, or extension inference occurs. Verified
+  special fiscal-year rules reverse from the operation year: corporate and
+  undistributed-earnings work uses the month ending the fifth month after
+  fiscal year-end, while provisional work uses the month ending the ninth
+  fiscal month. The stored cross-year period and tax year identify the actual
+  source fiscal year rather than the workbench year.
+- One profile per active client is exposed through a same-connection repository
+  and atomic `BEGIN IMMEDIATE` service. Saves are partial upserts: omitted and
+  disabled rows remain stored. Notes preserve newlines and reject overlength;
+  exact repeated payloads do not touch timestamps or create fake audit events.
+- `compliance_profile.update` audit detail contains only the client id, fiscal
+  start month, item count, and work-type/frequency/enabled metadata. Profile
+  notes are excluded. Audit failure restores the exact previous profile/item
+  rows, and writer contention returns a stable busy error.
+- TDD evidence: initial collection RED was two missing-module errors; the
+  first special-year RED exposed the incorrect blank deadline, then the
+  source-guided exhaustive correction produced 25 failures across all 2..12
+  fiscal starts before turning green. Strict runtime-type RED exposed three
+  unstable/raw errors. Final focused rules and profile regression is 84
+  passed. Existing annual migration, DB migration, client, and atomic
+  client-profile regression is 113 passed. This is not
+  full-suite, coverage, UI, or EXE evidence.
+- Next: independently review this slice, then implement Annual Core Task 3
+  workspace preview/idempotent generation. Read the annual core plan and the
+  compliance rules/profile tests before changing the contract.
+
 ## Latest Handoff Update (2026-07-18 - annual compliance schema)
 
 - Migration `0028_annual_compliance` creates compliance profiles and defaults,

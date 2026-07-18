@@ -15,8 +15,10 @@
 
 - [ ] Independently review the shared client profile and multiple-lease UI.
 - [ ] Independently re-review the registry industry search/display/apply slice.
-- [ ] Implement and independently review annual compliance repositories and
-  services on top of migration 0028.
+- [ ] Independently review the annual compliance profile repository, pure
+  period rules, atomic partial-upsert service, and safe audit contract.
+- [ ] Implement and independently review the remaining annual workspace,
+  work-item, transaction, and workflow-integration services on migration 0028.
 
 ### BLOCKED
 
@@ -45,6 +47,11 @@
 - [x] Add migration 0028 for annual compliance profiles, client-year
   workspaces, independent-status work items, transaction rows, and optional
   workflow-task links with upgrade, rollback, FK, and sequence regression.
+- [x] Implement deterministic suggested-period rules and one atomic compliance
+  profile per active client. Preserve omitted/disabled rows and multiline
+  notes, reject overlong or mistyped values, derive verified special-year
+  filing windows without holiday guesses, and suppress writes/audits for an
+  exactly unchanged payload.
 
 ## 2026-07-12 Branch coverage and happy-path hardening
 

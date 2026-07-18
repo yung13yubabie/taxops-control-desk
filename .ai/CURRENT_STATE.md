@@ -35,8 +35,13 @@
   and evidence-preserving foreign keys while retaining existing task rows and
   sequence high-water marks. Client purge preflight includes both compliance
   profiles and annual workspaces, so retained annual data produces the stable
-  validation error rather than a raw SQLite FK exception. Annual
-  repositories/services/UI,
+  validation error rather than a raw SQLite FK exception. Compliance profile
+  repositories, pure period rules, and atomic partial-upsert service are now
+  implemented with focused regression coverage; independent review remains
+  pending. Disabled and omitted profile rows are retained, unchanged saves do
+  not write or audit, and verified special fiscal-year filing windows are
+  derived from the operation year without holiday-extension inference.
+  Remaining annual repositories/services/UI,
   full coverage measurement, DPI acceptance, and EXE packaging are not yet
   verified and must not be reported as complete.
 

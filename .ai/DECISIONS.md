@@ -1,5 +1,31 @@
 # DECISIONS
 
+## 2026-07-18 - Compliance deadlines remain explicit suggestions
+
+### Decision
+
+Annual compliance generation stores only deterministic suggested dates for
+the ordinary rules represented in the code. It does not infer holiday
+extensions, network-fetched changes, or client exceptions. Verified
+special-fiscal-year corporate-income-tax and undistributed-earnings windows
+use the month ending the fifth month after fiscal year-end; provisional-tax
+windows use the month ending the ninth fiscal month. The fiscal start year is
+derived backward from the operation year so every suggested date occurs in
+that workbench year.
+
+### Rationale
+
+The Ministry of Finance guidance defines these non-calendar filing windows,
+while the exact holiday extension can vary. Encoding the verified base window
+but not an inferred extension keeps offline generation useful, reproducible,
+and independent of current network state.
+
+### Impact
+
+Generated dates are planning aids rather than legal guarantees. A future rule
+change requires explicit source review and regression-test updates; holiday or
+client-specific extensions must not be introduced as implicit date arithmetic.
+
 ## 2026-07-12 - Fixed-billing plan delete preserves issued history
 
 ### Decision

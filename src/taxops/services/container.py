@@ -19,6 +19,7 @@ from ..repositories.audit_logs import AuditLogRepository
 from ..repositories.clients import ClientsRepository
 from ..repositories.client_leases import ClientLeasesRepository
 from ..repositories.client_industries import ClientIndustriesRepository
+from ..repositories.compliance_profiles import ComplianceProfilesRepository
 from ..repositories.document_requests import DocumentRequestsRepository
 from ..repositories.engagements import EngagementsRepository
 from ..repositories.registry_matches import RegistryMatchRepository
@@ -42,6 +43,7 @@ from .clients import ClientsService
 from .client_profiles import ClientProfilesService
 from .client_leases import ClientLeasesService
 from .client_industries import ClientIndustriesService
+from .compliance_profiles import ComplianceProfilesService
 from .registry_client import RegistryClientService
 from .document_requests import DocumentRequestsService
 from .engagements import EngagementsService
@@ -74,6 +76,7 @@ class ServiceContainer:
     client_profiles: ClientProfilesService
     client_leases: ClientLeasesService
     client_industries: ClientIndustriesService
+    compliance_profiles: ComplianceProfilesService
     registry_client: RegistryClientService
     audit: AuditService
     system_log: SystemLogService
@@ -114,6 +117,7 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
     clients_repo = ClientsRepository(conn)
     client_leases_repo = ClientLeasesRepository(conn)
     client_industries_repo = ClientIndustriesRepository(conn)
+    compliance_profiles_repo = ComplianceProfilesRepository(conn)
     tax_registry_repo = TaxRegistryRepository(conn)
     tax_cache_metadata_repo = TaxCacheMetadataRepository(conn)
     match_repo = RegistryMatchRepository(conn)
@@ -142,6 +146,9 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
     client_leases_service = ClientLeasesService(client_leases_repo, audit_service)
     client_industries_service = ClientIndustriesService(
         client_industries_repo, audit_service
+    )
+    compliance_profiles_service = ComplianceProfilesService(
+        conn, compliance_profiles_repo, audit_service
     )
     registry_client_service = RegistryClientService(
         conn, clients_repo, client_industries_repo, audit_service, search_repo
@@ -238,6 +245,7 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         client_profiles=client_profiles_service,
         client_leases=client_leases_service,
         client_industries=client_industries_service,
+        compliance_profiles=compliance_profiles_service,
         registry_client=registry_client_service,
         audit=audit_service,
         system_log=system_log_service,
