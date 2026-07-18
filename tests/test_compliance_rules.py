@@ -273,6 +273,58 @@ def test_operation_year_requires_exact_bounded_integer(year: object) -> None:
     assert exc.value.code == "compliance_rules.operation_year.invalid"
 
 
+def test_storage_floor_remains_available_to_rules_without_prior_tax_years() -> None:
+    drafts = build_standard_drafts(
+        1912,
+        fiscal_start_month=1,
+        enabled={"monthly_bookkeeping": "monthly"},
+    )
+
+    assert len(drafts) == 12
+    assert {draft.operation_year for draft in drafts} == {1912}
+    assert {draft.tax_year for draft in drafts} == {1912}
+
+
+@pytest.mark.parametrize(
+    (
+        "work_type",
+        "fiscal_start_month",
+        "rejected_operation_year",
+        "first_accepted_operation_year",
+    ),
+    [
+        ("annual_withholding_statements", 1, 1912, 1913),
+        ("corporate_income_tax", 1, 1912, 1913),
+        ("undistributed_earnings", 1, 1913, 1914),
+        ("corporate_income_tax", 9, 1913, 1914),
+        ("undistributed_earnings", 9, 1914, 1915),
+        ("provisional_tax", 5, 1912, 1913),
+    ],
+)
+def test_derived_tax_years_fail_before_crossing_the_storage_floor(
+    work_type: str,
+    fiscal_start_month: int,
+    rejected_operation_year: int,
+    first_accepted_operation_year: int,
+) -> None:
+    enabled = {work_type: "annual"}
+
+    with pytest.raises(ComplianceRuleError) as exc:
+        build_standard_drafts(
+            rejected_operation_year,
+            fiscal_start_month=fiscal_start_month,
+            enabled=enabled,
+        )
+    assert exc.value.code == "compliance_rules.tax_year.out_of_range"
+
+    accepted = build_standard_drafts(
+        first_accepted_operation_year,
+        fiscal_start_month=fiscal_start_month,
+        enabled=enabled,
+    )
+    assert accepted[0].tax_year == 1912
+
+
 @pytest.mark.parametrize("month", [True, 0, 13, 1.0, "1"])
 def test_fiscal_start_requires_exact_bounded_integer(month: object) -> None:
     with pytest.raises(ComplianceRuleError) as exc:
