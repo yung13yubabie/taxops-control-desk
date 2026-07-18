@@ -30,6 +30,7 @@ from . import (
     _m0025_late_fee_period_breakdown,
     _m0026_fix_payment_template_semantics,
     _m0027_client_master_expansion,
+    _m0028_annual_compliance,
 )
 
 MIGRATIONS: tuple[tuple[str, str], ...] = (
@@ -60,4 +61,5 @@ MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("0025_late_fee_period_breakdown", _m0025_late_fee_period_breakdown.SQL),
     ("0026_fix_payment_template_semantics", _m0026_fix_payment_template_semantics.SQL),
     ("0027_client_master_expansion", _m0027_client_master_expansion.SQL),
+    ("0028_annual_compliance", _m0028_annual_compliance.SQL),
 )

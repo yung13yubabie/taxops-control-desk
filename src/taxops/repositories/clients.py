@@ -274,8 +274,10 @@ class ClientsRepository:
             " (SELECT COUNT(*) FROM workflow_templates_v2 WHERE client_id = ?) +"
             " (SELECT COUNT(*) FROM workflow_runs WHERE client_id = ?) +"
             " (SELECT COUNT(*) FROM error_reviews WHERE client_id = ?) +"
-            " (SELECT COUNT(*) FROM canvas_notes WHERE client_id = ?) AS c",
-            (client_id,) * 6,
+            " (SELECT COUNT(*) FROM canvas_notes WHERE client_id = ?) +"
+            " (SELECT COUNT(*) FROM compliance_profiles WHERE client_id = ?) +"
+            " (SELECT COUNT(*) FROM annual_workspaces WHERE client_id = ?) AS c",
+            (client_id,) * 8,
         ).fetchone()
         return int(row["c"]) if row else 0
 

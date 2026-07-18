@@ -127,7 +127,10 @@ def test_client_master_migration_backfills_addresses_and_legacy_lease(
         )
     }
 
-    assert apply_migrations(v029_conn) == ["0027_client_master_expansion"]
+    assert apply_migrations(v029_conn) == [
+        "0027_client_master_expansion",
+        "0028_annual_compliance",
+    ]
 
     client = v029_conn.execute(
         "SELECT registered_address, contact_address, contact_address_same, "
@@ -213,7 +216,10 @@ def test_client_master_migration_handles_partial_lease_dates_and_null_address(
 def test_client_master_migration_upgrades_empty_database_with_required_schema(
     v029_conn: sqlite3.Connection,
 ) -> None:
-    assert apply_migrations(v029_conn) == ["0027_client_master_expansion"]
+    assert apply_migrations(v029_conn) == [
+        "0027_client_master_expansion",
+        "0028_annual_compliance",
+    ]
 
     tables = {
         row["name"]

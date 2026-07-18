@@ -28,7 +28,15 @@
   exact contact-address text, and applies client fields, industries, FTS, and
   audit rows atomically. Non-tax-id searches in both registry entry points use
   a shared bounded read-only SQLite worker; focused regression passes, while
-  independent review is still pending. Annual domain/UI,
+  independent review is still pending. Migration 0028 adds the annual
+  compliance profile, client-year workspace, work-item, transaction-ledger,
+  and optional workflow-task link schema. It enforces active uniqueness,
+  bounded integer years/months/amounts, forward-compatible status storage,
+  and evidence-preserving foreign keys while retaining existing task rows and
+  sequence high-water marks. Client purge preflight includes both compliance
+  profiles and annual workspaces, so retained annual data produces the stable
+  validation error rather than a raw SQLite FK exception. Annual
+  repositories/services/UI,
   full coverage measurement, DPI acceptance, and EXE packaging are not yet
   verified and must not be reported as complete.
 

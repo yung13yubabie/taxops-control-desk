@@ -15,6 +15,8 @@
 
 - [ ] Independently review the shared client profile and multiple-lease UI.
 - [ ] Independently re-review the registry industry search/display/apply slice.
+- [ ] Implement and independently review annual compliance repositories and
+  services on top of migration 0028.
 
 ### BLOCKED
 
@@ -40,6 +42,9 @@
 - [x] Implement industry search across primary/secondary slots, source-faithful
   primary display and persistence, atomic registry application, exact contact
   preservation, and bounded shared local-search worker lifecycle handling.
+- [x] Add migration 0028 for annual compliance profiles, client-year
+  workspaces, independent-status work items, transaction rows, and optional
+  workflow-task links with upgrade, rollback, FK, and sequence regression.
 
 ## 2026-07-12 Branch coverage and happy-path hardening
 

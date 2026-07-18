@@ -626,6 +626,68 @@ def test_purge_deleted_client_with_client_only_task_is_blocked(
     ).fetchone()[0] == 0
 
 
+@pytest.mark.parametrize(
+    "annual_reference",
+    ["profile", "workspace", "profile_and_workspace"],
+)
+def test_purge_deleted_client_with_annual_reference_is_stably_blocked(
+    container: ServiceContainer,
+    annual_reference: str,
+) -> None:
+    client = container.clients.create_client(
+        CreateClientInput(
+            client_code=f"ANNUAL-{annual_reference}",
+            client_name="年度資料不可永久刪除",
+        )
+    )
+    if annual_reference in {"profile", "profile_and_workspace"}:
+        container.conn.execute(
+            "INSERT INTO compliance_profiles("
+            "client_id, created_at, updated_at"
+            ") VALUES (?, '2026-01-01', '2026-01-01')",
+            (client.id,),
+        )
+    if annual_reference in {"workspace", "profile_and_workspace"}:
+        container.conn.execute(
+            "INSERT INTO annual_workspaces("
+            "client_id, operation_year, fiscal_year_start_month_snapshot, "
+            "created_at, updated_at"
+            ") VALUES (?, 2026, 1, '2026-01-01', '2026-01-01')",
+            (client.id,),
+        )
+    container.clients.delete_client(client.id)
+
+    with pytest.raises(ClientValidationError) as exc:
+        container.clients.purge_client(client.id)
+
+    assert exc.value.code == "client.purge.has_references"
+    preserved_client = container.conn.execute(
+        "SELECT deleted_at FROM clients WHERE id = ?",
+        (client.id,),
+    ).fetchone()
+    assert preserved_client is not None
+    assert preserved_client["deleted_at"] is not None
+    expected_profile_count = int(
+        annual_reference in {"profile", "profile_and_workspace"}
+    )
+    expected_workspace_count = int(
+        annual_reference in {"workspace", "profile_and_workspace"}
+    )
+    assert container.conn.execute(
+        "SELECT COUNT(*) FROM compliance_profiles WHERE client_id = ?",
+        (client.id,),
+    ).fetchone()[0] == expected_profile_count
+    assert container.conn.execute(
+        "SELECT COUNT(*) FROM annual_workspaces WHERE client_id = ?",
+        (client.id,),
+    ).fetchone()[0] == expected_workspace_count
+    assert container.conn.execute(
+        "SELECT COUNT(*) FROM audit_logs "
+        "WHERE action = 'client.purge' AND target_id = ?",
+        (str(client.id),),
+    ).fetchone()[0] == 0
+
+
 # ---------------------------------------------------------------------------
 # Bulk service
 # ---------------------------------------------------------------------------

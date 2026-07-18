@@ -1,5 +1,42 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-07-18 - annual compliance schema)
+
+- Migration `0028_annual_compliance` creates compliance profiles and defaults,
+  one active workspace per client/operation year, active-unique work items,
+  the six-category integer transaction ledger, and a nullable indexed
+  `workflow_tasks.annual_work_item_id` foreign key.
+- Profile items cascade only with their profile. Client, workspace, work-item,
+  transaction, engagement, and linked-task relationships use evidence-
+  preserving NO ACTION semantics; normal removal remains soft deletion.
+- Schema checks require SQLite integer storage for operation/tax years, fiscal
+  start months, enabled flags, and amounts; they also bound years/months,
+  transaction categories, and amounts from zero through TWD 9 trillion. Status
+  columns retain their known defaults but intentionally accept future raw
+  values; Task 4 service allowlists mutations and reports unknown stored values
+  instead of making the migration reject forward-compatible data. Partial
+  unique indexes allow a soft-deleted workspace or item key to be recreated
+  without accepting duplicate active rows.
+- Upgrade regression starts from the exact schema after 0027 and proves
+  existing workflow-task values and AUTOINCREMENT high-water marks are
+  unchanged. An injected final-statement failure proves all 0028 tables, the
+  task column, and the migration ledger row roll back together.
+- The redundant profile-item index is omitted because the
+  `UNIQUE(profile_id, work_type)` autoindex serves profile-prefix lookups; an
+  EXPLAIN QUERY PLAN regression proves SQLite uses it. Client permanent-delete
+  preflight counts both compliance profiles and annual workspaces, returning
+  `client.purge.has_references` without a raw FK exception or purge audit.
+- Verification: initial RED was 22 failures/4 passes from missing 0028 schema;
+  the forward-compatibility/storage-class correction was RED at 7 failures/17
+  passes then GREEN at 24 passes; focused migration/client/task dependency
+  regression is 123 passed. The integer-affinity/purge quality correction was
+  RED at 7 failures/75 passes then GREEN at 82 passes; expanded migration,
+  client-purge, and task dependency regression is 182 passed;
+  compileall and `git diff --check` pass. This is not full-suite, coverage, UI,
+  or EXE evidence.
+- Next: independently review migration 0028, then implement annual compliance
+  profile/default services (Annual Core Task 2).
+
 ## Latest Handoff Update (2026-07-18 - registry industries and bounded lookup)
 
 - Local registry search uses a separate parameterized tax-ID index lookup
