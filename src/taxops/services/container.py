@@ -16,6 +16,7 @@ from ..core.paths import AppPaths
 from ..repositories.app_settings import AppSettingsRepository
 from ..repositories.attachments import AttachmentsRepository
 from ..repositories.annual_work import AnnualWorkRepository
+from ..repositories.annual_transactions import AnnualTransactionsRepository
 from ..repositories.audit_logs import AuditLogRepository
 from ..repositories.clients import ClientsRepository
 from ..repositories.client_leases import ClientLeasesRepository
@@ -41,6 +42,7 @@ from ..repositories.tax_registry import (
 )
 from .audit import AuditService
 from .annual_work import AnnualWorkService
+from .annual_transactions import AnnualTransactionsService
 from .clients import ClientsService
 from .client_profiles import ClientProfilesService
 from .client_leases import ClientLeasesService
@@ -80,6 +82,7 @@ class ServiceContainer:
     client_industries: ClientIndustriesService
     compliance_profiles: ComplianceProfilesService
     annual_work: AnnualWorkService
+    annual_transactions: AnnualTransactionsService
     registry_client: RegistryClientService
     audit: AuditService
     system_log: SystemLogService
@@ -122,6 +125,7 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
     client_industries_repo = ClientIndustriesRepository(conn)
     compliance_profiles_repo = ComplianceProfilesRepository(conn)
     annual_work_repo = AnnualWorkRepository(conn)
+    annual_transactions_repo = AnnualTransactionsRepository(conn)
     tax_registry_repo = TaxRegistryRepository(conn)
     tax_cache_metadata_repo = TaxCacheMetadataRepository(conn)
     match_repo = RegistryMatchRepository(conn)
@@ -160,6 +164,9 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         compliance_profiles_repo,
         audit_service,
         system_log_service,
+    )
+    annual_transactions_service = AnnualTransactionsService(
+        conn, annual_transactions_repo, audit_service
     )
     registry_client_service = RegistryClientService(
         conn, clients_repo, client_industries_repo, audit_service, search_repo
@@ -258,6 +265,7 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         client_industries=client_industries_service,
         compliance_profiles=compliance_profiles_service,
         annual_work=annual_work_service,
+        annual_transactions=annual_transactions_service,
         registry_client=registry_client_service,
         audit=audit_service,
         system_log=system_log_service,
