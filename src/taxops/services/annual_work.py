@@ -3,19 +3,48 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 
 from ..core.compliance import WORK_TYPE_LABELS
+from ..core.annual_status import (
+    DOCUMENT_STATUSES,
+    FEE_STATUSES,
+    FILING_STATUSES,
+    TAX_STATUSES,
+    WORK_STATUSES,
+)
+from ..i18n.status_labels import (
+    ANNUAL_DOCUMENT_STATUS_LABELS,
+    ANNUAL_FEE_STATUS_LABELS,
+    ANNUAL_FILING_STATUS_LABELS,
+    ANNUAL_TAX_STATUS_LABELS,
+    ANNUAL_WORK_STATUS_LABELS,
+    UNKNOWN_STATUS_TEXT,
+)
 from ..repositories.annual_work import (
     AnnualWorkItemRow,
+    AnnualWorkOverviewRow,
     AnnualWorkRepository,
     AnnualWorkspaceRow,
 )
 from ..repositories.compliance_profiles import ComplianceProfilesRepository
 from .audit import AuditService
 from .compliance_rules import ComplianceRuleError, WorkDraft, build_standard_drafts
+from .system_log import SystemLogService
+
+
+MAX_REASON_LENGTH = 4000
+
+_COMPLETION_RISKS = {
+    "filing_status": frozenset({"filing_failed", "correction_required"}),
+    "document_status": frozenset({"missing", "partially_received"}),
+    "tax_status": frozenset(
+        {"unconfirmed", "awaiting_collection", "partially_collected", "unpaid"}
+    ),
+    "fee_status": frozenset({"awaiting_payment", "partially_paid"}),
+}
 
 
 class AnnualWorkError(Exception):
@@ -38,6 +67,15 @@ class AnnualWorkspaceResult:
     @property
     def unchanged(self) -> bool:
         return not self.created_workspace and self.inserted_item_count == 0
+
+
+@dataclass(frozen=True)
+class AnnualWorkStatusPresentation:
+    work_status_label: str
+    filing_status_label: str
+    document_status_label: str
+    tax_status_label: str
+    fee_status_label: str
 
 
 def _validate_client_id(value: object) -> int:
@@ -121,20 +159,30 @@ def _prepare_drafts(
 
 
 class AnnualWorkService:
+    WORK_STATUSES = WORK_STATUSES
+    FILING_STATUSES = FILING_STATUSES
+    DOCUMENT_STATUSES = DOCUMENT_STATUSES
+    TAX_STATUSES = TAX_STATUSES
+    FEE_STATUSES = FEE_STATUSES
+
     def __init__(
         self,
         conn: sqlite3.Connection,
         repository: AnnualWorkRepository,
         profiles: ComplianceProfilesRepository,
         audit: AuditService,
+        system_log: SystemLogService | None = None,
     ) -> None:
+        collaborators = [
+            ("repository", repository.connection),
+            ("profiles", profiles.connection),
+            ("audit", audit.connection),
+        ]
+        if system_log is not None:
+            collaborators.append(("system_log", system_log.connection))
         mismatched = [
             name
-            for name, candidate in (
-                ("repository", repository.connection),
-                ("profiles", profiles.connection),
-                ("audit", audit.connection),
-            )
+            for name, candidate in collaborators
             if candidate is not conn
         ]
         if mismatched:
@@ -143,6 +191,7 @@ class AnnualWorkService:
         self._repo = repository
         self._profiles = profiles
         self._audit = audit
+        self._system_log = system_log
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -151,6 +200,62 @@ class AnnualWorkService:
     @property
     def repository(self) -> AnnualWorkRepository:
         return self._repo
+
+    def get_status_presentation(self, item_id: int) -> AnnualWorkStatusPresentation:
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        item = self._repo.get_item(item_id)
+        if item is None:
+            raise AnnualWorkValidationError("annual_work.item_not_found")
+        mappings = {
+            "work_status": ANNUAL_WORK_STATUS_LABELS,
+            "filing_status": ANNUAL_FILING_STATUS_LABELS,
+            "document_status": ANNUAL_DOCUMENT_STATUS_LABELS,
+            "tax_status": ANNUAL_TAX_STATUS_LABELS,
+            "fee_status": ANNUAL_FEE_STATUS_LABELS,
+        }
+        labels: dict[str, str] = {}
+        for dimension, mapping in mappings.items():
+            raw = getattr(item, dimension)
+            labels[dimension] = mapping.get(raw, UNKNOWN_STATUS_TEXT)
+            if raw not in mapping and self._system_log is not None:
+                sanitized = "".join(
+                    char if ord(char) >= 32 and ord(char) != 127 else "�"
+                    for char in raw
+                )[:120]
+                self._system_log.warn(
+                    "annual_work.unknown_status",
+                    detail={
+                        "dimension": dimension,
+                        "item_id": item.id,
+                        "raw_code": sanitized,
+                    },
+                    commit=not self._conn.in_transaction,
+                )
+        return AnnualWorkStatusPresentation(
+            work_status_label=labels["work_status"],
+            filing_status_label=labels["filing_status"],
+            document_status_label=labels["document_status"],
+            tax_status_label=labels["tax_status"],
+            fee_status_label=labels["fee_status"],
+        )
+
+    def search_overview(
+        self,
+        filters: Mapping[str, object] | None = None,
+        *,
+        risk: object = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[AnnualWorkOverviewRow]:
+        if filters is not None and not isinstance(filters, Mapping):
+            raise ValueError("annual_work.filters.invalid")
+        values = dict(filters or {})
+        if risk is not None:
+            if "risk" in values:
+                raise ValueError("annual_work.filters.invalid")
+            values["risk"] = risk
+        return self._repo.search_overview(values, limit=limit, offset=offset)
 
     def preview(self, client_id: int, operation_year: int) -> tuple[WorkDraft, ...]:
         client_id = _validate_client_id(client_id)
@@ -179,6 +284,319 @@ class AnnualWorkService:
         if not drafts:
             raise AnnualWorkValidationError("annual_work.preview.empty")
         return drafts
+
+    def _set_status(
+        self,
+        item_id: int,
+        status: object,
+        *,
+        dimension: str,
+        allowed: frozenset[str],
+    ) -> AnnualWorkItemRow:
+        if self._conn.in_transaction:
+            raise AnnualWorkValidationError(
+                "annual_work.transaction.already_active"
+            )
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        if not isinstance(status, str) or status not in allowed:
+            raise AnnualWorkValidationError(f"annual_work.{dimension}.invalid")
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            current = self._repo.get_item(item_id)
+            if current is None:
+                raise AnnualWorkValidationError("annual_work.item_not_found")
+            if current.work_status == "cancelled":
+                raise AnnualWorkValidationError("annual_work.item.cancelled")
+            previous = getattr(current, dimension)
+            if previous == status:
+                self._conn.commit()
+                return current
+            reopened = dimension == "work_status" and current.work_status in {
+                "completed",
+                "completed_with_exception",
+            }
+            if reopened:
+                updated = self._repo.reopen_item(item_id, status)
+            else:
+                updated = self._repo.update_status(item_id, dimension, status)
+            detail = {
+                "from_status": previous,
+                "to_status": status,
+            }
+            if reopened:
+                detail["reopened"] = True
+            self._audit.record(
+                action=f"annual_work.{dimension}.update",
+                target_type="annual_work_item",
+                target_id=str(item_id),
+                detail=detail,
+            )
+            self._conn.commit()
+            return updated
+        except AnnualWorkError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except sqlite3.OperationalError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            code = getattr(exc, "sqlite_errorcode", None)
+            if code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED} or "locked" in str(
+                exc
+            ).lower():
+                raise AnnualWorkError("annual_work.transaction.busy") from exc
+            raise AnnualWorkError("annual_work.status.update_failed") from exc
+        except Exception as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkError("annual_work.status.update_failed") from exc
+
+    def set_work_status(self, item_id: int, status: object) -> AnnualWorkItemRow:
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        if isinstance(status, str) and status in {
+            "completed",
+            "completed_with_exception",
+            "cancelled",
+        }:
+            raise AnnualWorkValidationError(
+                "annual_work.work_status.transition_required"
+            )
+        return self._set_status(
+            item_id, status, dimension="work_status", allowed=self.WORK_STATUSES
+        )
+
+    def set_filing_status(self, item_id: int, status: object) -> AnnualWorkItemRow:
+        return self._set_status(
+            item_id, status, dimension="filing_status", allowed=self.FILING_STATUSES
+        )
+
+    def set_document_status(self, item_id: int, status: object) -> AnnualWorkItemRow:
+        return self._set_status(
+            item_id,
+            status,
+            dimension="document_status",
+            allowed=self.DOCUMENT_STATUSES,
+        )
+
+    def set_tax_status(self, item_id: int, status: object) -> AnnualWorkItemRow:
+        return self._set_status(
+            item_id, status, dimension="tax_status", allowed=self.TAX_STATUSES
+        )
+
+    def set_fee_status(self, item_id: int, status: object) -> AnnualWorkItemRow:
+        return self._set_status(
+            item_id, status, dimension="fee_status", allowed=self.FEE_STATUSES
+        )
+
+    def complete_item(
+        self, item_id: int, *, exception_reason: object = None
+    ) -> AnnualWorkItemRow:
+        if self._conn.in_transaction:
+            raise AnnualWorkValidationError(
+                "annual_work.transaction.already_active"
+            )
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        if exception_reason is not None and (
+            not isinstance(exception_reason, str)
+            or len(exception_reason) > MAX_REASON_LENGTH
+        ):
+            raise AnnualWorkValidationError("annual_work.exception_reason.invalid")
+        reason = exception_reason
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            current = self._repo.get_item(item_id)
+            if current is None:
+                raise AnnualWorkValidationError("annual_work.item_not_found")
+            if current.work_status == "cancelled":
+                raise AnnualWorkValidationError("annual_work.item.cancelled")
+            if current.work_status in {"completed", "completed_with_exception"}:
+                raise AnnualWorkValidationError(
+                    "annual_work.item.already_completed"
+                )
+            risks = tuple(
+                dimension
+                for dimension, statuses in _COMPLETION_RISKS.items()
+                if getattr(current, dimension) in statuses
+            )
+            if risks and (reason is None or not reason.strip()):
+                raise AnnualWorkValidationError(
+                    "annual_work.exception_reason.required"
+                )
+            target = "completed_with_exception" if risks else "completed"
+            updated = self._repo.complete_item(item_id, target, reason)
+            self._audit.record(
+                action="annual_work.complete",
+                target_type="annual_work_item",
+                target_id=str(item_id),
+                detail={
+                    "from_status": current.work_status,
+                    "to_status": target,
+                    "open_risk_dimensions": list(risks),
+                    "exception_reason": reason,
+                },
+            )
+            self._conn.commit()
+            return updated
+        except AnnualWorkError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except sqlite3.OperationalError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            code = getattr(exc, "sqlite_errorcode", None)
+            if code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED} or "locked" in str(
+                exc
+            ).lower():
+                raise AnnualWorkError("annual_work.transaction.busy") from exc
+            raise AnnualWorkError("annual_work.complete.failed") from exc
+        except Exception as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkError("annual_work.complete.failed") from exc
+
+    def cancel_item(self, item_id: int, reason: object) -> AnnualWorkItemRow:
+        if self._conn.in_transaction:
+            raise AnnualWorkValidationError(
+                "annual_work.transaction.already_active"
+            )
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        if not isinstance(reason, str) or len(reason) > MAX_REASON_LENGTH:
+            raise AnnualWorkValidationError("annual_work.cancel_reason.invalid")
+        if not reason.strip():
+            raise AnnualWorkValidationError("annual_work.cancel_reason.required")
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            current = self._repo.get_item(item_id)
+            if current is None:
+                raise AnnualWorkValidationError("annual_work.item_not_found")
+            if current.work_status == "cancelled" and current.exception_reason == reason:
+                self._conn.commit()
+                return current
+            updated = self._repo.cancel_item(item_id, reason)
+            self._audit.record(
+                action="annual_work.cancel",
+                target_type="annual_work_item",
+                target_id=str(item_id),
+                detail={
+                    "from_status": current.work_status,
+                    "to_status": "cancelled",
+                    "reason": reason,
+                    "reason_changed": current.work_status == "cancelled",
+                },
+            )
+            self._conn.commit()
+            return updated
+        except AnnualWorkError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except sqlite3.OperationalError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            code = getattr(exc, "sqlite_errorcode", None)
+            if code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED} or "locked" in str(
+                exc
+            ).lower():
+                raise AnnualWorkError("annual_work.transaction.busy") from exc
+            raise AnnualWorkError("annual_work.cancel.failed") from exc
+        except Exception as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkError("annual_work.cancel.failed") from exc
+
+    def restore_item(self, item_id: int) -> AnnualWorkItemRow:
+        if self._conn.in_transaction:
+            raise AnnualWorkValidationError(
+                "annual_work.transaction.already_active"
+            )
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            current = self._repo.get_item(item_id)
+            if current is None:
+                raise AnnualWorkValidationError("annual_work.item_not_found")
+            if current.work_status != "cancelled":
+                raise AnnualWorkValidationError("annual_work.item.not_cancelled")
+            updated = self._repo.restore_item(item_id)
+            self._audit.record(
+                action="annual_work.restore",
+                target_type="annual_work_item",
+                target_id=str(item_id),
+                detail={
+                    "from_status": "cancelled",
+                    "to_status": "not_started",
+                    "cancel_reason": current.exception_reason,
+                },
+            )
+            self._conn.commit()
+            return updated
+        except AnnualWorkError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except sqlite3.OperationalError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            code = getattr(exc, "sqlite_errorcode", None)
+            if code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED} or "locked" in str(
+                exc
+            ).lower():
+                raise AnnualWorkError("annual_work.transaction.busy") from exc
+            raise AnnualWorkError("annual_work.restore.failed") from exc
+        except Exception as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkError("annual_work.restore.failed") from exc
+
+    def delete_item(self, item_id: int) -> None:
+        if self._conn.in_transaction:
+            raise AnnualWorkValidationError(
+                "annual_work.transaction.already_active"
+            )
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            current = self._repo.get_item(item_id)
+            if current is None:
+                raise AnnualWorkValidationError("annual_work.item_not_found")
+            if current.work_status == "cancelled":
+                raise AnnualWorkValidationError("annual_work.item.cancelled")
+            dependencies = self._repo.probe_dependencies(item_id)
+            if dependencies.has_history:
+                raise AnnualWorkValidationError("annual_work.delete.has_history")
+            if not self._repo.hard_delete_item(item_id):
+                raise AnnualWorkValidationError("annual_work.item_not_found")
+            self._audit.record(
+                action="annual_work.delete",
+                target_type="annual_work_item",
+                target_id=str(item_id),
+                detail={"item_key": current.item_key, "work_type": current.work_type},
+            )
+            self._conn.commit()
+        except AnnualWorkError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except sqlite3.OperationalError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            code = getattr(exc, "sqlite_errorcode", None)
+            if code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED} or "locked" in str(
+                exc
+            ).lower():
+                raise AnnualWorkError("annual_work.transaction.busy") from exc
+            raise AnnualWorkError("annual_work.delete.failed") from exc
+        except Exception as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkError("annual_work.delete.failed") from exc
 
     def confirm_preview(
         self,

@@ -94,6 +94,50 @@ REVIEW_NOTE_STATUS_LABELS: dict[str, str] = {
 
 UNKNOWN_STATUS_TEXT = "未知狀態，請聯絡系統管理員"
 
+ANNUAL_WORK_STATUS_LABELS: dict[str, str] = {
+    "not_started": "未開始",
+    "in_progress": "進行中",
+    "completed": "已完成",
+    "completed_with_exception": "例外完成",
+    "exception": "異常",
+    "not_applicable": "不適用",
+    "cancelled": "已取消",
+}
+
+ANNUAL_FILING_STATUS_LABELS: dict[str, str] = {
+    "not_filed": "未申報",
+    "filed": "已申報",
+    "filing_failed": "申報失敗",
+    "correction_required": "需要更正",
+}
+
+ANNUAL_DOCUMENT_STATUS_LABELS: dict[str, str] = {
+    "not_requested": "未要求",
+    "missing": "缺件",
+    "partially_received": "部分收件",
+    "complete": "文件齊全",
+    "not_applicable": "不適用",
+}
+
+ANNUAL_TAX_STATUS_LABELS: dict[str, str] = {
+    "unconfirmed": "稅款未確認",
+    "awaiting_collection": "稅款待收",
+    "partially_collected": "稅款部分收取",
+    "collected": "稅款已收取",
+    "paid": "稅款已繳納",
+    "unpaid": "稅款未繳納",
+    "refund": "退稅",
+    "not_applicable": "不適用",
+}
+
+ANNUAL_FEE_STATUS_LABELS: dict[str, str] = {
+    "not_billed": "服務費未開帳",
+    "awaiting_payment": "服務費待付款",
+    "partially_paid": "服務費部分付款",
+    "paid": "服務費已付款",
+    "not_applicable": "不適用",
+}
+
 
 def status_to_label(value: str | None) -> str:
     """Map a raw enum value to its Chinese label.

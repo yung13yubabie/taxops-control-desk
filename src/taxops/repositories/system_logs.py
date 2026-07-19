@@ -29,12 +29,17 @@ class SystemLogRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self._conn
+
     def append(
         self,
         *,
         level: str,
         message: str,
         detail: dict[str, Any] | None = None,
+        commit: bool = True,
     ) -> SystemLogRow:
         if level not in VALID_LEVELS:
             level = "ERROR"
@@ -47,7 +52,8 @@ class SystemLogRepository:
             "VALUES (?, ?, ?, ?)",
             (level, message, detail_json, ts),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return SystemLogRow(
             id=int(cur.lastrowid or 0),
             level=level,

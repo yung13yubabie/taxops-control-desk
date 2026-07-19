@@ -155,7 +155,11 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         conn, compliance_profiles_repo, audit_service
     )
     annual_work_service = AnnualWorkService(
-        conn, annual_work_repo, compliance_profiles_repo, audit_service
+        conn,
+        annual_work_repo,
+        compliance_profiles_repo,
+        audit_service,
+        system_log_service,
     )
     registry_client_service = RegistryClientService(
         conn, clients_repo, client_industries_repo, audit_service, search_repo

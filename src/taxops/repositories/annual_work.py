@@ -9,6 +9,7 @@ from datetime import date
 
 from ..core.compliance import WORK_TYPE_LABELS
 from ..core.clock import now_iso
+from ..core.annual_status import STATUS_SETS, WORK_STATUSES
 from ..services.compliance_rules import WorkDraft
 
 
@@ -54,6 +55,21 @@ class AnnualWorkItemRow:
 class AnnualWorkItemInsertResult:
     row: AnnualWorkItemRow
     inserted: bool
+
+
+@dataclass(frozen=True)
+class AnnualWorkDependencies:
+    has_transactions: bool
+    engagement_id: int | None
+    has_tasks: bool
+
+    @property
+    def has_history(self) -> bool:
+        return (
+            self.has_transactions
+            or self.engagement_id is not None
+            or self.has_tasks
+        )
 
 
 @dataclass(frozen=True)
@@ -175,6 +191,13 @@ def _literal_like(value: str) -> str:
 
 
 class AnnualWorkRepository:
+    _STATUS_COLUMNS = {
+        "work_status": "work_status",
+        "filing_status": "filing_status",
+        "document_status": "document_status",
+        "tax_status": "tax_status",
+        "fee_status": "fee_status",
+    }
     _WORKSPACE_SORT = {
         "id": "aw.id",
         "operation_year": "aw.operation_year",
@@ -204,6 +227,7 @@ class AnnualWorkRepository:
             "due_from",
             "due_to",
             "query",
+            "risk",
             "order_by",
             "order_dir",
         }
@@ -215,6 +239,144 @@ class AnnualWorkRepository:
     @property
     def connection(self) -> sqlite3.Connection:
         return self._conn
+
+    def get_item(self, item_id: int) -> AnnualWorkItemRow | None:
+        item_id = _positive_id(item_id, "annual_work.item_id.invalid")
+        row = self._conn.execute(
+            "SELECT awi.* FROM annual_work_items awi "
+            "JOIN annual_workspaces aw ON aw.id = awi.workspace_id "
+            "JOIN clients c ON c.id = aw.client_id "
+            "WHERE awi.id = ? AND awi.deleted_at IS NULL "
+            "AND aw.deleted_at IS NULL AND c.deleted_at IS NULL",
+            (item_id,),
+        ).fetchone()
+        return _item_row(row) if row else None
+
+    def update_status(
+        self, item_id: int, dimension: str, status: str
+    ) -> AnnualWorkItemRow:
+        item_id = _positive_id(item_id, "annual_work.item_id.invalid")
+        column = self._STATUS_COLUMNS.get(dimension)
+        if column is None:
+            raise ValueError("annual_work.status_dimension.invalid")
+        if not isinstance(status, str) or status not in STATUS_SETS[dimension]:
+            raise ValueError("annual_work.status.invalid")
+        timestamp = now_iso()
+        cursor = self._conn.execute(
+            f"UPDATE annual_work_items SET {column} = ?, updated_at = ? "
+            "WHERE id = ? AND deleted_at IS NULL",
+            (status, timestamp, item_id),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("annual_work.item_not_found")
+        row = self.get_item(item_id)
+        if row is None:
+            raise RuntimeError("annual_work.item_not_found")
+        return row
+
+    def complete_item(
+        self, item_id: int, status: str, exception_reason: str | None
+    ) -> AnnualWorkItemRow:
+        item_id = _positive_id(item_id, "annual_work.item_id.invalid")
+        if status not in {"completed", "completed_with_exception"}:
+            raise ValueError("annual_work.completion_status.invalid")
+        timestamp = now_iso()
+        cursor = self._conn.execute(
+            "UPDATE annual_work_items SET work_status = ?, exception_reason = ?, "
+            "completed_at = ?, cancelled_at = NULL, updated_at = ? "
+            "WHERE id = ? AND deleted_at IS NULL",
+            (status, exception_reason, timestamp, timestamp, item_id),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("annual_work.item_not_found")
+        row = self.get_item(item_id)
+        if row is None:
+            raise RuntimeError("annual_work.item_not_found")
+        return row
+
+    def reopen_item(self, item_id: int, status: str) -> AnnualWorkItemRow:
+        item_id = _positive_id(item_id, "annual_work.item_id.invalid")
+        if status not in WORK_STATUSES - {
+            "completed",
+            "completed_with_exception",
+            "cancelled",
+        }:
+            raise ValueError("annual_work.work_status.invalid")
+        cursor = self._conn.execute(
+            "UPDATE annual_work_items SET work_status = ?, completed_at = NULL, "
+            "exception_reason = NULL, updated_at = ? "
+            "WHERE id = ? AND deleted_at IS NULL",
+            (status, now_iso(), item_id),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("annual_work.item_not_found")
+        row = self.get_item(item_id)
+        if row is None:
+            raise RuntimeError("annual_work.item_not_found")
+        return row
+
+    def cancel_item(self, item_id: int, reason: str) -> AnnualWorkItemRow:
+        item_id = _positive_id(item_id, "annual_work.item_id.invalid")
+        timestamp = now_iso()
+        cursor = self._conn.execute(
+            "UPDATE annual_work_items SET work_status = 'cancelled', "
+            "exception_reason = ?, completed_at = NULL, "
+            "cancelled_at = COALESCE(cancelled_at, ?), updated_at = ? "
+            "WHERE id = ? AND deleted_at IS NULL",
+            (reason, timestamp, timestamp, item_id),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("annual_work.item_not_found")
+        row = self.get_item(item_id)
+        if row is None:
+            raise RuntimeError("annual_work.item_not_found")
+        return row
+
+    def restore_item(self, item_id: int) -> AnnualWorkItemRow:
+        item_id = _positive_id(item_id, "annual_work.item_id.invalid")
+        cursor = self._conn.execute(
+            "UPDATE annual_work_items SET work_status = 'not_started', "
+            "cancelled_at = NULL, completed_at = NULL, exception_reason = NULL, "
+            "updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+            (now_iso(), item_id),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("annual_work.item_not_found")
+        row = self.get_item(item_id)
+        if row is None:
+            raise RuntimeError("annual_work.item_not_found")
+        return row
+
+    def probe_dependencies(self, item_id: int) -> AnnualWorkDependencies:
+        item_id = _positive_id(item_id, "annual_work.item_id.invalid")
+        row = self._conn.execute(
+            "SELECT awi.engagement_id, "
+            "EXISTS(SELECT 1 FROM annual_work_transactions tx WHERE tx.work_item_id = awi.id) "
+            "AS has_transactions, "
+            "EXISTS(SELECT 1 FROM workflow_tasks wt WHERE wt.annual_work_item_id = awi.id) "
+            "AS has_tasks FROM annual_work_items awi "
+            "WHERE awi.id = ? AND awi.deleted_at IS NULL",
+            (item_id,),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("annual_work.item_not_found")
+        return AnnualWorkDependencies(
+            has_transactions=bool(row["has_transactions"]),
+            engagement_id=(
+                int(row["engagement_id"])
+                if row["engagement_id"] is not None
+                else None
+            ),
+            has_tasks=bool(row["has_tasks"]),
+        )
+
+    def hard_delete_item(self, item_id: int) -> bool:
+        item_id = _positive_id(item_id, "annual_work.item_id.invalid")
+        cursor = self._conn.execute(
+            "DELETE FROM annual_work_items WHERE id = ? AND deleted_at IS NULL",
+            (item_id,),
+        )
+        return cursor.rowcount == 1
 
     def find_workspace(
         self, client_id: int, operation_year: int
@@ -368,8 +530,19 @@ class AnnualWorkRepository:
             params.append(work_type)
         for name, column_name in exact_columns.items():
             if name in values and values[name] is not None:
+                if (
+                    not isinstance(values[name], str)
+                    or values[name] not in STATUS_SETS[name]
+                ):
+                    raise ValueError("annual_work.filters.invalid")
                 clauses.append(f"{column_name} = ?")
                 params.append(_filter_text(values[name]))
+        if "risk" in values and values["risk"] is not None:
+            if values["risk"] != "exception":
+                raise ValueError("annual_work.filters.invalid")
+            clauses.append(
+                "awi.work_status IN ('exception', 'completed_with_exception')"
+            )
         for name, operator in (("due_from", ">="), ("due_to", "<=")):
             if name in values and values[name] is not None:
                 clauses.append(f"awi.due_date {operator} ?")
