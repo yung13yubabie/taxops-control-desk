@@ -20,6 +20,12 @@ _ACTIVE_OWNER_SQL = (
     " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
     " WHERE e.id = workflow_tasks.engagement_id AND e.deleted_at IS NULL"
     "))"
+    " AND (workflow_tasks.annual_work_item_id IS NULL OR EXISTS ("
+    " SELECT 1 FROM annual_work_items awi"
+    " JOIN annual_workspaces aw ON aw.id = awi.workspace_id AND aw.deleted_at IS NULL"
+    " JOIN clients c ON c.id = aw.client_id AND c.deleted_at IS NULL"
+    " WHERE awi.id = workflow_tasks.annual_work_item_id AND awi.deleted_at IS NULL"
+    "))"
 )
 
 
@@ -29,6 +35,7 @@ class TaskRow:
     engagement_id: int | None
     client_id: int | None
     parent_task_id: int | None
+    annual_work_item_id: int | None
     title: str
     assignee: str | None
     due_date: str | None
@@ -49,6 +56,9 @@ def _row_to_task(row: sqlite3.Row) -> TaskRow:
         engagement_id=row["engagement_id"],
         client_id=row["client_id"] if "client_id" in keys else None,
         parent_task_id=row["parent_task_id"] if "parent_task_id" in keys else None,
+        annual_work_item_id=(
+            row["annual_work_item_id"] if "annual_work_item_id" in keys else None
+        ),
         title=row["title"],
         assignee=row["assignee"],
         due_date=row["due_date"],
@@ -76,6 +86,7 @@ class TasksRepository:
         title: str,
         client_id: int | None = None,
         parent_task_id: int | None = None,
+        annual_work_item_id: int | None = None,
         assignee: str | None = None,
         due_date: str | None = None,
         priority: str = "normal",
@@ -86,10 +97,10 @@ class TasksRepository:
         ts = now_iso()
         cur = self._conn.execute(
             "INSERT INTO workflow_tasks("
-            "engagement_id, client_id, parent_task_id, title, assignee, due_date, priority, status,"
+            "engagement_id, client_id, parent_task_id, annual_work_item_id, title, assignee, due_date, priority, status,"
             " next_step, notes, created_at, updated_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (engagement_id, client_id, parent_task_id, title, assignee, due_date, priority, status,
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (engagement_id, client_id, parent_task_id, annual_work_item_id, title, assignee, due_date, priority, status,
              next_step, notes, ts, ts),
         )
         new_id = cur.lastrowid
@@ -247,6 +258,53 @@ class TasksRepository:
             (client_id,),
         ).fetchone()
         return row is not None
+
+    def get_annual_work_context(
+        self, item_id: int
+    ) -> tuple[int, int | None] | None:
+        row = self._conn.execute(
+            "SELECT aw.client_id, awi.engagement_id FROM annual_work_items awi"
+            " JOIN annual_workspaces aw ON aw.id = awi.workspace_id"
+            " JOIN clients c ON c.id = aw.client_id"
+            " WHERE awi.id = ? AND awi.deleted_at IS NULL"
+            " AND aw.deleted_at IS NULL AND c.deleted_at IS NULL",
+            (item_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return int(row["client_id"]), (
+            int(row["engagement_id"])
+            if row["engagement_id"] is not None
+            else None
+        )
+
+    def list_by_annual_work_item(
+        self,
+        item_id: int,
+        *,
+        order_by: str = "updated_at",
+        order_dir: str = "DESC",
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[TaskRow]:
+        if order_by not in self._SORT_COLUMNS or order_dir not in {"ASC", "DESC"}:
+            raise ValueError("task.list.invalid_sort")
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 1 <= limit <= 500
+            or not isinstance(offset, int)
+            or isinstance(offset, bool)
+            or not 0 <= offset <= 1_000_000
+        ):
+            raise ValueError("task.list.invalid_pagination")
+        rows = self._conn.execute(
+            f"SELECT * FROM workflow_tasks WHERE annual_work_item_id = ?"
+            f" AND deleted_at IS NULL AND {_ACTIVE_OWNER_SQL}"
+            f" ORDER BY {order_by} {order_dir}, id ASC LIMIT ? OFFSET ?",
+            (item_id, limit, offset),
+        ).fetchall()
+        return [_row_to_task(row) for row in rows]
 
     def update_parent(self, task_id: int, parent_task_id: int | None) -> TaskRow | None:
         ts = now_iso()

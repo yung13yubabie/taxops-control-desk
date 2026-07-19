@@ -158,13 +158,6 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
     compliance_profiles_service = ComplianceProfilesService(
         conn, compliance_profiles_repo, audit_service
     )
-    annual_work_service = AnnualWorkService(
-        conn,
-        annual_work_repo,
-        compliance_profiles_repo,
-        audit_service,
-        system_log_service,
-    )
     annual_transactions_service = AnnualTransactionsService(
         conn, annual_transactions_repo, audit_service
     )
@@ -174,6 +167,16 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
     engagements_service = EngagementsService(engagements_repo, audit_service, search_repo)
     doc_requests_service = DocumentRequestsService(doc_requests_repo, audit_service)
     tasks_service = TasksService(tasks_repo, audit_service)
+    annual_work_service = AnnualWorkService(
+        conn,
+        annual_work_repo,
+        compliance_profiles_repo,
+        audit_service,
+        system_log_service,
+        engagements_service,
+        doc_requests_service,
+        tasks_service,
+    )
     work_records_service = WorkRecordsService(
         work_records_repo,
         audit_service,

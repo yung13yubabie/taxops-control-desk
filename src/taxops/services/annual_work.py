@@ -24,15 +24,30 @@ from ..i18n.status_labels import (
     UNKNOWN_STATUS_TEXT,
 )
 from ..repositories.annual_work import (
+    AnnualDocumentSummaryRow,
     AnnualWorkItemRow,
     AnnualWorkOverviewRow,
     AnnualWorkRepository,
     AnnualWorkspaceRow,
 )
+from ..repositories.document_requests import DocumentRequestItemRow, DocumentRequestRow
+from ..repositories.engagements import EngagementRow
+from ..repositories.tasks import TaskRow
 from ..repositories.compliance_profiles import ComplianceProfilesRepository
 from .audit import AuditService
 from .compliance_rules import ComplianceRuleError, WorkDraft, build_standard_drafts
 from .system_log import SystemLogService
+from .document_requests import (
+    CreateDocumentRequestInput,
+    DocumentRequestsService,
+    DocumentRequestValidationError,
+)
+from .engagements import (
+    CreateEngagementInput,
+    EngagementsService,
+    EngagementValidationError,
+)
+from .tasks import CreateTaskInput, TasksService, TaskValidationError
 
 
 MAX_REASON_LENGTH = 4000
@@ -76,6 +91,35 @@ class AnnualWorkStatusPresentation:
     document_status_label: str
     tax_status_label: str
     fee_status_label: str
+
+
+@dataclass(frozen=True)
+class LinkedDocumentRequestResult:
+    item: AnnualWorkItemRow
+    engagement: EngagementRow
+    request: DocumentRequestRow
+    items: tuple[DocumentRequestItemRow, ...]
+
+
+@dataclass(frozen=True)
+class AnnualLinkedOverview:
+    item: AnnualWorkItemRow
+    engagement: EngagementRow | None
+    requests: tuple[DocumentRequestRow, ...]
+    tasks: tuple[TaskRow, ...]
+
+
+AnnualDocumentSummary = AnnualDocumentSummaryRow
+
+
+_WORK_TYPE_TAX_TYPES = {
+    "vat": "vat",
+    "corporate_income_tax": "cit",
+    "undistributed_earnings": "cit",
+    "provisional_tax": "cit",
+    "monthly_withholding_payment": "iit",
+    "annual_withholding_statements": "iit",
+}
 
 
 def _validate_client_id(value: object) -> int:
@@ -172,6 +216,9 @@ class AnnualWorkService:
         profiles: ComplianceProfilesRepository,
         audit: AuditService,
         system_log: SystemLogService | None = None,
+        engagements: EngagementsService | None = None,
+        document_requests: DocumentRequestsService | None = None,
+        tasks: TasksService | None = None,
     ) -> None:
         collaborators = [
             ("repository", repository.connection),
@@ -180,6 +227,12 @@ class AnnualWorkService:
         ]
         if system_log is not None:
             collaborators.append(("system_log", system_log.connection))
+        if engagements is not None:
+            collaborators.append(("engagements", engagements.connection))
+        if document_requests is not None:
+            collaborators.append(("document_requests", document_requests.connection))
+        if tasks is not None:
+            collaborators.append(("tasks", tasks.connection))
         mismatched = [
             name
             for name, candidate in collaborators
@@ -192,6 +245,9 @@ class AnnualWorkService:
         self._profiles = profiles
         self._audit = audit
         self._system_log = system_log
+        self._engagements = engagements
+        self._document_requests = document_requests
+        self._tasks = tasks
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -200,6 +256,363 @@ class AnnualWorkService:
     @property
     def repository(self) -> AnnualWorkRepository:
         return self._repo
+
+    def _require_workflow_services(
+        self,
+    ) -> tuple[EngagementsService, DocumentRequestsService]:
+        if self._engagements is None or self._document_requests is None:
+            raise AnnualWorkError("annual_work.workflow.unavailable")
+        return self._engagements, self._document_requests
+
+    def create_linked_request(
+        self,
+        item_id: int,
+        *,
+        request_name: str,
+        item_names: tuple[str, ...],
+        due_date: str | None = None,
+        notes: str | None = None,
+    ) -> LinkedDocumentRequestResult:
+        """Create a new request business event in one immediate transaction.
+
+        A future UI must disable its submit control while this call is in flight.
+        The transaction prevents a partial double-click, but repeated completed
+        calls intentionally create distinct document requests.
+        """
+        if self._conn.in_transaction:
+            raise AnnualWorkValidationError("annual_work.transaction.already_active")
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        if not isinstance(request_name, str) or not request_name.strip():
+            raise AnnualWorkValidationError("doc_request.name.required")
+        engagements, documents = self._require_workflow_services()
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            context = self._repo.get_item_context(item_id)
+            if context is None:
+                raise AnnualWorkValidationError("annual_work.item_not_found")
+            item = context.item
+            engagement: EngagementRow | None = None
+            if item.engagement_id is not None:
+                engagement = engagements.get_engagement(item.engagement_id)
+                if engagement is None:
+                    raise AnnualWorkValidationError("annual_work.engagement_not_found")
+                if engagement.client_id != context.client_id:
+                    raise AnnualWorkValidationError("annual_work.engagement.client_mismatch")
+            else:
+                engagement_name = item.title
+                period_name = item.period_code or str(
+                    item.tax_year or context.operation_year
+                )
+                if len(engagement_name) > 200 or len(period_name) > 50:
+                    raise AnnualWorkValidationError(
+                        "annual_work.engagement_fields.invalid"
+                    )
+                engagement = engagements._create_engagement_uncommitted(
+                    CreateEngagementInput(
+                        client_id=context.client_id,
+                        engagement_name=engagement_name,
+                        tax_type=_WORK_TYPE_TAX_TYPES.get(item.work_type, "other"),
+                        period_name=period_name,
+                        due_date=item.due_date,
+                        notes=item.notes,
+                    )
+                )
+                item = self._repo.set_engagement_link(item.id, engagement.id)
+
+            request, created_items = documents._create_request_uncommitted(
+                CreateDocumentRequestInput(
+                    engagement_id=engagement.id,
+                    tax_type=engagement.tax_type,
+                    period_name=engagement.period_name,
+                    request_name=request_name,
+                    due_date=due_date,
+                    notes=notes,
+                    item_names=item_names,
+                )
+            )
+            self._audit.record(
+                action="annual_work.request.create",
+                target_type="annual_work_item",
+                target_id=str(item.id),
+                detail={
+                    "engagement_id": engagement.id,
+                    "request_id": request.id,
+                    "item_count": len(created_items),
+                },
+            )
+            self._conn.commit()
+            return LinkedDocumentRequestResult(
+                item=item,
+                engagement=engagement,
+                request=request,
+                items=tuple(created_items),
+            )
+        except AnnualWorkError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except (EngagementValidationError, DocumentRequestValidationError) as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkValidationError(exc.code) from exc
+        except sqlite3.OperationalError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            code = getattr(exc, "sqlite_errorcode", None)
+            if code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED} or "locked" in str(exc).lower():
+                raise AnnualWorkError("annual_work.transaction.busy") from exc
+            raise AnnualWorkError("annual_work.request.create_failed") from exc
+        except Exception as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkError("annual_work.request.create_failed") from exc
+
+    def document_summary(self, item_id: int) -> AnnualDocumentSummary:
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        if not self._repo.active_item_record_exists(item_id):
+            raise AnnualWorkValidationError("annual_work.item_not_found")
+        return self._repo.document_summary(item_id)
+
+    def link_existing_engagement(
+        self, item_id: int, engagement_id: int
+    ) -> AnnualWorkItemRow:
+        if self._conn.in_transaction:
+            raise AnnualWorkValidationError("annual_work.transaction.already_active")
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        if (
+            not isinstance(engagement_id, int)
+            or isinstance(engagement_id, bool)
+            or engagement_id <= 0
+        ):
+            raise AnnualWorkValidationError("annual_work.engagement_id.invalid")
+        engagements, _documents = self._require_workflow_services()
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            context = self._repo.get_item_context(item_id)
+            if context is None:
+                raise AnnualWorkValidationError("annual_work.item_not_found")
+            engagement = engagements.get_engagement(engagement_id)
+            if engagement is None:
+                raise AnnualWorkValidationError("annual_work.engagement_not_found")
+            if engagement.client_id != context.client_id:
+                raise AnnualWorkValidationError(
+                    "annual_work.engagement.client_mismatch"
+                )
+            previous = context.item.engagement_id
+            if previous == engagement_id:
+                self._conn.commit()
+                return context.item
+            if previous is not None and self._repo.linked_engagement_has_history(
+                item_id, previous
+            ):
+                raise AnnualWorkValidationError(
+                    "annual_work.engagement.relink_has_history"
+                )
+            updated = self._repo.set_engagement_link(item_id, engagement_id)
+            self._audit.record(
+                action=(
+                    "annual_work.engagement.relink"
+                    if previous is not None
+                    else "annual_work.engagement.link"
+                ),
+                target_type="annual_work_item",
+                target_id=str(item_id),
+                detail={
+                    "previous_engagement_id": previous,
+                    "engagement_id": engagement_id,
+                },
+            )
+            self._conn.commit()
+            return updated
+        except AnnualWorkError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except sqlite3.OperationalError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            code = getattr(exc, "sqlite_errorcode", None)
+            if code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED} or "locked" in str(exc).lower():
+                raise AnnualWorkError("annual_work.transaction.busy") from exc
+            raise AnnualWorkError("annual_work.engagement.link_failed") from exc
+        except Exception as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkError("annual_work.engagement.link_failed") from exc
+
+    def unlink_engagement(self, item_id: int) -> AnnualWorkItemRow:
+        if self._conn.in_transaction:
+            raise AnnualWorkValidationError("annual_work.transaction.already_active")
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            context = self._repo.get_item_context(item_id)
+            if context is None:
+                raise AnnualWorkValidationError("annual_work.item_not_found")
+            previous = context.item.engagement_id
+            if previous is None:
+                self._conn.commit()
+                return context.item
+            if self._repo.linked_engagement_has_history(item_id, previous):
+                raise AnnualWorkValidationError(
+                    "annual_work.engagement.unlink_has_history"
+                )
+            updated = self._repo.set_engagement_link(item_id, None)
+            self._audit.record(
+                action="annual_work.engagement.unlink",
+                target_type="annual_work_item",
+                target_id=str(item_id),
+                detail={"previous_engagement_id": previous},
+            )
+            self._conn.commit()
+            return updated
+        except AnnualWorkError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except sqlite3.OperationalError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            code = getattr(exc, "sqlite_errorcode", None)
+            if code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED} or "locked" in str(exc).lower():
+                raise AnnualWorkError("annual_work.transaction.busy") from exc
+            raise AnnualWorkError("annual_work.engagement.unlink_failed") from exc
+        except Exception as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkError("annual_work.engagement.unlink_failed") from exc
+
+    def create_linked_task(
+        self,
+        item_id: int,
+        *,
+        title: str,
+        assignee: str | None = None,
+        due_date: str | None = None,
+        priority: str = "normal",
+        next_step: str | None = None,
+        notes: str | None = None,
+    ) -> TaskRow:
+        """Create one existing workflow task linked bidirectionally to an item."""
+        if self._conn.in_transaction:
+            raise AnnualWorkValidationError("annual_work.transaction.already_active")
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        if self._engagements is None or self._tasks is None:
+            raise AnnualWorkError("annual_work.workflow.unavailable")
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            context = self._repo.get_item_context(item_id)
+            if context is None:
+                raise AnnualWorkValidationError("annual_work.item_not_found")
+            item = context.item
+            engagement: EngagementRow | None = None
+            if item.engagement_id is not None:
+                engagement = self._engagements.get_engagement(item.engagement_id)
+                if engagement is None:
+                    raise AnnualWorkValidationError("annual_work.engagement_not_found")
+                if engagement.client_id != context.client_id:
+                    raise AnnualWorkValidationError(
+                        "annual_work.engagement.client_mismatch"
+                    )
+            else:
+                engagement_name = item.title
+                period_name = item.period_code or str(
+                    item.tax_year or context.operation_year
+                )
+                if len(engagement_name) > 200 or len(period_name) > 50:
+                    raise AnnualWorkValidationError(
+                        "annual_work.engagement_fields.invalid"
+                    )
+                engagement = self._engagements._create_engagement_uncommitted(
+                    CreateEngagementInput(
+                        client_id=context.client_id,
+                        engagement_name=engagement_name,
+                        tax_type=_WORK_TYPE_TAX_TYPES.get(item.work_type, "other"),
+                        period_name=period_name,
+                        due_date=item.due_date,
+                        notes=item.notes,
+                    )
+                )
+                item = self._repo.set_engagement_link(item.id, engagement.id)
+            task = self._tasks._create_task_uncommitted(
+                CreateTaskInput(
+                    engagement_id=engagement.id,
+                    client_id=context.client_id,
+                    title=title,
+                    assignee=assignee,
+                    due_date=due_date,
+                    priority=priority,
+                    next_step=next_step,
+                    notes=notes,
+                    annual_work_item_id=item.id,
+                )
+            )
+            self._audit.record(
+                action="annual_work.task.create",
+                target_type="annual_work_item",
+                target_id=str(item.id),
+                detail={"engagement_id": engagement.id, "task_id": task.id},
+            )
+            self._conn.commit()
+            return task
+        except AnnualWorkError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except (EngagementValidationError, TaskValidationError) as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkValidationError(exc.code) from exc
+        except sqlite3.OperationalError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            code = getattr(exc, "sqlite_errorcode", None)
+            if code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED} or "locked" in str(exc).lower():
+                raise AnnualWorkError("annual_work.transaction.busy") from exc
+            raise AnnualWorkError("annual_work.task.create_failed") from exc
+        except Exception as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkError("annual_work.task.create_failed") from exc
+
+    def linked_overview(self, item_id: int) -> AnnualLinkedOverview:
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        context = self._repo.get_item_context(item_id)
+        if context is None:
+            raise AnnualWorkValidationError("annual_work.item_not_found")
+        engagement: EngagementRow | None = None
+        requests: tuple[DocumentRequestRow, ...] = ()
+        if context.item.engagement_id is not None and self._engagements is not None:
+            engagement = self._engagements.get_engagement(
+                context.item.engagement_id
+            )
+            if engagement is not None and self._document_requests is not None:
+                requests = tuple(
+                    self._document_requests.list_by_engagement(engagement.id)
+                )
+        tasks: tuple[TaskRow, ...] = ()
+        if self._tasks is not None:
+            tasks = tuple(self._tasks.list_by_annual_work_item(item_id))
+        return AnnualLinkedOverview(
+            item=context.item,
+            engagement=engagement,
+            requests=requests,
+            tasks=tasks,
+        )
+
+    def list_linked_requests(
+        self, item_id: int
+    ) -> tuple[DocumentRequestRow, ...]:
+        return self.linked_overview(item_id).requests
+
+    def list_linked_tasks(self, item_id: int) -> tuple[TaskRow, ...]:
+        return self.linked_overview(item_id).tasks
 
     def get_status_presentation(self, item_id: int) -> AnnualWorkStatusPresentation:
         if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:

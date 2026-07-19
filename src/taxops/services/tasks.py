@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import sqlite3
 from dataclasses import dataclass
 
 from ..core.text import sanitize_user_text
@@ -64,6 +65,7 @@ class CreateTaskInput:
     priority: str = "normal"
     next_step: str | None = None
     notes: str | None = None
+    annual_work_item_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -79,16 +81,48 @@ class BulkTaskTemplate:
 
 class TasksService:
     def __init__(self, repo: TasksRepository, audit: AuditService) -> None:
+        if audit.connection is not repo._conn:
+            raise ValueError("task.connection.mismatch")
         self._repo = repo
         self._audit = audit
         self._conn = repo._conn
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self._conn
 
     def create_task(self, payload: CreateTaskInput) -> TaskRow:
         with self._conn:
             return self._create_task_uncommitted(payload)
 
     def _create_task_uncommitted(self, payload: CreateTaskInput) -> TaskRow:
-        if payload.engagement_id is not None:
+        effective_engagement_id = payload.engagement_id
+        if payload.annual_work_item_id is not None:
+            if (
+                not isinstance(payload.annual_work_item_id, int)
+                or isinstance(payload.annual_work_item_id, bool)
+                or payload.annual_work_item_id <= 0
+            ):
+                raise TaskValidationError("task.annual_work_item_id.invalid")
+            annual_context = self._repo.get_annual_work_context(
+                payload.annual_work_item_id
+            )
+            if annual_context is None:
+                raise TaskValidationError("task.annual_work_item_not_found")
+            annual_client_id, annual_engagement_id = annual_context
+            if payload.engagement_id != annual_engagement_id:
+                raise TaskValidationError("task.annual_work_context_mismatch")
+            if annual_engagement_id is not None:
+                engagement_client_id = self._repo.get_engagement_client_id(
+                    annual_engagement_id
+                )
+                if engagement_client_id is None:
+                    raise TaskValidationError("task.engagement_not_found")
+                if engagement_client_id != annual_client_id:
+                    raise TaskValidationError("task.annual_work_context_mismatch")
+            effective_client_id: int | None = annual_client_id
+            effective_engagement_id = annual_engagement_id
+        elif payload.engagement_id is not None:
             if not self._repo.engagement_exists(payload.engagement_id):
                 raise TaskValidationError("task.engagement_not_found")
             # Engagement is the source of truth — overrides any caller-supplied
@@ -121,8 +155,9 @@ class TasksService:
         notes = sanitize_user_text(payload.notes, max_length=2000) or None
 
         row = self._repo.insert(
-            engagement_id=payload.engagement_id,
+            engagement_id=effective_engagement_id,
             client_id=effective_client_id,
+            annual_work_item_id=payload.annual_work_item_id,
             title=title,
             assignee=assignee,
             due_date=due_date,
@@ -136,8 +171,9 @@ class TasksService:
             target_type="task",
             target_id=str(row.id),
             detail={
-                "engagement_id": payload.engagement_id,
+                "engagement_id": effective_engagement_id,
                 "client_id": effective_client_id,
+                "annual_work_item_id": payload.annual_work_item_id,
                 "title": row.title,
                 "priority": row.priority,
                 "due_date": row.due_date,
@@ -546,3 +582,27 @@ class TasksService:
             limit=limit,
             offset=offset,
         )
+
+    def list_by_annual_work_item(
+        self,
+        item_id: int,
+        *,
+        order_by: str = "updated_at",
+        order_dir: str = "DESC",
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[TaskRow]:
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise TaskValidationError("task.annual_work_item_id.invalid")
+        if self._repo.get_annual_work_context(item_id) is None:
+            raise TaskValidationError("task.annual_work_item_not_found")
+        try:
+            return self._repo.list_by_annual_work_item(
+                item_id,
+                order_by=order_by,
+                order_dir=order_dir,
+                limit=limit,
+                offset=offset,
+            )
+        except ValueError as exc:
+            raise TaskValidationError(str(exc)) from exc

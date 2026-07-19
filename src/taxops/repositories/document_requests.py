@@ -308,43 +308,69 @@ class DocumentRequestsRepository:
 
         On any failure the entire batch is rolled back.
         """
-        ts = now_iso()
         try:
-            cur = self._conn.execute(
-                "INSERT INTO document_requests("
-                "engagement_id, request_name, tax_type, period_name, status,"
-                " due_date, requested_at, follow_up_count, notes, created_at, updated_at"
-                ") VALUES (?, ?, ?, ?, ?, ?, NULL, 0, ?, ?, ?)",
-                (
-                    engagement_id,
-                    request_name,
-                    tax_type,
-                    period_name,
-                    status,
-                    due_date,
-                    notes,
-                    ts,
-                    ts,
-                ),
+            return self.insert_request_with_items_uncommitted(
+                engagement_id=engagement_id,
+                request_name=request_name,
+                tax_type=tax_type,
+                period_name=period_name,
+                status=status,
+                due_date=due_date,
+                notes=notes,
+                item_names=item_names,
             )
-            request_id = cur.lastrowid
-            item_ids: list[int] = []
-            for name in item_names:
-                ic = self._conn.execute(
-                    "INSERT INTO document_request_items("
-                    "request_id, item_name, item_status, notes, created_at, updated_at"
-                    ") VALUES (?, ?, 'missing', NULL, ?, ?)",
-                    (request_id, name, ts, ts),
-                )
-                if ic.lastrowid is None:
-                    raise RuntimeError("insert_request_with_items: item lastrowid missing")
-                item_ids.append(ic.lastrowid)
         except Exception:
             self._conn.rollback()
             raise
+
+    def insert_request_with_items_uncommitted(
+        self,
+        *,
+        engagement_id: int,
+        request_name: str,
+        tax_type: str,
+        period_name: str,
+        status: str = "not_requested",
+        due_date: str | None = None,
+        notes: str | None = None,
+        item_names: tuple[str, ...] = (),
+    ) -> tuple[DocumentRequestRow, list[DocumentRequestItemRow]]:
+        """Insert a complete request without commit/rollback side effects."""
+        ts = now_iso()
+        cur = self._conn.execute(
+            "INSERT INTO document_requests("
+            "engagement_id, request_name, tax_type, period_name, status,"
+            " due_date, requested_at, follow_up_count, notes, created_at, updated_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, NULL, 0, ?, ?, ?)",
+            (
+                engagement_id,
+                request_name,
+                tax_type,
+                period_name,
+                status,
+                due_date,
+                notes,
+                ts,
+                ts,
+            ),
+        )
+        request_id = cur.lastrowid
+        if request_id is None:
+            raise RuntimeError("insert_request_with_items: request lastrowid missing")
+        item_ids: list[int] = []
+        for name in item_names:
+            ic = self._conn.execute(
+                "INSERT INTO document_request_items("
+                "request_id, item_name, item_status, notes, created_at, updated_at"
+                ") VALUES (?, ?, 'missing', NULL, ?, ?)",
+                (request_id, name, ts, ts),
+            )
+            if ic.lastrowid is None:
+                raise RuntimeError("insert_request_with_items: item lastrowid missing")
+            item_ids.append(ic.lastrowid)
         request = self.get_request(request_id)
         if request is None:
-            raise RuntimeError("insert_request_with_items: request missing after commit")
+            raise RuntimeError("insert_request_with_items: request missing after insert")
         items = [self.get_item(iid) for iid in item_ids]
         return request, [i for i in items if i is not None]
 

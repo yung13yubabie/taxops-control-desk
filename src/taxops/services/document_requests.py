@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import unicodedata
 from dataclasses import dataclass
 
 from ..core.clock import now_iso
@@ -97,15 +98,29 @@ def default_request_name(*, period_name: str, tax_type: str) -> str:
     return f"{period} {tax} request"
 
 
+def _has_disallowed_control(value: str) -> bool:
+    return any(
+        unicodedata.category(char).startswith("C")
+        for char in value
+        if char not in {"\n", "\t"}
+    )
+
+
 class DocumentRequestsService:
     def __init__(
         self,
         repo: DocumentRequestsRepository,
         audit: AuditService,
     ) -> None:
+        if audit.connection is not repo._conn:
+            raise ValueError("doc_request.connection.mismatch")
         self._repo = repo
         self._audit = audit
         self._conn = repo._conn
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self._conn
 
     def create_request(
         self, payload: CreateDocumentRequestInput
@@ -115,8 +130,59 @@ class DocumentRequestsService:
         Request + items are inserted atomically — any failure rolls back both.
         Returns (request_row, items).
         """
+        with self._conn:
+            return self._create_request_uncommitted(payload)
+
+    def _create_request_uncommitted(
+        self, payload: CreateDocumentRequestInput
+    ) -> tuple[DocumentRequestRow, list[DocumentRequestItemRow]]:
+        """Validate and create without committing or rolling back a caller transaction."""
         if not self._repo.engagement_exists(payload.engagement_id):
             raise DocumentRequestValidationError("doc_request.engagement_not_found")
+
+        if (
+            not isinstance(payload.tax_type, str)
+            or not payload.tax_type.strip()
+            or len(payload.tax_type) > 40
+            or _has_disallowed_control(payload.tax_type)
+        ):
+            raise DocumentRequestValidationError("doc_request.tax_type.invalid")
+        if (
+            not isinstance(payload.period_name, str)
+            or not payload.period_name.strip()
+            or len(payload.period_name) > 80
+            or _has_disallowed_control(payload.period_name)
+        ):
+            raise DocumentRequestValidationError("doc_request.period_name.invalid")
+        if payload.request_name is not None and (
+            not isinstance(payload.request_name, str) or len(payload.request_name) > 120
+            or _has_disallowed_control(payload.request_name)
+        ):
+            raise DocumentRequestValidationError("doc_request.name.invalid")
+        if payload.due_date is not None and (
+            not isinstance(payload.due_date, str) or len(payload.due_date) > 20
+            or _has_disallowed_control(payload.due_date)
+        ):
+            raise DocumentRequestValidationError("doc_request.due_date.invalid")
+        if payload.notes is not None and (
+            not isinstance(payload.notes, str) or len(payload.notes) > 2000
+            or _has_disallowed_control(payload.notes)
+        ):
+            raise DocumentRequestValidationError("doc_request.notes.invalid")
+        if not isinstance(payload.item_names, tuple):
+            raise DocumentRequestValidationError("doc_request.items.invalid")
+        clean_item_names: list[str] = []
+        for value in payload.item_names:
+            if (
+                not isinstance(value, str)
+                or len(value) > 200
+                or _has_disallowed_control(value)
+            ):
+                raise DocumentRequestValidationError("doc_request_item.name.invalid")
+            clean = sanitize_user_text(value, max_length=200)
+            if not clean:
+                raise DocumentRequestValidationError("doc_request_item.name.required")
+            clean_item_names.append(clean)
 
         due_date = sanitize_user_text(payload.due_date, max_length=20) or None
         try:
@@ -131,28 +197,27 @@ class DocumentRequestsService:
                 tax_type=payload.tax_type,
             )
 
-        with self._conn:
-            request, items = self._repo.insert_request_with_items(
-                engagement_id=payload.engagement_id,
-                request_name=request_name,
-                tax_type=payload.tax_type,
-                period_name=payload.period_name,
-                due_date=due_date,
-                notes=notes,
-                item_names=payload.item_names,
-            )
-            self._audit.record(
-                action="doc_request.create",
-                target_type="document_request",
-                target_id=str(request.id),
-                detail={
-                    "engagement_id": payload.engagement_id,
-                    "tax_type": payload.tax_type,
-                    "period_name": payload.period_name,
-                    "request_name": request.request_name,
-                    "item_count": len(items),
-                },
-            )
+        request, items = self._repo.insert_request_with_items_uncommitted(
+            engagement_id=payload.engagement_id,
+            request_name=request_name,
+            tax_type=payload.tax_type,
+            period_name=payload.period_name,
+            due_date=due_date,
+            notes=notes,
+            item_names=tuple(clean_item_names),
+        )
+        self._audit.record(
+            action="doc_request.create",
+            target_type="document_request",
+            target_id=str(request.id),
+            detail={
+                "engagement_id": payload.engagement_id,
+                "tax_type": payload.tax_type,
+                "period_name": payload.period_name,
+                "request_name": request.request_name,
+                "item_count": len(items),
+            },
+        )
         return request, items
 
     def update_request(

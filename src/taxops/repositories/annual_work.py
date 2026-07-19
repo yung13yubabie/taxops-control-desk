@@ -81,6 +81,28 @@ class AnnualWorkOverviewRow:
     client_name: str
 
 
+@dataclass(frozen=True)
+class AnnualWorkItemContext:
+    item: AnnualWorkItemRow
+    client_id: int
+    operation_year: int
+
+
+@dataclass(frozen=True)
+class AnnualDocumentSummaryRow:
+    request_count: int = 0
+    total: int = 0
+    missing: int = 0
+    received: int = 0
+    incomplete: int = 0
+    invalid: int = 0
+    accepted: int = 0
+    pending_confirm: int = 0
+    not_applicable: int = 0
+    client_said_none: int = 0
+    attachment_count: int = 0
+
+
 def _workspace_row(row: sqlite3.Row) -> AnnualWorkspaceRow:
     return AnnualWorkspaceRow(
         id=int(row["id"]),
@@ -251,6 +273,128 @@ class AnnualWorkRepository:
             (item_id,),
         ).fetchone()
         return _item_row(row) if row else None
+
+    def get_item_context(self, item_id: int) -> AnnualWorkItemContext | None:
+        item_id = _positive_id(item_id, "annual_work.item_id.invalid")
+        row = self._conn.execute(
+            "SELECT awi.*, aw.client_id AS context_client_id, "
+            "aw.operation_year AS context_operation_year "
+            "FROM annual_work_items awi "
+            "JOIN annual_workspaces aw ON aw.id = awi.workspace_id "
+            "JOIN clients c ON c.id = aw.client_id "
+            "WHERE awi.id = ? AND awi.deleted_at IS NULL "
+            "AND aw.deleted_at IS NULL AND c.deleted_at IS NULL",
+            (item_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return AnnualWorkItemContext(
+            item=_item_row(row),
+            client_id=int(row["context_client_id"]),
+            operation_year=int(row["context_operation_year"]),
+        )
+
+    def active_item_record_exists(self, item_id: int) -> bool:
+        item_id = _positive_id(item_id, "annual_work.item_id.invalid")
+        row = self._conn.execute(
+            "SELECT 1 FROM annual_work_items awi"
+            " JOIN annual_workspaces aw ON aw.id = awi.workspace_id"
+            " WHERE awi.id = ? AND awi.deleted_at IS NULL AND aw.deleted_at IS NULL",
+            (item_id,),
+        ).fetchone()
+        return row is not None
+
+    def set_engagement_link(
+        self, item_id: int, engagement_id: int | None
+    ) -> AnnualWorkItemRow:
+        item_id = _positive_id(item_id, "annual_work.item_id.invalid")
+        if engagement_id is not None:
+            engagement_id = _positive_id(
+                engagement_id, "annual_work.engagement_id.invalid"
+            )
+        cursor = self._conn.execute(
+            "UPDATE annual_work_items SET engagement_id = ?, updated_at = ? "
+            "WHERE id = ? AND deleted_at IS NULL",
+            (engagement_id, now_iso(), item_id),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("annual_work.item_not_found")
+        row = self.get_item(item_id)
+        if row is None:
+            raise RuntimeError("annual_work.item_not_found")
+        return row
+
+    def linked_engagement_has_history(
+        self, item_id: int, engagement_id: int
+    ) -> bool:
+        item_id = _positive_id(item_id, "annual_work.item_id.invalid")
+        engagement_id = _positive_id(
+            engagement_id, "annual_work.engagement_id.invalid"
+        )
+        row = self._conn.execute(
+            "SELECT "
+            "EXISTS(SELECT 1 FROM document_requests dr "
+            " WHERE dr.engagement_id = ?) "
+            "OR EXISTS(SELECT 1 FROM workflow_tasks wt "
+            " WHERE wt.annual_work_item_id = ? OR wt.engagement_id = ?) "
+            "OR EXISTS(SELECT 1 FROM attachments a "
+            " WHERE a.engagement_id = ? OR a.request_id IN "
+            " (SELECT dr.id FROM document_requests dr WHERE dr.engagement_id = ?)) "
+            "AS has_history",
+            (engagement_id, item_id, engagement_id, engagement_id, engagement_id),
+        ).fetchone()
+        return bool(row["has_history"]) if row else False
+
+    def document_summary(self, item_id: int) -> AnnualDocumentSummaryRow:
+        item_id = _positive_id(item_id, "annual_work.item_id.invalid")
+        row = self._conn.execute(
+            "WITH linked AS ("
+            " SELECT awi.engagement_id FROM annual_work_items awi"
+            " JOIN annual_workspaces aw ON aw.id = awi.workspace_id"
+            " JOIN clients c ON c.id = aw.client_id AND c.deleted_at IS NULL"
+            " JOIN engagements e ON e.id = awi.engagement_id"
+            "  AND e.client_id = aw.client_id AND e.deleted_at IS NULL"
+            " WHERE awi.id = ? AND awi.deleted_at IS NULL AND aw.deleted_at IS NULL"
+            "), active_requests AS ("
+            " SELECT dr.id FROM document_requests dr JOIN linked l"
+            "  ON l.engagement_id = dr.engagement_id WHERE dr.deleted_at IS NULL"
+            "), item_counts AS ("
+            " SELECT COUNT(*) AS total,"
+            " SUM(dri.item_status = 'missing') AS missing,"
+            " SUM(dri.item_status = 'received') AS received,"
+            " SUM(dri.item_status = 'incomplete') AS incomplete,"
+            " SUM(dri.item_status = 'invalid') AS invalid,"
+            " SUM(dri.item_status = 'accepted') AS accepted,"
+            " SUM(dri.item_status = 'pending_confirm') AS pending_confirm,"
+            " SUM(dri.item_status = 'not_applicable') AS not_applicable,"
+            " SUM(dri.item_status = 'client_said_none') AS client_said_none"
+            " FROM document_request_items dri JOIN active_requests ar"
+            "  ON ar.id = dri.request_id"
+            ") SELECT"
+            " (SELECT COUNT(*) FROM active_requests) AS request_count,"
+            " COALESCE(ic.total, 0) AS total, COALESCE(ic.missing, 0) AS missing,"
+            " COALESCE(ic.received, 0) AS received,"
+            " COALESCE(ic.incomplete, 0) AS incomplete,"
+            " COALESCE(ic.invalid, 0) AS invalid,"
+            " COALESCE(ic.accepted, 0) AS accepted,"
+            " COALESCE(ic.pending_confirm, 0) AS pending_confirm,"
+            " COALESCE(ic.not_applicable, 0) AS not_applicable,"
+            " COALESCE(ic.client_said_none, 0) AS client_said_none,"
+            " (SELECT COUNT(*) FROM attachments a WHERE a.status != 'archived'"
+            "   AND ((a.request_id IS NULL"
+            "         AND a.engagement_id = (SELECT engagement_id FROM linked))"
+            "        OR a.request_id IN (SELECT id FROM active_requests)))"
+            " AS attachment_count FROM item_counts ic",
+            (item_id,),
+        ).fetchone()
+        if row is None:
+            return AnnualDocumentSummaryRow()
+        return AnnualDocumentSummaryRow(
+            **{
+                field: int(row[field] or 0)
+                for field in AnnualDocumentSummaryRow.__dataclass_fields__
+            }
+        )
 
     def update_status(
         self, item_id: int, dimension: str, status: str
