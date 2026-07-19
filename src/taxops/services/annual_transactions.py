@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import unicodedata
 from datetime import date
 
 from ..repositories.annual_transactions import (
@@ -52,10 +53,9 @@ def _text(
     if len(value) > maximum:
         raise AnnualTransactionValidationError(code)
     for char in value:
-        ordinal = ord(char)
-        if ordinal == 0 or ordinal == 127 or 128 <= ordinal <= 159:
-            raise AnnualTransactionValidationError(code)
-        if ordinal < 32 and char not in "\t\n\r":
+        if char in "\t\n\r":
+            continue
+        if unicodedata.category(char) in {"Cc", "Cf"}:
             raise AnnualTransactionValidationError(code)
     return value
 

@@ -50,6 +50,27 @@ def test_tax_and_fee_balances_are_independent(container: object) -> None:
     assert balance.outstanding_fee == 3_000
 
 
+def test_empty_balance_remains_all_zero(container: object) -> None:
+    item = _work_item(container)
+
+    balance = getattr(container, "annual_transactions").balance(item.id)
+
+    assert (
+        balance.tax_liability,
+        balance.client_tax_collection,
+        balance.tax_payment,
+        balance.tax_credit_or_refund,
+        balance.fee_receivable,
+        balance.fee_receipt,
+        balance.collection_shortfall,
+        balance.unpaid_tax,
+        balance.outstanding_fee,
+        balance.excess_client_collection,
+        balance.tax_overpayment,
+        balance.fee_overpayment,
+    ) == (0,) * 12
+
+
 def test_all_six_categories_zero_large_refund_and_overpayments(container: object) -> None:
     item = _work_item(container)
     add = getattr(container, "annual_transactions").add
@@ -132,6 +153,9 @@ def test_add_rejects_invalid_types_and_boundaries_without_writes(
         ("reference", "bad\x00", "annual_transactions.reference.invalid"),
         ("reference", "bad\x1f", "annual_transactions.reference.invalid"),
         ("reference", "bad\x7f", "annual_transactions.reference.invalid"),
+        ("reference", "bad\u202e", "annual_transactions.reference.invalid"),
+        ("reference", "bad\u2066", "annual_transactions.reference.invalid"),
+        ("reference", "bad\u200b", "annual_transactions.reference.invalid"),
         ("notes", 1, "annual_transactions.notes.invalid"),
         ("notes", "n" * 4001, "annual_transactions.notes.invalid"),
         ("notes", "bad\x85", "annual_transactions.notes.invalid"),
@@ -155,8 +179,8 @@ def test_text_fields_reject_mistyped_overlength_and_unsafe_control_values(
 
 def test_reference_and_notes_preserve_exact_multiline_whitespace(container: object) -> None:
     item = _work_item(container)
-    reference = "  發票\r\n第二行\t " + "r" * 480
-    notes = "  備註\n第二行\r第三行\t " + "n" * 3975
+    reference = "  發票🧾\r\n第二行\t " + "r" * 479
+    notes = "  備註🧾\n第二行\r第三行\t " + "n" * 3974
 
     row = getattr(container, "annual_transactions").add(
         item.id, "tax_liability", 0, "2026-01-01", reference, notes
@@ -466,7 +490,9 @@ def test_committed_transaction_is_visible_from_another_connection(container: obj
     other = sqlite3.connect(db_path)
     other.row_factory = sqlite3.Row
     try:
-        assert AnnualTransactionsRepository(other).get(row.id) == row
+        other_repo = AnnualTransactionsRepository(other)
+        assert other_repo.get(row.id) == row
+        assert other_repo.balance(item.id).tax_liability == 7
     finally:
         other.close()
 
@@ -519,10 +545,68 @@ def test_balance_is_pure_read_and_uses_one_aggregate_transaction_select(
         and "FROM annual_work_transactions" in statement
     ]
     assert len(transaction_selects) == 1
-    assert "SUM(CASE" in transaction_selects[0]
+    assert "ANNUAL_EXACT_INT_SUM(CASE" in transaction_selects[0].upper()
+    assert "TOTAL(" not in transaction_selects[0].upper()
     assert conn.execute(
         "SELECT work_status, filing_status, document_status, tax_status, fee_status, updated_at "
         "FROM annual_work_items WHERE id = ?",
         (item.id,),
     ).fetchone() == before_status
     assert getattr(container, "audit")._repo.count() == before_audits
+
+
+def test_balance_exactly_aggregates_more_than_signed_int64_in_one_select(
+    container: object,
+) -> None:
+    item = _work_item(container)
+    conn = getattr(container, "conn")
+    conn.execute(
+        "WITH RECURSIVE counter(n) AS ("
+        "SELECT 1 UNION ALL SELECT n + 1 FROM counter WHERE n < ?"
+        ") INSERT INTO annual_work_transactions("
+        "work_item_id, category, amount, transaction_date, created_at, updated_at"
+        ") SELECT ?, 'tax_liability', 9000000000000, '2026-01-01', "
+        "'2026-01-01T00:00:00', '2026-01-01T00:00:00' FROM counter",
+        (1_024_820, item.id),
+    )
+    conn.commit()
+    statements: list[str] = []
+    conn.set_trace_callback(statements.append)
+    try:
+        balance = getattr(container, "annual_transactions").balance(item.id)
+    finally:
+        conn.set_trace_callback(None)
+
+    assert balance.tax_liability == 9_223_380_000_000_000_000
+    transaction_selects = [
+        statement
+        for statement in statements
+        if statement.lstrip().upper().startswith("SELECT")
+        and "FROM annual_work_transactions" in statement
+    ]
+    assert len(transaction_selects) == 1
+    assert "ANNUAL_EXACT_INT_SUM" in transaction_selects[0].upper()
+    assert "TOTAL(" not in transaction_selects[0].upper()
+
+
+def test_exact_aggregate_failure_has_stable_sanitized_service_error(
+    container: object,
+) -> None:
+    item = _work_item(container)
+    service = getattr(container, "annual_transactions")
+    service.add(item.id, "tax_liability", 1, "2026-01-01")
+
+    class BrokenAggregate:
+        def step(self, value: object) -> None:
+            raise RuntimeError("SECRET aggregate failure")
+
+        def finalize(self) -> str:
+            return "0"
+
+    getattr(container, "conn").create_aggregate(
+        "annual_exact_int_sum", 1, BrokenAggregate
+    )
+    with pytest.raises(AnnualTransactionError) as caught:
+        service.balance(item.id)
+    assert caught.value.code == "annual_transactions.balance.failed"
+    assert "SECRET" not in str(caught.value)

@@ -8,6 +8,28 @@ from dataclasses import dataclass
 from ..core.clock import now_iso
 
 
+EXACT_SUM_AGGREGATE = "annual_exact_int_sum"
+
+
+class _ExactIntegerSum:
+    """SQLite aggregate that never narrows Python integers to int64 or float."""
+
+    def __init__(self) -> None:
+        self._total = 0
+
+    def step(self, value: object) -> None:
+        if value is None:
+            return
+        if type(value) is not int:
+            raise TypeError("annual exact sum requires an integer")
+        self._total += value
+
+    def finalize(self) -> str:
+        # Returning decimal text avoids sqlite3 converting an out-of-int64
+        # Python integer back into SQLite INTEGER before repository decoding.
+        return str(self._total)
+
+
 @dataclass(frozen=True)
 class AnnualTransactionRow:
     id: int
@@ -100,6 +122,7 @@ class AnnualTransactionsRepository:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
+        self._conn.create_aggregate(EXACT_SUM_AGGREGATE, 1, _ExactIntegerSum)
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -270,18 +293,20 @@ class AnnualTransactionsRepository:
         )
         value = self._conn.execute(
             "SELECT "
-            "COALESCE(SUM(CASE WHEN category='tax_liability' "
-            "THEN amount ELSE 0 END), 0) AS liability, "
-            "COALESCE(SUM(CASE WHEN category='client_tax_collection' "
-            "THEN amount ELSE 0 END), 0) AS collected, "
-            "COALESCE(SUM(CASE WHEN category='tax_payment' "
-            "THEN amount ELSE 0 END), 0) AS paid, "
-            "COALESCE(SUM(CASE WHEN category='tax_credit_or_refund' "
-            "THEN amount ELSE 0 END), 0) AS credits, "
-            "COALESCE(SUM(CASE WHEN category='fee_receivable' "
-            "THEN amount ELSE 0 END), 0) AS fees, "
-            "COALESCE(SUM(CASE WHEN category='fee_receipt' "
-            "THEN amount ELSE 0 END), 0) AS fee_receipts "
+            "COALESCE(annual_exact_int_sum(CASE WHEN category='tax_liability' "
+            "THEN amount ELSE 0 END), '0') AS liability, "
+            "COALESCE(annual_exact_int_sum(CASE "
+            "WHEN category='client_tax_collection' "
+            "THEN amount ELSE 0 END), '0') AS collected, "
+            "COALESCE(annual_exact_int_sum(CASE WHEN category='tax_payment' "
+            "THEN amount ELSE 0 END), '0') AS paid, "
+            "COALESCE(annual_exact_int_sum(CASE "
+            "WHEN category='tax_credit_or_refund' "
+            "THEN amount ELSE 0 END), '0') AS credits, "
+            "COALESCE(annual_exact_int_sum(CASE WHEN category='fee_receivable' "
+            "THEN amount ELSE 0 END), '0') AS fees, "
+            "COALESCE(annual_exact_int_sum(CASE WHEN category='fee_receipt' "
+            "THEN amount ELSE 0 END), '0') AS fee_receipts "
             "FROM annual_work_transactions "
             "WHERE work_item_id = ? AND deleted_at IS NULL",
             (work_item_id,),
