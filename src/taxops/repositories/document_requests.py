@@ -24,6 +24,19 @@ _ACTIVE_ITEM_OWNER_SQL = (
 )
 
 
+def _request_pagination(limit: object, offset: object) -> tuple[int, int]:
+    if (
+        not isinstance(limit, int)
+        or isinstance(limit, bool)
+        or not 1 <= limit <= 500
+        or not isinstance(offset, int)
+        or isinstance(offset, bool)
+        or not 0 <= offset <= 1_000_000
+    ):
+        raise ValueError("doc_request.pagination.invalid")
+    return limit, offset
+
+
 @dataclass(frozen=True)
 class DocumentRequestRow:
     id: int
@@ -143,13 +156,20 @@ class DocumentRequestsRepository:
         ).fetchall()
         return [_row_to_request(r) for r in rows]
 
-    def list_by_engagement(self, engagement_id: int) -> list[DocumentRequestRow]:
+    def list_by_engagement(
+        self,
+        engagement_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[DocumentRequestRow]:
+        limit, offset = _request_pagination(limit, offset)
         rows = self._conn.execute(
             "SELECT * FROM document_requests"
             " WHERE engagement_id = ? AND deleted_at IS NULL"
             f" AND {_ACTIVE_REQUEST_OWNER_SQL}"
-            " ORDER BY created_at ASC",
-            (engagement_id,),
+            " ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?",
+            (engagement_id, limit, offset),
         ).fetchall()
         return [_row_to_request(r) for r in rows]
 

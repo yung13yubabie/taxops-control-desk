@@ -580,9 +580,26 @@ class AnnualWorkService:
                 self._conn.rollback()
             raise AnnualWorkError("annual_work.task.create_failed") from exc
 
-    def linked_overview(self, item_id: int) -> AnnualLinkedOverview:
+    def linked_overview(
+        self,
+        item_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> AnnualLinkedOverview:
         if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
             raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 1 <= limit <= 500
+            or not isinstance(offset, int)
+            or isinstance(offset, bool)
+            or not 0 <= offset <= 1_000_000
+        ):
+            raise AnnualWorkValidationError(
+                "annual_work.linked_requests.pagination.invalid"
+            )
         context = self._repo.get_item_context(item_id)
         if context is None:
             raise AnnualWorkValidationError("annual_work.item_not_found")
@@ -594,7 +611,9 @@ class AnnualWorkService:
             )
             if engagement is not None and self._document_requests is not None:
                 requests = tuple(
-                    self._document_requests.list_by_engagement(engagement.id)
+                    self._document_requests.list_by_engagement(
+                        engagement.id, limit=limit, offset=offset
+                    )
                 )
         tasks: tuple[TaskRow, ...] = ()
         if self._tasks is not None:
@@ -607,9 +626,15 @@ class AnnualWorkService:
         )
 
     def list_linked_requests(
-        self, item_id: int
+        self,
+        item_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
     ) -> tuple[DocumentRequestRow, ...]:
-        return self.linked_overview(item_id).requests
+        return self.linked_overview(
+            item_id, limit=limit, offset=offset
+        ).requests
 
     def list_linked_tasks(self, item_id: int) -> tuple[TaskRow, ...]:
         return self.linked_overview(item_id).tasks

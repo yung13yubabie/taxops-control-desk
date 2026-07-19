@@ -446,8 +446,27 @@ class DocumentRequestsService:
     def list_all(self) -> list[DocumentRequestRow]:
         return self._repo.list_all()
 
-    def list_by_engagement(self, engagement_id: int) -> list[DocumentRequestRow]:
-        return self._repo.list_by_engagement(engagement_id)
+    def list_by_engagement(
+        self,
+        engagement_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[DocumentRequestRow]:
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 1 <= limit <= 500
+            or not isinstance(offset, int)
+            or isinstance(offset, bool)
+            or not 0 <= offset <= 1_000_000
+        ):
+            raise DocumentRequestValidationError(
+                "doc_request.pagination.invalid"
+            )
+        return self._repo.list_by_engagement(
+            engagement_id, limit=limit, offset=offset
+        )
 
     def list_items(self, request_id: int) -> list[DocumentRequestItemRow]:
         return self._repo.list_items(request_id)

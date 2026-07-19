@@ -371,6 +371,68 @@ def test_linked_overview_returns_existing_engagement_requests_and_tasks(
     assert annual.list_linked_tasks(item.id) == (task,)
 
 
+def test_annual_linked_request_lists_use_bounded_pagination(container: object) -> None:
+    _client, item = _work_item(container, code="ANNUAL-REQUEST-PAGE")
+    annual = getattr(container, "annual_work")
+    created = [
+        annual.create_linked_request(
+            item.id,
+            request_name=f"第 {index} 批補件",
+            item_names=(f"文件 {index}",),
+        ).request
+        for index in range(3)
+    ]
+    for index in range(3, 205):
+        getattr(container, "doc_requests")._repo.insert_request(
+            engagement_id=created[0].engagement_id,
+            request_name=f"第 {index} 批補件",
+            tax_type="vat",
+            period_name=created[0].period_name,
+        )
+
+    assert annual.list_linked_requests(item.id, limit=1, offset=1) == (created[1],)
+    assert annual.linked_overview(item.id, limit=1, offset=2).requests == (
+        created[2],
+    )
+    assert len(annual.list_linked_requests(item.id)) == 200
+    assert [
+        row.request_name
+        for row in annual.list_linked_requests(item.id, limit=5, offset=200)
+    ] == [f"第 {index} 批補件" for index in range(200, 205)]
+
+
+@pytest.mark.parametrize(
+    ("limit", "offset"),
+    [
+        (True, 0),
+        ("1", 0),
+        (0, 0),
+        (501, 0),
+        ("1 LIMIT 999999", 0),
+        (1, True),
+        (1, "0"),
+        (1, -1),
+        (1, 1_000_001),
+        (1, "0; SELECT 1"),
+    ],
+)
+def test_annual_linked_request_pagination_rejects_invalid_or_injectable_values(
+    container: object, limit: object, offset: object
+) -> None:
+    _client, item = _work_item(
+        container, code=f"ANNUAL-PAGE-INVALID-{type(limit).__name__}-{type(offset).__name__}"
+    )
+    annual = getattr(container, "annual_work")
+
+    for operation in (
+        lambda: annual.list_linked_requests(item.id, limit=limit, offset=offset),
+        lambda: annual.linked_overview(item.id, limit=limit, offset=offset),
+    ):
+        with pytest.raises(AnnualWorkValidationError) as caught:
+            operation()
+        assert caught.value.code == "annual_work.linked_requests.pagination.invalid"
+
+
 def test_deleted_engagement_and_client_are_excluded_from_summary(
     container: object,
 ) -> None:

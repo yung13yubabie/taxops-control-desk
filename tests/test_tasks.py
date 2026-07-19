@@ -7,7 +7,7 @@ import pytest
 from taxops.db.connection import open_connection
 from taxops.db.migrate import apply_migrations
 from taxops.repositories.audit_logs import AuditLogRepository
-from taxops.repositories.tasks import TasksRepository
+from taxops.repositories.tasks import TaskRow, TasksRepository
 from taxops.services.audit import AuditService
 from taxops.services.tasks import (
     CreateTaskInput,
@@ -18,6 +18,28 @@ from taxops.services.tasks import (
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
+
+def test_task_row_preserves_legacy_full_keyword_construction() -> None:
+    row = TaskRow(
+        id=1,
+        engagement_id=None,
+        client_id=2,
+        parent_task_id=None,
+        title="舊版完整欄位建構",
+        assignee=None,
+        due_date=None,
+        priority="normal",
+        status="todo",
+        next_step=None,
+        notes=None,
+        completed_at=None,
+        created_at="2026-07-19T00:00:00",
+        updated_at="2026-07-19T00:00:00",
+        deleted_at=None,
+    )
+
+    assert row.annual_work_item_id is None
+
 
 @pytest.fixture()
 def conn(tmp_path):

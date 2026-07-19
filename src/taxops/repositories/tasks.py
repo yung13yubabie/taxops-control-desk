@@ -35,7 +35,6 @@ class TaskRow:
     engagement_id: int | None
     client_id: int | None
     parent_task_id: int | None
-    annual_work_item_id: int | None
     title: str
     assignee: str | None
     due_date: str | None
@@ -47,6 +46,7 @@ class TaskRow:
     created_at: str
     updated_at: str
     deleted_at: str | None = None
+    annual_work_item_id: int | None = None
 
 
 def _row_to_task(row: sqlite3.Row) -> TaskRow:

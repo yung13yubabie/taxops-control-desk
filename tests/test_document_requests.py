@@ -256,6 +256,57 @@ def test_list_by_engagement(svc, engagement_id):
     assert len(rows) == 2
 
 
+def test_list_by_engagement_is_bounded_by_default_and_paginates(
+    svc, engagement_id
+):
+    for index in range(205):
+        svc._repo.insert_request(
+            engagement_id=engagement_id,
+            request_name=f"補件 {index:03d}",
+            tax_type="vat",
+            period_name="2024Q1",
+        )
+
+    first_page = svc.list_by_engagement(engagement_id)
+    last_page = svc.list_by_engagement(engagement_id, limit=5, offset=200)
+
+    assert len(first_page) == 200
+    assert [row.request_name for row in last_page] == [
+        f"補件 {index:03d}" for index in range(200, 205)
+    ]
+    assert svc.list_by_engagement(
+        engagement_id, limit=500, offset=1_000_000
+    ) == []
+
+
+@pytest.mark.parametrize(
+    ("limit", "offset"),
+    [
+        (True, 0),
+        ("1", 0),
+        (0, 0),
+        (501, 0),
+        ("1 LIMIT 999999", 0),
+        (1, True),
+        (1, "0"),
+        (1, -1),
+        (1, 1_000_001),
+        (1, "0; SELECT 1"),
+    ],
+)
+def test_list_by_engagement_rejects_invalid_or_injectable_pagination(
+    svc, engagement_id, limit, offset
+):
+    with pytest.raises(DocumentRequestValidationError) as caught:
+        svc.list_by_engagement(engagement_id, limit=limit, offset=offset)
+    assert caught.value.code == "doc_request.pagination.invalid"
+    with pytest.raises(ValueError) as repository_caught:
+        svc._repo.list_by_engagement(
+            engagement_id, limit=limit, offset=offset
+        )
+    assert str(repository_caught.value) == "doc_request.pagination.invalid"
+
+
 def test_list_by_engagement_excludes_deleted(svc, engagement_id):
     req, _ = svc.create_request(_req_input(engagement_id))
     svc.delete_request(req.id)
