@@ -223,15 +223,27 @@ class AnnualWorkService:
                     char if ord(char) >= 32 and ord(char) != 127 else "�"
                     for char in raw
                 )[:120]
-                self._system_log.warn(
-                    "annual_work.unknown_status",
-                    detail={
-                        "dimension": dimension,
-                        "item_id": item.id,
-                        "raw_code": sanitized,
-                    },
-                    commit=not self._conn.in_transaction,
-                )
+                caller_transaction = self._conn.in_transaction
+                try:
+                    self._system_log.warn(
+                        "annual_work.unknown_status",
+                        detail={
+                            "dimension": dimension,
+                            "item_id": item.id,
+                            "raw_code": sanitized,
+                        },
+                        commit=not caller_transaction,
+                    )
+                except Exception:
+                    # Presentation must remain available when diagnostic storage
+                    # is locked or unavailable. Never alter a caller-owned
+                    # transaction; only clean up a transaction started by this
+                    # best-effort log attempt.
+                    if not caller_transaction and self._conn.in_transaction:
+                        try:
+                            self._conn.rollback()
+                        except sqlite3.Error:
+                            pass
         return AnnualWorkStatusPresentation(
             work_status_label=labels["work_status"],
             filing_status_label=labels["filing_status"],
@@ -308,6 +320,11 @@ class AnnualWorkService:
                 raise AnnualWorkValidationError("annual_work.item_not_found")
             if current.work_status == "cancelled":
                 raise AnnualWorkValidationError("annual_work.item.cancelled")
+            if dimension != "work_status" and current.work_status in {
+                "completed",
+                "completed_with_exception",
+            }:
+                raise AnnualWorkValidationError("annual_work.item.completed")
             previous = getattr(current, dimension)
             if previous == status:
                 self._conn.commit()

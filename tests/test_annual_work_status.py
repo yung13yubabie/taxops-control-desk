@@ -240,6 +240,57 @@ def test_work_status_reopen_clears_completion_metadata(container: object) -> Non
     assert reopened.exception_reason is None
 
 
+@pytest.mark.parametrize(
+    ("setter", "target"),
+    [
+        ("set_filing_status", "filed"),
+        ("set_document_status", "complete"),
+        ("set_tax_status", "unpaid"),
+        ("set_fee_status", "paid"),
+    ],
+)
+@pytest.mark.parametrize("terminal", ["completed", "completed_with_exception"])
+def test_completed_item_rejects_independent_status_mutation_until_reopened(
+    container: object, setter: str, target: str, terminal: str
+) -> None:
+    item = _work_item(container)
+    service = getattr(container, "annual_work")
+    if terminal == "completed":
+        service.set_tax_status(item.id, "paid")
+        completed = service.complete_item(item.id)
+    else:
+        completed = service.complete_item(item.id, exception_reason="尚有風險")
+    with pytest.raises(AnnualWorkValidationError) as caught:
+        getattr(service, setter)(item.id, target)
+    assert caught.value.code == "annual_work.item.completed"
+    assert service.repository.get_item(item.id) == completed
+
+    service.set_work_status(item.id, "in_progress")
+    changed = getattr(service, setter)(item.id, target)
+    assert getattr(changed, setter.removeprefix("set_")) == target
+
+
+@pytest.mark.parametrize(
+    ("setter", "same_value"),
+    [
+        ("set_filing_status", "not_filed"),
+        ("set_document_status", "not_requested"),
+        ("set_tax_status", "unconfirmed"),
+        ("set_fee_status", "not_billed"),
+    ],
+)
+def test_completed_item_same_value_setter_is_rejected_not_hidden_as_noop(
+    container: object, setter: str, same_value: str
+) -> None:
+    item = _work_item(container)
+    service = getattr(container, "annual_work")
+    completed = service.complete_item(item.id, exception_reason="尚有風險")
+    with pytest.raises(AnnualWorkValidationError) as caught:
+        getattr(service, setter)(item.id, same_value)
+    assert caught.value.code == "annual_work.item.completed"
+    assert service.repository.get_item(item.id) == completed
+
+
 def test_cancel_preserves_independent_states_and_exact_multiline_reason(container: object) -> None:
     item = _work_item(container)
     service = getattr(container, "annual_work")
@@ -463,6 +514,41 @@ def test_unknown_label_logging_does_not_commit_caller_transaction(container: obj
     assert conn.execute("SELECT COUNT(*) FROM system_logs").fetchone()[0] == before_logs + 2
     conn.rollback()
     assert conn.execute("SELECT COUNT(*) FROM system_logs").fetchone()[0] == before_logs
+
+
+def test_unknown_label_presentation_survives_system_log_writer_lock(
+    container: object,
+) -> None:
+    item = _work_item(container)
+    conn = getattr(container, "conn")
+    raw = "future\nprivate-value"
+    conn.execute("UPDATE annual_work_items SET tax_status = ? WHERE id = ?", (raw, item.id))
+    conn.commit()
+    db_path = conn.execute("PRAGMA database_list").fetchone()[2]
+    locker = sqlite3.connect(db_path)
+    locker.execute("PRAGMA busy_timeout = 1")
+    conn.execute("PRAGMA busy_timeout = 1")
+    locker.execute("BEGIN IMMEDIATE")
+    try:
+        presentation = getattr(container, "annual_work").get_status_presentation(item.id)
+        assert presentation.tax_status_label == UNKNOWN_STATUS_TEXT
+        assert raw not in tuple(presentation.__dict__.values())
+        assert conn.in_transaction is False
+        assert getattr(container, "annual_work").repository.get_item(item.id).tax_status == raw
+    finally:
+        locker.rollback()
+        locker.close()
+
+    presentation = getattr(container, "annual_work").get_status_presentation(item.id)
+    assert presentation.tax_status_label == UNKNOWN_STATUS_TEXT
+    log = conn.execute(
+        "SELECT detail_json FROM system_logs WHERE message = 'annual_work.unknown_status' "
+        "ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert log is not None
+    detail = json.loads(log["detail_json"])
+    assert detail["raw_code"] == "future�private-value"
+    assert raw not in log["detail_json"]
 
 
 def test_exception_risk_search_and_strict_status_filters(container: object) -> None:
