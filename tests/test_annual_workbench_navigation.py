@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import Mock
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QListWidget, QStackedWidget
+from PySide6.QtWidgets import QApplication, QLabel, QListWidget, QStackedWidget
 
 from taxops.i18n import DISABLED_TOOLTIP, NAV_LABELS
 from taxops.ui.action_registry import (
@@ -18,6 +18,7 @@ from taxops.ui.action_registry import (
 )
 from taxops.ui.main_window import MainWindow
 from taxops.ui.pages.annual_workbench_page import AnnualWorkbenchPage
+from taxops.ui.style import apply as apply_style
 
 
 def _nav_row(nav: QListWidget, label: str) -> int:
@@ -99,3 +100,36 @@ def test_annual_workbench_exposes_only_a_disabled_future_action(
     assert page.future_action_button.text() == action.button_label
     assert not page.future_action_button.isEnabled()
     assert page.future_action_button.toolTip() == DISABLED_TOOLTIP
+
+
+def test_annual_empty_state_text_stays_legible_without_compact_clipping(
+    qtbot, qapp, container
+) -> None:
+    previous_stylesheet = qapp.styleSheet()
+    try:
+        apply_style(qapp)
+        page = AnnualWorkbenchPage(container)
+        qtbot.addWidget(page)
+        page.resize(900, 540)
+        page.show()
+        QApplication.processEvents()
+
+        empty_title = page.findChild(QLabel, "EmptyStateTitle")
+        empty_body = page.findChild(QLabel, "EmptyStateBody")
+        assert empty_title is not None
+        assert empty_body is not None
+        text_widgets = (
+            empty_title,
+            empty_body,
+            page.future_action_button,
+        )
+        assert all(widget.font().pixelSize() >= 14 for widget in text_widgets)
+        assert page.minimumSizeHint().width() <= 900
+        assert page.minimumSizeHint().height() <= 540
+        for widget in text_widgets:
+            top_left = widget.mapTo(page, widget.rect().topLeft())
+            bottom_right = widget.mapTo(page, widget.rect().bottomRight())
+            assert page.rect().contains(top_left)
+            assert page.rect().contains(bottom_right)
+    finally:
+        qapp.setStyleSheet(previous_stylesheet)

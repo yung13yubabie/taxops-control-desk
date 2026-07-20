@@ -48,9 +48,15 @@ class AnnualWorkbenchPage(QWidget):
         self.future_action_button = cast(
             QPushButton, self._empty_state.action_button
         )
+        self.future_action_button.setObjectName("AnnualFutureAction")
         self.future_action_button.setEnabled(False)
         self.future_action_button.setToolTip(DISABLED_TOOLTIP)
         outer.addWidget(self._empty_state, stretch=1)
+
+        self.setStyleSheet(
+            "QLabel#EmptyStateTitle, QLabel#EmptyStateBody, "
+            "QPushButton#AnnualFutureAction { font-size: 14px; }"
+        )
 
         self._apply_filter_state()
 
