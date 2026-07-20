@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 # Page identifiers — must match keys in ``taxops.i18n.labels.NAV_LABELS``.
 PAGE_CLIENTS = "clients"
+PAGE_ANNUAL_WORKBENCH = "annual_workbench"
 PAGE_ENGAGEMENTS = "engagements"
 PAGE_DOC_REQUESTS = "doc_requests"
 PAGE_TASKS = "tasks"
@@ -36,6 +37,7 @@ NAV_ORDER: tuple[str, ...] = (
     # Slice 24 v0.15.1: PAGE_REVIEW_NOTES retired; PAGE_FOLDER_BOOKMARKS
     # replaces it in the same slot.
     PAGE_CLIENTS,
+    PAGE_ANNUAL_WORKBENCH,
     PAGE_ENGAGEMENTS,
     PAGE_TASKS,
     PAGE_WORK_RECORDS,
@@ -346,6 +348,8 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
         test_marker="test_download_registry_contract",
         enabled=True,
     ),
+    # Annual workbench (read-only navigation skeleton)
+    _disabled("年度工作項目尚未開放", PAGE_ANNUAL_WORKBENCH),
     # Engagements page (slice 4 — enabled)
     UIActionContract(
         button_label="新增案件",

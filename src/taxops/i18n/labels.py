@@ -10,6 +10,7 @@ NAV_LABELS: dict[str, str] = dict(
     MappingProxyType(
         {
             "clients": "客戶管理",
+            "annual_workbench": "年度工作檯",
             "engagements": "案件管理",
             "doc_requests": "索件管理",
             "tasks": "待辦事項",
