@@ -85,7 +85,7 @@ class AnnualWorkOverviewRow:
     operation_year: int
     client_code: str
     client_name: str
-    balance: AnnualBalance = AnnualBalance()
+    balance: AnnualBalance
 
 
 @dataclass(frozen=True)

@@ -69,7 +69,7 @@ class AnnualWorkError(Exception):
         self.code = code
 
 
-class AnnualWorkValidationError(AnnualWorkError):
+class AnnualWorkValidationError(AnnualWorkError, ValueError):
     """A caller-supplied value or current client profile cannot be used."""
 
 

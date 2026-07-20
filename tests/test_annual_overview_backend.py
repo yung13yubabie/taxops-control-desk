@@ -5,7 +5,10 @@ import sqlite3
 import pytest
 
 from taxops.db.connection import open_connection
-from taxops.repositories.annual_work import AnnualWorkRepository
+from taxops.repositories.annual_work import (
+    AnnualWorkOverviewRow,
+    AnnualWorkRepository,
+)
 from taxops.services.clients import CreateClientInput
 from taxops.services.compliance_profiles import ComplianceProfileItemInput
 from taxops.services.annual_work import AnnualWorkError, AnnualWorkValidationError
@@ -315,3 +318,29 @@ def test_overview_metrics_udf_failure_has_stable_sanitized_service_error(
         )
     assert caught.value.code == "annual_work.overview.failed"
     assert "SECRET" not in str(caught.value)
+
+
+def test_overview_service_validation_error_preserves_value_error_contract(
+    container: object,
+) -> None:
+    with pytest.raises(ValueError) as caught:
+        getattr(container, "annual_work").search_overview({"unknown": "filter"})
+
+    error = caught.value
+    assert isinstance(error, AnnualWorkValidationError)
+    assert isinstance(error, AnnualWorkError)
+    assert isinstance(error, ValueError)
+    assert error.code == "annual_work.filters.invalid"
+
+
+def test_overview_row_constructor_requires_explicit_balance(container: object) -> None:
+    item = _work_item(container, code="OVERVIEW-BALANCE-REQUIRED")
+
+    with pytest.raises(TypeError):
+        AnnualWorkOverviewRow(
+            item=item,
+            workspace_client_id=1,
+            operation_year=2026,
+            client_code="OVERVIEW-BALANCE-REQUIRED",
+            client_name="年度總覽測試客戶",
+        )
