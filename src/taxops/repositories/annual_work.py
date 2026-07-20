@@ -11,6 +11,12 @@ from ..core.compliance import WORK_TYPE_LABELS
 from ..core.clock import now_iso
 from ..core.annual_status import STATUS_SETS, WORK_STATUSES
 from ..services.compliance_rules import WorkDraft
+from .annual_transactions import (
+    ANNUAL_OVERVIEW_RISKS,
+    AnnualBalance,
+    decode_annual_exact_decimal,
+    register_annual_exact_sqlite_functions,
+)
 
 
 @dataclass(frozen=True)
@@ -79,6 +85,19 @@ class AnnualWorkOverviewRow:
     operation_year: int
     client_code: str
     client_name: str
+    balance: AnnualBalance = AnnualBalance()
+
+
+@dataclass(frozen=True)
+class AnnualOverviewMetrics:
+    item_count: int = 0
+    client_count: int = 0
+    exception_count: int = 0
+    document_risk_count: int = 0
+    collection_shortfall_total: int = 0
+    unpaid_tax_total: int = 0
+    outstanding_fee_total: int = 0
+    overage_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -227,14 +246,14 @@ class AnnualWorkRepository:
         "updated_at": "aw.updated_at",
     }
     _OVERVIEW_SORT = {
-        "id": "awi.id",
-        "operation_year": "aw.operation_year",
-        "client_code": "c.client_code",
-        "client_name": "c.client_name",
-        "due_date": "awi.due_date",
-        "work_type": "awi.work_type",
-        "work_status": "awi.work_status",
-        "updated_at": "awi.updated_at",
+        "id": "id",
+        "operation_year": "overview_operation_year",
+        "client_code": "overview_client_code",
+        "client_name": "overview_client_name",
+        "due_date": "due_date",
+        "work_type": "work_type",
+        "work_status": "work_status",
+        "updated_at": "updated_at",
     }
     _OVERVIEW_FILTERS = frozenset(
         {
@@ -257,6 +276,7 @@ class AnnualWorkRepository:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
+        register_annual_exact_sqlite_functions(self._conn)
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -628,19 +648,13 @@ class AnnualWorkRepository:
         ).fetchall()
         return [_item_row(row) for row in rows]
 
-    def search_overview(
-        self,
-        filters: Mapping[str, object] | None = None,
-        *,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[AnnualWorkOverviewRow]:
-        limit, offset = _pagination(limit, offset)
+    def _overview_filter_parts(
+        self, filters: Mapping[str, object] | None
+    ) -> tuple[list[str], list[object], str | None, str, str]:
         if filters is not None and not isinstance(filters, Mapping):
             raise ValueError("annual_work.filters.invalid")
         values = dict(filters or {})
-        unknown = set(values) - self._OVERVIEW_FILTERS
-        if unknown:
+        if set(values) - self._OVERVIEW_FILTERS:
             raise ValueError("annual_work.filters.invalid")
         order_by = values.pop("order_by", "due_date")
         order_dir = values.pop("order_dir", "ASC")
@@ -651,14 +665,20 @@ class AnnualWorkRepository:
             "c.deleted_at IS NULL",
         ]
         params: list[object] = []
-        if "client_id" in values and values["client_id"] is not None:
+        if values.get("client_id") is not None:
             clauses.append("aw.client_id = ?")
             params.append(
                 _positive_id(values["client_id"], "annual_work.filters.invalid")
             )
-        if "operation_year" in values and values["operation_year"] is not None:
+        if values.get("operation_year") is not None:
             clauses.append("aw.operation_year = ?")
             params.append(_operation_year(values["operation_year"]))
+        if values.get("work_type") is not None:
+            work_type = _filter_text(values["work_type"])
+            if work_type not in WORK_TYPE_LABELS:
+                raise ValueError("annual_work.filters.invalid")
+            clauses.append("awi.work_type = ?")
+            params.append(work_type)
         exact_columns = {
             "work_status": "awi.work_status",
             "filing_status": "awi.filing_status",
@@ -666,14 +686,8 @@ class AnnualWorkRepository:
             "tax_status": "awi.tax_status",
             "fee_status": "awi.fee_status",
         }
-        if "work_type" in values and values["work_type"] is not None:
-            work_type = _filter_text(values["work_type"])
-            if work_type not in WORK_TYPE_LABELS:
-                raise ValueError("annual_work.filters.invalid")
-            clauses.append("awi.work_type = ?")
-            params.append(work_type)
         for name, column_name in exact_columns.items():
-            if name in values and values[name] is not None:
+            if values.get(name) is not None:
                 if (
                     not isinstance(values[name], str)
                     or values[name] not in STATUS_SETS[name]
@@ -681,14 +695,16 @@ class AnnualWorkRepository:
                     raise ValueError("annual_work.filters.invalid")
                 clauses.append(f"{column_name} = ?")
                 params.append(_filter_text(values[name]))
-        if "risk" in values and values["risk"] is not None:
-            if values["risk"] != "exception":
+        risk: str | None = None
+        if values.get("risk") is not None:
+            if (
+                not isinstance(values["risk"], str)
+                or values["risk"] not in ANNUAL_OVERVIEW_RISKS
+            ):
                 raise ValueError("annual_work.filters.invalid")
-            clauses.append(
-                "awi.work_status IN ('exception', 'completed_with_exception')"
-            )
+            risk = values["risk"]
         for name, operator in (("due_from", ">="), ("due_to", "<=")):
-            if name in values and values[name] is not None:
+            if values.get(name) is not None:
                 clauses.append(f"awi.due_date {operator} ?")
                 params.append(_filter_date(values[name]))
         if (
@@ -708,17 +724,61 @@ class AnnualWorkRepository:
                     "OR awi.item_key LIKE ? ESCAPE '\\')"
                 )
                 params.extend((pattern, pattern, pattern, pattern))
+        return clauses, params, risk, column, direction
+
+    def search_overview(
+        self,
+        filters: Mapping[str, object] | None = None,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[AnnualWorkOverviewRow]:
+        limit, offset = _pagination(limit, offset)
+        clauses, params, risk, column, direction = self._overview_filter_parts(
+            filters
+        )
+        outer_clause = ""
+        if risk is not None:
+            outer_clause = (
+                " WHERE annual_exact_balance_risk(?, work_status, document_status, "
+                "overview_tax_liability, overview_client_tax_collection, "
+                "overview_tax_payment, overview_tax_credit_or_refund, "
+                "overview_fee_receivable, overview_fee_receipt) = 1"
+            )
+            params.append(risk)
         params.extend((limit, offset))
         rows = self._conn.execute(
-            "SELECT awi.*, aw.client_id AS overview_client_id, "
+            "WITH overview AS (SELECT awi.*, aw.client_id AS overview_client_id, "
             "aw.operation_year AS overview_operation_year, "
             "c.client_code AS overview_client_code, "
-            "c.client_name AS overview_client_name "
+            "c.client_name AS overview_client_name, "
+            "COALESCE(annual_exact_int_sum(CASE "
+            " WHEN awt.category = 'tax_liability' THEN awt.amount ELSE 0 END), '0') "
+            " AS overview_tax_liability, "
+            "COALESCE(annual_exact_int_sum(CASE "
+            " WHEN awt.category = 'client_tax_collection' THEN awt.amount ELSE 0 END), '0') "
+            " AS overview_client_tax_collection, "
+            "COALESCE(annual_exact_int_sum(CASE "
+            " WHEN awt.category = 'tax_payment' THEN awt.amount ELSE 0 END), '0') "
+            " AS overview_tax_payment, "
+            "COALESCE(annual_exact_int_sum(CASE "
+            " WHEN awt.category = 'tax_credit_or_refund' THEN awt.amount ELSE 0 END), '0') "
+            " AS overview_tax_credit_or_refund, "
+            "COALESCE(annual_exact_int_sum(CASE "
+            " WHEN awt.category = 'fee_receivable' THEN awt.amount ELSE 0 END), '0') "
+            " AS overview_fee_receivable, "
+            "COALESCE(annual_exact_int_sum(CASE "
+            " WHEN awt.category = 'fee_receipt' THEN awt.amount ELSE 0 END), '0') "
+            " AS overview_fee_receipt "
             "FROM annual_work_items awi "
             "JOIN annual_workspaces aw ON aw.id = awi.workspace_id "
-            "JOIN clients c ON c.id = aw.client_id WHERE "
+            "JOIN clients c ON c.id = aw.client_id "
+            "LEFT JOIN annual_work_transactions awt "
+            " ON awt.work_item_id = awi.id AND awt.deleted_at IS NULL WHERE "
             + " AND ".join(clauses)
-            + f" ORDER BY {column} {direction}, awi.id ASC LIMIT ? OFFSET ?",
+            + " GROUP BY awi.id) SELECT * FROM overview"
+            + outer_clause
+            + f" ORDER BY {column} {direction}, id ASC LIMIT ? OFFSET ?",
             params,
         ).fetchall()
         return [
@@ -728,6 +788,118 @@ class AnnualWorkRepository:
                 operation_year=int(row["overview_operation_year"]),
                 client_code=str(row["overview_client_code"]),
                 client_name=str(row["overview_client_name"]),
+                balance=AnnualBalance.from_totals(
+                    tax_liability=decode_annual_exact_decimal(
+                        row["overview_tax_liability"]
+                    ),
+                    client_tax_collection=decode_annual_exact_decimal(
+                        row["overview_client_tax_collection"]
+                    ),
+                    tax_payment=decode_annual_exact_decimal(
+                        row["overview_tax_payment"]
+                    ),
+                    tax_credit_or_refund=decode_annual_exact_decimal(
+                        row["overview_tax_credit_or_refund"]
+                    ),
+                    fee_receivable=decode_annual_exact_decimal(
+                        row["overview_fee_receivable"]
+                    ),
+                    fee_receipt=decode_annual_exact_decimal(
+                        row["overview_fee_receipt"]
+                    ),
+                ),
             )
             for row in rows
         ]
+
+    def overview_metrics(
+        self, filters: Mapping[str, object] | None = None
+    ) -> AnnualOverviewMetrics:
+        clauses, params, risk, _column, _direction = self._overview_filter_parts(
+            filters
+        )
+        matched_where = ""
+        if risk is not None:
+            matched_where = (
+                " WHERE annual_exact_balance_risk(?, work_status, document_status, "
+                "overview_tax_liability, overview_client_tax_collection, "
+                "overview_tax_payment, overview_tax_credit_or_refund, "
+                "overview_fee_receivable, overview_fee_receipt) = 1"
+            )
+            params.append(risk)
+        row = self._conn.execute(
+            "WITH overview AS (SELECT awi.*, aw.client_id AS overview_client_id, "
+            "COALESCE(annual_exact_int_sum(CASE "
+            " WHEN awt.category = 'tax_liability' THEN awt.amount ELSE 0 END), '0') "
+            " AS overview_tax_liability, "
+            "COALESCE(annual_exact_int_sum(CASE "
+            " WHEN awt.category = 'client_tax_collection' THEN awt.amount ELSE 0 END), '0') "
+            " AS overview_client_tax_collection, "
+            "COALESCE(annual_exact_int_sum(CASE "
+            " WHEN awt.category = 'tax_payment' THEN awt.amount ELSE 0 END), '0') "
+            " AS overview_tax_payment, "
+            "COALESCE(annual_exact_int_sum(CASE "
+            " WHEN awt.category = 'tax_credit_or_refund' THEN awt.amount ELSE 0 END), '0') "
+            " AS overview_tax_credit_or_refund, "
+            "COALESCE(annual_exact_int_sum(CASE "
+            " WHEN awt.category = 'fee_receivable' THEN awt.amount ELSE 0 END), '0') "
+            " AS overview_fee_receivable, "
+            "COALESCE(annual_exact_int_sum(CASE "
+            " WHEN awt.category = 'fee_receipt' THEN awt.amount ELSE 0 END), '0') "
+            " AS overview_fee_receipt FROM annual_work_items awi "
+            "JOIN annual_workspaces aw ON aw.id = awi.workspace_id "
+            "JOIN clients c ON c.id = aw.client_id "
+            "LEFT JOIN annual_work_transactions awt "
+            " ON awt.work_item_id = awi.id AND awt.deleted_at IS NULL WHERE "
+            + " AND ".join(clauses)
+            + " GROUP BY awi.id), matched AS (SELECT * FROM overview"
+            + matched_where
+            + "), per_item AS (SELECT *, "
+            "annual_exact_balance_value('collection_shortfall', "
+            "overview_tax_liability, overview_client_tax_collection, "
+            "overview_tax_payment, overview_tax_credit_or_refund, "
+            "overview_fee_receivable, overview_fee_receipt) AS collection_shortfall, "
+            "annual_exact_balance_value('unpaid_tax', "
+            "overview_tax_liability, overview_client_tax_collection, "
+            "overview_tax_payment, overview_tax_credit_or_refund, "
+            "overview_fee_receivable, overview_fee_receipt) AS unpaid_tax, "
+            "annual_exact_balance_value('outstanding_fee', "
+            "overview_tax_liability, overview_client_tax_collection, "
+            "overview_tax_payment, overview_tax_credit_or_refund, "
+            "overview_fee_receivable, overview_fee_receipt) AS outstanding_fee "
+            "FROM matched) SELECT COUNT(*) AS item_count, "
+            "COUNT(DISTINCT overview_client_id) AS client_count, "
+            "COALESCE(SUM(work_status IN ('exception', 'completed_with_exception')), 0) "
+            " AS exception_count, "
+            "COALESCE(SUM(document_status IN ('missing', 'partially_received')), 0) "
+            " AS document_risk_count, "
+            "COALESCE(annual_exact_decimal_sum(collection_shortfall), '0') "
+            " AS collection_shortfall_total, "
+            "COALESCE(annual_exact_decimal_sum(unpaid_tax), '0') AS unpaid_tax_total, "
+            "COALESCE(annual_exact_decimal_sum(outstanding_fee), '0') "
+            " AS outstanding_fee_total, "
+            "COALESCE(SUM(annual_exact_balance_risk('overage', work_status, "
+            "document_status, overview_tax_liability, "
+            "overview_client_tax_collection, overview_tax_payment, "
+            "overview_tax_credit_or_refund, overview_fee_receivable, "
+            "overview_fee_receipt)), 0) AS overage_count FROM per_item",
+            params,
+        ).fetchone()
+        if row is None:
+            return AnnualOverviewMetrics()
+        return AnnualOverviewMetrics(
+            item_count=int(row["item_count"]),
+            client_count=int(row["client_count"]),
+            exception_count=int(row["exception_count"]),
+            document_risk_count=int(row["document_risk_count"]),
+            collection_shortfall_total=decode_annual_exact_decimal(
+                row["collection_shortfall_total"]
+            ),
+            unpaid_tax_total=decode_annual_exact_decimal(
+                row["unpaid_tax_total"]
+            ),
+            outstanding_fee_total=decode_annual_exact_decimal(
+                row["outstanding_fee_total"]
+            ),
+            overage_count=int(row["overage_count"]),
+        )

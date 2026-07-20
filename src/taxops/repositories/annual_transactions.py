@@ -9,9 +9,22 @@ from ..core.clock import now_iso
 
 
 EXACT_SUM_AGGREGATE = "annual_exact_int_sum"
+EXACT_DECIMAL_SUM_AGGREGATE = "annual_exact_decimal_sum"
+EXACT_BALANCE_RISK_FUNCTION = "annual_exact_balance_risk"
+EXACT_BALANCE_VALUE_FUNCTION = "annual_exact_balance_value"
+ANNUAL_OVERVIEW_RISKS = frozenset(
+    {
+        "exception",
+        "document_missing",
+        "collection_shortfall",
+        "unpaid_tax",
+        "outstanding_fee",
+        "overage",
+    }
+)
 
 
-class _ExactIntegerSum:
+class ExactIntegerSum:
     """SQLite aggregate that never narrows Python integers to int64 or float."""
 
     def __init__(self) -> None:
@@ -27,6 +40,20 @@ class _ExactIntegerSum:
     def finalize(self) -> str:
         # Returning decimal text avoids sqlite3 converting an out-of-int64
         # Python integer back into SQLite INTEGER before repository decoding.
+        return str(self._total)
+
+
+class ExactDecimalSum:
+    """Sum canonical decimal text without SQLite numeric coercion."""
+
+    def __init__(self) -> None:
+        self._total = 0
+
+    def step(self, value: object) -> None:
+        if value is not None:
+            self._total += _canonical_decimal_int(value)
+
+    def finalize(self) -> str:
         return str(self._total)
 
 
@@ -46,18 +73,50 @@ class AnnualTransactionRow:
 
 @dataclass(frozen=True)
 class AnnualBalance:
-    tax_liability: int
-    client_tax_collection: int
-    tax_payment: int
-    tax_credit_or_refund: int
-    fee_receivable: int
-    fee_receipt: int
-    collection_shortfall: int
-    unpaid_tax: int
-    outstanding_fee: int
-    excess_client_collection: int
-    tax_overpayment: int
-    fee_overpayment: int
+    tax_liability: int = 0
+    client_tax_collection: int = 0
+    tax_payment: int = 0
+    tax_credit_or_refund: int = 0
+    fee_receivable: int = 0
+    fee_receipt: int = 0
+    collection_shortfall: int = 0
+    unpaid_tax: int = 0
+    outstanding_fee: int = 0
+    excess_client_collection: int = 0
+    tax_overpayment: int = 0
+    fee_overpayment: int = 0
+
+    @classmethod
+    def from_totals(
+        cls,
+        *,
+        tax_liability: int,
+        client_tax_collection: int,
+        tax_payment: int,
+        tax_credit_or_refund: int,
+        fee_receivable: int,
+        fee_receipt: int,
+    ) -> AnnualBalance:
+        return cls(
+            tax_liability=tax_liability,
+            client_tax_collection=client_tax_collection,
+            tax_payment=tax_payment,
+            tax_credit_or_refund=tax_credit_or_refund,
+            fee_receivable=fee_receivable,
+            fee_receipt=fee_receipt,
+            collection_shortfall=max(
+                0, tax_liability - tax_credit_or_refund - client_tax_collection
+            ),
+            unpaid_tax=max(0, tax_liability - tax_credit_or_refund - tax_payment),
+            outstanding_fee=max(0, fee_receivable - fee_receipt),
+            excess_client_collection=max(
+                0, tax_credit_or_refund + client_tax_collection - tax_liability
+            ),
+            tax_overpayment=max(
+                0, tax_credit_or_refund + tax_payment - tax_liability
+            ),
+            fee_overpayment=max(0, fee_receipt - fee_receivable),
+        )
 
     @property
     def client_collection_shortfall(self) -> int:
@@ -87,6 +146,131 @@ class AnnualBalance:
     @property
     def fee_receipts(self) -> int:
         return self.fee_receipt
+
+
+def _canonical_decimal_int(value: object) -> int:
+    if not isinstance(value, str) or not value:
+        raise ValueError("annual exact decimal text required")
+    if value != "0" and (not value.isdigit() or value.startswith("0")):
+        raise ValueError("annual exact decimal text is not canonical")
+    return int(value)
+
+
+def decode_annual_exact_decimal(value: object) -> int:
+    """Decode trusted aggregate text or raise a stable database data error."""
+    try:
+        return _canonical_decimal_int(value)
+    except ValueError as exc:
+        raise sqlite3.DataError("annual exact aggregate result invalid") from exc
+
+
+def _annual_exact_balance_risk(
+    risk: object,
+    work_status: object,
+    document_status: object,
+    tax_liability: object,
+    client_tax_collection: object,
+    tax_payment: object,
+    tax_credit_or_refund: object,
+    fee_receivable: object,
+    fee_receipt: object,
+) -> int:
+    if not isinstance(risk, str) or risk not in ANNUAL_OVERVIEW_RISKS:
+        raise ValueError("annual overview risk is not allowlisted")
+    if not isinstance(work_status, str) or not isinstance(document_status, str):
+        raise ValueError("annual overview status text required")
+    balance = _balance_from_decimal_totals(
+        tax_liability,
+        client_tax_collection,
+        tax_payment,
+        tax_credit_or_refund,
+        fee_receivable,
+        fee_receipt,
+    )
+    return int(
+        (risk == "exception" and work_status in {"exception", "completed_with_exception"})
+        or (
+            risk == "document_missing"
+            and document_status in {"missing", "partially_received"}
+        )
+        or (risk == "collection_shortfall" and balance.collection_shortfall > 0)
+        or (risk == "unpaid_tax" and balance.unpaid_tax > 0)
+        or (risk == "outstanding_fee" and balance.outstanding_fee > 0)
+        or (
+            risk == "overage"
+            and any(
+                amount > 0
+                for amount in (
+                    balance.excess_client_collection,
+                    balance.tax_overpayment,
+                    balance.fee_overpayment,
+                )
+            )
+        )
+    )
+
+
+def _balance_from_decimal_totals(
+    tax_liability: object,
+    client_tax_collection: object,
+    tax_payment: object,
+    tax_credit_or_refund: object,
+    fee_receivable: object,
+    fee_receipt: object,
+) -> AnnualBalance:
+    return AnnualBalance.from_totals(
+        tax_liability=_canonical_decimal_int(tax_liability),
+        client_tax_collection=_canonical_decimal_int(client_tax_collection),
+        tax_payment=_canonical_decimal_int(tax_payment),
+        tax_credit_or_refund=_canonical_decimal_int(tax_credit_or_refund),
+        fee_receivable=_canonical_decimal_int(fee_receivable),
+        fee_receipt=_canonical_decimal_int(fee_receipt),
+    )
+
+
+def _annual_exact_balance_value(
+    metric: object,
+    tax_liability: object,
+    client_tax_collection: object,
+    tax_payment: object,
+    tax_credit_or_refund: object,
+    fee_receivable: object,
+    fee_receipt: object,
+) -> str:
+    if metric not in {"collection_shortfall", "unpaid_tax", "outstanding_fee"}:
+        raise ValueError("annual balance metric is not allowlisted")
+    balance = _balance_from_decimal_totals(
+        tax_liability,
+        client_tax_collection,
+        tax_payment,
+        tax_credit_or_refund,
+        fee_receivable,
+        fee_receipt,
+    )
+    return str(getattr(balance, metric))
+
+
+def register_annual_exact_sqlite_functions(conn: sqlite3.Connection) -> None:
+    """Register annual-money helpers on one SQLite connection.
+
+    SQLite functions are connection-local. Re-registering the same helper is
+    supported by ``sqlite3`` and keeps repository construction deterministic on
+    fresh or independently opened connections.
+    """
+    conn.create_aggregate(EXACT_SUM_AGGREGATE, 1, ExactIntegerSum)
+    conn.create_aggregate(EXACT_DECIMAL_SUM_AGGREGATE, 1, ExactDecimalSum)
+    conn.create_function(
+        EXACT_BALANCE_RISK_FUNCTION,
+        9,
+        _annual_exact_balance_risk,
+        deterministic=True,
+    )
+    conn.create_function(
+        EXACT_BALANCE_VALUE_FUNCTION,
+        7,
+        _annual_exact_balance_value,
+        deterministic=True,
+    )
 
 
 def _positive_id(value: object, code: str) -> int:
@@ -122,7 +306,7 @@ class AnnualTransactionsRepository:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
-        self._conn.create_aggregate(EXACT_SUM_AGGREGATE, 1, _ExactIntegerSum)
+        register_annual_exact_sqlite_functions(self._conn)
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -313,23 +497,17 @@ class AnnualTransactionsRepository:
         ).fetchone()
         if value is None:
             raise RuntimeError("annual_transactions.balance.failed")
-        liability = int(value["liability"])
-        collected = int(value["collected"])
-        paid = int(value["paid"])
-        credits = int(value["credits"])
-        fees = int(value["fees"])
-        receipts = int(value["fee_receipts"])
-        return AnnualBalance(
+        liability = decode_annual_exact_decimal(value["liability"])
+        collected = decode_annual_exact_decimal(value["collected"])
+        paid = decode_annual_exact_decimal(value["paid"])
+        credits = decode_annual_exact_decimal(value["credits"])
+        fees = decode_annual_exact_decimal(value["fees"])
+        receipts = decode_annual_exact_decimal(value["fee_receipts"])
+        return AnnualBalance.from_totals(
             tax_liability=liability,
             client_tax_collection=collected,
             tax_payment=paid,
             tax_credit_or_refund=credits,
             fee_receivable=fees,
             fee_receipt=receipts,
-            collection_shortfall=max(0, liability - credits - collected),
-            unpaid_tax=max(0, liability - credits - paid),
-            outstanding_fee=max(0, fees - receipts),
-            excess_client_collection=max(0, credits + collected - liability),
-            tax_overpayment=max(0, credits + paid - liability),
-            fee_overpayment=max(0, receipts - fees),
         )

@@ -24,6 +24,7 @@ from ..i18n.status_labels import (
     UNKNOWN_STATUS_TEXT,
 )
 from ..repositories.annual_work import (
+    AnnualOverviewMetrics,
     AnnualDocumentSummaryRow,
     AnnualWorkItemRow,
     AnnualWorkOverviewRow,
@@ -698,14 +699,36 @@ class AnnualWorkService:
         limit: int = 100,
         offset: int = 0,
     ) -> list[AnnualWorkOverviewRow]:
+        if (
+            type(limit) is not int
+            or not 1 <= limit <= 100
+            or type(offset) is not int
+            or not 0 <= offset <= 1_000_000
+        ):
+            raise AnnualWorkValidationError("annual_work.pagination.invalid")
         if filters is not None and not isinstance(filters, Mapping):
-            raise ValueError("annual_work.filters.invalid")
+            raise AnnualWorkValidationError("annual_work.filters.invalid")
         values = dict(filters or {})
         if risk is not None:
             if "risk" in values:
-                raise ValueError("annual_work.filters.invalid")
+                raise AnnualWorkValidationError("annual_work.filters.invalid")
             values["risk"] = risk
-        return self._repo.search_overview(values, limit=limit, offset=offset)
+        try:
+            return self._repo.search_overview(values, limit=limit, offset=offset)
+        except ValueError as exc:
+            raise AnnualWorkValidationError(str(exc)) from exc
+        except sqlite3.Error as exc:
+            raise AnnualWorkError("annual_work.overview.failed") from exc
+
+    def overview_metrics(
+        self, filters: Mapping[str, object] | None = None
+    ) -> AnnualOverviewMetrics:
+        try:
+            return self._repo.overview_metrics(filters)
+        except ValueError as exc:
+            raise AnnualWorkValidationError(str(exc)) from exc
+        except sqlite3.Error as exc:
+            raise AnnualWorkError("annual_work.overview.failed") from exc
 
     def preview(self, client_id: int, operation_year: int) -> tuple[WorkDraft, ...]:
         client_id = _validate_client_id(client_id)
