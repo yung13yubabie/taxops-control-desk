@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import logging
 import sqlite3
+import unicodedata
 from dataclasses import dataclass
 
 from ..core.text import sanitize_user_text
@@ -53,6 +54,28 @@ class TaskValidationError(Exception):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+
+def _task_text(
+    value: object,
+    *,
+    field: str,
+    maximum: int,
+    required: bool = False,
+) -> str | None:
+    if value is None and not required:
+        return None
+    if type(value) is not str:
+        raise TaskValidationError(f"task.{field}.invalid")
+    if len(value) > maximum or any(
+        unicodedata.category(char) in {"Cc", "Cf"}
+        for char in value
+        if char not in "\t\n\r"
+    ):
+        raise TaskValidationError(f"task.{field}.invalid")
+    if required and not value.strip():
+        raise TaskValidationError(f"task.{field}.required")
+    return value
 
 
 @dataclass(frozen=True)
@@ -137,22 +160,28 @@ class TasksService:
             ):
                 raise TaskValidationError("task.client_not_found")
 
-        title = sanitize_user_text(payload.title, max_length=200)
-        if not title:
-            raise TaskValidationError("task.title.required")
+        title = _task_text(
+            payload.title, field="title", maximum=200, required=True
+        )
 
         if payload.priority not in VALID_PRIORITIES:
             raise TaskValidationError("task.priority.invalid")
 
-        assignee = sanitize_user_text(payload.assignee, max_length=100) or None
-        due_date = sanitize_user_text(payload.due_date, max_length=20) or None
+        assignee = _task_text(
+            payload.assignee, field="assignee", maximum=100
+        )
+        due_date = _task_text(
+            payload.due_date, field="due_date", maximum=20
+        )
         if due_date is not None:
             try:
                 datetime.date.fromisoformat(due_date)
             except ValueError:
                 raise TaskValidationError("task.due_date.invalid")
-        next_step = sanitize_user_text(payload.next_step, max_length=500) or None
-        notes = sanitize_user_text(payload.notes, max_length=2000) or None
+        next_step = _task_text(
+            payload.next_step, field="next_step", maximum=500
+        )
+        notes = _task_text(payload.notes, field="notes", maximum=2000)
 
         row = self._repo.insert(
             engagement_id=effective_engagement_id,

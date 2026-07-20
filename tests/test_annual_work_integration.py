@@ -91,6 +91,57 @@ def test_linked_task_is_the_same_existing_task_row(container: object) -> None:
     assert getattr(container, "tasks").list_by_annual_work_item(item.id) == [linked]
 
 
+def test_linked_task_preserves_valid_text_exactly(container: object) -> None:
+    _client, item = _work_item(container, code="ANNUAL-TASK-EXACT")
+    values = {
+        "title": "  年度任務😀\n第二行\r\n\t結尾  ",
+        "assignee": "  王小姐😀\t  ",
+        "due_date": "2026-07-20",
+        "next_step": "  下一步😀\n第二行\r\t  ",
+        "notes": "  備註😀\n第二行\r\n\t結尾  ",
+    }
+
+    task = getattr(container, "annual_work").create_linked_task(
+        item.id, **values
+    )
+
+    assert task.title == values["title"]
+    assert task.assignee == values["assignee"]
+    assert task.due_date == values["due_date"]
+    assert task.next_step == values["next_step"]
+    assert task.notes == values["notes"]
+
+
+def test_linked_task_invalid_text_is_atomic_and_returns_stable_code(
+    container: object,
+) -> None:
+    _client, item = _work_item(container, code="ANNUAL-TASK-TEXT-INVALID")
+    annual = getattr(container, "annual_work")
+    conn = getattr(container, "conn")
+    tables = ("engagements", "workflow_tasks", "audit_logs")
+    before = {
+        table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in tables
+    }
+    before_fts = conn.execute(
+        "SELECT COUNT(*) FROM fts_engagements"
+    ).fetchone()[0]
+
+    with pytest.raises(AnnualWorkValidationError) as caught:
+        annual.create_linked_task(item.id, title="任" * 201)
+
+    assert caught.value.code == "task.title.invalid"
+    assert {
+        table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in tables
+    } == before
+    assert (
+        conn.execute("SELECT COUNT(*) FROM fts_engagements").fetchone()[0]
+        == before_fts
+    )
+    assert annual.repository.get_item(item.id).engagement_id is None
+
+
 def test_repeated_request_reuses_engagement_but_creates_new_request_event(
     container: object,
 ) -> None:

@@ -128,6 +128,62 @@ def test_create_task_whitespace_only_title_raises(svc, eng_id):
     assert exc.value.code == "task.title.required"
 
 
+def test_create_task_rejects_title_instead_of_silently_truncating(svc, eng_id):
+    with pytest.raises(TaskValidationError) as exc:
+        svc.create_task(_make(eng_id, title="任" * 201))
+    assert exc.value.code == "task.title.invalid"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "code"),
+    [
+        ("title", 1, "task.title.invalid"),
+        ("title", "任\x00務", "task.title.invalid"),
+        ("title", "任\u200b務", "task.title.invalid"),
+        ("assignee", "人" * 101, "task.assignee.invalid"),
+        ("assignee", 1, "task.assignee.invalid"),
+        ("assignee", "王\x00小姐", "task.assignee.invalid"),
+        ("assignee", "王\u200b小姐", "task.assignee.invalid"),
+        ("due_date", "2" * 21, "task.due_date.invalid"),
+        ("due_date", 1, "task.due_date.invalid"),
+        ("due_date", "2026-01\x0001", "task.due_date.invalid"),
+        ("due_date", "2026-01\u200b01", "task.due_date.invalid"),
+        ("next_step", "步" * 501, "task.next_step.invalid"),
+        ("next_step", 1, "task.next_step.invalid"),
+        ("next_step", "下\x00一步", "task.next_step.invalid"),
+        ("next_step", "下\u200b一步", "task.next_step.invalid"),
+        ("notes", "註" * 2001, "task.notes.invalid"),
+        ("notes", 1, "task.notes.invalid"),
+        ("notes", "備\x00註", "task.notes.invalid"),
+        ("notes", "備\u200b註", "task.notes.invalid"),
+    ],
+)
+def test_create_task_rejects_invalid_text_without_rewriting(
+    svc, eng_id, field, value, code
+):
+    with pytest.raises(TaskValidationError) as exc:
+        svc.create_task(_make(eng_id, **{field: value}))
+    assert exc.value.code == code
+
+
+def test_create_task_preserves_valid_text_exactly(svc, eng_id):
+    values = {
+        "title": "  繁中😀\n第二行\r\n\t結尾  ",
+        "assignee": "  王小姐😀\t  ",
+        "due_date": "2026-07-20",
+        "next_step": "  下一步😀\n第二行\r\t  ",
+        "notes": "  備註😀\n第二行\r\n\t結尾  ",
+    }
+
+    row = svc.create_task(_make(eng_id, **values))
+
+    assert row.title == values["title"]
+    assert row.assignee == values["assignee"]
+    assert row.due_date == values["due_date"]
+    assert row.next_step == values["next_step"]
+    assert row.notes == values["notes"]
+
+
 def test_create_task_invalid_priority_raises(svc, eng_id):
     with pytest.raises(TaskValidationError) as exc:
         svc.create_task(_make(eng_id, priority="super_urgent"))
