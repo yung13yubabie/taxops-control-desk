@@ -7,13 +7,12 @@ from unittest.mock import Mock
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QLabel, QListWidget, QStackedWidget
 
-from taxops.i18n import DISABLED_TOOLTIP, NAV_LABELS
+from taxops.i18n import NAV_LABELS
 from taxops.ui.action_registry import (
     NAV_ORDER,
     PAGE_ANNUAL_WORKBENCH,
     PAGE_CLIENTS,
     PAGE_ENGAGEMENTS,
-    PLACEHOLDER_HANDLER,
     actions_for_page,
 )
 from taxops.ui.main_window import MainWindow
@@ -85,7 +84,7 @@ def test_navigation_reuses_page_and_runs_refresh_clear_filter_contract(
     assert not filter_notice.isVisibleTo(page)
 
 
-def test_annual_workbench_exposes_only_a_disabled_future_action(
+def test_annual_workbench_exposes_enabled_create_action(
     qtbot, container
 ) -> None:
     page = AnnualWorkbenchPage(container)
@@ -94,12 +93,11 @@ def test_annual_workbench_exposes_only_a_disabled_future_action(
 
     assert len(actions) == 1
     action = actions[0]
-    assert action.button_label == "年度工作項目尚未開放"
-    assert not action.enabled
-    assert action.handler == PLACEHOLDER_HANDLER
+    assert action.button_label == "建立年度工作"
+    assert action.enabled
+    assert action.handler == "AnnualWorkbenchPage._open_create_dialog"
     assert page.future_action_button.text() == action.button_label
-    assert not page.future_action_button.isEnabled()
-    assert page.future_action_button.toolTip() == DISABLED_TOOLTIP
+    assert page.future_action_button.isEnabled()
 
 
 def test_annual_empty_state_text_stays_legible_without_compact_clipping(

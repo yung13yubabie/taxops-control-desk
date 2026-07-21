@@ -8,6 +8,7 @@ from PySide6.QtCore import QEventLoop, Qt
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QDialog,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -22,10 +23,11 @@ from PySide6.QtWidgets import (
 )
 
 from ...core.compliance import WORK_TYPE_LABELS
-from ...i18n import DISABLED_TOOLTIP, NAV_LABELS
+from ...i18n import NAV_LABELS
 from ...repositories.annual_work import AnnualOverviewMetrics, AnnualWorkOverviewRow
 from ...services.annual_work import AnnualWorkStatusPresentation
 from ...services.container import ServiceContainer
+from ..dialogs.annual_workspace_dialog import AnnualWorkspaceDialog
 from ..style import TEXT_MUTED
 from ..widgets.annual_overview_table import AnnualOverviewTable, format_twd
 from ..widgets.empty_state import EmptyState
@@ -89,10 +91,8 @@ class AnnualWorkbenchPage(QWidget):
         self.title_label.setStyleSheet("font-size: 20px; font-weight: 600;")
         heading.addWidget(self.title_label)
         heading.addStretch(1)
-        self.create_button = QPushButton("年度工作項目尚未開放")
+        self.create_button = QPushButton("建立年度工作")
         self.create_button.setObjectName("AnnualFutureAction")
-        self.create_button.setEnabled(False)
-        self.create_button.setToolTip(DISABLED_TOOLTIP)
         self.future_action_button = self.create_button
         heading.addWidget(self.create_button)
         outer.addLayout(heading)
@@ -227,6 +227,7 @@ class AnnualWorkbenchPage(QWidget):
         page_row.addWidget(self.page_label)
         outer.addLayout(page_row)
 
+        self.create_button.clicked.connect(self._open_create_dialog)
         self.apply_button.clicked.connect(self._apply_filters)
         self.clear_button.clicked.connect(self._clear_filters)
         self.refresh_button.clicked.connect(self._refresh)
@@ -242,6 +243,11 @@ class AnnualWorkbenchPage(QWidget):
 
     def refresh_context(self) -> None:
         self._refresh()
+
+    def _open_create_dialog(self) -> None:
+        dialog = AnnualWorkspaceDialog(self._container)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._refresh()
 
     def clear_filter(self) -> None:
         self._filter_key = ""

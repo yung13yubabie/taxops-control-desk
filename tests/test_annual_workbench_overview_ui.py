@@ -7,7 +7,6 @@ from unittest.mock import Mock
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import QApplication, QPushButton
 
-from taxops.i18n import DISABLED_TOOLTIP
 from taxops.i18n.status_labels import UNKNOWN_STATUS_TEXT
 from taxops.repositories.annual_work import AnnualOverviewMetrics
 from taxops.services.annual_work import AnnualWorkError
@@ -397,19 +396,72 @@ def test_fixed_desktop_layout_works_at_900_by_540_with_legible_controls(
     )
 
 
-def test_only_real_actions_are_enabled_and_create_remains_canonical_disabled(
-    qtbot, container
+def test_create_annual_work_is_enabled_and_opens_real_dialog(
+    qtbot, container, monkeypatch
 ) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    opened: list[tuple[object, int | None, int | None]] = []
+
+    class DialogSpy:
+        def __init__(
+            self,
+            candidate_container,
+            preselected_client_id=None,
+            operation_year=None,
+        ) -> None:
+            opened.append(
+                (candidate_container, preselected_client_id, operation_year)
+            )
+
+        def exec(self):
+            return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(
+        "taxops.ui.pages.annual_workbench_page.AnnualWorkspaceDialog",
+        DialogSpy,
+    )
     page = AnnualWorkbenchPage(container)
     qtbot.addWidget(page)
-    assert not page.create_button.isEnabled()
-    assert page.create_button.toolTip() == DISABLED_TOOLTIP
+    refresh_spy = Mock()
+    page._refresh = refresh_spy
+    assert page.create_button.isEnabled()
+    assert page.create_button.text() == "建立年度工作"
+    qtbot.mouseClick(page.create_button, Qt.MouseButton.LeftButton)
+    assert opened == [(container, None, None)]
+    assert refresh_spy.call_count == 0
     enabled_text = {
         button.text()
         for button in page.findChildren(QPushButton)
         if button.isEnabled()
     }
-    assert enabled_text == {"套用", "清除", "重新整理"}
+    assert enabled_text == {"建立年度工作", "套用", "清除", "重新整理"}
+
+
+def test_accepted_create_dialog_refreshes_overview_once(
+    qtbot, container, monkeypatch
+) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    class AcceptedDialog:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def exec(self):
+            return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(
+        "taxops.ui.pages.annual_workbench_page.AnnualWorkspaceDialog",
+        AcceptedDialog,
+    )
+    page = AnnualWorkbenchPage(container)
+    qtbot.addWidget(page)
+    refresh_spy = Mock()
+    page._refresh = refresh_spy
+
+    qtbot.mouseClick(page.create_button, Qt.MouseButton.LeftButton)
+
+    refresh_spy.assert_called_once_with()
 
 
 def test_refresh_clamps_page_after_total_shrinks_and_still_fetches_once(

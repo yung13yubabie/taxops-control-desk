@@ -348,8 +348,18 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
         test_marker="test_download_registry_contract",
         enabled=True,
     ),
-    # Annual workbench (read-only navigation skeleton)
-    _disabled("年度工作項目尚未開放", PAGE_ANNUAL_WORKBENCH),
+    UIActionContract(
+        button_label="建立年度工作",
+        page=PAGE_ANNUAL_WORKBENCH,
+        handler="AnnualWorkbenchPage._open_create_dialog",
+        service="AnnualWorkService.confirm_preview_selection",
+        repository="AnnualWorkRepository.insert_item_if_missing",
+        success_text="建立成功，已新增 N 項年度工作。",
+        failure_text="建立年度工作失敗，請稍後再試。",
+        audit_action="annual_workspace.confirm",
+        test_marker="test_create_annual_workspace_action",
+        enabled=True,
+    ),
     # Engagements page (slice 4 — enabled)
     UIActionContract(
         button_label="新增案件",

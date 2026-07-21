@@ -8,6 +8,7 @@ from taxops.i18n import DISABLED_TOOLTIP, NAV_LABELS
 from taxops.ui.action_registry import (
     ACTION_REGISTRY,
     NAV_ORDER,
+    PAGE_ANNUAL_WORKBENCH,
     PAGE_DOC_REQUESTS,
     PLACEHOLDER_HANDLER,
     actions_for_page,
@@ -19,6 +20,7 @@ from taxops.ui.action_registry import (
 _EMBEDDED_ONLY_PAGES = {PAGE_DOC_REQUESTS}
 
 _HANDLER_MODULES = {
+    "AnnualWorkbenchPage": "taxops.ui.pages.annual_workbench_page",
     "AttachmentsPage": "taxops.ui.pages.attachments_page",
     "ClientsPage": "taxops.ui.pages.clients_page",
     "DocumentRequestsPage": "taxops.ui.pages.document_requests_page",
@@ -41,6 +43,22 @@ _HANDLER_MODULES = {
     "_OccRow": "taxops.ui.pages.recurring_billing_page",
     "_PlanSection": "taxops.ui.pages.recurring_billing_page",
 }
+
+
+def test_create_annual_workspace_action_contract_is_enabled_and_precise() -> None:
+    action = next(
+        action
+        for action in actions_for_page(PAGE_ANNUAL_WORKBENCH)
+        if action.button_label == "建立年度工作"
+    )
+
+    assert action.enabled is True
+    assert action.handler == "AnnualWorkbenchPage._open_create_dialog"
+    assert action.service == "AnnualWorkService.confirm_preview_selection"
+    assert action.repository == "AnnualWorkRepository.insert_item_if_missing"
+    assert action.audit_action == "annual_workspace.confirm"
+    assert action.success_text == "建立成功，已新增 N 項年度工作。"
+    assert action.failure_text == "建立年度工作失敗，請稍後再試。"
 
 
 def test_every_action_targets_a_known_page() -> None:
