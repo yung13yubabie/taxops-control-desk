@@ -646,6 +646,12 @@ class AnnualWorkService:
         item = self._repo.get_item(item_id)
         if item is None:
             raise AnnualWorkValidationError("annual_work.item_not_found")
+        return self.present_statuses(item)
+
+    def present_statuses(
+        self, item: AnnualWorkItemRow
+    ) -> AnnualWorkStatusPresentation:
+        """Present an already-loaded item without another repository read."""
         mappings = {
             "work_status": ANNUAL_WORK_STATUS_LABELS,
             "filing_status": ANNUAL_FILING_STATUS_LABELS,
