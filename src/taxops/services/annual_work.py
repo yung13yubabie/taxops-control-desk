@@ -782,20 +782,32 @@ class AnnualWorkService:
         """Return one complete bounded workspace snapshot for presentation."""
         client_id = _validate_client_id(client_id)
         operation_year = _validate_operation_year(operation_year)
+        owns_transaction = not self._conn.in_transaction
         try:
+            if owns_transaction:
+                self._conn.execute("BEGIN")
             workspace = self._repo.find_workspace(client_id, operation_year)
             if workspace is None:
+                if owns_transaction:
+                    self._conn.commit()
                 return None
             items = tuple(self._repo.list_items_for_snapshot(workspace.id))
             if len(items) > 500:
                 raise AnnualWorkError("annual_work.snapshot.too_many_items")
-            return AnnualWorkspaceSnapshot(
+            snapshot = AnnualWorkspaceSnapshot(
                 workspace=workspace,
                 items=items,
             )
+            if owns_transaction:
+                self._conn.commit()
+            return snapshot
         except AnnualWorkError:
+            if owns_transaction and self._conn.in_transaction:
+                self._conn.rollback()
             raise
-        except (sqlite3.Error, RuntimeError, ValueError) as exc:
+        except Exception as exc:
+            if owns_transaction and self._conn.in_transaction:
+                self._conn.rollback()
             raise AnnualWorkError("annual_work.snapshot.failed") from exc
 
     def _set_status(
@@ -1228,7 +1240,11 @@ class AnnualWorkService:
             for draft in prepared_selected:
                 result = self._repo.insert_item_if_missing(workspace.id, draft)
                 inserted_count += int(result.inserted)
-            items = tuple(self._repo.list_items(workspace.id))
+            items = tuple(self._repo.list_items_for_snapshot(workspace.id))
+            if len(items) > 500:
+                raise AnnualWorkValidationError(
+                    "annual_work.snapshot.too_many_items"
+                )
             unchanged = not created_workspace and inserted_count == 0
             audit_detail = {
                 "client_id": client_id,
