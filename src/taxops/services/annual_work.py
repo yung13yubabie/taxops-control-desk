@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import unicodedata
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -84,6 +85,12 @@ class AnnualWorkspaceResult:
     @property
     def unchanged(self) -> bool:
         return not self.created_workspace and self.inserted_item_count == 0
+
+
+@dataclass(frozen=True)
+class AnnualWorkspaceSnapshot:
+    workspace: AnnualWorkspaceRow
+    items: tuple[AnnualWorkItemRow, ...]
 
 
 @dataclass(frozen=True)
@@ -769,6 +776,28 @@ class AnnualWorkService:
             raise AnnualWorkValidationError("annual_work.preview.empty")
         return drafts
 
+    def get_workspace_snapshot(
+        self, client_id: int, operation_year: int
+    ) -> AnnualWorkspaceSnapshot | None:
+        """Return one complete bounded workspace snapshot for presentation."""
+        client_id = _validate_client_id(client_id)
+        operation_year = _validate_operation_year(operation_year)
+        try:
+            workspace = self._repo.find_workspace(client_id, operation_year)
+            if workspace is None:
+                return None
+            items = tuple(self._repo.list_items_for_snapshot(workspace.id))
+            if len(items) > 500:
+                raise AnnualWorkError("annual_work.snapshot.too_many_items")
+            return AnnualWorkspaceSnapshot(
+                workspace=workspace,
+                items=items,
+            )
+        except AnnualWorkError:
+            raise
+        except (sqlite3.Error, RuntimeError, ValueError) as exc:
+            raise AnnualWorkError("annual_work.snapshot.failed") from exc
+
     def _set_status(
         self,
         item_id: int,
@@ -1093,21 +1122,82 @@ class AnnualWorkService:
         operation_year: int,
         drafts: Sequence[WorkDraft],
     ) -> AnnualWorkspaceResult:
+        return self._confirm_preview_selection(
+            client_id,
+            operation_year,
+            expected_drafts=drafts,
+            selected_drafts=drafts,
+            include_selection_audit=False,
+        )
+
+    def confirm_preview_selection(
+        self,
+        client_id: int,
+        operation_year: int,
+        *,
+        expected_drafts: Sequence[WorkDraft],
+        selected_drafts: Sequence[WorkDraft],
+    ) -> AnnualWorkspaceResult:
+        """Atomically confirm a stale-guarded subset of standard/custom drafts."""
+        return self._confirm_preview_selection(
+            client_id,
+            operation_year,
+            expected_drafts=expected_drafts,
+            selected_drafts=selected_drafts,
+            include_selection_audit=True,
+        )
+
+    def _confirm_preview_selection(
+        self,
+        client_id: int,
+        operation_year: int,
+        *,
+        expected_drafts: Sequence[WorkDraft],
+        selected_drafts: Sequence[WorkDraft],
+        include_selection_audit: bool,
+    ) -> AnnualWorkspaceResult:
         if self._conn.in_transaction:
             raise AnnualWorkValidationError(
                 "annual_work.transaction.already_active"
             )
         client_id = _validate_client_id(client_id)
         operation_year = _validate_operation_year(operation_year)
-        prepared = _prepare_drafts(drafts, operation_year)
+        prepared_expected = _prepare_drafts(expected_drafts, operation_year)
+        prepared_selected = _prepare_drafts(selected_drafts, operation_year)
 
         try:
             self._conn.execute("BEGIN IMMEDIATE")
-            expected = self.preview(client_id, operation_year)
-            if prepared != expected:
+            fresh = self.preview(client_id, operation_year)
+            if prepared_expected != fresh:
                 raise AnnualWorkValidationError(
                     "annual_work.drafts.profile_mismatch"
                 )
+            standard_by_key = {draft.item_key: draft for draft in fresh}
+            custom_count = 0
+            for draft in prepared_selected:
+                standard = standard_by_key.get(draft.item_key)
+                if standard is not None:
+                    if draft.work_type != standard.work_type:
+                        raise AnnualWorkValidationError(
+                            "annual_work.draft.standard_mismatch"
+                        )
+                    continue
+                if not draft.item_key.startswith("custom:"):
+                    raise AnnualWorkValidationError(
+                        "annual_work.draft.item_key.fabricated"
+                    )
+                raw_uuid = draft.item_key.removeprefix("custom:")
+                try:
+                    canonical_uuid = str(uuid.UUID(raw_uuid))
+                except (ValueError, AttributeError) as exc:
+                    raise AnnualWorkValidationError(
+                        "annual_work.draft.custom_key.invalid"
+                    ) from exc
+                if raw_uuid != canonical_uuid:
+                    raise AnnualWorkValidationError(
+                        "annual_work.draft.custom_key.invalid"
+                    )
+                custom_count += 1
             profile = self._profiles.get_for_client(client_id)
             if profile is None:
                 raise AnnualWorkValidationError("annual_work.profile_not_found")
@@ -1135,22 +1225,31 @@ class AnnualWorkService:
                         raise
 
             inserted_count = 0
-            for draft in prepared:
+            for draft in prepared_selected:
                 result = self._repo.insert_item_if_missing(workspace.id, draft)
                 inserted_count += int(result.inserted)
             items = tuple(self._repo.list_items(workspace.id))
+            unchanged = not created_workspace and inserted_count == 0
+            audit_detail = {
+                "client_id": client_id,
+                "operation_year": operation_year,
+                "created_workspace": created_workspace,
+                "inserted_item_count": inserted_count,
+                "item_count": len(items),
+                "unchanged": unchanged,
+            }
+            if include_selection_audit:
+                audit_detail.update(
+                    {
+                        "selected_count": len(prepared_selected),
+                        "custom_count": custom_count,
+                    }
+                )
             self._audit.record(
                 action="annual_workspace.confirm",
                 target_type="annual_workspace",
                 target_id=str(workspace.id),
-                detail={
-                    "client_id": client_id,
-                    "operation_year": operation_year,
-                    "created_workspace": created_workspace,
-                    "inserted_item_count": inserted_count,
-                    "item_count": len(items),
-                    "unchanged": not created_workspace and inserted_count == 0,
-                },
+                detail=audit_detail,
             )
             self._conn.commit()
             return AnnualWorkspaceResult(

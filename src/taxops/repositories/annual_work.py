@@ -648,6 +648,21 @@ class AnnualWorkRepository:
         ).fetchall()
         return [_item_row(row) for row in rows]
 
+    def list_items_for_snapshot(
+        self, workspace_id: int
+    ) -> list[AnnualWorkItemRow]:
+        """Read at most one row beyond the service snapshot bound."""
+        workspace_id = _positive_id(
+            workspace_id, "annual_work.workspace_id.invalid"
+        )
+        rows = self._conn.execute(
+            "SELECT * FROM annual_work_items "
+            "WHERE workspace_id = ? AND deleted_at IS NULL "
+            "ORDER BY id LIMIT 501",
+            (workspace_id,),
+        ).fetchall()
+        return [_item_row(row) for row in rows]
+
     def _overview_filter_parts(
         self, filters: Mapping[str, object] | None
     ) -> tuple[list[str], list[object], str | None, str, str]:
