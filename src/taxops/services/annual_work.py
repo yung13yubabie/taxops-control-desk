@@ -32,6 +32,7 @@ from ..repositories.annual_work import (
     AnnualWorkOverviewRow,
     AnnualWorkRepository,
     AnnualWorkspaceRow,
+    MAX_WORKSPACE_ITEMS,
 )
 from ..repositories.document_requests import DocumentRequestItemRow, DocumentRequestRow
 from ..repositories.engagements import EngagementRow
@@ -163,11 +164,29 @@ def _prepare_drafts(
 ) -> tuple[WorkDraft, ...]:
     if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
         raise AnnualWorkValidationError("annual_work.drafts.invalid")
-    if not value:
+    try:
+        draft_count = len(value)
+    except Exception as exc:
+        raise AnnualWorkValidationError("annual_work.drafts.invalid") from exc
+    if draft_count == 0:
         raise AnnualWorkValidationError("annual_work.drafts.empty")
+    if draft_count > MAX_WORKSPACE_ITEMS:
+        raise AnnualWorkValidationError("annual_work.drafts.too_many")
     prepared: list[WorkDraft] = []
     seen: set[str] = set()
-    for draft in value:
+    try:
+        iterator = iter(value)
+    except Exception as exc:
+        raise AnnualWorkValidationError("annual_work.drafts.invalid") from exc
+    while True:
+        try:
+            draft = next(iterator)
+        except StopIteration:
+            break
+        except Exception as exc:
+            raise AnnualWorkValidationError("annual_work.drafts.invalid") from exc
+        if len(prepared) >= draft_count:
+            raise AnnualWorkValidationError("annual_work.drafts.invalid")
         if type(draft) is not WorkDraft:
             raise AnnualWorkValidationError("annual_work.draft.invalid")
         if (
@@ -208,6 +227,8 @@ def _prepare_drafts(
             raise AnnualWorkValidationError("annual_work.draft.item_key.duplicate")
         seen.add(draft.item_key)
         prepared.append(draft)
+    if len(prepared) != draft_count:
+        raise AnnualWorkValidationError("annual_work.drafts.invalid")
     return tuple(prepared)
 
 
@@ -257,6 +278,7 @@ class AnnualWorkService:
         self._engagements = engagements
         self._document_requests = document_requests
         self._tasks = tasks
+        self._snapshot_connection_usable = True
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -776,39 +798,115 @@ class AnnualWorkService:
             raise AnnualWorkValidationError("annual_work.preview.empty")
         return drafts
 
+    def _invalidate_snapshot_connection(self) -> None:
+        self._snapshot_connection_usable = False
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
+    def _snapshot_in_transaction(self, *, caller_owned: bool = False) -> bool:
+        try:
+            return bool(self._conn.in_transaction)
+        except Exception as exc:
+            self._invalidate_snapshot_connection()
+            code = (
+                "annual_work.snapshot.caller_transaction_ended"
+                if caller_owned
+                else "annual_work.snapshot.transaction_failed"
+            )
+            raise AnnualWorkError(code) from exc
+
+    def _rollback_owned_snapshot(self) -> None:
+        try:
+            if self._snapshot_in_transaction():
+                self._conn.rollback()
+            if self._snapshot_in_transaction():
+                raise sqlite3.OperationalError("snapshot rollback incomplete")
+        except AnnualWorkError:
+            raise
+        except Exception as exc:
+            self._invalidate_snapshot_connection()
+            raise AnnualWorkError(
+                "annual_work.snapshot.transaction_failed"
+            ) from exc
+
+    def _begin_owned_snapshot(self) -> None:
+        try:
+            self._conn.execute("BEGIN")
+        except Exception as exc:
+            self._rollback_owned_snapshot()
+            raise AnnualWorkError(
+                "annual_work.snapshot.transaction_failed"
+            ) from exc
+        if not self._snapshot_in_transaction():
+            self._invalidate_snapshot_connection()
+            raise AnnualWorkError("annual_work.snapshot.transaction_failed")
+
+    def _commit_owned_snapshot(self) -> None:
+        try:
+            self._conn.commit()
+        except Exception as exc:
+            self._rollback_owned_snapshot()
+            raise AnnualWorkError(
+                "annual_work.snapshot.transaction_failed"
+            ) from exc
+        if self._snapshot_in_transaction():
+            self._invalidate_snapshot_connection()
+            raise AnnualWorkError("annual_work.snapshot.transaction_failed")
+
+    def _raise_snapshot_read_failure(
+        self, exc: Exception, *, owns_transaction: bool
+    ) -> None:
+        if owns_transaction:
+            self._rollback_owned_snapshot()
+        elif not self._snapshot_in_transaction(caller_owned=True):
+            raise AnnualWorkError(
+                "annual_work.snapshot.caller_transaction_ended"
+            ) from exc
+        if isinstance(exc, AnnualWorkError):
+            raise exc
+        raise AnnualWorkError("annual_work.snapshot.failed") from exc
+
     def get_workspace_snapshot(
         self, client_id: int, operation_year: int
     ) -> AnnualWorkspaceSnapshot | None:
         """Return one complete bounded workspace snapshot for presentation."""
         client_id = _validate_client_id(client_id)
         operation_year = _validate_operation_year(operation_year)
-        owns_transaction = not self._conn.in_transaction
+        if not self._snapshot_connection_usable:
+            raise AnnualWorkError("annual_work.snapshot.transaction_failed")
+        owns_transaction = not self._snapshot_in_transaction()
+        if owns_transaction:
+            self._begin_owned_snapshot()
         try:
-            if owns_transaction:
-                self._conn.execute("BEGIN")
             workspace = self._repo.find_workspace(client_id, operation_year)
-            if workspace is None:
-                if owns_transaction:
-                    self._conn.commit()
-                return None
-            items = tuple(self._repo.list_items_for_snapshot(workspace.id))
-            if len(items) > 500:
-                raise AnnualWorkError("annual_work.snapshot.too_many_items")
-            snapshot = AnnualWorkspaceSnapshot(
-                workspace=workspace,
-                items=items,
+            snapshot: AnnualWorkspaceSnapshot | None = None
+            if workspace is not None:
+                items = tuple(self._repo.list_items_for_snapshot(workspace.id))
+                if len(items) > MAX_WORKSPACE_ITEMS:
+                    raise AnnualWorkError(
+                        "annual_work.snapshot.too_many_items"
+                    )
+                snapshot = AnnualWorkspaceSnapshot(
+                    workspace=workspace,
+                    items=items,
+                )
+        except AnnualWorkError as exc:
+            self._raise_snapshot_read_failure(
+                exc, owns_transaction=owns_transaction
             )
-            if owns_transaction:
-                self._conn.commit()
-            return snapshot
-        except AnnualWorkError:
-            if owns_transaction and self._conn.in_transaction:
-                self._conn.rollback()
-            raise
         except Exception as exc:
-            if owns_transaction and self._conn.in_transaction:
-                self._conn.rollback()
-            raise AnnualWorkError("annual_work.snapshot.failed") from exc
+            self._raise_snapshot_read_failure(
+                exc, owns_transaction=owns_transaction
+            )
+        if owns_transaction:
+            self._commit_owned_snapshot()
+        elif not self._snapshot_in_transaction(caller_owned=True):
+            raise AnnualWorkError(
+                "annual_work.snapshot.caller_transaction_ended"
+            )
+        return snapshot
 
     def _set_status(
         self,
@@ -1236,12 +1334,29 @@ class AnnualWorkService:
                     if workspace is None:
                         raise
 
+            existing_items = tuple(
+                self._repo.list_items_for_snapshot(workspace.id)
+            )
+            if len(existing_items) > MAX_WORKSPACE_ITEMS:
+                raise AnnualWorkValidationError(
+                    "annual_work.snapshot.too_many_items"
+                )
+            existing_keys = {item.item_key for item in existing_items}
+            missing_count = sum(
+                draft.item_key not in existing_keys
+                for draft in prepared_selected
+            )
+            if len(existing_items) + missing_count > MAX_WORKSPACE_ITEMS:
+                raise AnnualWorkValidationError(
+                    "annual_work.snapshot.too_many_items"
+                )
+
             inserted_count = 0
             for draft in prepared_selected:
                 result = self._repo.insert_item_if_missing(workspace.id, draft)
                 inserted_count += int(result.inserted)
             items = tuple(self._repo.list_items_for_snapshot(workspace.id))
-            if len(items) > 500:
+            if len(items) > MAX_WORKSPACE_ITEMS:
                 raise AnnualWorkValidationError(
                     "annual_work.snapshot.too_many_items"
                 )

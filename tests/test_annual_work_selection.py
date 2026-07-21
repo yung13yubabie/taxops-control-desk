@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import replace
 from uuid import UUID
 
 import pytest
 
+from taxops.repositories import annual_work as annual_work_repository
 from taxops.services.annual_work import AnnualWorkValidationError
 from taxops.services.annual_work import AnnualWorkError
 from taxops.services.clients import CreateClientInput
@@ -44,6 +46,131 @@ def _custom_drafts(
         )
         for index in range(start, start + count)
     )
+
+
+class _OversizedDraftSequence(Sequence[WorkDraft]):
+    def __len__(self) -> int:
+        return annual_work_repository.MAX_WORKSPACE_ITEMS + 1
+
+    def __getitem__(self, index: int) -> WorkDraft:
+        raise AssertionError(f"oversized sequence must not be read: {index}")
+
+
+class _BrokenLengthDraftSequence(Sequence[WorkDraft]):
+    def __len__(self) -> int:
+        raise RuntimeError("raw invalid sequence length")
+
+    def __getitem__(self, index: int) -> WorkDraft:
+        raise AssertionError(f"broken sequence must not be read: {index}")
+
+
+class _ConnectionFaultProxy:
+    def __init__(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        fail_begin: bool = False,
+        fail_commit: bool = False,
+        fail_rollback: bool = False,
+    ) -> None:
+        self.connection = connection
+        self.fail_begin = fail_begin
+        self.fail_commit = fail_commit
+        self.fail_rollback = fail_rollback
+        self.rollback_calls = 0
+        self.closed = False
+
+    @property
+    def in_transaction(self) -> bool:
+        return self.connection.in_transaction
+
+    def execute(self, statement: str, parameters: object = ()) -> object:
+        if statement.strip().upper() == "BEGIN" and self.fail_begin:
+            raise sqlite3.OperationalError("raw begin transaction failure")
+        return self.connection.execute(statement, parameters)
+
+    def commit(self) -> None:
+        if self.fail_commit:
+            raise sqlite3.OperationalError("raw commit transaction failure")
+        self.connection.commit()
+
+    def rollback(self) -> None:
+        self.rollback_calls += 1
+        if self.fail_rollback:
+            raise sqlite3.OperationalError("raw rollback transaction failure")
+        self.connection.rollback()
+
+    def close(self) -> None:
+        self.closed = True
+        self.connection.close()
+
+
+def test_workspace_item_limit_is_one_shared_product_contract() -> None:
+    assert annual_work_repository.MAX_WORKSPACE_ITEMS == 500
+
+
+@pytest.mark.parametrize("oversized_field", ("expected_drafts", "selected_drafts"))
+def test_oversized_drafts_fail_before_begin_or_iteration(
+    container: object, oversized_field: str
+) -> None:
+    client_id = _client_with_profile(container)
+    service = getattr(container, "annual_work")
+    expected = service.preview(client_id, 2026)
+    conn = getattr(container, "conn")
+    changes_before = conn.total_changes
+    audit_before = conn.execute(
+        "SELECT COUNT(*) FROM audit_logs WHERE action = 'annual_workspace.confirm'"
+    ).fetchone()[0]
+    statements: list[str] = []
+    conn.set_trace_callback(lambda statement: statements.append(statement.strip().upper()))
+    try:
+        with pytest.raises(AnnualWorkValidationError) as caught:
+            arguments = {
+                "expected_drafts": expected,
+                "selected_drafts": expected[:1],
+            }
+            arguments[oversized_field] = _OversizedDraftSequence()
+            service.confirm_preview_selection(client_id, 2026, **arguments)
+    finally:
+        conn.set_trace_callback(None)
+
+    assert caught.value.code == "annual_work.drafts.too_many"
+    assert conn.total_changes == changes_before
+    assert not any(statement == "BEGIN IMMEDIATE" for statement in statements)
+    assert conn.execute("SELECT COUNT(*) FROM annual_workspaces").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM annual_work_items").fetchone()[0] == 0
+    assert conn.execute(
+        "SELECT COUNT(*) FROM audit_logs WHERE action = 'annual_workspace.confirm'"
+    ).fetchone()[0] == audit_before
+
+
+def test_abnormal_sequence_length_is_stable_invalid_without_begin(
+    container: object,
+) -> None:
+    client_id = _client_with_profile(container)
+    service = getattr(container, "annual_work")
+    expected = service.preview(client_id, 2026)
+    conn = getattr(container, "conn")
+    changes_before = conn.total_changes
+    statements: list[str] = []
+    conn.set_trace_callback(lambda statement: statements.append(statement.strip().upper()))
+    try:
+        with pytest.raises(AnnualWorkValidationError) as caught:
+            service.confirm_preview_selection(
+                client_id,
+                2026,
+                expected_drafts=expected,
+                selected_drafts=_BrokenLengthDraftSequence(),
+            )
+    finally:
+        conn.set_trace_callback(None)
+
+    assert caught.value.code == "annual_work.drafts.invalid"
+    assert "raw invalid sequence length" not in str(caught.value)
+    assert conn.total_changes == changes_before
+    assert not any(statement == "BEGIN IMMEDIATE" for statement in statements)
+    assert conn.execute("SELECT COUNT(*) FROM annual_workspaces").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM annual_work_items").fetchone()[0] == 0
 
 
 def test_confirm_selection_inserts_only_selected_subset(container: object) -> None:
@@ -345,45 +472,55 @@ def test_confirm_selection_exactly_500_items_returns_and_audits_every_item(
         client_id,
         2026,
         expected_drafts=expected,
-        selected_drafts=_custom_drafts(500),
+        selected_drafts=_custom_drafts(annual_work_repository.MAX_WORKSPACE_ITEMS),
     )
 
-    assert result.inserted_item_count == 500
-    assert len(result.items) == 500
+    assert result.inserted_item_count == annual_work_repository.MAX_WORKSPACE_ITEMS
+    assert len(result.items) == annual_work_repository.MAX_WORKSPACE_ITEMS
     row = getattr(container, "conn").execute(
         "SELECT detail_json FROM audit_logs "
         "WHERE action = 'annual_workspace.confirm' AND target_id = ?",
         (str(result.workspace.id),),
     ).fetchone()
     detail = json.loads(row["detail_json"])
-    assert detail["item_count"] == 500
-    assert detail["selected_count"] == 500
+    assert detail["item_count"] == annual_work_repository.MAX_WORKSPACE_ITEMS
+    assert detail["selected_count"] == annual_work_repository.MAX_WORKSPACE_ITEMS
     snapshot = service.get_workspace_snapshot(client_id, 2026)
     assert snapshot is not None
-    assert len(snapshot.items) == 500
+    assert len(snapshot.items) == annual_work_repository.MAX_WORKSPACE_ITEMS
 
 
-def test_confirm_selection_501_items_rolls_back_new_workspace_and_audit(
+def test_confirm_selection_oversized_tuple_fails_before_workspace_and_audit(
     container: object,
 ) -> None:
     client_id = _client_with_profile(container)
     service = getattr(container, "annual_work")
     expected = service.preview(client_id, 2026)
     conn = getattr(container, "conn")
+    changes_before = conn.total_changes
     audit_before = conn.execute(
         "SELECT COUNT(*) FROM audit_logs WHERE action = 'annual_workspace.confirm'"
     ).fetchone()[0]
+    statements: list[str] = []
+    conn.set_trace_callback(lambda statement: statements.append(statement.strip().upper()))
 
-    with pytest.raises(AnnualWorkValidationError) as caught:
-        service.confirm_preview_selection(
-            client_id,
-            2026,
-            expected_drafts=expected,
-            selected_drafts=_custom_drafts(501),
-        )
+    try:
+        with pytest.raises(AnnualWorkValidationError) as caught:
+            service.confirm_preview_selection(
+                client_id,
+                2026,
+                expected_drafts=expected,
+                selected_drafts=_custom_drafts(
+                    annual_work_repository.MAX_WORKSPACE_ITEMS + 1
+                ),
+            )
+    finally:
+        conn.set_trace_callback(None)
 
-    assert caught.value.code == "annual_work.snapshot.too_many_items"
+    assert caught.value.code == "annual_work.drafts.too_many"
     assert conn.in_transaction is False
+    assert conn.total_changes == changes_before
+    assert not any(statement == "BEGIN IMMEDIATE" for statement in statements)
     assert conn.execute("SELECT COUNT(*) FROM annual_workspaces").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM annual_work_items").fetchone()[0] == 0
     assert conn.execute(
@@ -392,7 +529,7 @@ def test_confirm_selection_501_items_rolls_back_new_workspace_and_audit(
 
 
 def test_confirm_selection_501st_cumulative_item_rolls_back_only_that_call(
-    container: object,
+    container: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client_id = _client_with_profile(container)
     service = getattr(container, "annual_work")
@@ -401,13 +538,25 @@ def test_confirm_selection_501st_cumulative_item_rolls_back_only_that_call(
         client_id,
         2026,
         expected_drafts=expected,
-        selected_drafts=_custom_drafts(500),
+        selected_drafts=_custom_drafts(annual_work_repository.MAX_WORKSPACE_ITEMS),
     )
     conn = getattr(container, "conn")
+    changes_before = conn.total_changes
     audit_before = conn.execute(
         "SELECT COUNT(*) FROM audit_logs WHERE action = 'annual_workspace.confirm'"
     ).fetchone()[0]
-    extra = _custom_drafts(1, start=501)
+    extra = _custom_drafts(
+        1, start=annual_work_repository.MAX_WORKSPACE_ITEMS + 1
+    )
+    insert_calls = 0
+    original_insert = service.repository.insert_item_if_missing
+
+    def count_insert(workspace_id: int, draft: WorkDraft) -> object:
+        nonlocal insert_calls
+        insert_calls += 1
+        return original_insert(workspace_id, draft)
+
+    monkeypatch.setattr(service.repository, "insert_item_if_missing", count_insert)
 
     with pytest.raises(AnnualWorkValidationError) as caught:
         service.confirm_preview_selection(
@@ -419,10 +568,12 @@ def test_confirm_selection_501st_cumulative_item_rolls_back_only_that_call(
 
     assert caught.value.code == "annual_work.snapshot.too_many_items"
     assert conn.in_transaction is False
+    assert insert_calls == 0
+    assert conn.total_changes == changes_before
     assert conn.execute(
         "SELECT COUNT(*) FROM annual_work_items WHERE workspace_id = ?",
         (first.workspace.id,),
-    ).fetchone()[0] == 500
+    ).fetchone()[0] == annual_work_repository.MAX_WORKSPACE_ITEMS
     assert conn.execute(
         "SELECT COUNT(*) FROM annual_work_items WHERE workspace_id = ? AND item_key = ?",
         (first.workspace.id, extra[0].item_key),
@@ -430,6 +581,121 @@ def test_confirm_selection_501st_cumulative_item_rolls_back_only_that_call(
     assert conn.execute(
         "SELECT COUNT(*) FROM audit_logs WHERE action = 'annual_workspace.confirm'"
     ).fetchone()[0] == audit_before
+
+
+def test_confirm_selection_preflight_rejects_already_oversized_workspace(
+    container: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client_id = _client_with_profile(container)
+    service = getattr(container, "annual_work")
+    expected = service.preview(client_id, 2026)
+    first = service.confirm_preview_selection(
+        client_id,
+        2026,
+        expected_drafts=expected,
+        selected_drafts=_custom_drafts(annual_work_repository.MAX_WORKSPACE_ITEMS),
+    )
+    overflow = _custom_drafts(
+        1, start=annual_work_repository.MAX_WORKSPACE_ITEMS + 1
+    )[0]
+    service.repository.insert_item_if_missing(first.workspace.id, overflow)
+    conn = getattr(container, "conn")
+    conn.commit()
+    changes_before = conn.total_changes
+    audit_before = conn.execute(
+        "SELECT COUNT(*) FROM audit_logs WHERE action = 'annual_workspace.confirm'"
+    ).fetchone()[0]
+    insert_calls = 0
+    original_insert = service.repository.insert_item_if_missing
+
+    def count_insert(workspace_id: int, draft: WorkDraft) -> object:
+        nonlocal insert_calls
+        insert_calls += 1
+        return original_insert(workspace_id, draft)
+
+    monkeypatch.setattr(service.repository, "insert_item_if_missing", count_insert)
+    next_draft = _custom_drafts(
+        1, start=annual_work_repository.MAX_WORKSPACE_ITEMS + 2
+    )
+
+    with pytest.raises(AnnualWorkValidationError) as caught:
+        service.confirm_preview_selection(
+            client_id,
+            2026,
+            expected_drafts=expected,
+            selected_drafts=next_draft,
+        )
+
+    assert caught.value.code == "annual_work.snapshot.too_many_items"
+    assert insert_calls == 0
+    assert conn.total_changes == changes_before
+    assert conn.execute(
+        "SELECT COUNT(*) FROM annual_work_items WHERE workspace_id = ?",
+        (first.workspace.id,),
+    ).fetchone()[0] == annual_work_repository.MAX_WORKSPACE_ITEMS + 1
+    assert conn.execute(
+        "SELECT COUNT(*) FROM audit_logs WHERE action = 'annual_workspace.confirm'"
+    ).fetchone()[0] == audit_before
+
+
+def test_confirm_selection_accepts_exact_text_and_date_boundaries(
+    container: object,
+) -> None:
+    client_id = _client_with_profile(container)
+    service = getattr(container, "annual_work")
+    expected = service.preview(client_id, 2026)
+    boundary = WorkDraft(
+        item_key="custom:123e4567-e89b-42d3-a456-426614174001",
+        operation_year=2026,
+        work_type="vat",
+        title="界" * 500,
+        tax_year=9999,
+        period_code="期" * 50,
+        suggested_due_date="9999-12-31",
+    )
+
+    result = service.confirm_preview_selection(
+        client_id,
+        2026,
+        expected_drafts=expected,
+        selected_drafts=(boundary,),
+    )
+
+    assert result.items[0].title == "界" * 500
+    assert result.items[0].period_code == "期" * 50
+    assert result.items[0].due_date == "9999-12-31"
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    (
+        {"title": "界" * 501},
+        {"period_code": "期" * 51},
+        {"suggested_due_date": "2027-01-01T00:00:00"},
+    ),
+)
+def test_confirm_selection_rejects_values_past_exact_boundaries(
+    container: object, invalid: dict[str, object]
+) -> None:
+    client_id = _client_with_profile(container)
+    service = getattr(container, "annual_work")
+    expected = service.preview(client_id, 2026)
+
+    with pytest.raises(AnnualWorkValidationError) as caught:
+        service.confirm_preview_selection(
+            client_id,
+            2026,
+            expected_drafts=expected,
+            selected_drafts=(replace(expected[0], **invalid),),
+        )
+
+    assert caught.value.code == "annual_work.draft.invalid"
+    conn = getattr(container, "conn")
+    assert conn.execute("SELECT COUNT(*) FROM annual_workspaces").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM annual_work_items").fetchone()[0] == 0
+    assert conn.execute(
+        "SELECT COUNT(*) FROM audit_logs WHERE action = 'annual_workspace.confirm'"
+    ).fetchone()[0] == 0
 
 
 def test_workspace_snapshot_returns_exact_items_and_missing_is_none(
@@ -516,6 +782,42 @@ def test_workspace_snapshot_missing_workspace_closes_owned_transaction(
     assert "COMMIT" in statements
 
 
+def test_workspace_snapshot_begin_failure_is_stable_and_never_leaks_raw(
+    container: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client_id = _client_with_profile(container)
+    service = getattr(container, "annual_work")
+    conn = getattr(container, "conn")
+    proxy = _ConnectionFaultProxy(conn, fail_begin=True)
+    monkeypatch.setattr(service, "_conn", proxy)
+
+    with pytest.raises(AnnualWorkError) as caught:
+        service.get_workspace_snapshot(client_id, 2026)
+
+    assert caught.value.code == "annual_work.snapshot.transaction_failed"
+    assert "raw begin transaction failure" not in str(caught.value)
+    assert conn.in_transaction is False
+    assert proxy.rollback_calls == 0
+
+
+def test_workspace_snapshot_commit_failure_rolls_back_owned_transaction(
+    container: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client_id = _client_with_profile(container)
+    service = getattr(container, "annual_work")
+    conn = getattr(container, "conn")
+    proxy = _ConnectionFaultProxy(conn, fail_commit=True)
+    monkeypatch.setattr(service, "_conn", proxy)
+
+    with pytest.raises(AnnualWorkError) as caught:
+        service.get_workspace_snapshot(client_id, 2026)
+
+    assert caught.value.code == "annual_work.snapshot.transaction_failed"
+    assert "raw commit transaction failure" not in str(caught.value)
+    assert proxy.rollback_calls == 1
+    assert conn.in_transaction is False
+
+
 def test_workspace_snapshot_preserves_caller_owned_transaction(
     container: object,
 ) -> None:
@@ -582,6 +884,38 @@ def test_workspace_snapshot_owned_read_error_rolls_back_and_hides_raw_detail(
     assert "ROLLBACK" in statements
 
 
+def test_workspace_snapshot_rollback_failure_invalidates_shared_connection(
+    container: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client_id = _client_with_profile(container)
+    service = getattr(container, "annual_work")
+    expected = service.preview(client_id, 2026)
+    service.confirm_preview_selection(
+        client_id, 2026, expected_drafts=expected, selected_drafts=expected[:1]
+    )
+    conn = getattr(container, "conn")
+    proxy = _ConnectionFaultProxy(conn, fail_rollback=True)
+    monkeypatch.setattr(service, "_conn", proxy)
+
+    def fail_items(_workspace_id: int) -> object:
+        raise sqlite3.DatabaseError("raw read failure before rollback")
+
+    monkeypatch.setattr(service.repository, "list_items_for_snapshot", fail_items)
+
+    with pytest.raises(AnnualWorkError) as caught:
+        service.get_workspace_snapshot(client_id, 2026)
+
+    assert caught.value.code == "annual_work.snapshot.transaction_failed"
+    assert "raw rollback transaction failure" not in str(caught.value)
+    assert proxy.rollback_calls == 1
+    assert proxy.closed is True
+    with pytest.raises(sqlite3.ProgrammingError):
+        conn.execute("SELECT 1")
+    with pytest.raises(AnnualWorkError) as reused:
+        service.get_workspace_snapshot(client_id, 2026)
+    assert reused.value.code == "annual_work.snapshot.transaction_failed"
+
+
 def test_workspace_snapshot_error_never_rolls_back_caller_transaction(
     container: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -622,6 +956,43 @@ def test_workspace_snapshot_error_never_rolls_back_caller_transaction(
     ).fetchone()[0] == 0
 
 
+def test_workspace_snapshot_reports_when_caller_transaction_ends_during_read(
+    container: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client_id = _client_with_profile(container)
+    service = getattr(container, "annual_work")
+    expected = service.preview(client_id, 2026)
+    service.confirm_preview_selection(
+        client_id, 2026, expected_drafts=expected, selected_drafts=expected[:1]
+    )
+    conn = getattr(container, "conn")
+    conn.execute("BEGIN")
+    conn.execute(
+        "INSERT INTO system_logs(level, message, created_at) "
+        "VALUES ('INFO', 'caller transaction will end', '2027-01-01T00:00:01')"
+    )
+
+    def end_caller_transaction(_workspace_id: int) -> object:
+        conn.rollback()
+        raise sqlite3.DatabaseError("raw read after caller ended")
+
+    monkeypatch.setattr(
+        service.repository,
+        "list_items_for_snapshot",
+        end_caller_transaction,
+    )
+
+    with pytest.raises(AnnualWorkError) as caught:
+        service.get_workspace_snapshot(client_id, 2026)
+
+    assert caught.value.code == "annual_work.snapshot.caller_transaction_ended"
+    assert "raw read after caller ended" not in str(caught.value)
+    assert conn.in_transaction is False
+    assert conn.execute(
+        "SELECT COUNT(*) FROM system_logs WHERE message = 'caller transaction will end'"
+    ).fetchone()[0] == 0
+
+
 def test_workspace_snapshot_rejects_more_than_500_items_without_truncation(
     container: object,
 ) -> None:
@@ -632,10 +1003,13 @@ def test_workspace_snapshot_rejects_more_than_500_items_without_truncation(
         client_id,
         2026,
         expected_drafts=expected,
-        selected_drafts=_custom_drafts(500),
+        selected_drafts=_custom_drafts(annual_work_repository.MAX_WORKSPACE_ITEMS),
     )
     service.repository.insert_item_if_missing(
-        created.workspace.id, _custom_drafts(1, start=501)[0]
+        created.workspace.id,
+        _custom_drafts(
+            1, start=annual_work_repository.MAX_WORKSPACE_ITEMS + 1
+        )[0],
     )
     getattr(container, "conn").commit()
 

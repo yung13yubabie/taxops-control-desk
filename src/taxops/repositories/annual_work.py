@@ -19,6 +19,9 @@ from .annual_transactions import (
 )
 
 
+MAX_WORKSPACE_ITEMS = 500
+
+
 @dataclass(frozen=True)
 class AnnualWorkspaceRow:
     id: int
@@ -170,7 +173,7 @@ def _pagination(limit: object, offset: object) -> tuple[int, int]:
     if (
         not isinstance(limit, int)
         or isinstance(limit, bool)
-        or not 1 <= limit <= 500
+        or not 1 <= limit <= MAX_WORKSPACE_ITEMS
         or not isinstance(offset, int)
         or isinstance(offset, bool)
         or not 0 <= offset <= 1_000_000
@@ -634,7 +637,11 @@ class AnnualWorkRepository:
         return AnnualWorkItemInsertResult(row=_item_row(row), inserted=inserted)
 
     def list_items(
-        self, workspace_id: int, *, limit: int = 500, offset: int = 0
+        self,
+        workspace_id: int,
+        *,
+        limit: int = MAX_WORKSPACE_ITEMS,
+        offset: int = 0,
     ) -> list[AnnualWorkItemRow]:
         limit, offset = _pagination(limit, offset)
         workspace_id = _positive_id(
@@ -658,8 +665,8 @@ class AnnualWorkRepository:
         rows = self._conn.execute(
             "SELECT * FROM annual_work_items "
             "WHERE workspace_id = ? AND deleted_at IS NULL "
-            "ORDER BY id LIMIT 501",
-            (workspace_id,),
+            "ORDER BY id LIMIT ?",
+            (workspace_id, MAX_WORKSPACE_ITEMS + 1),
         ).fetchall()
         return [_item_row(row) for row in rows]
 
