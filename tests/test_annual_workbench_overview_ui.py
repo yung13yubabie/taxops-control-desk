@@ -4,7 +4,7 @@ import json
 from dataclasses import replace
 from unittest.mock import Mock
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import QApplication, QPushButton
 
 from taxops.i18n import DISABLED_TOOLTIP
@@ -133,13 +133,22 @@ def test_refresh_error_clears_stale_truth_and_preserves_filters(
     assert page.overview_table.rowCount() == 1
 
     page.client_search_input.setText("青山精密")
+    search_spy = Mock(wraps=getattr(container, "annual_work").search_overview)
+    metrics_spy = Mock(
+        side_effect=AnnualWorkError("private database failure SECRET")
+    )
+    monkeypatch.setattr(
+        getattr(container, "annual_work"), "search_overview", search_spy
+    )
     monkeypatch.setattr(
         getattr(container, "annual_work"),
         "overview_metrics",
-        Mock(side_effect=AnnualWorkError("private database failure SECRET")),
+        metrics_spy,
     )
     qtbot.mouseClick(page.refresh_button, Qt.MouseButton.LeftButton)
 
+    assert metrics_spy.call_count == 1
+    assert search_spy.call_count == 1
     assert page.overview_table.rowCount() == 0
     assert all(label.text().endswith("0") for label in page.metric_value_labels)
     assert page.client_search_input.text() == "青山精密"
@@ -401,3 +410,200 @@ def test_only_real_actions_are_enabled_and_create_remains_canonical_disabled(
         if button.isEnabled()
     }
     assert enabled_text == {"套用", "清除", "重新整理"}
+
+
+def test_refresh_clamps_page_after_total_shrinks_and_still_fetches_once(
+    qtbot, container, monkeypatch
+) -> None:
+    _create_unpaid_work(container)
+    annual_work = getattr(container, "annual_work")
+    base = annual_work.search_overview({"query": "TW-ALPINE-001"})[0]
+    rows = [
+        replace(
+            base,
+            item=replace(base.item, id=index + 1, title=f"縮頁測試工作 {index + 1}"),
+        )
+        for index in range(101)
+    ]
+    state = {"rows": rows}
+    search_spy = Mock(
+        side_effect=lambda _filters, *, limit, offset: state["rows"][
+            offset : offset + limit
+        ]
+    )
+    metrics_spy = Mock(
+        side_effect=lambda _filters: AnnualOverviewMetrics(
+            item_count=len(state["rows"]), client_count=1
+        )
+    )
+    monkeypatch.setattr(annual_work, "search_overview", search_spy)
+    monkeypatch.setattr(annual_work, "overview_metrics", metrics_spy)
+    page = AnnualWorkbenchPage(container)
+    qtbot.addWidget(page)
+    qtbot.mouseClick(page.next_button, Qt.MouseButton.LeftButton)
+    assert page.page_label.text() == "第 2 頁 / 共 2 頁"
+
+    state["rows"] = rows[:1]
+    search_spy.reset_mock()
+    metrics_spy.reset_mock()
+    qtbot.mouseClick(page.refresh_button, Qt.MouseButton.LeftButton)
+
+    assert metrics_spy.call_count == 1
+    assert search_spy.call_count == 1
+    assert search_spy.call_args.kwargs == {"limit": 100, "offset": 0}
+    assert page.page_label.text() == "第 1 頁 / 共 1 頁"
+    assert page.overview_table.rowCount() == 1
+    assert page.overview_table.item(0, AnnualOverviewTable.TITLE_COLUMN).text() == (
+        "縮頁測試工作 1"
+    )
+
+
+def test_presentation_failure_clears_stale_truth_restores_buttons_and_can_retry(
+    qtbot, container, monkeypatch
+) -> None:
+    _create_unpaid_work(container)
+    page = AnnualWorkbenchPage(container)
+    qtbot.addWidget(page)
+    page.client_search_input.setText("青山精密")
+    annual_work = getattr(container, "annual_work")
+    real_present = annual_work.present_statuses
+    calls = 0
+
+    def fail_once(item):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("RAW PRESENTATION SECRET")
+        return real_present(item)
+
+    monkeypatch.setattr(annual_work, "present_statuses", fail_once)
+    qtbot.mouseClick(page.refresh_button, Qt.MouseButton.LeftButton)
+
+    assert page.overview_table.rowCount() == 0
+    assert all(label.text().endswith("0") for label in page.metric_value_labels)
+    assert page.client_search_input.text() == "青山精密"
+    assert page.feedback_label.text() == "載入失敗，請稍後重新整理。"
+    assert "SECRET" not in page.feedback_label.text()
+    assert all(
+        button.isEnabled()
+        for button in (page.apply_button, page.clear_button, page.refresh_button)
+    )
+
+    qtbot.mouseClick(page.refresh_button, Qt.MouseButton.LeftButton)
+    assert page.overview_table.rowCount() == 1
+    assert "已更新" in page.feedback_label.text()
+
+
+def test_sqlite_blob_status_uses_unknown_label_and_bounded_safe_log(
+    qtbot, container
+) -> None:
+    item = _create_unpaid_work(container)
+    raw = b"future\x00private\xff"
+    conn = getattr(container, "conn")
+    conn.execute(
+        "UPDATE annual_work_items SET tax_status = ? WHERE id = ?", (raw, item.id)
+    )
+    conn.commit()
+
+    page = AnnualWorkbenchPage(container)
+    qtbot.addWidget(page)
+
+    assert page.overview_table.item(
+        0, AnnualOverviewTable.TAX_STATUS_COLUMN
+    ).text() == UNKNOWN_STATUS_TEXT
+    log = conn.execute(
+        "SELECT message, detail_json FROM system_logs ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    detail = json.loads(log["detail_json"])
+    assert log["message"] == "annual_work.unknown_status"
+    assert detail["dimension"] == "tax_status"
+    assert isinstance(detail["raw_code"], str)
+    assert len(detail["raw_code"]) <= 120
+    assert "private" not in page.detail_label.text()
+
+
+def test_non_string_and_bidi_statuses_are_unknown_and_control_free_in_log(
+    container
+) -> None:
+    _create_unpaid_work(container)
+    annual_work = getattr(container, "annual_work")
+    row = annual_work.search_overview({"query": "TW-ALPINE-001"})[0]
+    conn = getattr(container, "conn")
+
+    for raw in (37, "future\nprivate\u202esecret\u2066"):
+        presentation = annual_work.present_statuses(
+            replace(row.item, tax_status=raw)
+        )
+        assert presentation.tax_status_label == UNKNOWN_STATUS_TEXT
+        log = conn.execute(
+            "SELECT detail_json FROM system_logs ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        detail = json.loads(log["detail_json"])
+        assert len(detail["raw_code"]) <= 120
+        assert "\n" not in detail["raw_code"]
+        assert "\u202e" not in detail["raw_code"]
+        assert "\u2066" not in detail["raw_code"]
+
+
+def test_queued_nested_refresh_is_ignored_without_duplicate_queries(
+    qtbot, container, monkeypatch
+) -> None:
+    page = AnnualWorkbenchPage(container)
+    qtbot.addWidget(page)
+    annual_work = getattr(container, "annual_work")
+    search_spy = Mock(wraps=annual_work.search_overview)
+    metrics_spy = Mock(wraps=annual_work.overview_metrics)
+    monkeypatch.setattr(annual_work, "search_overview", search_spy)
+    monkeypatch.setattr(annual_work, "overview_metrics", metrics_spy)
+
+    QTimer.singleShot(0, page.refresh_context)
+    page.refresh_context()
+    QApplication.processEvents()
+
+    assert search_spy.call_count == 1
+    assert metrics_spy.call_count == 1
+    assert all(
+        button.isEnabled()
+        for button in (page.apply_button, page.clear_button, page.refresh_button)
+    )
+
+
+def test_paginated_table_and_scrollbar_are_reachable_at_900_by_540(
+    qtbot, container, monkeypatch
+) -> None:
+    _create_unpaid_work(container)
+    annual_work = getattr(container, "annual_work")
+    base = annual_work.search_overview({"query": "TW-ALPINE-001"})[0]
+    rows = [
+        replace(base, item=replace(base.item, id=index + 1))
+        for index in range(101)
+    ]
+    monkeypatch.setattr(
+        annual_work,
+        "search_overview",
+        lambda _filters, *, limit, offset: rows[offset : offset + limit],
+    )
+    monkeypatch.setattr(
+        annual_work,
+        "overview_metrics",
+        lambda _filters: AnnualOverviewMetrics(item_count=101, client_count=1),
+    )
+    page = AnnualWorkbenchPage(container)
+    qtbot.addWidget(page)
+    page.resize(900, 540)
+    page.show()
+    QApplication.processEvents()
+
+    assert page.overview_table.isVisibleTo(page)
+    assert page.overview_table.viewport().isVisibleTo(page)
+    assert page.overview_table.horizontalScrollBar().isVisibleTo(page.overview_table)
+    assert page.overview_table.horizontalScrollBar().geometry().height() > 0
+    assert page.next_button.isVisibleTo(page) and page.next_button.isEnabled()
+    assert page.previous_button.isVisibleTo(page) and not page.previous_button.isEnabled()
+
+    qtbot.mouseClick(page.next_button, Qt.MouseButton.LeftButton)
+    assert page.previous_button.isEnabled()
+    assert not page.next_button.isEnabled()
+    qtbot.mouseClick(page.previous_button, Qt.MouseButton.LeftButton)
+    assert not page.previous_button.isEnabled()
+    assert page.next_button.isEnabled()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -662,11 +663,15 @@ class AnnualWorkService:
         labels: dict[str, str] = {}
         for dimension, mapping in mappings.items():
             raw = getattr(item, dimension)
-            labels[dimension] = mapping.get(raw, UNKNOWN_STATUS_TEXT)
-            if raw not in mapping and self._system_log is not None:
+            known = isinstance(raw, str) and raw in mapping
+            labels[dimension] = mapping[raw] if known else UNKNOWN_STATUS_TEXT
+            if not known and self._system_log is not None:
+                raw_text = raw if isinstance(raw, str) else f"<{type(raw).__name__}>"
                 sanitized = "".join(
-                    char if ord(char) >= 32 and ord(char) != 127 else "�"
-                    for char in raw
+                    char
+                    if unicodedata.category(char) not in {"Cc", "Cf"}
+                    else "�"
+                    for char in raw_text
                 )[:120]
                 caller_transaction = self._conn.in_transaction
                 try:

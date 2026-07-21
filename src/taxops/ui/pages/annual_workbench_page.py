@@ -69,6 +69,7 @@ class AnnualWorkbenchPage(QWidget):
         self._total = 0
         self._rows: list[AnnualWorkOverviewRow] = []
         self._presentations: list[AnnualWorkStatusPresentation] = []
+        self._refreshing = False
 
         page_font = self.font()
         page_font.setPixelSize(14)
@@ -291,57 +292,69 @@ class AnnualWorkbenchPage(QWidget):
             )
 
     def _refresh(self) -> None:
-        self._set_busy(True)
-        filters = self._filters()
-        rows: list[AnnualWorkOverviewRow] | None = None
-        metrics: AnnualOverviewMetrics | None = None
-        errors: list[BaseException] = []
-        try:
-            rows = self._container.annual_work.search_overview(
-                filters,
-                limit=_PAGE_SIZE,
-                offset=self._page * _PAGE_SIZE,
-            )
-        except Exception as exc:
-            errors.append(exc)
-        try:
-            metrics = self._container.annual_work.overview_metrics(filters)
-        except Exception as exc:
-            errors.append(exc)
-
-        if errors or rows is None or metrics is None:
-            self._clear_results()
-            try:
-                self._container.system_log.error(
-                    "annual_work.overview.ui_load_failed",
-                    exc=errors[0] if errors else None,
-                )
-            except Exception:
-                pass
-            self.feedback_label.setText("載入失敗，請稍後重新整理。")
-            self._set_busy(False)
+        if self._refreshing:
             return
+        self._refreshing = True
+        self._set_busy(True)
+        try:
+            filters = self._filters()
+            rows: list[AnnualWorkOverviewRow] | None = None
+            metrics: AnnualOverviewMetrics | None = None
+            errors: list[Exception] = []
+            try:
+                metrics = self._container.annual_work.overview_metrics(filters)
+            except Exception as exc:
+                errors.append(exc)
+            if metrics is not None:
+                last_page = max(0, (metrics.item_count - 1) // _PAGE_SIZE)
+                self._page = min(self._page, last_page)
+            try:
+                rows = self._container.annual_work.search_overview(
+                    filters,
+                    limit=_PAGE_SIZE,
+                    offset=self._page * _PAGE_SIZE,
+                )
+            except Exception as exc:
+                errors.append(exc)
+            if errors or rows is None or metrics is None:
+                self._show_refresh_failure(errors[0] if errors else None)
+                return
 
-        self._rows = list(rows)
-        self._presentations = [
-            self._container.annual_work.present_statuses(row.item)
-            for row in self._rows
-        ]
-        self.overview_table.set_rows(self._rows, self._presentations)
-        self.table_stack.setCurrentWidget(
-            self.overview_table if self._rows else self.empty_state
-        )
-        self._total = metrics.item_count
-        self._set_metrics(metrics)
-        self.overview_table.clearSelection()
-        self._show_selected_detail()
-        self._update_pagination()
-        self.feedback_label.setText(f"已更新，共 {self._total} 筆工作。")
-        self._set_busy(False)
+            self._rows = list(rows)
+            self._presentations = [
+                self._container.annual_work.present_statuses(row.item)
+                for row in self._rows
+            ]
+            self.overview_table.set_rows(self._rows, self._presentations)
+            self.table_stack.setCurrentWidget(
+                self.overview_table if self._rows else self.empty_state
+            )
+            self._total = metrics.item_count
+            self._set_metrics(metrics)
+            self.overview_table.clearSelection()
+            self._show_selected_detail()
+            self.feedback_label.setText(f"已更新，共 {self._total} 筆工作。")
+        except Exception as exc:
+            self._show_refresh_failure(exc)
+        finally:
+            self._set_busy(False)
+            self._refreshing = False
+
+    def _show_refresh_failure(self, exc: BaseException | None) -> None:
+        self._clear_results()
+        try:
+            self._container.system_log.error(
+                "annual_work.overview.ui_load_failed",
+                exc=exc,
+            )
+        except Exception:
+            pass
+        self.feedback_label.setText("載入失敗，請稍後重新整理。")
 
     def _clear_results(self) -> None:
         self._rows = []
         self._presentations = []
+        self._page = 0
         self._total = 0
         self.overview_table.set_rows((), ())
         self.table_stack.setCurrentWidget(self.empty_state)
