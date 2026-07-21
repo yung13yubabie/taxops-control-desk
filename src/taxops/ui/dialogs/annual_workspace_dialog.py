@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -27,6 +28,9 @@ from ..widgets.annual_preview_table import AnnualPreviewTable
 
 
 _SNAPSHOT_FAILURE = "資料可能已寫入，但重新讀取驗證失敗，請重新整理後再試。"
+_PRECHECK_FAILURE = "無法讀取目前的年度工作，請稍後再試。"
+_CLIENT_SEARCH_FAILURE = "載入客戶失敗，請稍後再試。"
+_CLIENT_RESULT_LIMIT = 100
 
 
 @dataclass
@@ -41,13 +45,15 @@ class AnnualWorkspaceDialog(QDialog):
         container: ServiceContainer,
         preselected_client_id: int | None = None,
         operation_year: int | None = None,
+        parent: QWidget | None = None,
     ) -> None:
-        super().__init__()
+        super().__init__(parent)
         self._container = container
         self._expected_drafts: tuple[WorkDraft, ...] = ()
         self._confirming = False
         self.setObjectName("AnnualWorkspaceDialog")
         self.setWindowTitle("建立年度工作")
+        self.setModal(True)
         self.resize(900, 540)
         self.setMinimumSize(700, 450)
         font = self.font()
@@ -65,25 +71,25 @@ class AnnualWorkspaceDialog(QDialog):
         intro.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 14px;")
         outer.addWidget(intro)
 
+        self.feedback_label = QLabel()
+        self.feedback_label.setObjectName("AnnualWorkspaceFeedback")
+        self.feedback_label.setWordWrap(True)
+        self.feedback_label.setStyleSheet("font-size: 14px;")
+
         selector_row = QHBoxLayout()
         selector_row.addWidget(QLabel("客戶（必填）"))
+        self.client_search_input = QLineEdit()
+        self.client_search_input.setObjectName("AnnualWorkspaceClientSearch")
+        self.client_search_input.setPlaceholderText("輸入客戶代號或名稱")
+        self.client_search_input.setMaxLength(100)
+        self.client_search_input.setMinimumWidth(130)
+        selector_row.addWidget(self.client_search_input)
+        self.client_search_button = QPushButton("搜尋客戶")
+        self.client_search_button.setObjectName("AnnualWorkspaceClientSearchButton")
+        selector_row.addWidget(self.client_search_button)
         self.client_combo = QComboBox()
         self.client_combo.setObjectName("AnnualWorkspaceClient")
-        self.client_combo.setMinimumWidth(260)
-        self.client_combo.addItem("請選擇客戶", None)
-        try:
-            clients = container.clients.list_clients(limit=500, offset=0)
-        except Exception as exc:
-            clients = []
-            self._log_safe("annual_work.dialog.client_list_failed", exc)
-        for client in clients:
-            self.client_combo.addItem(
-                f"{client.client_code}｜{client.client_name}", client.id
-            )
-        if preselected_client_id is not None:
-            index = self.client_combo.findData(preselected_client_id)
-            if index >= 0:
-                self.client_combo.setCurrentIndex(index)
+        self.client_combo.setMinimumWidth(220)
         selector_row.addWidget(self.client_combo, 1)
         selector_row.addWidget(QLabel("作業年度"))
         self.operation_year_spin = QSpinBox()
@@ -112,10 +118,6 @@ class AnnualWorkspaceDialog(QDialog):
         table_actions.addStretch(1)
         outer.addLayout(table_actions)
 
-        self.feedback_label = QLabel()
-        self.feedback_label.setObjectName("AnnualWorkspaceFeedback")
-        self.feedback_label.setWordWrap(True)
-        self.feedback_label.setStyleSheet("font-size: 14px;")
         outer.addWidget(self.feedback_label)
 
         bottom = QHBoxLayout()
@@ -130,6 +132,9 @@ class AnnualWorkspaceDialog(QDialog):
         bottom.addWidget(self.confirm_button)
         outer.addLayout(bottom)
 
+        self.client_search_button.clicked.connect(self._search_clients)
+        self.client_search_input.returnPressed.connect(self._search_clients)
+        self.client_search_input.textChanged.connect(self._invalidate_preview)
         self.load_button.clicked.connect(self._load_preview)
         self.add_custom_button.clicked.connect(self._add_custom)
         self.confirm_button.clicked.connect(self._confirm)
@@ -137,6 +142,7 @@ class AnnualWorkspaceDialog(QDialog):
         self.client_combo.currentIndexChanged.connect(self._invalidate_preview)
         self.operation_year_spin.valueChanged.connect(self._invalidate_preview)
         self.preview_table.selection_changed.connect(self._update_confirm_enabled)
+        self._search_clients(preselected_client_id=preselected_client_id)
 
     @property
     def expected_drafts(self) -> tuple[WorkDraft, ...]:
@@ -160,6 +166,71 @@ class AnnualWorkspaceDialog(QDialog):
     def _selected_client_id(self) -> int | None:
         value = self.client_combo.currentData()
         return value if type(value) is int and value > 0 else None
+
+    def _search_clients(
+        self,
+        _checked: bool = False,
+        *,
+        preselected_client_id: int | None = None,
+    ) -> None:
+        if self._confirming:
+            return
+        self._invalidate_preview()
+        query = self.client_search_input.text().strip()
+        self.client_search_button.setEnabled(False)
+        self.feedback_label.setText("處理中，正在搜尋客戶。")
+        QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+        try:
+            total = self._container.clients.count_clients(
+                query,
+                include_deleted=False,
+                has_note=False,
+            )
+            clients = self._container.clients.search_clients(
+                query,
+                order_by="client_code",
+                order_dir="ASC",
+                limit=_CLIENT_RESULT_LIMIT,
+                offset=0,
+                include_deleted=False,
+                has_note=False,
+            )
+            selected_client = None
+            if type(preselected_client_id) is int and preselected_client_id > 0:
+                selected_client = self._container.clients.get_client(
+                    preselected_client_id
+                )
+        except Exception as exc:
+            self.client_combo.clear()
+            self.feedback_label.setText(_CLIENT_SEARCH_FAILURE)
+            self._log_safe("annual_work.dialog.client_search_failed", exc)
+            self.client_search_button.setEnabled(True)
+            return
+
+        self.client_combo.clear()
+        self.client_combo.addItem("請選擇客戶", None)
+        for client in clients:
+            self.client_combo.addItem(
+                f"{client.client_code}｜{client.client_name}", client.id
+            )
+        if selected_client is not None:
+            selected_index = self.client_combo.findData(selected_client.id)
+            if selected_index < 0:
+                self.client_combo.insertItem(
+                    1,
+                    f"{selected_client.client_code}｜{selected_client.client_name}",
+                    selected_client.id,
+                )
+                selected_index = 1
+            self.client_combo.setCurrentIndex(selected_index)
+        if total > _CLIENT_RESULT_LIMIT:
+            self.feedback_label.setText(
+                f"找到 {total} 位客戶，目前顯示前 {_CLIENT_RESULT_LIMIT} 位，"
+                "請輸入更完整的代號或名稱。"
+            )
+        else:
+            self.feedback_label.setText(f"找到 {total} 位客戶。")
+        self.client_search_button.setEnabled(True)
 
     def _load_preview(self) -> None:
         if self._confirming:
@@ -243,6 +314,8 @@ class AnnualWorkspaceDialog(QDialog):
         return tuple(selected)
 
     def _set_payload_enabled(self, enabled: bool) -> None:
+        self.client_search_input.setEnabled(enabled)
+        self.client_search_button.setEnabled(enabled)
         self.client_combo.setEnabled(enabled)
         self.operation_year_spin.setEnabled(enabled)
         self.load_button.setEnabled(enabled)
@@ -275,6 +348,22 @@ class AnnualWorkspaceDialog(QDialog):
             return
 
         try:
+            before_snapshot = self._container.annual_work.get_workspace_snapshot(
+                client_id, self.operation_year_spin.value()
+            )
+            before_keys = (
+                {item.item_key for item in before_snapshot.items}
+                if before_snapshot is not None
+                else set()
+            )
+        except Exception as exc:
+            self.feedback_label.setText(_PRECHECK_FAILURE)
+            self._log_safe("annual_work.dialog.snapshot_precheck_failed", exc)
+            self._confirming = False
+            self._set_payload_enabled(True)
+            return
+
+        try:
             result = self._container.annual_work.confirm_preview_selection(
                 client_id,
                 self.operation_year_spin.value(),
@@ -292,15 +381,29 @@ class AnnualWorkspaceDialog(QDialog):
             snapshot = self._container.annual_work.get_workspace_snapshot(
                 client_id, self.operation_year_spin.value()
             )
-            selected_keys = {draft.item_key for draft in selected}
+            if snapshot is None:
+                raise RuntimeError("annual workspace snapshot missing")
+            selected_by_key = {draft.item_key: draft for draft in selected}
+            selected_keys = set(selected_by_key)
+            snapshot_by_key = {item.item_key: item for item in snapshot.items}
+            new_keys = selected_keys - before_keys
             if (
-                snapshot is None
-                or snapshot.workspace.id != result.workspace.id
-                or not selected_keys.issubset(
-                    {item.item_key for item in snapshot.items}
-                )
+                snapshot.workspace.id != result.workspace.id
+                or not selected_keys.issubset(snapshot_by_key)
+                or len(new_keys) != result.inserted_item_count
             ):
                 raise RuntimeError("annual workspace snapshot mismatch")
+            for item_key in new_keys:
+                draft = selected_by_key[item_key]
+                item = snapshot_by_key[item_key]
+                if (
+                    item.work_type != draft.work_type
+                    or item.title != draft.title
+                    or item.tax_year != draft.tax_year
+                    or item.period_code != draft.period_code
+                    or item.due_date != draft.suggested_due_date
+                ):
+                    raise RuntimeError("annual workspace item verification mismatch")
         except Exception as exc:
             self.feedback_label.setText(_SNAPSHOT_FAILURE)
             self._log_safe("annual_work.dialog.snapshot_verify_failed", exc)

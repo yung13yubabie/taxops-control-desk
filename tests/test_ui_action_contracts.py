@@ -21,6 +21,7 @@ _EMBEDDED_ONLY_PAGES = {PAGE_DOC_REQUESTS}
 
 _HANDLER_MODULES = {
     "AnnualWorkbenchPage": "taxops.ui.pages.annual_workbench_page",
+    "AnnualWorkspaceDialog": "taxops.ui.dialogs.annual_workspace_dialog",
     "AttachmentsPage": "taxops.ui.pages.attachments_page",
     "ClientsPage": "taxops.ui.pages.clients_page",
     "DocumentRequestsPage": "taxops.ui.pages.document_requests_page",
@@ -46,19 +47,63 @@ _HANDLER_MODULES = {
 
 
 def test_create_annual_workspace_action_contract_is_enabled_and_precise() -> None:
-    action = next(
-        action
+    by_label = {
+        action.button_label: action
         for action in actions_for_page(PAGE_ANNUAL_WORKBENCH)
-        if action.button_label == "建立年度工作"
-    )
+    }
+    assert set(by_label) == {
+        "建立年度工作",
+        "搜尋客戶",
+        "載入預覽",
+        "新增自訂列",
+        "確認建立",
+        "取消",
+    }
 
-    assert action.enabled is True
-    assert action.handler == "AnnualWorkbenchPage._open_create_dialog"
-    assert action.service == "AnnualWorkService.confirm_preview_selection"
-    assert action.repository == "AnnualWorkRepository.insert_item_if_missing"
-    assert action.audit_action == "annual_workspace.confirm"
-    assert action.success_text == "建立成功，已新增 N 項年度工作。"
-    assert action.failure_text == "建立年度工作失敗，請稍後再試。"
+    opener = by_label["建立年度工作"]
+    assert opener.enabled is True
+    assert opener.handler == "AnnualWorkbenchPage._open_create_dialog"
+    assert opener.service is None
+    assert opener.repository is None
+    assert opener.audit_action is None
+    assert opener.success_text == ""
+    assert opener.failure_text == ""
+
+    search = by_label["搜尋客戶"]
+    assert search.handler == "AnnualWorkspaceDialog._search_clients"
+    assert search.service == "ClientsService.search_clients"
+    assert search.repository == "ClientsRepository.search_clients"
+    assert search.audit_action is None
+    assert search.success_text == "找到 N 位客戶。"
+    assert search.failure_text == "載入客戶失敗，請稍後再試。"
+
+    preview = by_label["載入預覽"]
+    assert preview.handler == "AnnualWorkspaceDialog._load_preview"
+    assert preview.service == "AnnualWorkService.preview"
+    assert preview.repository == "ComplianceProfilesRepository.get_for_client"
+    assert preview.audit_action is None
+    assert preview.success_text == "已載入 N 項年度工作預覽。"
+    assert preview.failure_text == "載入預覽失敗，請稍後再試。"
+
+    custom = by_label["新增自訂列"]
+    assert custom.handler == "AnnualWorkspaceDialog._add_custom"
+    assert custom.service is None
+    assert custom.repository is None
+    assert custom.audit_action is None
+
+    confirm = by_label["確認建立"]
+    assert confirm.handler == "AnnualWorkspaceDialog._confirm"
+    assert confirm.service == "AnnualWorkService.confirm_preview_selection"
+    assert confirm.repository == "AnnualWorkRepository.insert_item_if_missing"
+    assert confirm.audit_action == "annual_workspace.confirm"
+    assert confirm.success_text == "建立成功，已新增 N 項年度工作。"
+    assert confirm.failure_text == "建立年度工作失敗，請稍後再試。"
+
+    cancel = by_label["取消"]
+    assert cancel.handler == "AnnualWorkspaceDialog.reject"
+    assert cancel.service is None
+    assert cancel.repository is None
+    assert cancel.audit_action is None
 
 
 def test_every_action_targets_a_known_page() -> None:

@@ -245,7 +245,7 @@ class AnnualWorkbenchPage(QWidget):
         self._refresh()
 
     def _open_create_dialog(self) -> None:
-        dialog = AnnualWorkspaceDialog(self._container)
+        dialog = AnnualWorkspaceDialog(self._container, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._refresh()
 

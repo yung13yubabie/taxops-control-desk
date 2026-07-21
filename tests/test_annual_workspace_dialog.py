@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QDialog, QPushButton
+from PySide6.QtWidgets import QApplication, QDialog, QPushButton, QWidget
 
 from taxops.services.clients import CreateClientInput
 from taxops.services.compliance_profiles import ComplianceProfileItemInput
@@ -243,7 +243,7 @@ def test_snapshot_none_never_shows_success_and_same_payload_can_retry(
     def missing_once(*args, **kwargs):
         nonlocal reads
         reads += 1
-        if reads == 1:
+        if reads == 2:
             return None
         return real_snapshot(*args, **kwargs)
 
@@ -353,6 +353,7 @@ def test_fixed_900_by_540_layout_keeps_scroll_table_and_bottom_actions_visible(
         for button in dialog.findChildren(QPushButton)
     )
     for button in (
+        dialog.client_search_button,
         dialog.load_button,
         dialog.add_custom_button,
         dialog.cancel_button,
@@ -379,7 +380,8 @@ def test_snapshot_workspace_mismatch_never_accepts_or_shows_success(
 
     def mismatched_snapshot(*args, **kwargs):
         snapshot = real_snapshot(*args, **kwargs)
-        assert snapshot is not None
+        if snapshot is None:
+            return None
         return replace(
             snapshot,
             workspace=replace(snapshot.workspace, id=snapshot.workspace.id + 100),
@@ -396,6 +398,190 @@ def test_snapshot_workspace_mismatch_never_accepts_or_shows_success(
     )
     assert "建立成功" not in dialog.feedback_label.text()
     assert dialog.confirm_button.isEnabled()
+
+
+@pytest.mark.parametrize(
+    ("field", "wrong_value"),
+    (
+        ("title", "錯誤的快照標題"),
+        ("work_type", "vat"),
+        ("due_date", "2099-12-31"),
+    ),
+)
+def test_new_item_field_mismatch_never_accepts_or_shows_success(
+    qtbot, container, monkeypatch, field, wrong_value
+) -> None:
+    client = _client_with_two_drafts(container)
+    dialog = AnnualWorkspaceDialog(
+        container, preselected_client_id=client.id, operation_year=2026
+    )
+    qtbot.addWidget(dialog)
+    qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
+    real_snapshot = container.annual_work.get_workspace_snapshot
+
+    def wrong_item_snapshot(*args, **kwargs):
+        snapshot = real_snapshot(*args, **kwargs)
+        if snapshot is None:
+            return None
+        return replace(
+            snapshot,
+            items=(replace(snapshot.items[0], **{field: wrong_value}),)
+            + snapshot.items[1:],
+        )
+
+    monkeypatch.setattr(
+        container.annual_work, "get_workspace_snapshot", wrong_item_snapshot
+    )
+    qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
+
+    assert dialog.result() != QDialog.DialogCode.Accepted
+    assert dialog.feedback_label.text() == (
+        "資料可能已寫入，但重新讀取驗證失敗，請重新整理後再試。"
+    )
+    assert "建立成功" not in dialog.feedback_label.text()
+
+
+def test_snapshot_precheck_failure_never_writes_and_preserves_payload(
+    qtbot, container, monkeypatch
+) -> None:
+    client = _client_with_two_drafts(container)
+    dialog = AnnualWorkspaceDialog(
+        container, preselected_client_id=client.id, operation_year=2026
+    )
+    qtbot.addWidget(dialog)
+    qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
+    dialog.preview_table.set_title(0, "前置讀取失敗仍保留")
+    expected = dialog.expected_drafts
+    confirm_spy = Mock(wraps=container.annual_work.confirm_preview_selection)
+    monkeypatch.setattr(
+        container.annual_work, "confirm_preview_selection", confirm_spy
+    )
+    monkeypatch.setattr(
+        container.annual_work,
+        "get_workspace_snapshot",
+        Mock(side_effect=RuntimeError("RAW PRECHECK SECRET")),
+    )
+
+    qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
+
+    assert confirm_spy.call_count == 0
+    assert container.conn.execute(
+        "SELECT COUNT(*) FROM annual_workspaces"
+    ).fetchone()[0] == 0
+    assert dialog.result() != QDialog.DialogCode.Accepted
+    assert dialog.feedback_label.text() == "無法讀取目前的年度工作，請稍後再試。"
+    assert "SECRET" not in dialog.feedback_label.text()
+    assert dialog.expected_drafts == expected
+    assert dialog.preview_table.row_widgets(0).title.text() == "前置讀取失敗仍保留"
+    assert dialog.confirm_button.isEnabled()
+
+
+def test_post_snapshot_missing_selected_key_never_accepts(
+    qtbot, container, monkeypatch
+) -> None:
+    client = _client_with_two_drafts(container)
+    dialog = AnnualWorkspaceDialog(
+        container, preselected_client_id=client.id, operation_year=2026
+    )
+    qtbot.addWidget(dialog)
+    qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
+    real_snapshot = container.annual_work.get_workspace_snapshot
+
+    def missing_selected(*args, **kwargs):
+        snapshot = real_snapshot(*args, **kwargs)
+        if snapshot is None:
+            return None
+        return replace(snapshot, items=snapshot.items[1:])
+
+    monkeypatch.setattr(
+        container.annual_work, "get_workspace_snapshot", missing_selected
+    )
+    qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
+
+    assert dialog.result() != QDialog.DialogCode.Accepted
+    assert dialog.feedback_label.text() == (
+        "資料可能已寫入，但重新讀取驗證失敗，請重新整理後再試。"
+    )
+
+
+def test_result_insert_count_mismatch_never_accepts(
+    qtbot, container, monkeypatch
+) -> None:
+    client = _client_with_two_drafts(container)
+    dialog = AnnualWorkspaceDialog(
+        container, preselected_client_id=client.id, operation_year=2026
+    )
+    qtbot.addWidget(dialog)
+    qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
+    real_confirm = container.annual_work.confirm_preview_selection
+
+    def wrong_count(*args, **kwargs):
+        result = real_confirm(*args, **kwargs)
+        return replace(result, inserted_item_count=result.inserted_item_count + 1)
+
+    monkeypatch.setattr(
+        container.annual_work, "confirm_preview_selection", wrong_count
+    )
+    qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
+
+    assert dialog.result() != QDialog.DialogCode.Accepted
+    assert dialog.feedback_label.text() == (
+        "資料可能已寫入，但重新讀取驗證失敗，請重新整理後再試。"
+    )
+
+
+def test_existing_manually_edited_item_is_not_overwritten_on_second_confirm(
+    qtbot, container
+) -> None:
+    client = _client_with_two_drafts(container)
+    service = container.annual_work
+    expected = service.preview(client.id, 2026)
+    first = service.confirm_preview_selection(
+        client.id,
+        2026,
+        expected_drafts=expected,
+        selected_drafts=expected[:1],
+    )
+    container.conn.execute(
+        "UPDATE annual_work_items SET work_type = ?, title = ?, tax_year = ?, "
+        "period_code = ?, due_date = ? WHERE id = ?",
+        ("vat", "人工保留標題", 2023, "人工期間", "2026-12-20", first.items[0].id),
+    )
+    container.conn.commit()
+    dialog = AnnualWorkspaceDialog(
+        container, preselected_client_id=client.id, operation_year=2026
+    )
+    qtbot.addWidget(dialog)
+    qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
+    dialog.preview_table.set_checked(1, False)
+
+    qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
+
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert dialog.feedback_label.text() == "此年度工作已存在，未新增重複資料。"
+    row = container.conn.execute(
+        "SELECT work_type, title, tax_year, period_code, due_date "
+        "FROM annual_work_items WHERE id = ?",
+        (first.items[0].id,),
+    ).fetchone()
+    assert dict(row) == {
+        "work_type": "vat",
+        "title": "人工保留標題",
+        "tax_year": 2023,
+        "period_code": "人工期間",
+        "due_date": "2026-12-20",
+    }
+
+
+def test_dialog_owns_parent_and_is_modal(qtbot, container) -> None:
+    parent = QWidget()
+    qtbot.addWidget(parent)
+
+    dialog = AnnualWorkspaceDialog(container, parent=parent)
+    qtbot.addWidget(dialog)
+
+    assert dialog.parent() is parent
+    assert dialog.isModal()
 
 
 @pytest.mark.parametrize(

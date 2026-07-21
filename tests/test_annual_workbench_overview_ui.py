@@ -401,7 +401,7 @@ def test_create_annual_work_is_enabled_and_opens_real_dialog(
 ) -> None:
     from PySide6.QtWidgets import QDialog
 
-    opened: list[tuple[object, int | None, int | None]] = []
+    opened: list[tuple[object, int | None, int | None, object | None]] = []
 
     class DialogSpy:
         def __init__(
@@ -409,9 +409,10 @@ def test_create_annual_work_is_enabled_and_opens_real_dialog(
             candidate_container,
             preselected_client_id=None,
             operation_year=None,
+            parent=None,
         ) -> None:
             opened.append(
-                (candidate_container, preselected_client_id, operation_year)
+                (candidate_container, preselected_client_id, operation_year, parent)
             )
 
         def exec(self):
@@ -428,7 +429,7 @@ def test_create_annual_work_is_enabled_and_opens_real_dialog(
     assert page.create_button.isEnabled()
     assert page.create_button.text() == "建立年度工作"
     qtbot.mouseClick(page.create_button, Qt.MouseButton.LeftButton)
-    assert opened == [(container, None, None)]
+    assert opened == [(container, None, None, page)]
     assert refresh_spy.call_count == 0
     enabled_text = {
         button.text()

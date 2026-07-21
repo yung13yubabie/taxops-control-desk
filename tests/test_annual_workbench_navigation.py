@@ -91,8 +91,10 @@ def test_annual_workbench_exposes_enabled_create_action(
     qtbot.addWidget(page)
     actions = actions_for_page(PAGE_ANNUAL_WORKBENCH)
 
-    assert len(actions) == 1
-    action = actions[0]
+    assert len(actions) == 6
+    action = next(
+        action for action in actions if action.button_label == "建立年度工作"
+    )
     assert action.button_label == "建立年度工作"
     assert action.enabled
     assert action.handler == "AnnualWorkbenchPage._open_create_dialog"
