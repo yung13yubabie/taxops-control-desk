@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import time
 from unittest.mock import Mock
 
 import pytest
@@ -11,6 +12,8 @@ from taxops.services.clients import CreateClientInput
 from taxops.services.compliance_profiles import ComplianceProfileItemInput
 from taxops.services.annual_work import AnnualWorkError, AnnualWorkValidationError
 from taxops.ui.dialogs.annual_workspace_dialog import AnnualWorkspaceDialog
+from taxops.ui.dialogs import annual_workspace_dialog
+from taxops.ui.workers import annual_client_search
 
 
 def _client_with_two_drafts(container):
@@ -28,6 +31,11 @@ def _client_with_two_drafts(container):
     return client
 
 
+def _add_dialog(qtbot, dialog: AnnualWorkspaceDialog) -> None:
+    qtbot.addWidget(dialog)
+    qtbot.waitUntil(lambda: not dialog._search_workers, timeout=2000)
+
+
 def test_double_click_confirm_calls_service_once_and_persists_exact_selection(
     qtbot, container, monkeypatch
 ) -> None:
@@ -35,7 +43,7 @@ def test_double_click_confirm_calls_service_once_and_persists_exact_selection(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     dialog.show()
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     assert dialog.preview_table.rowCount() == 2
@@ -68,7 +76,7 @@ def test_native_mouse_double_click_never_confirms_twice(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     dialog.show()
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     confirm_spy = Mock(wraps=container.annual_work.confirm_preview_selection)
@@ -88,7 +96,7 @@ def test_edited_standard_subset_and_custom_row_are_persisted_exactly(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     dialog.show()
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
 
@@ -149,7 +157,7 @@ def test_no_selection_and_invalid_date_keep_dialog_open_and_focus_first_error(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     dialog.show()
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     for row in range(dialog.preview_table.rowCount()):
@@ -159,7 +167,8 @@ def test_no_selection_and_invalid_date_keep_dialog_open_and_focus_first_error(
     qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
     assert dialog.result() != QDialog.DialogCode.Accepted
     assert dialog.feedback_label.text() == "請至少勾選一項年度工作。"
-    assert dialog.preview_table.hasFocus()
+    first_selection = dialog.preview_table.row_widgets(0).selected
+    qtbot.waitUntil(first_selection.hasFocus, timeout=500)
 
     dialog.preview_table.set_checked(0, True)
     due_input = dialog.preview_table.row_widgets(0).due_date
@@ -170,6 +179,40 @@ def test_no_selection_and_invalid_date_keep_dialog_open_and_focus_first_error(
     assert due_input.hasFocus()
 
 
+def test_invalid_confirm_focus_survives_delayed_initial_client_search(
+    qtbot, container, monkeypatch
+) -> None:
+    client = _client_with_two_drafts(container)
+
+    class DelayedWorker(annual_client_search.AnnualClientSearchWorker):
+        def run(self) -> None:
+            time.sleep(0.15)
+            super().run()
+
+    monkeypatch.setattr(
+        annual_workspace_dialog, "AnnualClientSearchWorker", DelayedWorker
+    )
+    dialog = AnnualWorkspaceDialog(
+        container, preselected_client_id=client.id, operation_year=2026
+    )
+    qtbot.addWidget(dialog)
+    dialog.show()
+    assert not dialog.client_combo.isEnabled()
+    assert not dialog.load_button.isEnabled()
+    qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
+    assert dialog.preview_table.rowCount() == 0
+    qtbot.waitUntil(lambda: not dialog._search_workers, timeout=1000)
+    assert dialog.client_combo.isEnabled()
+    assert dialog.load_button.isEnabled()
+    qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
+    for row in range(dialog.preview_table.rowCount()):
+        dialog.preview_table.set_checked(row, False)
+    qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
+    assert dialog.feedback_label.text() == "請至少勾選一項年度工作。"
+    assert dialog.preview_table.rowCount() == 2
+    assert dialog.preview_table.row_widgets(0).selected.hasFocus()
+
+
 def test_preview_load_does_not_pump_nested_qt_events(
     qtbot, container, monkeypatch
 ) -> None:
@@ -177,7 +220,7 @@ def test_preview_load_does_not_pump_nested_qt_events(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     process_events = Mock()
     monkeypatch.setattr(QApplication, "processEvents", process_events)
 
@@ -203,8 +246,9 @@ def test_overlong_preview_input_is_preserved_then_rejected_without_writing(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     dialog.show()
+    qtbot.waitUntil(lambda: not dialog._search_workers, timeout=2000)
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     widget = getattr(dialog.preview_table.row_widgets(0), field_name)
 
@@ -213,7 +257,7 @@ def test_overlong_preview_input_is_preserved_then_rejected_without_writing(
     qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
 
     assert dialog.result() != QDialog.DialogCode.Accepted
-    assert widget.hasFocus()
+    qtbot.waitUntil(widget.hasFocus, timeout=500)
     assert container.conn.execute(
         "SELECT COUNT(*) FROM annual_workspaces"
     ).fetchone()[0] == 0
@@ -226,7 +270,7 @@ def test_stale_error_preserves_inputs_checks_custom_uuid_and_can_retry(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     dialog.show()
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     dialog.preview_table.set_checked(1, False)
@@ -288,7 +332,7 @@ def test_snapshot_none_never_shows_success_and_same_payload_can_retry(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     dialog.show()
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     dialog.preview_table.set_checked(1, False)
@@ -339,8 +383,7 @@ def test_client_or_year_change_invalidates_preview_and_old_expected_token(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
-    qtbot.waitUntil(lambda: not dialog._search_workers, timeout=2000)
+    _add_dialog(qtbot, dialog)
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     original = dialog.expected_drafts
     assert original
@@ -379,8 +422,7 @@ def test_profile_missing_and_all_disabled_use_fixed_safe_chinese_errors(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=missing.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
-    qtbot.waitUntil(lambda: not dialog._search_workers, timeout=2000)
+    _add_dialog(qtbot, dialog)
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     assert dialog.feedback_label.text() == "此客戶尚未設定年度法遵檔案。"
     assert "annual_work.profile_not_found" not in dialog.feedback_label.text()
@@ -400,7 +442,7 @@ def test_fixed_900_by_540_layout_keeps_scroll_table_and_bottom_actions_visible(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     dialog.resize(900, 540)
     dialog.show()
     QApplication.processEvents()
@@ -438,7 +480,7 @@ def test_snapshot_workspace_mismatch_never_accepts_or_shows_success(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     real_snapshot = container.annual_work.get_workspace_snapshot
 
@@ -482,7 +524,7 @@ def test_new_item_field_mismatch_never_accepts_or_shows_success(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     expected_before = dialog.expected_drafts
     first_key = dialog.preview_table.item_key(0)
@@ -522,7 +564,7 @@ def test_snapshot_precheck_failure_never_writes_and_preserves_payload(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     dialog.preview_table.set_title(0, "前置讀取失敗仍保留")
     expected = dialog.expected_drafts
@@ -557,7 +599,7 @@ def test_post_snapshot_missing_selected_key_never_accepts(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     real_snapshot = container.annual_work.get_workspace_snapshot
 
@@ -594,7 +636,7 @@ def test_post_snapshot_missing_existing_unselected_item_never_accepts(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     dialog.preview_table.set_checked(0, False)
     expected_before = dialog.expected_drafts
@@ -639,7 +681,7 @@ def test_post_snapshot_unexpected_extra_item_never_accepts(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     dialog.preview_table.set_checked(1, False)
     expected_before = dialog.expected_drafts
@@ -683,7 +725,7 @@ def test_result_insert_count_mismatch_never_accepts(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     real_confirm = container.annual_work.confirm_preview_selection
 
@@ -723,7 +765,7 @@ def test_existing_manually_edited_item_is_not_overwritten_on_second_confirm(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     dialog.preview_table.set_checked(1, False)
 
@@ -753,7 +795,7 @@ def test_dialog_owns_parent_and_is_modal(qtbot, container) -> None:
     qtbot.addWidget(parent)
 
     dialog = AnnualWorkspaceDialog(container, parent=parent)
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
 
     assert dialog.parent() is parent
     assert dialog.isModal()
@@ -787,7 +829,7 @@ def test_confirm_error_mapping_is_fixed_safe_and_preserves_payload(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     dialog.preview_table.set_title(0, "服務錯誤仍保留")
     monkeypatch.setattr(
@@ -814,9 +856,8 @@ def test_selector_bounds_immutable_standard_identity_tooltips_and_cancel_wiring(
     dialog = AnnualWorkspaceDialog(
         container, preselected_client_id=client.id, operation_year=2026
     )
-    qtbot.addWidget(dialog)
+    _add_dialog(qtbot, dialog)
     dialog.show()
-    qtbot.waitUntil(lambda: not dialog._search_workers, timeout=2000)
     assert dialog.client_combo.currentData() == client.id
     assert dialog.client_combo.currentText() == (
         f"{client.client_code}｜{client.client_name}"

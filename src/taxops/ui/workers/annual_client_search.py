@@ -25,6 +25,7 @@ class AnnualClientChoice:
 @dataclass(frozen=True)
 class AnnualClientSearchResult:
     request_token: int
+    normalized_query: str
     choices: tuple[AnnualClientChoice, ...]
     has_more: bool
     preselected: AnnualClientChoice | None
@@ -54,9 +55,6 @@ class AnnualClientSearchWorker(QThread):
         self._preselected_client_id = preselected_client_id
         self._connection: sqlite3.Connection | None = None
         self._connection_lock = threading.Lock()
-        app = QCoreApplication.instance()
-        if app is not None:
-            app.aboutToQuit.connect(self.shutdown)
 
     @property
     def request_token(self) -> int:
@@ -67,12 +65,12 @@ class AnnualClientSearchWorker(QThread):
         with self._connection_lock:
             connection = self._connection
         if connection is not None:
-            connection.interrupt()
-
-    def shutdown(self) -> None:
-        """Bound app shutdown so a native worker cannot outlive Qt."""
-        self.cancel()
-        self.wait(11_000)
+            try:
+                connection.interrupt()
+            except sqlite3.ProgrammingError:
+                # The worker may have closed between native query return and
+                # this native interrupt call.
+                pass
 
     @staticmethod
     def _choice(row: sqlite3.Row) -> AnnualClientChoice:
@@ -133,6 +131,7 @@ class AnnualClientSearchWorker(QThread):
                 return
             result = AnnualClientSearchResult(
                 request_token=self._request_token,
+                normalized_query=self._query,
                 choices=tuple(self._choice(row) for row in rows[: self._limit]),
                 has_more=len(rows) > self._limit,
                 preselected=preselected,
@@ -159,9 +158,77 @@ class AnnualClientSearchWorker(QThread):
             self.errored.emit(self._request_token, "system.unexpected")
         finally:
             if connection is not None:
-                connection.set_progress_handler(None, 0)
-                if connection.in_transaction:
-                    connection.rollback()
                 with self._connection_lock:
+                    connection.set_progress_handler(None, 0)
+                    if connection.in_transaction:
+                        connection.rollback()
                     self._connection = None
-                connection.close()
+                    connection.close()
+
+
+_shutdown_survivors: set[QThread] = set()
+
+
+class AnnualClientSearchCoordinator(QObject):
+    """Own client-search workers and coordinate one aggregate app shutdown."""
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._workers: set[QThread] = set()
+        app = QCoreApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self.shutdown)
+
+    @property
+    def active_count(self) -> int:
+        return sum(not worker.isFinished() for worker in self._workers)
+
+    def register(self, worker: AnnualClientSearchWorker) -> None:
+        worker.setParent(self)
+        self._workers.add(worker)
+        worker.finished.connect(self._on_worker_finished)
+        worker.finished.connect(worker.deleteLater)
+
+    def _on_worker_finished(self) -> None:
+        worker = self.sender()
+        if isinstance(worker, QThread):
+            self._workers.discard(worker)
+            _shutdown_survivors.discard(worker)
+
+    def cancel_and_wait(self, timeout_ms: int = 11_000) -> bool:
+        workers = tuple(self._workers)
+        for worker in workers:
+            if isinstance(worker, AnnualClientSearchWorker):
+                worker.cancel()
+            else:
+                worker.requestInterruption()
+        deadline = time.monotonic() + max(0, timeout_ms) / 1000
+        all_finished = True
+        for worker in workers:
+            remaining_ms = max(0, int((deadline - time.monotonic()) * 1000))
+            if not worker.isFinished() and not worker.wait(remaining_ms):
+                all_finished = False
+        return all_finished
+
+    def shutdown(self, timeout_ms: int = 11_000) -> bool:
+        clean = self.cancel_and_wait(timeout_ms)
+        if not clean:
+            _log.critical(
+                "annual client workers exceeded aggregate shutdown deadline"
+            )
+            for worker in tuple(self._workers):
+                if not worker.isFinished():
+                    worker.setParent(None)
+                    _shutdown_survivors.add(worker)
+        return clean
+
+
+def annual_client_search_coordinator() -> AnnualClientSearchCoordinator:
+    app = QCoreApplication.instance()
+    if app is None:
+        raise RuntimeError("annual client search requires a Qt application")
+    coordinator = getattr(app, "_annual_client_search_coordinator", None)
+    if not isinstance(coordinator, AnnualClientSearchCoordinator):
+        coordinator = AnnualClientSearchCoordinator(app)
+        setattr(app, "_annual_client_search_coordinator", coordinator)
+    return coordinator

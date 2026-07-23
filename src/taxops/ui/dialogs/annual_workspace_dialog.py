@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
-    QApplication,
     QComboBox,
     QDialog,
     QHBoxLayout,
@@ -35,6 +34,7 @@ from ..widgets.annual_preview_table import AnnualPreviewTable
 from ..workers.annual_client_search import (
     AnnualClientSearchResult,
     AnnualClientSearchWorker,
+    annual_client_search_coordinator,
 )
 
 
@@ -104,6 +104,8 @@ class AnnualWorkspaceDialog(QDialog):
         self._loading = False
         self._search_request_token = 0
         self._search_workers: dict[int, AnnualClientSearchWorker] = {}
+        self._pending_search: tuple[int, str, int | None] | None = None
+        self._search_coordinator = annual_client_search_coordinator()
         self._close_after_search = False
         self._accept_after_search = False
         self.setObjectName("AnnualWorkspaceDialog")
@@ -189,7 +191,9 @@ class AnnualWorkspaceDialog(QDialog):
 
         self.client_search_button.clicked.connect(self._search_clients)
         self.client_search_input.returnPressed.connect(self._search_clients)
-        self.client_search_input.textChanged.connect(self._invalidate_preview)
+        self.client_search_input.textChanged.connect(
+            self._on_search_query_changed
+        )
         self.load_button.clicked.connect(self._load_preview)
         self.add_custom_button.clicked.connect(self._add_custom)
         self.confirm_button.clicked.connect(self._confirm)
@@ -239,29 +243,58 @@ class AnnualWorkspaceDialog(QDialog):
         self._invalidate_preview()
         self._search_request_token += 1
         token = self._search_request_token
+        request = (
+            token,
+            self.client_search_input.text().strip(),
+            preselected_client_id,
+        )
+        if self._search_workers:
+            self._pending_search = request
+            for worker in tuple(self._search_workers.values()):
+                worker.cancel()
+            self.feedback_label.setText("正在切換搜尋條件…")
+            return
+        self._start_client_search(request)
+
+    def _start_client_search(
+        self, request: tuple[int, str, int | None]
+    ) -> None:
+        token, query, preselected_client_id = request
         worker = AnnualClientSearchWorker(
             str(self._container.paths.db_path),
-            self.client_search_input.text(),
+            query,
             token,
             limit=_CLIENT_RESULT_LIMIT,
             preselected_client_id=preselected_client_id,
-            # The dialog may be torn down by application/test cleanup before a
-            # queued close event is delivered. App ownership keeps a native
-            # QThread from being destroyed while it is still unwinding.
-            parent=QApplication.instance(),
         )
+        self._search_coordinator.register(worker)
         self._search_workers[token] = worker
+        self.client_combo.setEnabled(False)
+        self.load_button.setEnabled(False)
         self.feedback_label.setText("正在搜尋客戶…")
         worker.succeeded.connect(self._on_client_search_succeeded)
         worker.errored.connect(self._on_client_search_errored)
         worker.finished.connect(self._on_client_search_worker_finished)
-        worker.finished.connect(worker.deleteLater)
         worker.start()
+
+    def _on_search_query_changed(self, _text: str) -> None:
+        self._invalidate_preview()
+        self._search_request_token += 1
+        self._pending_search = None
+        self.client_combo.clear()
+        self.client_combo.addItem("搜尋條件已變更，請重新搜尋", None)
+        self.feedback_label.setText("搜尋條件已變更，請重新搜尋。")
+        for worker in tuple(self._search_workers.values()):
+            worker.cancel()
 
     def _on_client_search_succeeded(
         self, result: AnnualClientSearchResult
     ) -> None:
-        if result.request_token != self._search_request_token:
+        if (
+            result.request_token != self._search_request_token
+            or result.normalized_query
+            != self.client_search_input.text().strip()
+        ):
             return
         self.client_combo.clear()
         self.client_combo.addItem("請選擇客戶", None)
@@ -304,26 +337,35 @@ class AnnualWorkspaceDialog(QDialog):
             return
         token = worker.request_token
         worker = self._search_workers.pop(token, None)
+        if (
+            self._pending_search is not None
+            and not self._close_after_search
+            and not self._accept_after_search
+        ):
+            pending = self._pending_search
+            self._pending_search = None
+            self._start_client_search(pending)
+            return
         if token == self._search_request_token:
             self.client_search_button.setEnabled(
                 not self._close_after_search and not self._accept_after_search
             )
+        if not self._search_workers:
+            controls_enabled = (
+                not self._close_after_search and not self._accept_after_search
+            )
+            self.client_combo.setEnabled(controls_enabled)
+            self.load_button.setEnabled(controls_enabled)
         if not self._search_workers:
             if self._accept_after_search:
                 QDialog.accept(self)
             elif self._close_after_search:
                 QDialog.reject(self)
 
-    def _reap_finished_search_workers(self) -> None:
-        for token, worker in tuple(self._search_workers.items()):
-            if worker.isFinished():
-                self._search_workers.pop(token, None)
-                worker.deleteLater()
-
     def accept(self) -> None:
-        self._reap_finished_search_workers()
         if self._search_workers:
             self._accept_after_search = True
+            self._pending_search = None
             self.client_search_button.setEnabled(False)
             for worker in tuple(self._search_workers.values()):
                 worker.cancel()
@@ -331,9 +373,9 @@ class AnnualWorkspaceDialog(QDialog):
         super().accept()
 
     def reject(self) -> None:
-        self._reap_finished_search_workers()
         if self._search_workers:
             self._close_after_search = True
+            self._pending_search = None
             self.client_search_button.setEnabled(False)
             self.feedback_label.setText("正在停止客戶搜尋，請稍候…")
             for worker in tuple(self._search_workers.values()):
@@ -438,7 +480,12 @@ class AnnualWorkspaceDialog(QDialog):
                     raise _InputError("到期日須為 YYYY-MM-DD 格式。", widgets.due_date)
             selected.append(self.preview_table.draft_for_row(row, year))
         if not selected:
-            raise _InputError("請至少勾選一項年度工作。", self.preview_table)
+            focus = (
+                self.preview_table.row_widgets(0).selected
+                if self.preview_table.rowCount()
+                else self.preview_table
+            )
+            raise _InputError("請至少勾選一項年度工作。", focus)
         return tuple(selected)
 
     def _set_payload_enabled(self, enabled: bool) -> None:

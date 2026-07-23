@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import threading
 
 from PySide6.QtCore import QCoreApplication, QEvent, QTimer, Qt
 from PySide6.QtTest import QSignalSpy
@@ -60,13 +61,14 @@ def test_client_search_is_bounded_warns_and_can_find_client_501(
 def test_constructor_does_not_block_qt_event_loop_on_client_query(
     qtbot, container, monkeypatch
 ) -> None:
-    original_count = container.clients.count_clients
+    class DelayedWorker(annual_client_search.AnnualClientSearchWorker):
+        def run(self) -> None:
+            time.sleep(0.2)
+            super().run()
 
-    def delayed_count(*args, **kwargs):
-        time.sleep(0.2)
-        return original_count(*args, **kwargs)
-
-    monkeypatch.setattr(container.clients, "count_clients", delayed_count)
+    monkeypatch.setattr(
+        annual_workspace_dialog, "AnnualClientSearchWorker", DelayedWorker
+    )
     timer_fired: list[bool] = []
     QTimer.singleShot(10, lambda: timer_fired.append(True))
 
@@ -76,8 +78,73 @@ def test_constructor_does_not_block_qt_event_loop_on_client_query(
     qtbot.addWidget(dialog)
 
     assert elapsed < 0.1
+    assert dialog._search_workers
     qtbot.waitUntil(lambda: timer_fired == [True], timeout=1000)
     _wait_for_search(qtbot, dialog)
+
+
+def test_editing_query_without_search_discards_delayed_old_result(
+    qtbot, container, monkeypatch
+) -> None:
+    old = container.clients_repo.insert(
+        client_code="ONLY-OLD", client_name="只屬於舊查詢"
+    )
+    container.conn.commit()
+
+    class DelayedWorker(annual_client_search.AnnualClientSearchWorker):
+        def run(self) -> None:
+            time.sleep(0.15)
+            super().run()
+
+    monkeypatch.setattr(
+        annual_workspace_dialog, "AnnualClientSearchWorker", DelayedWorker
+    )
+    dialog = AnnualWorkspaceDialog(container, operation_year=2026)
+    qtbot.addWidget(dialog)
+    dialog.client_search_input.setText("ONLY-OLD")
+    qtbot.mouseClick(dialog.client_search_button, Qt.MouseButton.LeftButton)
+    dialog.client_search_input.setText("尚未按搜尋的新條件")
+
+    _wait_for_search(qtbot, dialog)
+
+    assert dialog.client_search_input.text() == "尚未按搜尋的新條件"
+    assert dialog.client_combo.findData(old.id) < 0
+    assert "重新搜尋" in dialog.feedback_label.text()
+
+
+def test_rapid_search_clicks_keep_at_most_one_live_worker(
+    qtbot, container, monkeypatch
+) -> None:
+    counter_lock = threading.Lock()
+    active = 0
+    maximum = 0
+
+    class CountedWorker(annual_client_search.AnnualClientSearchWorker):
+        def run(self) -> None:
+            nonlocal active, maximum
+            with counter_lock:
+                active += 1
+                maximum = max(maximum, active)
+            try:
+                time.sleep(0.1)
+                super().run()
+            finally:
+                with counter_lock:
+                    active -= 1
+
+    monkeypatch.setattr(
+        annual_workspace_dialog, "AnnualClientSearchWorker", CountedWorker
+    )
+    dialog = AnnualWorkspaceDialog(container, operation_year=2026)
+    qtbot.addWidget(dialog)
+    for index in range(8):
+        dialog.client_search_input.setText(f"連點-{index}")
+        qtbot.mouseClick(dialog.client_search_button, Qt.MouseButton.LeftButton)
+
+    _wait_for_search(qtbot, dialog)
+
+    assert maximum == 1
+    assert dialog.client_search_input.text() == "連點-7"
 
 
 def test_delayed_old_search_keeps_ui_responsive_and_cannot_replace_new_result(
@@ -151,6 +218,38 @@ def test_cancel_waits_for_search_worker_before_rejecting_dialog(
     assert not dialog._search_workers
 
 
+def test_reject_after_native_finish_does_not_launch_pending_search(
+    qtbot, container, monkeypatch
+) -> None:
+    created: list[annual_client_search.AnnualClientSearchWorker] = []
+
+    class ObservedWorker(annual_client_search.AnnualClientSearchWorker):
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            created.append(self)
+
+    monkeypatch.setattr(
+        annual_workspace_dialog, "AnnualClientSearchWorker", ObservedWorker
+    )
+    dialog = AnnualWorkspaceDialog(container, operation_year=2026)
+    qtbot.addWidget(dialog)
+    dialog.client_search_input.setText("關閉前的待執行搜尋")
+    dialog._search_clients()
+    assert dialog._pending_search is not None
+    first = created[0]
+    assert first.wait(2000)
+    assert first.isFinished()
+    assert dialog._search_workers
+
+    dialog.reject()
+    qtbot.wait(50)
+
+    assert len(created) == 1
+    assert dialog._pending_search is None
+    assert not dialog._search_workers
+    assert dialog.result() == QDialog.DialogCode.Rejected
+
+
 def test_dialog_can_be_deleted_while_delayed_worker_finishes_safely(
     qtbot, container, monkeypatch
 ) -> None:
@@ -171,6 +270,124 @@ def test_dialog_can_be_deleted_while_delayed_worker_finishes_safely(
     )
 
     qtbot.waitUntil(lambda: finished.count() == 1, timeout=1000)
+
+
+def test_cancel_tolerates_connection_closing_after_reference_was_read(
+    qtbot, container, monkeypatch
+) -> None:
+    query_started = threading.Event()
+    allow_query_finish = threading.Event()
+    close_started = threading.Event()
+    cancel_errors: list[BaseException] = []
+
+    class Cursor:
+        def fetchall(self):
+            query_started.set()
+            assert allow_query_finish.wait(1)
+            return []
+
+        def fetchone(self):
+            return None
+
+    class RacingConnection:
+        row_factory = None
+        in_transaction = False
+        closed = False
+
+        def execute(self, sql, _params=()):
+            if sql == "BEGIN":
+                self.in_transaction = True
+            if sql.startswith("SELECT id, client_code"):
+                return Cursor()
+            return Cursor()
+
+        def set_progress_handler(self, *_args):
+            return None
+
+        def rollback(self):
+            self.in_transaction = False
+
+        def close(self):
+            self.closed = True
+            close_started.set()
+
+        def interrupt(self):
+            assert close_started.wait(1)
+            if self.closed:
+                raise annual_client_search.sqlite3.ProgrammingError(
+                    "Cannot operate on a closed database."
+                )
+
+    connection = RacingConnection()
+    monkeypatch.setattr(
+        annual_client_search.sqlite3,
+        "connect",
+        lambda *_args, **_kwargs: connection,
+    )
+    worker = annual_client_search.AnnualClientSearchWorker(
+        str(container.paths.db_path), "race", 1
+    )
+    worker.start()
+    assert query_started.wait(1)
+
+    def cancel_worker() -> None:
+        try:
+            worker.cancel()
+        except BaseException as exc:  # pragma: no branch - asserted below
+            cancel_errors.append(exc)
+
+    cancel_thread = threading.Thread(target=cancel_worker)
+    cancel_thread.start()
+    allow_query_finish.set()
+    cancel_thread.join(2)
+    assert not cancel_thread.is_alive()
+    qtbot.waitUntil(worker.isFinished, timeout=1000)
+    assert cancel_errors == []
+
+
+def test_shutdown_coordinator_cancels_all_before_one_aggregate_wait_deadline(
+    qtbot,
+) -> None:
+    events: list[tuple[str, object]] = []
+    cancelled: set[str] = set()
+
+    class ObservedWorker(annual_client_search.AnnualClientSearchWorker):
+        def __init__(self, name: str) -> None:
+            super().__init__("unused.sqlite", "", 1)
+            self.name = name
+
+        def run(self) -> None:
+            while not self.isInterruptionRequested():
+                time.sleep(0.005)
+
+        def cancel(self) -> None:
+            cancelled.add(self.name)
+            events.append(("cancel", self.name))
+            super().cancel()
+
+        def wait(self, timeout=...):
+            events.append(("wait", frozenset(cancelled)))
+            return super().wait(timeout)
+
+    coordinator = annual_client_search.AnnualClientSearchCoordinator()
+    workers = (ObservedWorker("A"), ObservedWorker("B"))
+    for worker in workers:
+        coordinator.register(worker)
+        worker.start()
+
+    assert coordinator.cancel_and_wait(1000) is True
+
+    first_wait = next(index for index, event in enumerate(events) if event[0] == "wait")
+    assert {event[1] for event in events[:first_wait]} == {"A", "B"}
+    assert all(event[1] == frozenset({"A", "B"}) for event in events[first_wait:])
+    qtbot.waitUntil(lambda: coordinator.active_count == 0, timeout=1000)
+
+
+def test_application_uses_one_shared_annual_search_coordinator() -> None:
+    first = annual_client_search.annual_client_search_coordinator()
+    second = annual_client_search.annual_client_search_coordinator()
+
+    assert first is second
 
 
 def test_preselected_active_client_is_fetched_exactly_beyond_first_page(

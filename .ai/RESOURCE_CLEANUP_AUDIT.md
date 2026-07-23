@@ -5,14 +5,17 @@
 - Annual-workspace client search now uses a fresh read-only SQLite QThread
   with `query_only`, a ten-second busy timeout, a progress deadline, bounded
   `LIMIT 101` results, and detached row DTOs.
-- Immutable request tokens discard stale results. The QApplication owns native
-  workers so dialog destruction cannot destroy a running QThread; bound slots
-  auto-disconnect with the dialog, `finished` schedules worker deletion, and
-  app shutdown cancels plus waits within the query deadline.
-- Real-widget regressions cover a deliberately delayed old query, event-loop
-  responsiveness, stale-result rejection, cancel-before-close, and direct
-  dialog deletion while the worker finishes.
-- Focused verification passed 116 tests. Compileall and `git diff --check`
+- Immutable request tokens discard stale results, including when the user edits
+  the query without launching a replacement search. Each dialog keeps at most
+  one native worker active and one latest pending request.
+- One QApplication-owned coordinator owns all search workers, connects the
+  shutdown hook once, cancels every worker before waiting, and applies one
+  aggregate shutdown deadline. Finished workers are removed and scheduled for
+  deletion without dialog ownership races.
+- Real-widget regressions cover delayed old queries, event-loop responsiveness,
+  rapid repeated searches, cancel/close races, aggregate shutdown, stale-result
+  rejection, and direct dialog deletion while the worker finishes.
+- Focused verification passed 123 tests. Compileall and `git diff --check`
   passed. The post-test hygiene command listed only its own Python process
   under suspicious TaxOps/PyTest/PyInstaller processes.
 
