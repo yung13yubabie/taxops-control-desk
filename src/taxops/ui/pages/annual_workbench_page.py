@@ -28,6 +28,7 @@ from ...repositories.annual_work import AnnualOverviewMetrics, AnnualWorkOvervie
 from ...services.annual_work import AnnualWorkStatusPresentation
 from ...services.container import ServiceContainer
 from ..dialogs.annual_workspace_dialog import AnnualWorkspaceDialog
+from ..dialogs.annual_item_dialog import AnnualItemDialog
 from ..style import TEXT_MUTED
 from ..widgets.annual_overview_table import AnnualOverviewTable, format_twd
 from ..widgets.empty_state import EmptyState
@@ -72,6 +73,7 @@ class AnnualWorkbenchPage(QWidget):
         self._rows: list[AnnualWorkOverviewRow] = []
         self._presentations: list[AnnualWorkStatusPresentation] = []
         self._refreshing = False
+        self._detail_open = False
 
         page_font = self.font()
         page_font.setPixelSize(14)
@@ -200,6 +202,12 @@ class AnnualWorkbenchPage(QWidget):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         detail_layout.addWidget(self.detail_label)
+        detail_actions = QHBoxLayout()
+        detail_actions.addStretch(1)
+        self.open_detail_button = QPushButton("開啟明細")
+        self.open_detail_button.setObjectName("AnnualOpenDetail")
+        detail_actions.addWidget(self.open_detail_button)
+        detail_layout.addLayout(detail_actions)
 
         self.splitter = QSplitter(Qt.Orientation.Vertical)
         self.splitter.setObjectName("AnnualDesktopSplitter")
@@ -237,6 +245,10 @@ class AnnualWorkbenchPage(QWidget):
         self.overview_table.itemSelectionChanged.connect(
             self._show_selected_detail
         )
+        self.open_detail_button.clicked.connect(self._open_selected_detail)
+        self.overview_table.itemDoubleClicked.connect(
+            lambda _item: self._open_selected_detail()
+        )
 
         self._update_pagination()
         self._refresh()
@@ -248,6 +260,40 @@ class AnnualWorkbenchPage(QWidget):
         dialog = AnnualWorkspaceDialog(self._container, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._refresh()
+
+    def _open_selected_detail(self) -> None:
+        if self._detail_open:
+            return
+        row_index = self._selected_row_index()
+        if row_index is None:
+            self.feedback_label.setText("請先選取要開啟的年度工作。")
+            self.overview_table.setFocus()
+            return
+        self._detail_open = True
+        self.open_detail_button.setEnabled(False)
+        try:
+            item_id = self._rows[row_index].item.id
+            dialog = AnnualItemDialog(self._container, item_id, parent=self)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self._refresh()
+        except Exception as exc:
+            try:
+                self._container.system_log.error(
+                    "annual_work.item_dialog.open_failed", exc=exc
+                )
+            except Exception:
+                pass
+            self.feedback_label.setText("開啟年度工作明細失敗，請稍後再試。")
+        finally:
+            self._detail_open = False
+            self.open_detail_button.setEnabled(True)
+
+    def _selected_row_index(self) -> int | None:
+        selected = self.overview_table.selectionModel().selectedRows()
+        if len(selected) != 1:
+            return None
+        row_index = selected[0].row()
+        return row_index if 0 <= row_index < len(self._rows) else None
 
     def clear_filter(self) -> None:
         self._filter_key = ""
@@ -420,8 +466,8 @@ class AnnualWorkbenchPage(QWidget):
         if not self._rows:
             self.detail_label.setText("目前沒有符合篩選條件的年度工作。")
             return
-        row_index = self.overview_table.currentRow()
-        if not 0 <= row_index < len(self._rows):
+        row_index = self._selected_row_index()
+        if row_index is None:
             self.detail_label.setText("請選取表格中的工作項目。")
             return
         row = self._rows[row_index]

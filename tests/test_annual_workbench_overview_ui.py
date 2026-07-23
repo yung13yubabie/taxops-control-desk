@@ -436,7 +436,13 @@ def test_create_annual_work_is_enabled_and_opens_real_dialog(
         for button in page.findChildren(QPushButton)
         if button.isEnabled()
     }
-    assert enabled_text == {"建立年度工作", "套用", "清除", "重新整理"}
+    assert enabled_text == {
+        "建立年度工作",
+        "開啟明細",
+        "套用",
+        "清除",
+        "重新整理",
+    }
 
 
 def test_accepted_create_dialog_refreshes_overview_once(

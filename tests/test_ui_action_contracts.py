@@ -24,6 +24,7 @@ _EMBEDDED_ONLY_PAGES = {PAGE_DOC_REQUESTS}
 _HANDLER_MODULES = {
     "AnnualWorkbenchPage": "taxops.ui.pages.annual_workbench_page",
     "AnnualWorkspaceDialog": "taxops.ui.dialogs.annual_workspace_dialog",
+    "AnnualItemDetail": "taxops.ui.widgets.annual_item_detail",
     "AttachmentsPage": "taxops.ui.pages.attachments_page",
     "ClientsPage": "taxops.ui.pages.clients_page",
     "DocumentRequestsPage": "taxops.ui.pages.document_requests_page",
@@ -60,6 +61,12 @@ def test_create_annual_workspace_action_contract_is_enabled_and_precise() -> Non
         "新增自訂列",
         "確認建立",
         "取消",
+        "開啟明細",
+        "儲存明細",
+        "完成工作",
+        "取消此工作",
+        "還原",
+        "重新開啟",
     }
 
     opener = by_label["建立年度工作"]
