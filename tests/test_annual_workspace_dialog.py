@@ -514,6 +514,104 @@ def test_post_snapshot_missing_selected_key_never_accepts(
     )
 
 
+def test_post_snapshot_missing_existing_unselected_item_never_accepts(
+    qtbot, container, monkeypatch
+) -> None:
+    client = _client_with_two_drafts(container)
+    service = container.annual_work
+    expected = service.preview(client.id, 2026)
+    first = service.confirm_preview_selection(
+        client.id,
+        2026,
+        expected_drafts=expected,
+        selected_drafts=expected[:1],
+    )
+    existing_key = first.items[0].item_key
+    dialog = AnnualWorkspaceDialog(
+        container, preselected_client_id=client.id, operation_year=2026
+    )
+    qtbot.addWidget(dialog)
+    qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
+    dialog.preview_table.set_checked(0, False)
+    expected_before = dialog.expected_drafts
+    first_key = dialog.preview_table.item_key(0)
+    first_title = dialog.preview_table.row_widgets(0).title.text()
+    real_snapshot = service.get_workspace_snapshot
+    calls = 0
+
+    def missing_existing_only_post_confirm(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        snapshot = real_snapshot(*args, **kwargs)
+        if snapshot is None or calls == 1:
+            return snapshot
+        return replace(
+            snapshot,
+            items=tuple(
+                item for item in snapshot.items if item.item_key != existing_key
+            ),
+        )
+
+    monkeypatch.setattr(
+        service, "get_workspace_snapshot", missing_existing_only_post_confirm
+    )
+    qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
+
+    assert dialog.result() != QDialog.DialogCode.Accepted
+    assert dialog.feedback_label.text() == (
+        "資料可能已寫入，但重新讀取驗證失敗，請重新整理後再試。"
+    )
+    assert "建立成功" not in dialog.feedback_label.text()
+    assert dialog.expected_drafts == expected_before
+    assert dialog.preview_table.item_key(0) == first_key
+    assert dialog.preview_table.row_widgets(0).title.text() == first_title
+    assert dialog.confirm_button.isEnabled()
+
+
+def test_post_snapshot_unexpected_extra_item_never_accepts(
+    qtbot, container, monkeypatch
+) -> None:
+    client = _client_with_two_drafts(container)
+    dialog = AnnualWorkspaceDialog(
+        container, preselected_client_id=client.id, operation_year=2026
+    )
+    qtbot.addWidget(dialog)
+    qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
+    dialog.preview_table.set_checked(1, False)
+    expected_before = dialog.expected_drafts
+    first_key = dialog.preview_table.item_key(0)
+    first_title = dialog.preview_table.row_widgets(0).title.text()
+    real_snapshot = container.annual_work.get_workspace_snapshot
+
+    def unexpected_extra_only_post_confirm(*args, **kwargs):
+        snapshot = real_snapshot(*args, **kwargs)
+        if snapshot is None:
+            return None
+        unexpected = replace(
+            snapshot.items[0],
+            id=snapshot.items[0].id + 100,
+            item_key="unexpected:post-snapshot",
+        )
+        return replace(snapshot, items=snapshot.items + (unexpected,))
+
+    monkeypatch.setattr(
+        container.annual_work,
+        "get_workspace_snapshot",
+        unexpected_extra_only_post_confirm,
+    )
+    qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
+
+    assert dialog.result() != QDialog.DialogCode.Accepted
+    assert dialog.feedback_label.text() == (
+        "資料可能已寫入，但重新讀取驗證失敗，請重新整理後再試。"
+    )
+    assert "建立成功" not in dialog.feedback_label.text()
+    assert dialog.expected_drafts == expected_before
+    assert dialog.preview_table.item_key(0) == first_key
+    assert dialog.preview_table.row_widgets(0).title.text() == first_title
+    assert dialog.confirm_button.isEnabled()
+
+
 def test_result_insert_count_mismatch_never_accepts(
     qtbot, container, monkeypatch
 ) -> None:

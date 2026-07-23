@@ -386,9 +386,13 @@ class AnnualWorkspaceDialog(QDialog):
             selected_by_key = {draft.item_key: draft for draft in selected}
             selected_keys = set(selected_by_key)
             snapshot_by_key = {item.item_key: item for item in snapshot.items}
+            result_item_ids = {item.item_key: item.id for item in result.items}
+            snapshot_item_ids = {item.item_key: item.id for item in snapshot.items}
             new_keys = selected_keys - before_keys
             if (
                 snapshot.workspace.id != result.workspace.id
+                or len(snapshot.items) != len(result.items)
+                or snapshot_item_ids != result_item_ids
                 or not selected_keys.issubset(snapshot_by_key)
                 or len(new_keys) != result.inserted_item_count
             ):
