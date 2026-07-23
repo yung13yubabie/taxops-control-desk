@@ -401,6 +401,7 @@ class AnnualWorkspaceDialog(QDialog):
                     or item.title != draft.title
                     or item.tax_year != draft.tax_year
                     or item.period_code != draft.period_code
+                    or item.suggested_due_date != draft.suggested_due_date
                     or item.due_date != draft.suggested_due_date
                 ):
                     raise RuntimeError("annual workspace item verification mismatch")

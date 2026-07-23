@@ -405,6 +405,9 @@ def test_snapshot_workspace_mismatch_never_accepts_or_shows_success(
     (
         ("title", "錯誤的快照標題"),
         ("work_type", "vat"),
+        ("tax_year", 1912),
+        ("period_code", "錯誤期間"),
+        ("suggested_due_date", "2099-11-30"),
         ("due_date", "2099-12-31"),
     ),
 )
@@ -417,6 +420,9 @@ def test_new_item_field_mismatch_never_accepts_or_shows_success(
     )
     qtbot.addWidget(dialog)
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
+    expected_before = dialog.expected_drafts
+    first_key = dialog.preview_table.item_key(0)
+    first_title = dialog.preview_table.row_widgets(0).title.text()
     real_snapshot = container.annual_work.get_workspace_snapshot
 
     def wrong_item_snapshot(*args, **kwargs):
@@ -439,6 +445,10 @@ def test_new_item_field_mismatch_never_accepts_or_shows_success(
         "資料可能已寫入，但重新讀取驗證失敗，請重新整理後再試。"
     )
     assert "建立成功" not in dialog.feedback_label.text()
+    assert dialog.expected_drafts == expected_before
+    assert dialog.preview_table.item_key(0) == first_key
+    assert dialog.preview_table.row_widgets(0).title.text() == first_title
+    assert dialog.confirm_button.isEnabled()
 
 
 def test_snapshot_precheck_failure_never_writes_and_preserves_payload(
