@@ -223,6 +223,23 @@ ERROR_MESSAGES: dict[str, str] = dict(
             "recurring_billing.confirmed_invoice_no.too_long": "發票號碼不可超過 50 個字元",
             "recurring_billing.confirmed_issue_date.invalid": "確認開立日期格式不正確，請使用 YYYY-MM-DD 格式",
             "recurring_billing.occurrence.cannot_cancel_confirmed": "已確認的開立紀錄無法取消，請先取消確認後再操作",
+            "annual_work.item_details.invalid": "年度工作明細格式不正確，請重新確認輸入內容",
+            "annual_work.title.invalid": "工作名稱為必填，且不得超過 500 個字",
+            "annual_work.tax_year.invalid": "課稅年度必須介於 1912 至 9999 年",
+            "annual_work.period_code.invalid": "所屬期間不得超過 50 個字，且不可包含控制字元",
+            "annual_work.due_date.invalid": "採用期限格式不正確，請使用 YYYY-MM-DD",
+            "annual_work.notes.invalid": "備註內容過長或包含不安全的控制字元",
+            "annual_work.expected_updated_at.invalid": "年度工作版本資訊無效，請重新載入後再試",
+            "annual_work.item_details.stale": "此年度工作已被其他視窗更新，請重新載入後再儲存",
+            "annual_work.item_details.read_failed": "讀取年度工作明細失敗，請稍後再試",
+            "annual_work.item_details.update_failed": "儲存年度工作明細失敗，原有資料保持不變",
+            "annual_work.item.updated_at.invalid": "年度工作版本資訊異常，請聯絡系統管理員",
+            "annual_work.item_not_found": "找不到可用的年度工作明細，資料可能已刪除",
+            "annual_transactions.include_deleted.invalid": "交易歷史篩選條件不正確",
+            "annual_transactions.pagination.invalid": "交易歷史分頁條件不正確",
+            "annual_transactions.work_item_not_found": "找不到可用的年度工作，無法讀取交易歷史",
+            "annual_transactions.list.failed": "讀取交易歷史失敗，請稍後再試",
+            "annual_transactions.count.failed": "讀取交易總筆數失敗，請稍後再試",
         }
     )
 )

@@ -369,6 +369,26 @@ class AnnualTransactionsRepository:
     ) -> list[AnnualTransactionRow]:
         return self.list(work_item_id, **kwargs)
 
+    def count(
+        self,
+        work_item_id: int,
+        *,
+        include_deleted: bool = False,
+    ) -> int:
+        """Count ledger rows using the same deleted-row contract as ``list``."""
+        work_item_id = _positive_id(
+            work_item_id, "annual_transactions.work_item_id.invalid"
+        )
+        if type(include_deleted) is not bool:
+            raise ValueError("annual_transactions.include_deleted.invalid")
+        deleted_clause = "" if include_deleted else " AND deleted_at IS NULL"
+        value = self._conn.execute(
+            "SELECT COUNT(*) AS total FROM annual_work_transactions "
+            f"WHERE work_item_id = ?{deleted_clause}",
+            (work_item_id,),
+        ).fetchone()
+        return int(value["total"])
+
     def active_work_item_exists(self, work_item_id: int) -> bool:
         work_item_id = _positive_id(
             work_item_id, "annual_transactions.work_item_id.invalid"

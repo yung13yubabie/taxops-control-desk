@@ -441,6 +441,54 @@ class AnnualWorkRepository:
             raise RuntimeError("annual_work.item_not_found")
         return row
 
+    def update_item_details(
+        self,
+        item_id: int,
+        *,
+        title: str,
+        tax_year: int | None,
+        period_code: str | None,
+        due_date: str | None,
+        notes: str | None,
+        work_status: str,
+        filing_status: str,
+        document_status: str,
+        tax_status: str,
+        fee_status: str,
+        expected_updated_at: str,
+        updated_at: str,
+    ) -> AnnualWorkItemRow:
+        """Replace user-editable detail fields using one optimistic write."""
+        item_id = _positive_id(item_id, "annual_work.item_id.invalid")
+        cursor = self._conn.execute(
+            "UPDATE annual_work_items SET title = ?, tax_year = ?, "
+            "period_code = ?, due_date = ?, notes = ?, work_status = ?, "
+            "filing_status = ?, document_status = ?, tax_status = ?, "
+            "fee_status = ?, updated_at = ? "
+            "WHERE id = ? AND deleted_at IS NULL AND updated_at = ?",
+            (
+                title,
+                tax_year,
+                period_code,
+                due_date,
+                notes,
+                work_status,
+                filing_status,
+                document_status,
+                tax_status,
+                fee_status,
+                updated_at,
+                item_id,
+                expected_updated_at,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("annual_work.item_update_stale")
+        row = self.get_item(item_id)
+        if row is None:
+            raise RuntimeError("annual_work.item_not_found")
+        return row
+
     def complete_item(
         self, item_id: int, status: str, exception_reason: str | None
     ) -> AnnualWorkItemRow:

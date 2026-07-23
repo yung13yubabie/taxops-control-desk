@@ -7,9 +7,10 @@ import unicodedata
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from ..core.compliance import WORK_TYPE_LABELS
+from ..core.clock import now_iso
 from ..core.annual_status import (
     DOCUMENT_STATUSES,
     FEE_STATUSES,
@@ -31,6 +32,7 @@ from ..repositories.annual_work import (
     AnnualWorkItemRow,
     AnnualWorkOverviewRow,
     AnnualWorkRepository,
+    AnnualWorkItemContext,
     AnnualWorkspaceRow,
     MAX_WORKSPACE_ITEMS,
 )
@@ -55,6 +57,7 @@ from .tasks import CreateTaskInput, TasksService, TaskValidationError
 
 
 MAX_REASON_LENGTH = 4000
+MAX_ITEM_NOTES_LENGTH = 100_000
 
 _COMPLETION_RISKS = {
     "filing_status": frozenset({"filing_failed", "correction_required"}),
@@ -74,6 +77,53 @@ class AnnualWorkError(Exception):
 
 class AnnualWorkValidationError(AnnualWorkError, ValueError):
     """A caller-supplied value or current client profile cannot be used."""
+
+
+@dataclass(frozen=True)
+class UpdateAnnualWorkItemInput:
+    title: str
+    tax_year: int | None
+    period_code: str | None
+    due_date: str | None
+    notes: str | None
+    work_status: str
+    filing_status: str
+    document_status: str
+    tax_status: str
+    fee_status: str
+    expected_updated_at: str
+
+
+@dataclass(frozen=True)
+class _PreparedAnnualWorkItemUpdate:
+    title: str
+    tax_year: int | None
+    period_code: str | None
+    due_date: str | None
+    notes: str | None
+    work_status: str
+    filing_status: str
+    document_status: str
+    tax_status: str
+    fee_status: str
+    expected_updated_at: str
+
+    def editable_values(self) -> dict[str, object]:
+        return {
+            field: getattr(self, field)
+            for field in (
+                "title",
+                "tax_year",
+                "period_code",
+                "due_date",
+                "notes",
+                "work_status",
+                "filing_status",
+                "document_status",
+                "tax_status",
+                "fee_status",
+            )
+        }
 
 
 @dataclass(frozen=True)
@@ -157,6 +207,120 @@ def _valid_optional_date(value: object) -> bool:
         return date.fromisoformat(value).isoformat() == value
     except ValueError:
         return False
+
+
+def _item_text(
+    value: object,
+    *,
+    code: str,
+    maximum: int,
+    required: bool = False,
+    multiline: bool = False,
+) -> str | None:
+    if value is None and not required:
+        return None
+    if not isinstance(value, str) or len(value) > maximum:
+        raise AnnualWorkValidationError(code)
+    if required and not any(
+        not char.isspace()
+        and unicodedata.category(char) not in {"Cc", "Cf", "Mn", "Me"}
+        for char in value
+    ):
+        raise AnnualWorkValidationError(code)
+    for char in value:
+        category = unicodedata.category(char)
+        if multiline and char in "\t\n\r":
+            continue
+        if category in {"Cc", "Cf"}:
+            raise AnnualWorkValidationError(code)
+    return value
+
+
+def _next_item_updated_at(previous: str) -> str:
+    """Return a token strictly newer than ``previous`` at seconds precision."""
+    candidate = now_iso()
+    if candidate > previous:
+        return candidate
+    try:
+        parsed = datetime.strptime(previous, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+    except ValueError:
+        # Existing rows are trusted migration output; a malformed token should
+        # not be silently reused as an optimistic concurrency token.
+        raise AnnualWorkError("annual_work.item.updated_at.invalid")
+    return (parsed + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _prepare_item_update(value: object) -> _PreparedAnnualWorkItemUpdate:
+    if not isinstance(value, UpdateAnnualWorkItemInput):
+        raise AnnualWorkValidationError("annual_work.item_details.invalid")
+    title = _item_text(
+        value.title,
+        code="annual_work.title.invalid",
+        maximum=500,
+        required=True,
+    )
+    period_code = _item_text(
+        value.period_code,
+        code="annual_work.period_code.invalid",
+        maximum=50,
+    )
+    notes = _item_text(
+        value.notes,
+        code="annual_work.notes.invalid",
+        maximum=MAX_ITEM_NOTES_LENGTH,
+        multiline=True,
+    )
+    if (
+        value.tax_year is not None
+        and (
+            not isinstance(value.tax_year, int)
+            or isinstance(value.tax_year, bool)
+            or not 1912 <= value.tax_year <= 9999
+        )
+    ):
+        raise AnnualWorkValidationError("annual_work.tax_year.invalid")
+    if not _valid_optional_date(value.due_date):
+        raise AnnualWorkValidationError("annual_work.due_date.invalid")
+    status_sets = {
+        "work_status": WORK_STATUSES,
+        "filing_status": FILING_STATUSES,
+        "document_status": DOCUMENT_STATUSES,
+        "tax_status": TAX_STATUSES,
+        "fee_status": FEE_STATUSES,
+    }
+    for field, allowed in status_sets.items():
+        status = getattr(value, field)
+        if not isinstance(status, str) or status not in allowed:
+            raise AnnualWorkValidationError(f"annual_work.{field}.invalid")
+    if (
+        not isinstance(value.expected_updated_at, str)
+        or not value.expected_updated_at
+        or len(value.expected_updated_at) > 64
+        or any(
+            unicodedata.category(char) in {"Cc", "Cf"}
+            for char in value.expected_updated_at
+        )
+    ):
+        raise AnnualWorkValidationError(
+            "annual_work.expected_updated_at.invalid"
+        )
+    if not isinstance(title, str):
+        raise AnnualWorkValidationError("annual_work.title.invalid")
+    return _PreparedAnnualWorkItemUpdate(
+        title=title,
+        tax_year=value.tax_year,
+        period_code=period_code,
+        due_date=value.due_date,
+        notes=notes,
+        work_status=value.work_status,
+        filing_status=value.filing_status,
+        document_status=value.document_status,
+        tax_status=value.tax_status,
+        fee_status=value.fee_status,
+        expected_updated_at=value.expected_updated_at,
+    )
 
 
 def _invalid_draft_text(
@@ -915,6 +1079,99 @@ class AnnualWorkService:
                 "annual_work.snapshot.caller_transaction_ended"
             )
         return snapshot
+
+    def get_item_context(self, item_id: object) -> AnnualWorkItemContext:
+        """Return the active item and immutable client-year ownership context."""
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        try:
+            context = self._repo.get_item_context(item_id)
+        except sqlite3.Error as exc:
+            raise AnnualWorkError("annual_work.item_details.read_failed") from exc
+        if context is None:
+            raise AnnualWorkValidationError("annual_work.item_not_found")
+        return context
+
+    def update_item_details(
+        self,
+        item_id: object,
+        payload: object,
+    ) -> AnnualWorkItemRow:
+        """Atomically replace every user-editable detail field.
+
+        Completion, cancellation, restore, and reopening remain dedicated
+        business transitions. Historical terminal items may retain their work
+        status while metadata and the other independent axes are corrected.
+        """
+        if self._conn.in_transaction:
+            raise AnnualWorkValidationError(
+                "annual_work.transaction.already_active"
+            )
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise AnnualWorkValidationError("annual_work.item_id.invalid")
+        prepared = _prepare_item_update(payload)
+        values = prepared.editable_values()
+        terminal = frozenset(
+            {"completed", "completed_with_exception", "cancelled"}
+        )
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            current = self._repo.get_item(item_id)
+            if current is None:
+                raise AnnualWorkValidationError("annual_work.item_not_found")
+            if current.updated_at != prepared.expected_updated_at:
+                raise AnnualWorkValidationError(
+                    "annual_work.item_details.stale"
+                )
+            if (
+                prepared.work_status != current.work_status
+                and (
+                    prepared.work_status in terminal
+                    or current.work_status in terminal
+                )
+            ):
+                raise AnnualWorkValidationError(
+                    "annual_work.work_status.transition_required"
+                )
+            changed_fields = [
+                field
+                for field, value in values.items()
+                if getattr(current, field) != value
+            ]
+            if not changed_fields:
+                self._conn.rollback()
+                return current
+            updated = self._repo.update_item_details(
+                item_id,
+                **values,
+                expected_updated_at=prepared.expected_updated_at,
+                updated_at=_next_item_updated_at(current.updated_at),
+            )
+            self._audit.record(
+                action="annual_work.item_details.update",
+                target_type="annual_work_item",
+                target_id=str(item_id),
+                detail={"changed_fields": changed_fields},
+            )
+            self._conn.commit()
+            return updated
+        except AnnualWorkError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except sqlite3.OperationalError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            code = getattr(exc, "sqlite_errorcode", None)
+            if code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED} or "locked" in str(
+                exc
+            ).lower():
+                raise AnnualWorkError("annual_work.transaction.busy") from exc
+            raise AnnualWorkError("annual_work.item_details.update_failed") from exc
+        except Exception as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkError("annual_work.item_details.update_failed") from exc
 
     def _set_status(
         self,

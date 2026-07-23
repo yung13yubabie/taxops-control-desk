@@ -386,6 +386,7 @@ class AnnualTransactionsService:
             work_item_id, "annual_transactions.work_item_id.invalid"
         )
         try:
+            self._active_item(work_item_id)
             return self._repo.list(
                 work_item_id,
                 include_deleted=include_deleted,
@@ -396,6 +397,26 @@ class AnnualTransactionsService:
             )
         except ValueError as exc:
             raise AnnualTransactionValidationError(str(exc)) from exc
+        except sqlite3.Error as exc:
+            raise self._database_error(exc, "list") from exc
+
+    def count(
+        self,
+        work_item_id: object,
+        *,
+        include_deleted: object = False,
+    ) -> int:
+        """Return the total matching the ``list`` deleted-row semantics."""
+        try:
+            work_item_id = self._active_item(work_item_id)
+            return self._repo.count(
+                work_item_id,
+                include_deleted=include_deleted,
+            )
+        except ValueError as exc:
+            raise AnnualTransactionValidationError(str(exc)) from exc
+        except sqlite3.Error as exc:
+            raise self._database_error(exc, "count") from exc
 
     def list_for_work_item(
         self, work_item_id: object, **kwargs: object
