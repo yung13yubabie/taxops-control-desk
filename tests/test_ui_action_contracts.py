@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 from importlib import import_module
+from pathlib import Path
 
 from taxops.i18n import DISABLED_TOOLTIP, NAV_LABELS
 from taxops.ui.action_registry import (
@@ -71,10 +73,14 @@ def test_create_annual_workspace_action_contract_is_enabled_and_precise() -> Non
 
     search = by_label["搜尋客戶"]
     assert search.handler == "AnnualWorkspaceDialog._search_clients"
-    assert search.service == "ClientsService.search_clients"
-    assert search.repository == "ClientsRepository.search_clients"
+    assert search.service == (
+        "AnnualClientSearchWorker.run (isolated read-only connection)"
+    )
+    assert search.repository == (
+        "clients active query LIMIT 101 + optional id lookup"
+    )
     assert search.audit_action is None
-    assert search.success_text == "找到 N 位客戶。"
+    assert search.success_text == "找到 N 筆客戶。"
     assert search.failure_text == "載入客戶失敗，請稍後再試。"
 
     preview = by_label["載入預覽"]
@@ -138,6 +144,20 @@ def test_action_coverage_hints_are_explicit_scenario_ids() -> None:
     for action in ACTION_REGISTRY:
         assert action.test_marker.startswith("test_"), action
         assert action.test_marker.strip(), action
+
+
+def test_every_annual_action_marker_names_a_collected_test_function() -> None:
+    tests_root = Path(__file__).parent
+    function_names: set[str] = set()
+    for test_file in tests_root.glob("test_*.py"):
+        module = ast.parse(test_file.read_text(encoding="utf-8"))
+        function_names.update(
+            node.name
+            for node in ast.walk(module)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        )
+    for action in actions_for_page(PAGE_ANNUAL_WORKBENCH):
+        assert action.test_marker in function_names, action
 
 
 def test_audit_action_implies_service_and_repository() -> None:

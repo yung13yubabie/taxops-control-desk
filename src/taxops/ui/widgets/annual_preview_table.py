@@ -86,7 +86,7 @@ class AnnualPreviewTable(QTableWidget):
     @staticmethod
     def _line(value: object, max_length: int) -> QLineEdit:
         line = QLineEdit("" if value is None else str(value))
-        line.setMaxLength(max_length)
+        # Validate at submission instead of silently truncating the payload.
         line.setToolTip(line.text())
         line.textChanged.connect(line.setToolTip)
         return line

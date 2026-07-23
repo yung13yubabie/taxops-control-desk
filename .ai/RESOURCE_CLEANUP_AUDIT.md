@@ -1,5 +1,21 @@
 # RESOURCE CLEANUP AUDIT
 
+## 2026-07-23 - Annual workspace client search worker
+
+- Annual-workspace client search now uses a fresh read-only SQLite QThread
+  with `query_only`, a ten-second busy timeout, a progress deadline, bounded
+  `LIMIT 101` results, and detached row DTOs.
+- Immutable request tokens discard stale results. The QApplication owns native
+  workers so dialog destruction cannot destroy a running QThread; bound slots
+  auto-disconnect with the dialog, `finished` schedules worker deletion, and
+  app shutdown cancels plus waits within the query deadline.
+- Real-widget regressions cover a deliberately delayed old query, event-loop
+  responsiveness, stale-result rejection, cancel-before-close, and direct
+  dialog deletion while the worker finishes.
+- Focused verification passed 116 tests. Compileall and `git diff --check`
+  passed. The post-test hygiene command listed only its own Python process
+  under suspicious TaxOps/PyTest/PyInstaller processes.
+
 ## 2026-07-18 - Shared local registry search worker
 
 - Company-name and industry searches no longer execute the multi-column SQLite

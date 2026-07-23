@@ -159,6 +159,16 @@ def _valid_optional_date(value: object) -> bool:
         return False
 
 
+def _invalid_draft_text(
+    value: object, *, maximum: int, required: bool
+) -> bool:
+    if not isinstance(value, str) or len(value) > maximum:
+        return True
+    if any(unicodedata.category(char) in {"Cc", "Cf"} for char in value):
+        return True
+    return required and not value.strip()
+
+
 def _prepare_drafts(
     value: object, operation_year: int
 ) -> tuple[WorkDraft, ...]:
@@ -202,9 +212,7 @@ def _prepare_drafts(
             or len(draft.item_key) > 255
             or not isinstance(draft.work_type, str)
             or draft.work_type not in WORK_TYPE_LABELS
-            or not isinstance(draft.title, str)
-            or not draft.title.strip()
-            or len(draft.title) > 500
+            or _invalid_draft_text(draft.title, maximum=500, required=True)
             or (
                 draft.tax_year is not None
                 and (
@@ -215,9 +223,9 @@ def _prepare_drafts(
             or (
                 draft.period_code is not None
                 and (
-                    not isinstance(draft.period_code, str)
-                    or not draft.period_code.strip()
-                    or len(draft.period_code) > 50
+                    _invalid_draft_text(
+                        draft.period_code, maximum=50, required=True
+                    )
                 )
             )
             or not _valid_optional_date(draft.suggested_due_date)

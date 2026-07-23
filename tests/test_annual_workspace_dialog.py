@@ -49,6 +49,9 @@ def test_double_click_confirm_calls_service_once_and_persists_exact_selection(
     qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
 
     assert confirm_spy.call_count == 1
+    qtbot.waitUntil(
+        lambda: dialog.result() == QDialog.DialogCode.Accepted, timeout=2000
+    )
     assert dialog.result() == QDialog.DialogCode.Accepted
     rows = container.conn.execute(
         "SELECT item_key FROM annual_work_items ORDER BY item_key"
@@ -86,6 +89,7 @@ def test_edited_standard_subset_and_custom_row_are_persisted_exactly(
         container, preselected_client_id=client.id, operation_year=2026
     )
     qtbot.addWidget(dialog)
+    dialog.show()
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
 
     standard_key = dialog.preview_table.item_key(0)
@@ -109,6 +113,9 @@ def test_edited_standard_subset_and_custom_row_are_persisted_exactly(
 
     qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
 
+    qtbot.waitUntil(
+        lambda: dialog.result() == QDialog.DialogCode.Accepted, timeout=2000
+    )
     assert dialog.result() == QDialog.DialogCode.Accepted
     rows = container.conn.execute(
         "SELECT item_key, work_type, title, tax_year, period_code, due_date "
@@ -161,6 +168,55 @@ def test_no_selection_and_invalid_date_keep_dialog_open_and_focus_first_error(
     assert dialog.result() != QDialog.DialogCode.Accepted
     assert dialog.feedback_label.text() == "到期日須為 YYYY-MM-DD 格式。"
     assert due_input.hasFocus()
+
+
+def test_preview_load_does_not_pump_nested_qt_events(
+    qtbot, container, monkeypatch
+) -> None:
+    client = _client_with_two_drafts(container)
+    dialog = AnnualWorkspaceDialog(
+        container, preselected_client_id=client.id, operation_year=2026
+    )
+    qtbot.addWidget(dialog)
+    process_events = Mock()
+    monkeypatch.setattr(QApplication, "processEvents", process_events)
+
+    qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
+
+    assert dialog.preview_table.rowCount() == 2
+    process_events.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    (
+        ("title", "工" * 501),
+        ("period_code", "期" * 51),
+        ("tax_year", "10000"),
+        ("due_date", "2026-01-010"),
+    ),
+)
+def test_overlong_preview_input_is_preserved_then_rejected_without_writing(
+    qtbot, container, field_name, value
+) -> None:
+    client = _client_with_two_drafts(container)
+    dialog = AnnualWorkspaceDialog(
+        container, preselected_client_id=client.id, operation_year=2026
+    )
+    qtbot.addWidget(dialog)
+    dialog.show()
+    qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
+    widget = getattr(dialog.preview_table.row_widgets(0), field_name)
+
+    widget.setText(value)
+    assert widget.text() == value
+    qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
+
+    assert dialog.result() != QDialog.DialogCode.Accepted
+    assert widget.hasFocus()
+    assert container.conn.execute(
+        "SELECT COUNT(*) FROM annual_workspaces"
+    ).fetchone()[0] == 0
 
 
 def test_stale_error_preserves_inputs_checks_custom_uuid_and_can_retry(
@@ -216,6 +272,9 @@ def test_stale_error_preserves_inputs_checks_custom_uuid_and_can_retry(
 
     qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
     assert calls == 2
+    qtbot.waitUntil(
+        lambda: dialog.result() == QDialog.DialogCode.Accepted, timeout=2000
+    )
     assert dialog.result() == QDialog.DialogCode.Accepted
     assert container.conn.execute(
         "SELECT COUNT(*) FROM annual_work_items WHERE item_key = ?", (custom_key,)
@@ -263,6 +322,9 @@ def test_snapshot_none_never_shows_success_and_same_payload_can_retry(
     ).fetchone()[0] == 2
 
     qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
+    qtbot.waitUntil(
+        lambda: dialog.result() == QDialog.DialogCode.Accepted, timeout=2000
+    )
     assert dialog.result() == QDialog.DialogCode.Accepted
     assert dialog.feedback_label.text() == "此年度工作已存在，未新增重複資料。"
     assert container.conn.execute(
@@ -278,6 +340,7 @@ def test_client_or_year_change_invalidates_preview_and_old_expected_token(
         container, preselected_client_id=client.id, operation_year=2026
     )
     qtbot.addWidget(dialog)
+    qtbot.waitUntil(lambda: not dialog._search_workers, timeout=2000)
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     original = dialog.expected_drafts
     assert original
@@ -317,6 +380,7 @@ def test_profile_missing_and_all_disabled_use_fixed_safe_chinese_errors(
         container, preselected_client_id=missing.id, operation_year=2026
     )
     qtbot.addWidget(dialog)
+    qtbot.waitUntil(lambda: not dialog._search_workers, timeout=2000)
     qtbot.mouseClick(dialog.load_button, Qt.MouseButton.LeftButton)
     assert dialog.feedback_label.text() == "此客戶尚未設定年度法遵檔案。"
     assert "annual_work.profile_not_found" not in dialog.feedback_label.text()
@@ -665,6 +729,9 @@ def test_existing_manually_edited_item_is_not_overwritten_on_second_confirm(
 
     qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
 
+    qtbot.waitUntil(
+        lambda: dialog.result() == QDialog.DialogCode.Accepted, timeout=2000
+    )
     assert dialog.result() == QDialog.DialogCode.Accepted
     assert dialog.feedback_label.text() == "此年度工作已存在，未新增重複資料。"
     row = container.conn.execute(
@@ -749,6 +816,7 @@ def test_selector_bounds_immutable_standard_identity_tooltips_and_cancel_wiring(
     )
     qtbot.addWidget(dialog)
     dialog.show()
+    qtbot.waitUntil(lambda: not dialog._search_workers, timeout=2000)
     assert dialog.client_combo.currentData() == client.id
     assert dialog.client_combo.currentText() == (
         f"{client.client_code}｜{client.client_name}"

@@ -698,6 +698,36 @@ def test_confirm_selection_rejects_values_past_exact_boundaries(
     ).fetchone()[0] == 0
 
 
+@pytest.mark.parametrize(
+    "invalid",
+    (
+        {"title": "\u200b"},
+        {"title": "合法標題\u200b"},
+        {"title": "合法標題\n第二行"},
+        {"period_code": "01\u200b"},
+        {"period_code": "01\n02"},
+    ),
+)
+def test_confirm_selection_rejects_invisible_and_control_draft_text(
+    container: object, invalid: dict[str, object]
+) -> None:
+    client_id = _client_with_profile(container)
+    service = getattr(container, "annual_work")
+    expected = service.preview(client_id, 2026)
+
+    with pytest.raises(AnnualWorkValidationError) as caught:
+        service.confirm_preview_selection(
+            client_id,
+            2026,
+            expected_drafts=expected,
+            selected_drafts=(replace(expected[0], **invalid),),
+        )
+
+    assert caught.value.code == "annual_work.draft.invalid"
+    conn = getattr(container, "conn")
+    assert conn.execute("SELECT COUNT(*) FROM annual_workspaces").fetchone()[0] == 0
+
+
 def test_workspace_snapshot_returns_exact_items_and_missing_is_none(
     container: object,
 ) -> None:
