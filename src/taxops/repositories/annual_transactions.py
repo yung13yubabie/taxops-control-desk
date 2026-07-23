@@ -327,19 +327,15 @@ class AnnualTransactionsRepository:
         ).fetchone()
         return _row(value) if value is not None else None
 
-    def list(
+    def validate_list_parameters(
         self,
-        work_item_id: int,
         *,
-        include_deleted: bool = False,
-        limit: int = 100,
-        offset: int = 0,
-        order_by: str = "transaction_date",
-        order_dir: str = "ASC",
-    ) -> list[AnnualTransactionRow]:
-        work_item_id = _positive_id(
-            work_item_id, "annual_transactions.work_item_id.invalid"
-        )
+        include_deleted: object,
+        limit: object,
+        offset: object,
+        order_by: object,
+        order_dir: object,
+    ) -> tuple[bool, int, int, str, str]:
         if type(include_deleted) is not bool:
             raise ValueError("annual_transactions.include_deleted.invalid")
         if (
@@ -353,9 +349,37 @@ class AnnualTransactionsRepository:
             raise ValueError("annual_transactions.sort.invalid")
         if type(order_dir) is not str or order_dir.upper() not in {"ASC", "DESC"}:
             raise ValueError("annual_transactions.sort.invalid")
+        return include_deleted, limit, offset, order_by, order_dir.upper()
+
+    def list(
+        self,
+        work_item_id: int,
+        *,
+        include_deleted: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+        order_by: str = "transaction_date",
+        order_dir: str = "ASC",
+    ) -> list[AnnualTransactionRow]:
+        work_item_id = _positive_id(
+            work_item_id, "annual_transactions.work_item_id.invalid"
+        )
+        (
+            include_deleted,
+            limit,
+            offset,
+            order_by,
+            order_dir,
+        ) = self.validate_list_parameters(
+            include_deleted=include_deleted,
+            limit=limit,
+            offset=offset,
+            order_by=order_by,
+            order_dir=order_dir,
+        )
         deleted_clause = "" if include_deleted else " AND deleted_at IS NULL"
         column = self._SORT_COLUMNS[order_by]
-        direction = order_dir.upper()
+        direction = order_dir
         values = self._conn.execute(
             "SELECT * FROM annual_work_transactions WHERE work_item_id = ?"
             f"{deleted_clause} ORDER BY {column} {direction}, id {direction} "

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import unicodedata
+from dataclasses import dataclass
 from datetime import date
 
 from ..repositories.annual_transactions import (
@@ -35,6 +36,14 @@ class AnnualTransactionError(Exception):
 
 class AnnualTransactionValidationError(AnnualTransactionError):
     """Caller input or the referenced active domain object is invalid."""
+
+
+@dataclass(frozen=True)
+class AnnualTransactionPage:
+    total: int
+    rows: tuple[AnnualTransactionRow, ...]
+    limit: int
+    offset: int
 
 
 def _positive_id(value: object, code: str) -> int:
@@ -382,23 +391,25 @@ class AnnualTransactionsService:
         order_by: object = "transaction_date",
         order_dir: object = "ASC",
     ) -> list[AnnualTransactionRow]:
-        work_item_id = _positive_id(
-            work_item_id, "annual_transactions.work_item_id.invalid"
-        )
         try:
-            self._active_item(work_item_id)
-            return self._repo.list(
-                work_item_id,
-                include_deleted=include_deleted,
-                limit=limit,
-                offset=offset,
-                order_by=order_by,
-                order_dir=order_dir,
+            return list(
+                self.page(
+                    work_item_id,
+                    include_deleted=include_deleted,
+                    limit=limit,
+                    offset=offset,
+                    order_by=order_by,
+                    order_dir=order_dir,
+                ).rows
             )
-        except ValueError as exc:
-            raise AnnualTransactionValidationError(str(exc)) from exc
-        except sqlite3.Error as exc:
-            raise self._database_error(exc, "list") from exc
+        except AnnualTransactionValidationError:
+            raise
+        except AnnualTransactionError as exc:
+            if exc.code == "annual_transactions.transaction.busy":
+                raise
+            raise AnnualTransactionError(
+                "annual_transactions.list.failed"
+            ) from exc
 
     def count(
         self,
@@ -408,15 +419,96 @@ class AnnualTransactionsService:
     ) -> int:
         """Return the total matching the ``list`` deleted-row semantics."""
         try:
-            work_item_id = self._active_item(work_item_id)
-            return self._repo.count(
+            return self.page(
                 work_item_id,
                 include_deleted=include_deleted,
+                limit=1,
+            ).total
+        except AnnualTransactionValidationError:
+            raise
+        except AnnualTransactionError as exc:
+            if exc.code == "annual_transactions.transaction.busy":
+                raise
+            raise AnnualTransactionError(
+                "annual_transactions.count.failed"
+            ) from exc
+
+    def page(
+        self,
+        work_item_id: object,
+        *,
+        include_deleted: object = False,
+        limit: object = 100,
+        offset: object = 0,
+        order_by: object = "transaction_date",
+        order_dir: object = "ASC",
+    ) -> AnnualTransactionPage:
+        """Return total and rows from one owned SQLite read snapshot."""
+        if self._conn.in_transaction:
+            raise AnnualTransactionValidationError(
+                "annual_transactions.transaction.already_active"
+            )
+        work_item_id = _positive_id(
+            work_item_id, "annual_transactions.work_item_id.invalid"
+        )
+        try:
+            (
+                include_deleted,
+                limit,
+                offset,
+                order_by,
+                order_dir,
+            ) = self._repo.validate_list_parameters(
+                include_deleted=include_deleted,
+                limit=limit,
+                offset=offset,
+                order_by=order_by,
+                order_dir=order_dir,
             )
         except ValueError as exc:
             raise AnnualTransactionValidationError(str(exc)) from exc
+        try:
+            self._conn.execute("BEGIN")
+            self._active_item(work_item_id)
+            total = self._repo.count(
+                work_item_id,
+                include_deleted=include_deleted,
+            )
+            rows = tuple(
+                self._repo.list(
+                    work_item_id,
+                    include_deleted=include_deleted,
+                    limit=limit,
+                    offset=offset,
+                    order_by=order_by,
+                    order_dir=order_dir,
+                )
+            )
+            self._conn.commit()
+            return AnnualTransactionPage(
+                total=total,
+                rows=rows,
+                limit=limit,
+                offset=offset,
+            )
+        except AnnualTransactionError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except ValueError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualTransactionValidationError(str(exc)) from exc
         except sqlite3.Error as exc:
-            raise self._database_error(exc, "count") from exc
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise self._database_error(exc, "page") from exc
+        except Exception as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualTransactionError(
+                "annual_transactions.page.failed"
+            ) from exc
 
     def list_for_work_item(
         self, work_item_id: object, **kwargs: object

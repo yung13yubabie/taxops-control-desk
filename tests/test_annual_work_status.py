@@ -621,7 +621,11 @@ def test_repository_status_column_allowlist_prevents_sql_identifier_injection(
     item = _work_item(container)
     with pytest.raises(ValueError, match="^annual_work.status_dimension.invalid$"):
         getattr(container, "annual_work").repository.update_status(
-            item.id, "tax_status = 'paid'; DROP TABLE clients; --", "paid"
+            item.id,
+            "tax_status = 'paid'; DROP TABLE clients; --",
+            "paid",
+            expected_updated_at=item.updated_at,
+            updated_at=item.updated_at,
         )
     assert getattr(container, "conn").execute("SELECT COUNT(*) FROM clients").fetchone()[0] == 1
 

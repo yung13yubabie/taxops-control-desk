@@ -22,6 +22,10 @@ from .annual_transactions import (
 MAX_WORKSPACE_ITEMS = 500
 
 
+class AnnualWorkItemVersionConflict(RuntimeError):
+    """The work item changed after the service read its version token."""
+
+
 @dataclass(frozen=True)
 class AnnualWorkspaceRow:
     id: int
@@ -328,7 +332,12 @@ class AnnualWorkRepository:
         return row is not None
 
     def set_engagement_link(
-        self, item_id: int, engagement_id: int | None
+        self,
+        item_id: int,
+        engagement_id: int | None,
+        *,
+        expected_updated_at: str,
+        updated_at: str,
     ) -> AnnualWorkItemRow:
         item_id = _positive_id(item_id, "annual_work.item_id.invalid")
         if engagement_id is not None:
@@ -337,11 +346,11 @@ class AnnualWorkRepository:
             )
         cursor = self._conn.execute(
             "UPDATE annual_work_items SET engagement_id = ?, updated_at = ? "
-            "WHERE id = ? AND deleted_at IS NULL",
-            (engagement_id, now_iso(), item_id),
+            "WHERE id = ? AND deleted_at IS NULL AND updated_at = ?",
+            (engagement_id, updated_at, item_id, expected_updated_at),
         )
         if cursor.rowcount != 1:
-            raise RuntimeError("annual_work.item_not_found")
+            raise AnnualWorkItemVersionConflict
         row = self.get_item(item_id)
         if row is None:
             raise RuntimeError("annual_work.item_not_found")
@@ -420,7 +429,13 @@ class AnnualWorkRepository:
         )
 
     def update_status(
-        self, item_id: int, dimension: str, status: str
+        self,
+        item_id: int,
+        dimension: str,
+        status: str,
+        *,
+        expected_updated_at: str,
+        updated_at: str,
     ) -> AnnualWorkItemRow:
         item_id = _positive_id(item_id, "annual_work.item_id.invalid")
         column = self._STATUS_COLUMNS.get(dimension)
@@ -428,14 +443,13 @@ class AnnualWorkRepository:
             raise ValueError("annual_work.status_dimension.invalid")
         if not isinstance(status, str) or status not in STATUS_SETS[dimension]:
             raise ValueError("annual_work.status.invalid")
-        timestamp = now_iso()
         cursor = self._conn.execute(
             f"UPDATE annual_work_items SET {column} = ?, updated_at = ? "
-            "WHERE id = ? AND deleted_at IS NULL",
-            (status, timestamp, item_id),
+            "WHERE id = ? AND deleted_at IS NULL AND updated_at = ?",
+            (status, updated_at, item_id, expected_updated_at),
         )
         if cursor.rowcount != 1:
-            raise RuntimeError("annual_work.item_not_found")
+            raise AnnualWorkItemVersionConflict
         row = self.get_item(item_id)
         if row is None:
             raise RuntimeError("annual_work.item_not_found")
@@ -483,33 +497,53 @@ class AnnualWorkRepository:
             ),
         )
         if cursor.rowcount != 1:
-            raise RuntimeError("annual_work.item_update_stale")
+            raise AnnualWorkItemVersionConflict
         row = self.get_item(item_id)
         if row is None:
             raise RuntimeError("annual_work.item_not_found")
         return row
 
     def complete_item(
-        self, item_id: int, status: str, exception_reason: str | None
+        self,
+        item_id: int,
+        status: str,
+        exception_reason: str | None,
+        *,
+        completed_at: str,
+        expected_updated_at: str,
+        updated_at: str,
     ) -> AnnualWorkItemRow:
         item_id = _positive_id(item_id, "annual_work.item_id.invalid")
         if status not in {"completed", "completed_with_exception"}:
             raise ValueError("annual_work.completion_status.invalid")
-        timestamp = now_iso()
         cursor = self._conn.execute(
             "UPDATE annual_work_items SET work_status = ?, exception_reason = ?, "
             "completed_at = ?, cancelled_at = NULL, updated_at = ? "
-            "WHERE id = ? AND deleted_at IS NULL",
-            (status, exception_reason, timestamp, timestamp, item_id),
+            "WHERE id = ? AND deleted_at IS NULL AND updated_at = ?",
+            (
+                status,
+                exception_reason,
+                completed_at,
+                updated_at,
+                item_id,
+                expected_updated_at,
+            ),
         )
         if cursor.rowcount != 1:
-            raise RuntimeError("annual_work.item_not_found")
+            raise AnnualWorkItemVersionConflict
         row = self.get_item(item_id)
         if row is None:
             raise RuntimeError("annual_work.item_not_found")
         return row
 
-    def reopen_item(self, item_id: int, status: str) -> AnnualWorkItemRow:
+    def reopen_item(
+        self,
+        item_id: int,
+        status: str,
+        *,
+        expected_updated_at: str,
+        updated_at: str,
+    ) -> AnnualWorkItemRow:
         item_id = _positive_id(item_id, "annual_work.item_id.invalid")
         if status not in WORK_STATUSES - {
             "completed",
@@ -520,43 +554,63 @@ class AnnualWorkRepository:
         cursor = self._conn.execute(
             "UPDATE annual_work_items SET work_status = ?, completed_at = NULL, "
             "exception_reason = NULL, updated_at = ? "
-            "WHERE id = ? AND deleted_at IS NULL",
-            (status, now_iso(), item_id),
+            "WHERE id = ? AND deleted_at IS NULL AND updated_at = ?",
+            (status, updated_at, item_id, expected_updated_at),
         )
         if cursor.rowcount != 1:
-            raise RuntimeError("annual_work.item_not_found")
+            raise AnnualWorkItemVersionConflict
         row = self.get_item(item_id)
         if row is None:
             raise RuntimeError("annual_work.item_not_found")
         return row
 
-    def cancel_item(self, item_id: int, reason: str) -> AnnualWorkItemRow:
+    def cancel_item(
+        self,
+        item_id: int,
+        reason: str,
+        *,
+        cancelled_at: str,
+        expected_updated_at: str,
+        updated_at: str,
+    ) -> AnnualWorkItemRow:
         item_id = _positive_id(item_id, "annual_work.item_id.invalid")
-        timestamp = now_iso()
         cursor = self._conn.execute(
             "UPDATE annual_work_items SET work_status = 'cancelled', "
             "exception_reason = ?, completed_at = NULL, "
             "cancelled_at = COALESCE(cancelled_at, ?), updated_at = ? "
-            "WHERE id = ? AND deleted_at IS NULL",
-            (reason, timestamp, timestamp, item_id),
+            "WHERE id = ? AND deleted_at IS NULL AND updated_at = ?",
+            (
+                reason,
+                cancelled_at,
+                updated_at,
+                item_id,
+                expected_updated_at,
+            ),
         )
         if cursor.rowcount != 1:
-            raise RuntimeError("annual_work.item_not_found")
+            raise AnnualWorkItemVersionConflict
         row = self.get_item(item_id)
         if row is None:
             raise RuntimeError("annual_work.item_not_found")
         return row
 
-    def restore_item(self, item_id: int) -> AnnualWorkItemRow:
+    def restore_item(
+        self,
+        item_id: int,
+        *,
+        expected_updated_at: str,
+        updated_at: str,
+    ) -> AnnualWorkItemRow:
         item_id = _positive_id(item_id, "annual_work.item_id.invalid")
         cursor = self._conn.execute(
             "UPDATE annual_work_items SET work_status = 'not_started', "
             "cancelled_at = NULL, completed_at = NULL, exception_reason = NULL, "
-            "updated_at = ? WHERE id = ? AND deleted_at IS NULL",
-            (now_iso(), item_id),
+            "updated_at = ? WHERE id = ? AND deleted_at IS NULL "
+            "AND updated_at = ?",
+            (updated_at, item_id, expected_updated_at),
         )
         if cursor.rowcount != 1:
-            raise RuntimeError("annual_work.item_not_found")
+            raise AnnualWorkItemVersionConflict
         row = self.get_item(item_id)
         if row is None:
             raise RuntimeError("annual_work.item_not_found")

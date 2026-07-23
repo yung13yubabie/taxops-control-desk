@@ -7,9 +7,10 @@ import unicodedata
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date
 
 from ..core.compliance import WORK_TYPE_LABELS
+from ..core import version_tokens
 from ..core.clock import now_iso
 from ..core.annual_status import (
     DOCUMENT_STATUSES,
@@ -33,6 +34,7 @@ from ..repositories.annual_work import (
     AnnualWorkOverviewRow,
     AnnualWorkRepository,
     AnnualWorkItemContext,
+    AnnualWorkItemVersionConflict,
     AnnualWorkspaceRow,
     MAX_WORKSPACE_ITEMS,
 )
@@ -237,19 +239,17 @@ def _item_text(
 
 
 def _next_item_updated_at(previous: str) -> str:
-    """Return a token strictly newer than ``previous`` at seconds precision."""
-    candidate = now_iso()
-    if candidate > previous:
-        return candidate
     try:
-        parsed = datetime.strptime(previous, "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=timezone.utc
-        )
-    except ValueError:
-        # Existing rows are trusted migration output; a malformed token should
-        # not be silently reused as an optimistic concurrency token.
-        raise AnnualWorkError("annual_work.item.updated_at.invalid")
-    return (parsed + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return version_tokens.next_updated_at(previous)
+    except ValueError as exc:
+        raise AnnualWorkError("annual_work.item.updated_at.invalid") from exc
+
+
+def _item_version_fields(item: AnnualWorkItemRow) -> dict[str, str]:
+    return {
+        "expected_updated_at": item.updated_at,
+        "updated_at": _next_item_updated_at(item.updated_at),
+    }
 
 
 def _prepare_item_update(value: object) -> _PreparedAnnualWorkItemUpdate:
@@ -521,7 +521,11 @@ class AnnualWorkService:
                         notes=item.notes,
                     )
                 )
-                item = self._repo.set_engagement_link(item.id, engagement.id)
+                item = self._repo.set_engagement_link(
+                    item.id,
+                    engagement.id,
+                    **_item_version_fields(item),
+                )
 
             request, created_items = documents._create_request_uncommitted(
                 CreateDocumentRequestInput(
@@ -551,6 +555,12 @@ class AnnualWorkService:
                 request=request,
                 items=tuple(created_items),
             )
+        except AnnualWorkItemVersionConflict as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkValidationError(
+                "annual_work.item_details.stale"
+            ) from exc
         except AnnualWorkError:
             if self._conn.in_transaction:
                 self._conn.rollback()
@@ -614,7 +624,11 @@ class AnnualWorkService:
                 raise AnnualWorkValidationError(
                     "annual_work.engagement.relink_has_history"
                 )
-            updated = self._repo.set_engagement_link(item_id, engagement_id)
+            updated = self._repo.set_engagement_link(
+                item_id,
+                engagement_id,
+                **_item_version_fields(context.item),
+            )
             self._audit.record(
                 action=(
                     "annual_work.engagement.relink"
@@ -630,6 +644,12 @@ class AnnualWorkService:
             )
             self._conn.commit()
             return updated
+        except AnnualWorkItemVersionConflict as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkValidationError(
+                "annual_work.item_details.stale"
+            ) from exc
         except AnnualWorkError:
             if self._conn.in_transaction:
                 self._conn.rollback()
@@ -664,7 +684,11 @@ class AnnualWorkService:
                 raise AnnualWorkValidationError(
                     "annual_work.engagement.unlink_has_history"
                 )
-            updated = self._repo.set_engagement_link(item_id, None)
+            updated = self._repo.set_engagement_link(
+                item_id,
+                None,
+                **_item_version_fields(context.item),
+            )
             self._audit.record(
                 action="annual_work.engagement.unlink",
                 target_type="annual_work_item",
@@ -673,6 +697,12 @@ class AnnualWorkService:
             )
             self._conn.commit()
             return updated
+        except AnnualWorkItemVersionConflict as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkValidationError(
+                "annual_work.item_details.stale"
+            ) from exc
         except AnnualWorkError:
             if self._conn.in_transaction:
                 self._conn.rollback()
@@ -741,7 +771,11 @@ class AnnualWorkService:
                         notes=item.notes,
                     )
                 )
-                item = self._repo.set_engagement_link(item.id, engagement.id)
+                item = self._repo.set_engagement_link(
+                    item.id,
+                    engagement.id,
+                    **_item_version_fields(item),
+                )
             task = self._tasks._create_task_uncommitted(
                 CreateTaskInput(
                     engagement_id=engagement.id,
@@ -763,6 +797,12 @@ class AnnualWorkService:
             )
             self._conn.commit()
             return task
+        except AnnualWorkItemVersionConflict as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkValidationError(
+                "annual_work.item_details.stale"
+            ) from exc
         except AnnualWorkError:
             if self._conn.in_transaction:
                 self._conn.rollback()
@@ -1155,6 +1195,12 @@ class AnnualWorkService:
             )
             self._conn.commit()
             return updated
+        except AnnualWorkItemVersionConflict as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkValidationError(
+                "annual_work.item_details.stale"
+            ) from exc
         except AnnualWorkError:
             if self._conn.in_transaction:
                 self._conn.rollback()
@@ -1210,9 +1256,18 @@ class AnnualWorkService:
                 "completed_with_exception",
             }
             if reopened:
-                updated = self._repo.reopen_item(item_id, status)
+                updated = self._repo.reopen_item(
+                    item_id,
+                    status,
+                    **_item_version_fields(current),
+                )
             else:
-                updated = self._repo.update_status(item_id, dimension, status)
+                updated = self._repo.update_status(
+                    item_id,
+                    dimension,
+                    status,
+                    **_item_version_fields(current),
+                )
             detail = {
                 "from_status": previous,
                 "to_status": status,
@@ -1227,6 +1282,12 @@ class AnnualWorkService:
             )
             self._conn.commit()
             return updated
+        except AnnualWorkItemVersionConflict as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkValidationError(
+                "annual_work.item_details.stale"
+            ) from exc
         except AnnualWorkError:
             if self._conn.in_transaction:
                 self._conn.rollback()
@@ -1319,7 +1380,13 @@ class AnnualWorkService:
                     "annual_work.exception_reason.required"
                 )
             target = "completed_with_exception" if risks else "completed"
-            updated = self._repo.complete_item(item_id, target, reason)
+            updated = self._repo.complete_item(
+                item_id,
+                target,
+                reason,
+                completed_at=now_iso(),
+                **_item_version_fields(current),
+            )
             self._audit.record(
                 action="annual_work.complete",
                 target_type="annual_work_item",
@@ -1333,6 +1400,12 @@ class AnnualWorkService:
             )
             self._conn.commit()
             return updated
+        except AnnualWorkItemVersionConflict as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkValidationError(
+                "annual_work.item_details.stale"
+            ) from exc
         except AnnualWorkError:
             if self._conn.in_transaction:
                 self._conn.rollback()
@@ -1370,7 +1443,12 @@ class AnnualWorkService:
             if current.work_status == "cancelled" and current.exception_reason == reason:
                 self._conn.commit()
                 return current
-            updated = self._repo.cancel_item(item_id, reason)
+            updated = self._repo.cancel_item(
+                item_id,
+                reason,
+                cancelled_at=now_iso(),
+                **_item_version_fields(current),
+            )
             self._audit.record(
                 action="annual_work.cancel",
                 target_type="annual_work_item",
@@ -1384,6 +1462,12 @@ class AnnualWorkService:
             )
             self._conn.commit()
             return updated
+        except AnnualWorkItemVersionConflict as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkValidationError(
+                "annual_work.item_details.stale"
+            ) from exc
         except AnnualWorkError:
             if self._conn.in_transaction:
                 self._conn.rollback()
@@ -1416,7 +1500,10 @@ class AnnualWorkService:
                 raise AnnualWorkValidationError("annual_work.item_not_found")
             if current.work_status != "cancelled":
                 raise AnnualWorkValidationError("annual_work.item.not_cancelled")
-            updated = self._repo.restore_item(item_id)
+            updated = self._repo.restore_item(
+                item_id,
+                **_item_version_fields(current),
+            )
             self._audit.record(
                 action="annual_work.restore",
                 target_type="annual_work_item",
@@ -1429,6 +1516,12 @@ class AnnualWorkService:
             )
             self._conn.commit()
             return updated
+        except AnnualWorkItemVersionConflict as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AnnualWorkValidationError(
+                "annual_work.item_details.stale"
+            ) from exc
         except AnnualWorkError:
             if self._conn.in_transaction:
                 self._conn.rollback()
