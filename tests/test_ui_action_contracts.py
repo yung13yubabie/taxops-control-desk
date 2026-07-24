@@ -25,6 +25,7 @@ _HANDLER_MODULES = {
     "AnnualWorkbenchPage": "taxops.ui.pages.annual_workbench_page",
     "AnnualWorkspaceDialog": "taxops.ui.dialogs.annual_workspace_dialog",
     "AnnualItemDetail": "taxops.ui.widgets.annual_item_detail",
+    "AnnualTransactionPanel": "taxops.ui.widgets.annual_transaction_panel",
     "AttachmentsPage": "taxops.ui.pages.attachments_page",
     "ClientsPage": "taxops.ui.pages.clients_page",
     "DocumentRequestsPage": "taxops.ui.pages.document_requests_page",
@@ -67,6 +68,12 @@ def test_create_annual_workspace_action_contract_is_enabled_and_precise() -> Non
         "取消此工作",
         "還原",
         "重新開啟",
+        "新增交易",
+        "編輯交易",
+        "刪除交易",
+        "重新讀取交易",
+        "交易上一頁",
+        "交易下一頁",
     }
 
     opener = by_label["建立年度工作"]

@@ -68,3 +68,17 @@ TABLE_HEADERS: dict[str, dict[str, str]] = {
         "updated_at": "更新時間",
     }
 }
+
+
+ANNUAL_TRANSACTION_CATEGORY_LABELS: dict[str, str] = dict(
+    MappingProxyType(
+        {
+            "tax_liability": "應納稅額",
+            "client_tax_collection": "客戶稅款代收",
+            "tax_payment": "已繳稅款",
+            "tax_credit_or_refund": "退抵稅額",
+            "fee_receivable": "應收服務費",
+            "fee_receipt": "已收服務費",
+        }
+    )
+)
