@@ -116,6 +116,48 @@ def test_page_opens_selected_real_item_and_refreshes_only_after_accept(
     refresh_spy.assert_called_once_with()
 
 
+def test_page_refreshes_after_real_commit_even_when_dialog_cannot_reread(
+    qtbot, container, monkeypatch
+) -> None:
+    _client, item = _work_item(container)
+    real_get = container.annual_work.get_item_context
+
+    class CommittedRejectedDialog(AnnualItemDialog):
+        def __init__(self, candidate_container, item_id, parent=None) -> None:
+            super().__init__(candidate_container, item_id, parent)
+
+        def exec(self):
+            self.detail.title_input.setText("關閉前已真實寫入")
+            monkeypatch.setattr(
+                container.annual_work,
+                "get_item_context",
+                Mock(
+                    side_effect=AnnualWorkError(
+                        "annual_work.item_details.read_failed"
+                    )
+                ),
+            )
+            self.detail.save()
+            assert real_get(item.id).item.title == "關閉前已真實寫入"
+            assert not self.detail.save_button.isEnabled()
+            return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(
+        "taxops.ui.pages.annual_workbench_page.AnnualItemDialog",
+        CommittedRejectedDialog,
+    )
+    page = AnnualWorkbenchPage(container)
+    qtbot.addWidget(page)
+    page.overview_table.selectRow(0)
+    refresh_spy = Mock()
+    page._refresh = refresh_spy
+
+    qtbot.mouseClick(page.open_detail_button, Qt.MouseButton.LeftButton)
+
+    refresh_spy.assert_called_once_with()
+    assert real_get(item.id).item.title == "關閉前已真實寫入"
+
+
 def test_no_selection_shows_visible_error_and_focuses_overview(
     qtbot, container
 ) -> None:
@@ -403,6 +445,276 @@ def test_risk_completion_requires_reason_then_rereads_exception_completion(
         reopened_dialog.detail.transition_reason_input.toPlainText()
         == reason
     )
+
+
+@pytest.mark.parametrize(
+    ("database_tax_status", "ui_tax_status", "reason", "expected_status"),
+    [
+        ("unconfirmed", "paid", "", "completed"),
+        (
+            "paid",
+            "unpaid",
+            "客戶尚未繳納\n第二行保留  ",
+            "completed_with_exception",
+        ),
+    ],
+    ids=["database-risk-ui-safe", "database-safe-ui-risk"],
+)
+def test_dirty_completion_persists_full_form_before_transition(
+    qtbot,
+    container,
+    database_tax_status,
+    ui_tax_status,
+    reason,
+    expected_status,
+) -> None:
+    _client, item = _work_item(container)
+    if database_tax_status != item.tax_status:
+        container.annual_work.set_tax_status(item.id, database_tax_status)
+    detail = AnnualItemDetail(container, item.id)
+    qtbot.addWidget(detail)
+    notes = "完成前修改明細\n保留換行與尾端空白  "
+    detail.title_input.setText("完成前更新標題")
+    detail.notes_input.setPlainText(notes)
+    detail.tax_status_combo.setCurrentIndex(
+        detail.tax_status_combo.findData(ui_tax_status)
+    )
+    detail.transition_reason_input.setPlainText(reason)
+
+    qtbot.mouseClick(detail.complete_button, Qt.MouseButton.LeftButton)
+
+    stored = container.annual_work.get_item_context(item.id).item
+    assert stored.title == "完成前更新標題"
+    assert stored.notes == notes
+    assert stored.tax_status == ui_tax_status
+    assert stored.work_status == expected_status
+    assert stored.exception_reason == (reason or None)
+    assert detail.transition_reason_input.toPlainText() == reason
+
+
+def test_committed_save_with_failed_reread_disables_mutations_and_is_retryable(
+    qtbot, container, monkeypatch
+) -> None:
+    _client, item = _work_item(container)
+    dialog = AnnualItemDialog(container, item.id)
+    qtbot.addWidget(dialog)
+    detail = dialog.detail
+    detail.title_input.setText("已寫入但重新讀取失敗")
+    real_get = container.annual_work.get_item_context
+    monkeypatch.setattr(
+        container.annual_work,
+        "get_item_context",
+        Mock(side_effect=AnnualWorkError("annual_work.item_details.read_failed")),
+    )
+
+    qtbot.mouseClick(detail.save_button, Qt.MouseButton.LeftButton)
+
+    assert real_get(item.id).item.title == "已寫入但重新讀取失敗"
+    assert dialog.has_committed_change is True
+    assert "資料已寫入但重新讀取失敗" in detail.feedback_label.text()
+    assert not detail.save_button.isEnabled()
+    assert not detail.complete_button.isEnabled()
+    monkeypatch.setattr(container.annual_work, "get_item_context", real_get)
+    qtbot.mouseClick(detail.retry_read_button, Qt.MouseButton.LeftButton)
+    assert detail.save_button.isEnabled()
+    assert detail.title_input.text() == "已寫入但重新讀取失敗"
+
+
+def test_plain_reload_recovers_all_controls_after_transient_read_failure(
+    qtbot, container, monkeypatch
+) -> None:
+    _client, item = _work_item(container)
+    detail = AnnualItemDetail(container, item.id)
+    qtbot.addWidget(detail)
+    real_get = container.annual_work.get_item_context
+    monkeypatch.setattr(
+        container.annual_work,
+        "get_item_context",
+        Mock(side_effect=AnnualWorkError("annual_work.item_details.read_failed")),
+    )
+    detail.reload()
+    assert not detail.save_button.isEnabled()
+
+    monkeypatch.setattr(container.annual_work, "get_item_context", real_get)
+    detail.reload()
+
+    assert detail.save_button.isEnabled()
+    assert detail.complete_button.isEnabled()
+
+
+def test_transition_failure_after_detail_commit_is_honest_and_retryable(
+    qtbot, container, monkeypatch
+) -> None:
+    _client, item = _work_item(container)
+    dialog = AnnualItemDialog(container, item.id)
+    qtbot.addWidget(dialog)
+    detail = dialog.detail
+    notes = "先寫入的明細\n原樣保留  "
+    reason = "完成失敗後仍可重試"
+    detail.title_input.setText("明細已先寫入")
+    detail.notes_input.setPlainText(notes)
+    detail.transition_reason_input.setPlainText(reason)
+    monkeypatch.setattr(
+        container.annual_work,
+        "complete_item",
+        Mock(side_effect=AnnualWorkError("annual_work.complete.failed")),
+    )
+
+    qtbot.mouseClick(detail.complete_button, Qt.MouseButton.LeftButton)
+
+    stored = container.annual_work.get_item_context(item.id).item
+    assert stored.title == "明細已先寫入"
+    assert stored.notes == notes
+    assert stored.work_status == "not_started"
+    assert detail.updated_at_token == stored.updated_at
+    assert detail.title_input.text() == "明細已先寫入"
+    assert detail.notes_input.toPlainText() == notes
+    assert detail.transition_reason_input.toPlainText() == reason
+    assert detail.feedback_label.text() == (
+        "明細已儲存，但完成年度工作失敗；目前內容已保留，請確認後重試。"
+    )
+    assert dialog.has_committed_change is True
+    assert detail.complete_button.isEnabled()
+
+
+def test_invalid_dirty_transition_never_calls_dedicated_operation(
+    qtbot, container, monkeypatch
+) -> None:
+    _client, item = _work_item(container)
+    detail = AnnualItemDetail(container, item.id)
+    qtbot.addWidget(detail)
+    detail.show()
+    detail.activateWindow()
+    detail.title_input.setText("x" * 501)
+    operation = Mock()
+    monkeypatch.setattr(container.annual_work, "complete_item", operation)
+
+    qtbot.mouseClick(detail.complete_button, Qt.MouseButton.LeftButton)
+
+    operation.assert_not_called()
+    assert container.annual_work.get_item_context(item.id).item == item
+    assert detail.title_input.text() == "x" * 501
+    qtbot.waitUntil(detail.title_input.hasFocus, timeout=500)
+
+
+def test_stale_dirty_transition_preserves_inputs_and_never_transitions(
+    qtbot, container, monkeypatch
+) -> None:
+    _client, item = _work_item(container)
+    detail = AnnualItemDetail(container, item.id)
+    qtbot.addWidget(detail)
+    detail.show()
+    detail.activateWindow()
+    container.annual_work.update_item_details(
+        item.id,
+        replace(
+            detail.fields.payload(item.updated_at),
+            title="其他視窗已更新",
+        ),
+    )
+    notes = "本視窗尚未儲存\n完整保留  "
+    detail.title_input.setText("本視窗標題")
+    detail.notes_input.setPlainText(notes)
+    operation = Mock()
+    monkeypatch.setattr(container.annual_work, "complete_item", operation)
+
+    qtbot.mouseClick(detail.complete_button, Qt.MouseButton.LeftButton)
+
+    operation.assert_not_called()
+    assert detail.title_input.text() == "本視窗標題"
+    assert detail.notes_input.toPlainText() == notes
+    qtbot.waitUntil(detail.title_input.hasFocus, timeout=500)
+    stored = container.annual_work.get_item_context(item.id).item
+    assert stored.title == "其他視窗已更新"
+    assert stored.work_status == "not_started"
+
+
+def test_nested_dirty_transition_submits_each_service_operation_once(
+    qtbot, container, monkeypatch
+) -> None:
+    _client, item = _work_item(container)
+    detail = AnnualItemDetail(container, item.id)
+    qtbot.addWidget(detail)
+    detail.transition_reason_input.setPlainText("仍有風險")
+    real_update = container.annual_work.update_item_details
+    real_complete = container.annual_work.complete_item
+    calls = {"update": 0, "complete": 0}
+
+    def nested_update(item_id, payload):
+        calls["update"] += 1
+        detail.complete()
+        return real_update(item_id, payload)
+
+    def counted_complete(item_id, *, exception_reason=None):
+        calls["complete"] += 1
+        return real_complete(item_id, exception_reason=exception_reason)
+
+    monkeypatch.setattr(
+        container.annual_work, "update_item_details", nested_update
+    )
+    monkeypatch.setattr(
+        container.annual_work, "complete_item", counted_complete
+    )
+
+    qtbot.mouseClick(detail.complete_button, Qt.MouseButton.LeftButton)
+
+    assert calls == {"update": 1, "complete": 1}
+    assert (
+        container.annual_work.get_item_context(item.id).item.work_status
+        == "completed_with_exception"
+    )
+
+
+def test_cancel_restore_and_reopen_persist_dirty_details_first(
+    qtbot, container
+) -> None:
+    _client, item = _work_item(container)
+    detail = AnnualItemDetail(container, item.id)
+    qtbot.addWidget(detail)
+
+    detail.title_input.setText("取消前標題")
+    detail.transition_reason_input.setPlainText("取消理由\n第二行  ")
+    qtbot.mouseClick(detail.cancel_button, Qt.MouseButton.LeftButton)
+    cancelled = container.annual_work.get_item_context(item.id).item
+    assert cancelled.title == "取消前標題"
+    assert cancelled.work_status == "cancelled"
+    assert detail.transition_reason_input.toPlainText() == "取消理由\n第二行  "
+
+    detail.notes_input.setPlainText("還原前備註\n第二行")
+    qtbot.mouseClick(detail.restore_button, Qt.MouseButton.LeftButton)
+    restored = container.annual_work.get_item_context(item.id).item
+    assert restored.notes == "還原前備註\n第二行"
+    assert restored.work_status == "not_started"
+
+    detail.tax_status_combo.setCurrentIndex(
+        detail.tax_status_combo.findData("paid")
+    )
+    qtbot.mouseClick(detail.complete_button, Qt.MouseButton.LeftButton)
+    assert container.annual_work.get_item_context(item.id).item.work_status == "completed"
+    assert detail.work_status_combo.findData("completed") >= 0
+    assert not detail.cancel_button.isVisible()
+
+    detail.title_input.setText("重開前標題")
+    qtbot.mouseClick(detail.reopen_button, Qt.MouseButton.LeftButton)
+    reopened = container.annual_work.get_item_context(item.id).item
+    assert reopened.title == "重開前標題"
+    assert reopened.work_status == "in_progress"
+    assert detail.work_status_combo.findData("completed") == -1
+    assert detail.work_status_combo.findData("completed_with_exception") == -1
+    assert detail.work_status_combo.findData("cancelled") == -1
+
+
+def test_focus_timer_ignores_widget_deleted_before_callback(
+    qtbot, container
+) -> None:
+    _client, item = _work_item(container)
+    detail = AnnualItemDetail(container, item.id)
+    qtbot.addWidget(detail)
+    detail.deleteLater()
+    detail._pending_focus = detail.title_input
+    detail._set_busy(False)
+
+    qtbot.wait(20)
 
 
 def test_cancel_restore_complete_and_reopen_use_dedicated_service_paths(

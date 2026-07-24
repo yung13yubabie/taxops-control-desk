@@ -343,6 +343,32 @@ def test_same_cancel_reason_is_noop_but_changed_reason_is_audited(container: obj
     ).fetchone()[0] == audit_count + 1
 
 
+@pytest.mark.parametrize("terminal", ["completed", "completed_with_exception"])
+def test_completed_history_must_be_reopened_before_cancel_without_audit_write(
+    container: object, terminal: str
+) -> None:
+    item = _work_item(container)
+    service = getattr(container, "annual_work")
+    if terminal == "completed":
+        service.set_tax_status(item.id, "paid")
+        completed = service.complete_item(item.id)
+    else:
+        completed = service.complete_item(item.id, exception_reason="既有例外")
+    conn = getattr(container, "conn")
+    before = conn.execute(
+        "SELECT COUNT(*) FROM audit_logs WHERE action = 'annual_work.cancel'"
+    ).fetchone()[0]
+
+    with pytest.raises(AnnualWorkValidationError) as caught:
+        service.cancel_item(item.id, "不可覆寫完成歷史")
+
+    assert caught.value.code == "annual_work.item.completed"
+    assert service.repository.get_item(item.id) == completed
+    assert conn.execute(
+        "SELECT COUNT(*) FROM audit_logs WHERE action = 'annual_work.cancel'"
+    ).fetchone()[0] == before
+
+
 def test_restore_only_cancelled_item_and_clears_cancellation_reason(container: object) -> None:
     item = _work_item(container)
     service = getattr(container, "annual_work")

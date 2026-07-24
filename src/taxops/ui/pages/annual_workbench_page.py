@@ -274,7 +274,11 @@ class AnnualWorkbenchPage(QWidget):
         try:
             item_id = self._rows[row_index].item.id
             dialog = AnnualItemDialog(self._container, item_id, parent=self)
-            if dialog.exec() == QDialog.DialogCode.Accepted:
+            result = dialog.exec()
+            if (
+                result == QDialog.DialogCode.Accepted
+                or getattr(dialog, "has_committed_change", False)
+            ):
                 self._refresh()
         except Exception as exc:
             try:

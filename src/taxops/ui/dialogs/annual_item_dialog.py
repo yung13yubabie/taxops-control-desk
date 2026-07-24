@@ -22,9 +22,16 @@ class AnnualItemDialog(QDialog):
         self.resize(980, 680)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 14, 14, 14)
+        self.has_committed_change = False
         self.detail = AnnualItemDetail(container, item_id, self)
         layout.addWidget(self.detail)
+        self.detail.mutation_committed.connect(
+            self._mark_committed_change
+        )
         self.detail.saved.connect(self.accept)
+
+    def _mark_committed_change(self) -> None:
+        self.has_committed_change = True
 
     def reject(self) -> None:
         if self.detail.is_busy:

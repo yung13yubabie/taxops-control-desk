@@ -179,6 +179,9 @@ class AnnualItemFields(QScrollArea):
 
     def set_values(self, client, context) -> None:
         item = context.item
+        _remove_combo_values(
+            self.work_status_combo, _TERMINAL_WORK_STATUSES
+        )
         self.client_label.setText(client.client_name)
         self.client_label.setToolTip(
             f"{client.client_name}（{client.client_code}）"
@@ -282,3 +285,9 @@ def _set_combo_value(
         combo.addItem(labels.get(value, UNKNOWN_STATUS_TEXT), value)
         index = combo.count() - 1
     combo.setCurrentIndex(index)
+
+
+def _remove_combo_values(combo: QComboBox, values: frozenset[str]) -> None:
+    for index in range(combo.count() - 1, -1, -1):
+        if combo.itemData(index) in values:
+            combo.removeItem(index)

@@ -1440,6 +1440,11 @@ class AnnualWorkService:
             current = self._repo.get_item(item_id)
             if current is None:
                 raise AnnualWorkValidationError("annual_work.item_not_found")
+            if current.work_status in {
+                "completed",
+                "completed_with_exception",
+            }:
+                raise AnnualWorkValidationError("annual_work.item.completed")
             if current.work_status == "cancelled" and current.exception_reason == reason:
                 self._conn.commit()
                 return current
