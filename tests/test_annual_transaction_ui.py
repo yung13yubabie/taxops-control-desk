@@ -2,16 +2,23 @@ from __future__ import annotations
 
 from dataclasses import replace
 import json
+import sqlite3
+import sys
 
 import pytest
 
 from PySide6.QtCore import QCoreApplication, QEvent, Qt
-from PySide6.QtWidgets import QApplication, QDialog, QLabel
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QApplication, QDialog, QLabel, QScrollArea
 from shiboken6 import isValid
 
+from taxops.i18n.errors import error_message
 from taxops.services.clients import CreateClientInput
 from taxops.services.compliance_profiles import ComplianceProfileItemInput
-from taxops.services.annual_transactions import AnnualTransactionError
+from taxops.services.annual_transactions import (
+    MAX_AMOUNT,
+    AnnualTransactionError,
+)
 from taxops.ui.action_registry import PAGE_ANNUAL_WORKBENCH, actions_for_page
 from taxops.ui.dialogs.annual_item_dialog import AnnualItemDialog
 from taxops.ui.dialogs.annual_transaction_dialog import (
@@ -130,10 +137,10 @@ def test_add_dialog_saves_large_text_amount_and_panel_rereads_balance(
     dialog = AnnualTransactionDialog(
         container.annual_transactions,
         item.id,
+        commit_handler=panel._on_mutation_committed,
         parent=panel,
     )
     qtbot.addWidget(dialog)
-    dialog.committed_evidence.connect(panel._on_mutation_committed)
 
     dialog.category_combo.setCurrentIndex(
         dialog.category_combo.findData("tax_payment")
@@ -251,10 +258,10 @@ def test_edit_dialog_updates_same_id_and_panel_rereads_balance(
         container.annual_transactions,
         item.id,
         transaction_id=original.id,
+        commit_handler=panel._on_mutation_committed,
         parent=panel,
     )
     qtbot.addWidget(dialog)
-    dialog.committed_evidence.connect(panel._on_mutation_committed)
 
     assert dialog.amount_input.text() == "8000"
     dialog.amount_input.setText("6000")
@@ -280,6 +287,7 @@ def test_item_dialog_uses_horizontal_splitter_for_fields_and_ledger(
     item = _work_item(container)
     dialog = AnnualItemDialog(container, item.id)
     qtbot.addWidget(dialog)
+    dialog.setFont(QFont("Arial", 11))
     dialog.resize(900, 540)
     dialog.show()
 
@@ -326,10 +334,10 @@ def test_delete_dialog_requires_reason_soft_deletes_and_rereads_balance(
     dialog = AnnualTransactionDeleteDialog(
         container.annual_transactions,
         transaction.id,
+        commit_handler=panel._on_mutation_committed,
         parent=panel,
     )
     qtbot.addWidget(dialog)
-    dialog.committed_evidence.connect(panel._on_mutation_committed)
     dialog.reason_input.setPlainText("重複登錄，保留刪除軌跡")
 
     qtbot.mouseClick(dialog.delete_button, Qt.MouseButton.LeftButton)
@@ -392,12 +400,10 @@ def test_committed_add_with_reread_failure_disables_mutations_until_retry(
     transaction_dialog = AnnualTransactionDialog(
         container.annual_transactions,
         item.id,
+        commit_handler=panel._on_mutation_committed,
         parent=panel,
     )
     qtbot.addWidget(transaction_dialog)
-    transaction_dialog.committed_evidence.connect(
-        panel._on_mutation_committed
-    )
     transaction_dialog.category_combo.setCurrentIndex(
         transaction_dialog.category_combo.findData("tax_liability")
     )
@@ -432,6 +438,115 @@ def test_committed_add_with_reread_failure_disables_mutations_until_retry(
     assert panel.table.rowCount() == 1
     assert panel.add_button.isEnabled()
     assert not panel.retry_button.isVisible()
+
+
+def test_commit_callback_raising_before_evidence_takeover_blocks_resubmit(
+    qtbot, container, monkeypatch
+) -> None:
+    item = _work_item(container)
+    service = container.annual_transactions
+    add_calls = 0
+    real_add = service.add
+
+    def observed_add(*args, **kwargs):
+        nonlocal add_calls
+        add_calls += 1
+        return real_add(*args, **kwargs)
+
+    def raise_before_takeover(_evidence):
+        raise RuntimeError("callback-private-failure")
+
+    unhandled: list[tuple] = []
+    monkeypatch.setattr(service, "add", observed_add)
+    monkeypatch.setattr(
+        sys,
+        "excepthook",
+        lambda *args: unhandled.append(args),
+    )
+    dialog = AnnualTransactionDialog(
+        service,
+        item.id,
+        commit_handler=raise_before_takeover,
+    )
+    qtbot.addWidget(dialog)
+    dialog.show()
+    dialog.category_combo.setCurrentIndex(
+        dialog.category_combo.findData("tax_liability")
+    )
+    dialog.transaction_date_input.setText("2026-07-25")
+    dialog.amount_input.setText("2500")
+
+    qtbot.mouseClick(dialog.save_button, Qt.MouseButton.LeftButton)
+
+    assert add_calls == 1
+    assert service.page(item.id, limit=100, offset=0).total == 1
+    assert dialog.result() == QDialog.DialogCode.Rejected
+    assert not dialog.save_button.isEnabled()
+    assert "已儲存" in dialog.feedback_label.text()
+    assert "成功" not in dialog.feedback_label.text()
+    assert "callback-private-failure" not in dialog.feedback_label.text()
+    assert unhandled == []
+    dialog.save()
+    assert add_calls == 1
+
+
+def test_panel_takes_evidence_before_parent_callback_failure_and_retry(
+    qtbot, container, monkeypatch
+) -> None:
+    item = _work_item(container)
+    item_dialog = AnnualItemDialog(container, item.id)
+    qtbot.addWidget(item_dialog)
+    item_dialog.show()
+    panel = item_dialog.ledger
+    unhandled: list[tuple] = []
+
+    def mark_parent_then_raise() -> None:
+        item_dialog.has_committed_change = True
+        raise RuntimeError("parent-callback-private-failure")
+
+    monkeypatch.setattr(
+        panel,
+        "_commit_observer",
+        mark_parent_then_raise,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        sys,
+        "excepthook",
+        lambda *args: unhandled.append(args),
+    )
+
+    outcome = _submit_panel_add(
+        qtbot,
+        monkeypatch,
+        panel,
+        category="fee_receivable",
+        transaction_date="2026-07-25",
+        amount="2600",
+    )
+
+    assert outcome["result"] == QDialog.DialogCode.Accepted
+    assert item_dialog.has_committed_change is True
+    assert panel._pending_commit_evidence is not None
+    assert panel.retry_button.isVisible()
+    assert panel.retry_button.isEnabled()
+    assert not panel.add_button.isEnabled()
+    assert "成功" not in panel.feedback_label.text()
+    assert "parent-callback-private-failure" not in panel.feedback_label.text()
+    assert unhandled == []
+
+    monkeypatch.setattr(
+        panel,
+        "_commit_observer",
+        item_dialog._mark_committed_change,
+    )
+    qtbot.mouseClick(panel.retry_button, Qt.MouseButton.LeftButton)
+
+    assert panel._pending_commit_evidence is None
+    assert panel.table.rowCount() == 1
+    assert panel.add_button.isEnabled()
+    assert not panel.retry_button.isVisible()
+    assert item_dialog.has_committed_change is True
 
 
 def test_committed_add_is_verified_by_id_even_when_not_on_current_page(
@@ -811,6 +926,70 @@ def test_logger_failure_never_masks_original_mutation_error(
     )
 
 
+def test_add_error_logging_does_not_commit_caller_owned_transaction(
+    qtbot, container
+) -> None:
+    item = _work_item(container)
+    conn = container.conn
+    conn.execute("BEGIN")
+    conn.execute(
+        "INSERT INTO system_logs(level, message, created_at) "
+        "VALUES ('INFO', 'caller-owned-ui-sentinel', "
+        "'2026-07-25T00:00:00')"
+    )
+    before_rows = conn.execute(
+        "SELECT COUNT(*) FROM annual_work_transactions"
+    ).fetchone()[0]
+    before_audits = conn.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+    ).fetchone()[0]
+    dialog = AnnualTransactionDialog(
+        container.annual_transactions,
+        item.id,
+        system_log=container.system_log,
+    )
+    qtbot.addWidget(dialog)
+    dialog.show()
+    dialog.category_combo.setCurrentIndex(
+        dialog.category_combo.findData("tax_liability")
+    )
+    dialog.transaction_date_input.setText("2026-07-25")
+    dialog.amount_input.setText("2500")
+
+    qtbot.mouseClick(dialog.save_button, Qt.MouseButton.LeftButton)
+
+    assert dialog.result() == QDialog.DialogCode.Rejected
+    assert dialog.save_button.isEnabled()
+    assert conn.in_transaction is True
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM annual_work_transactions"
+        ).fetchone()[0]
+        == before_rows
+    )
+    assert (
+        conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+        == before_audits
+    )
+    observer = sqlite3.connect(str(container.paths.db_path))
+    try:
+        assert observer.execute(
+            "SELECT COUNT(*) FROM system_logs "
+            "WHERE message = 'caller-owned-ui-sentinel'"
+        ).fetchone()[0] == 0
+    finally:
+        observer.close()
+    assert conn.execute(
+        "SELECT COUNT(*) FROM system_logs "
+        "WHERE message = 'annual_transaction_ui.mutation.failed'"
+    ).fetchone()[0] == 0
+    conn.rollback()
+    assert conn.execute(
+        "SELECT COUNT(*) FROM system_logs "
+        "WHERE message = 'caller-owned-ui-sentinel'"
+    ).fetchone()[0] == 0
+
+
 def test_pagination_reaches_transaction_501_and_double_click_opens_its_id_once(
     qtbot, container, monkeypatch
 ) -> None:
@@ -965,6 +1144,110 @@ def test_invalid_fields_preserve_exact_input_focus_first_and_write_nothing(
     assert container.annual_transactions.page(
         item.id, limit=100, offset=0
     ).total == 0
+
+
+@pytest.mark.parametrize(
+    "invalid_date",
+    (
+        "2026-01-01XX",
+        "2026-01-01" + "X" * 1000,
+    ),
+    ids=("suffix", "long-suffix"),
+)
+def test_overlong_invalid_date_is_not_truncated_and_writes_nothing(
+    qtbot, container, invalid_date
+) -> None:
+    item = _work_item(container)
+    dialog = AnnualTransactionDialog(
+        container.annual_transactions,
+        item.id,
+    )
+    qtbot.addWidget(dialog)
+    dialog.show()
+    dialog.category_combo.setCurrentIndex(
+        dialog.category_combo.findData("tax_liability")
+    )
+    dialog.transaction_date_input.setText(invalid_date)
+    dialog.amount_input.setText("100")
+
+    qtbot.mouseClick(dialog.save_button, Qt.MouseButton.LeftButton)
+
+    assert dialog.transaction_date_input.text() == invalid_date
+    assert dialog.feedback_label.text() == error_message(
+        "annual_transactions.date.invalid"
+    )
+    assert any(ord(char) > 127 for char in dialog.feedback_label.text())
+    qtbot.waitUntil(dialog.transaction_date_input.hasFocus, timeout=500)
+    assert container.annual_transactions.page(
+        item.id, limit=100, offset=0
+    ).total == 0
+
+
+@pytest.mark.parametrize(
+    "invalid_amount",
+    (
+        "9" * 4301,
+        "8" * 10000,
+        "12X3",
+        str(MAX_AMOUNT + 1),
+    ),
+    ids=("4301-digits", "10000-digits", "non-digit", "over-maximum"),
+)
+def test_invalid_huge_amount_is_bounded_before_int_conversion(
+    qtbot, container, invalid_amount
+) -> None:
+    item = _work_item(container)
+    dialog = AnnualTransactionDialog(
+        container.annual_transactions,
+        item.id,
+    )
+    qtbot.addWidget(dialog)
+    dialog.show()
+    dialog.category_combo.setCurrentIndex(
+        dialog.category_combo.findData("tax_liability")
+    )
+    dialog.transaction_date_input.setText("2026-07-25")
+    dialog.amount_input.setText(invalid_amount)
+
+    qtbot.mouseClick(dialog.save_button, Qt.MouseButton.LeftButton)
+
+    assert dialog.amount_input.text() == invalid_amount
+    assert dialog.feedback_label.text() == error_message(
+        "annual_transactions.amount.invalid"
+    )
+    qtbot.waitUntil(dialog.amount_input.hasFocus, timeout=500)
+    assert container.annual_transactions.page(
+        item.id, limit=100, offset=0
+    ).total == 0
+
+
+def test_many_leading_zeroes_save_exact_field_text_and_numeric_amount(
+    qtbot, container
+) -> None:
+    item = _work_item(container)
+    original = "0" * 10000 + "10000"
+    dialog = AnnualTransactionDialog(
+        container.annual_transactions,
+        item.id,
+    )
+    qtbot.addWidget(dialog)
+    dialog.show()
+    dialog.category_combo.setCurrentIndex(
+        dialog.category_combo.findData("fee_receipt")
+    )
+    dialog.transaction_date_input.setText("2026-07-25")
+    dialog.amount_input.setText(original)
+
+    qtbot.mouseClick(dialog.save_button, Qt.MouseButton.LeftButton)
+
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert dialog.amount_input.text() == original
+    assert dialog.committed_transaction_id is not None
+    stored = container.annual_transactions.get(
+        dialog.committed_transaction_id
+    )
+    assert stored is not None
+    assert stored.amount == 10000
 
 
 def test_transaction_actions_have_real_layered_contracts() -> None:
@@ -1161,21 +1444,44 @@ def test_900_by_540_keeps_ledger_actions_table_and_pagination_reachable(
         assert dialog.rect().contains(bottom_right)
     assert panel.table.viewport().height() > 30
     assert panel.table.font().pointSize() >= 10
+    assert isinstance(panel.balance_scroll, QScrollArea)
+    assert panel.balance_scroll.verticalScrollBar().maximum() > 0
     assert panel.tax_liability_label.text() == "NT$ 9,000,000,000,000"
     longest_caption = panel._balance_caption_labels[
         "client_tax_collection"
     ]
-    for widget in (
-        longest_caption,
-        panel.tax_liability_label,
-        panel.excess_client_collection_label,
-        panel.tax_overpayment_label,
-    ):
+    balance_widgets = tuple(panel._balance_caption_labels.values()) + tuple(
+        getattr(panel, f"{name}_label")
+        for name in (
+            "tax_liability",
+            "client_tax_collection",
+            "tax_payment",
+            "tax_credit_or_refund",
+            "fee_receivable",
+            "fee_receipt",
+            "collection_shortfall",
+            "unpaid_tax",
+            "outstanding_fee",
+            "excess_client_collection",
+            "tax_overpayment",
+            "fee_overpayment",
+        )
+    )
+    assert longest_caption in balance_widgets
+    for widget in balance_widgets:
         assert widget.width() >= widget.sizeHint().width()
-        top_left = widget.mapTo(dialog, widget.rect().topLeft())
-        bottom_right = widget.mapTo(dialog, widget.rect().bottomRight())
-        assert dialog.rect().contains(top_left)
-        assert dialog.rect().contains(bottom_right)
+    scrollbar = panel.balance_scroll.verticalScrollBar()
+    scrollbar.setValue(scrollbar.maximum())
+    QApplication.processEvents()
+    last_value = panel.fee_overpayment_label
+    top_left = last_value.mapTo(
+        panel.balance_scroll.viewport(), last_value.rect().topLeft()
+    )
+    bottom_right = last_value.mapTo(
+        panel.balance_scroll.viewport(), last_value.rect().bottomRight()
+    )
+    assert panel.balance_scroll.viewport().rect().contains(top_left)
+    assert panel.balance_scroll.viewport().rect().contains(bottom_right)
     for name in (
         "tax_liability",
         "client_tax_collection",

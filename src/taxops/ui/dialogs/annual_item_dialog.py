@@ -27,7 +27,12 @@ class AnnualItemDialog(QDialog):
         self.has_committed_change = False
         self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self.detail = AnnualItemDetail(container, item_id, self)
-        self.ledger = AnnualTransactionPanel(container, item_id, self)
+        self.ledger = AnnualTransactionPanel(
+            container,
+            item_id,
+            commit_observer=self._mark_committed_change,
+            parent=self,
+        )
         self.splitter.addWidget(self.detail)
         self.splitter.addWidget(self.ledger)
         self.splitter.setStretchFactor(0, 1)
@@ -35,9 +40,6 @@ class AnnualItemDialog(QDialog):
         self.splitter.setSizes((330, 540))
         layout.addWidget(self.splitter)
         self.detail.mutation_committed.connect(
-            self._mark_committed_change
-        )
-        self.ledger.mutation_committed.connect(
             self._mark_committed_change
         )
         self.detail.saved.connect(self.accept)

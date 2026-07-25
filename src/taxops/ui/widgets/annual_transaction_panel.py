@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from typing import Callable
+
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
+    QFrame,
     QGroupBox,
     QGridLayout,
     QHeaderView,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -21,6 +25,7 @@ from ...i18n.errors import error_message
 from ...i18n.labels import ANNUAL_TRANSACTION_CATEGORY_LABELS
 from ...services.container import ServiceContainer
 from ..dialogs.annual_transaction_dialog import (
+    AnnualTransactionCommitAck,
     AnnualTransactionCommitEvidence,
     _safe_system_log_error,
 )
@@ -38,8 +43,6 @@ def _schedule_focus(owner: QWidget, target: QWidget) -> None:
 class AnnualTransactionPanel(QWidget):
     """Read model that refreshes only through ``page`` and ``balance``."""
 
-    mutation_committed = Signal()
-
     DATE_COLUMN = 0
     CATEGORY_COLUMN = 1
     AMOUNT_COLUMN = 2
@@ -50,12 +53,15 @@ class AnnualTransactionPanel(QWidget):
         container: ServiceContainer,
         work_item_id: int,
         parent: QWidget | None = None,
+        *,
+        commit_observer: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("AnnualTransactionPanel")
         self._container = container
         self._service = container.annual_transactions
         self._system_log = getattr(container, "system_log", None)
+        self._commit_observer = commit_observer
         self.work_item_id = work_item_id
         self.page_size = 50
         self.offset = 0
@@ -128,9 +134,26 @@ class AnnualTransactionPanel(QWidget):
         layout.addLayout(pagination_row)
 
         balance_group = QGroupBox("帳務核對")
-        balance_grid = QGridLayout(balance_group)
+        balance_layout = QVBoxLayout(balance_group)
+        balance_layout.setContentsMargins(8, 8, 8, 8)
+        self.balance_scroll = QScrollArea()
+        self.balance_scroll.setObjectName("AnnualTransactionBalanceScroll")
+        self.balance_scroll.setWidgetResizable(True)
+        self.balance_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.balance_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.balance_scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.balance_scroll.setMinimumHeight(105)
+        self.balance_scroll.setMaximumHeight(155)
+        balance_content = QWidget()
+        balance_grid = QGridLayout(balance_content)
+        balance_grid.setContentsMargins(4, 4, 8, 4)
         balance_grid.setHorizontalSpacing(10)
         balance_grid.setVerticalSpacing(4)
+        balance_grid.setColumnStretch(1, 1)
         self._balance_caption_labels: dict[str, QLabel] = {}
         for index, (attr, label) in enumerate((
             ("tax_liability_label", "應納稅額"),
@@ -155,11 +178,11 @@ class AnnualTransactionPanel(QWidget):
             caption = QLabel(label)
             self._balance_caption_labels[metric] = caption
             setattr(self, attr, value)
-            row = index // 2
-            column = (index % 2) * 2
-            balance_grid.addWidget(caption, row, column)
-            balance_grid.addWidget(value, row, column + 1)
-            balance_grid.setColumnStretch(column + 1, 1)
+            balance_grid.addWidget(caption, index, 0)
+            balance_grid.addWidget(value, index, 1)
+        balance_grid.setRowStretch(12, 1)
+        self.balance_scroll.setWidget(balance_content)
+        balance_layout.addWidget(self.balance_scroll)
         layout.addWidget(balance_group)
 
         self.retry_button = QPushButton("重新讀取交易")
@@ -353,9 +376,9 @@ class AnnualTransactionPanel(QWidget):
             self._service,
             self.work_item_id,
             system_log=self._system_log,
+            commit_handler=self._on_mutation_committed,
             parent=self,
         )
-        dialog.committed_evidence.connect(self._on_mutation_committed)
         dialog.exec()
 
     def _open_edit(self) -> None:
@@ -374,9 +397,9 @@ class AnnualTransactionPanel(QWidget):
             self.work_item_id,
             transaction_id=transaction_id,
             system_log=self._system_log,
+            commit_handler=self._on_mutation_committed,
             parent=self,
         )
-        dialog.committed_evidence.connect(self._on_mutation_committed)
         self._dialog_open = True
         try:
             dialog.exec()
@@ -400,9 +423,9 @@ class AnnualTransactionPanel(QWidget):
             self._service,
             transaction_id,
             system_log=self._system_log,
+            commit_handler=self._on_mutation_committed,
             parent=self,
         )
-        dialog.committed_evidence.connect(self._on_mutation_committed)
         self._dialog_open = True
         try:
             dialog.exec()
@@ -411,10 +434,50 @@ class AnnualTransactionPanel(QWidget):
 
     def _on_mutation_committed(
         self, evidence: AnnualTransactionCommitEvidence
-    ) -> None:
+    ) -> AnnualTransactionCommitAck:
         self._pending_commit_evidence = evidence
-        self.mutation_committed.emit()
-        self.reload(after_commit=True)
+        self._load_valid = False
+        self._apply_control_state()
+        try:
+            if self._commit_observer is not None:
+                self._commit_observer()
+        except Exception as exc:
+            _safe_system_log_error(
+                self._system_log,
+                "annual_transaction_ui.commit_observer.failed",
+                operation="post_commit_handoff",
+                exc=exc,
+                work_item_id=self.work_item_id,
+                transaction_id=evidence.row.id,
+            )
+            self.feedback_label.setText(
+                "資料已儲存，但畫面更新失敗。"
+                "已停用交易操作，請按「重新載入交易」核對；"
+                "不要再次新增。"
+            )
+            self._apply_control_state()
+            return AnnualTransactionCommitAck(True, False)
+        try:
+            self.reload(after_commit=True)
+        except Exception as exc:
+            # ``reload`` owns its normal failure recovery. This defensive
+            # boundary also covers an injected/replaced Python callback.
+            _safe_system_log_error(
+                self._system_log,
+                "annual_transaction_ui.reload.failed",
+                operation="post_commit_readback",
+                exc=exc,
+                work_item_id=self.work_item_id,
+                transaction_id=evidence.row.id,
+            )
+            self._load_valid = False
+            self.feedback_label.setText(
+                "資料已儲存，但畫面更新失敗。"
+                "已停用交易操作，請按「重新載入交易」核對；"
+                "不要再次新增。"
+            )
+            self._apply_control_state()
+        return AnnualTransactionCommitAck(True, self._load_valid)
 
     def _previous_page(self) -> None:
         if not self._load_valid or self.offset <= 0:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from typing import Callable
 
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
@@ -49,6 +50,20 @@ def _safe_system_log_error(
 ) -> None:
     if system_log is None:
         return
+    try:
+        logger_connection = getattr(system_log, "connection", None)
+        if (
+            logger_connection is not None
+            and bool(logger_connection.in_transaction)
+        ):
+            # The logger writes through this connection and commits by
+            # default.  Never let diagnostics commit a caller-owned unit of
+            # work after the business service has deliberately failed fast.
+            return
+    except Exception:
+        # Introspection is diagnostic-only and must not mask the original
+        # business failure.
+        return
     detail: dict[str, object] = {
         "code": _sanitized_error_code(exc),
         "operation": operation,
@@ -80,6 +95,60 @@ class AnnualTransactionCommitEvidence:
     row: AnnualTransactionRow
 
 
+@dataclass(frozen=True)
+class AnnualTransactionCommitAck:
+    """Synchronous ownership/readback result returned to a committed dialog."""
+
+    evidence_taken: bool
+    readback_succeeded: bool
+
+
+AnnualTransactionCommitHandler = Callable[
+    [AnnualTransactionCommitEvidence],
+    AnnualTransactionCommitAck,
+]
+
+
+def _deliver_commit_evidence(
+    handler: AnnualTransactionCommitHandler | None,
+    evidence: AnnualTransactionCommitEvidence,
+) -> AnnualTransactionCommitAck:
+    if handler is None:
+        # A standalone dialog keeps its own immutable evidence and closes
+        # safely. Production ledger dialogs always install the panel handler.
+        return AnnualTransactionCommitAck(True, False)
+    try:
+        ack = handler(evidence)
+    except Exception:
+        return AnnualTransactionCommitAck(False, False)
+    if (
+        not isinstance(ack, AnnualTransactionCommitAck)
+        or type(ack.evidence_taken) is not bool
+        or type(ack.readback_succeeded) is not bool
+        or (ack.readback_succeeded and not ack.evidence_taken)
+    ):
+        return AnnualTransactionCommitAck(False, False)
+    return ack
+
+
+def _emit_commit_notifications(
+    dialog: object,
+    evidence: AnnualTransactionCommitEvidence,
+) -> None:
+    for signal, argument in (
+        (getattr(dialog, "committed_evidence"), evidence),
+        (getattr(dialog, "committed"), None),
+    ):
+        try:
+            if argument is None:
+                signal.emit()
+            else:
+                signal.emit(argument)
+        except Exception:
+            # Notification listeners never own the synchronous handoff.
+            continue
+
+
 class AnnualTransactionDialog(QDialog):
     """Validated transaction form with no in-memory ledger state."""
 
@@ -93,6 +162,7 @@ class AnnualTransactionDialog(QDialog):
         *,
         transaction_id: int | None = None,
         system_log: object | None = None,
+        commit_handler: AnnualTransactionCommitHandler | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -102,9 +172,11 @@ class AnnualTransactionDialog(QDialog):
         self.resize(600, 520)
         self._service = service
         self._system_log = system_log
+        self._commit_handler = commit_handler
         self.work_item_id = work_item_id
         self.transaction_id = transaction_id
         self.committed_transaction_id: int | None = None
+        self._committed_evidence: AnnualTransactionCommitEvidence | None = None
         self._busy = False
 
         layout = QVBoxLayout(self)
@@ -123,7 +195,6 @@ class AnnualTransactionDialog(QDialog):
         self.transaction_date_input = QLineEdit()
         self.transaction_date_input.setObjectName("AnnualTransactionDate")
         self.transaction_date_input.setPlaceholderText("YYYY-MM-DD")
-        self.transaction_date_input.setMaxLength(11)
 
         self.amount_input = QLineEdit()
         self.amount_input.setObjectName("AnnualTransactionAmount")
@@ -202,13 +273,23 @@ class AnnualTransactionDialog(QDialog):
             raise ValueError("annual_transactions.category.invalid")
 
         raw_amount = self.amount_input.text()
-        if not raw_amount or not raw_amount.isascii() or not raw_amount.isdecimal():
+        if not raw_amount or not all(
+            "0" <= char <= "9" for char in raw_amount
+        ):
             self.amount_input.setFocus()
             raise ValueError("annual_transactions.amount.invalid")
-        amount = int(raw_amount)
-        if not 0 <= amount <= MAX_AMOUNT:
+        significant_amount = raw_amount.lstrip("0") or "0"
+        maximum_amount = str(MAX_AMOUNT)
+        if (
+            len(significant_amount) > len(maximum_amount)
+            or (
+                len(significant_amount) == len(maximum_amount)
+                and significant_amount > maximum_amount
+            )
+        ):
             self.amount_input.setFocus()
             raise ValueError("annual_transactions.amount.invalid")
+        amount = int(significant_amount)
 
         transaction_date = self.transaction_date_input.text()
         try:
@@ -251,15 +332,6 @@ class AnnualTransactionDialog(QDialog):
                 row = self._service.add(self.work_item_id, *payload)
             else:
                 row = self._service.update(self.transaction_id, *payload)
-            self.committed_transaction_id = row.id
-            self.committed_evidence.emit(
-                AnnualTransactionCommitEvidence(
-                    "add" if self.transaction_id is None else "update",
-                    row,
-                )
-            )
-            self.committed.emit()
-            self.accept()
         except Exception as exc:
             _safe_system_log_error(
                 self._system_log,
@@ -273,6 +345,23 @@ class AnnualTransactionDialog(QDialog):
             self._busy = False
             self._set_form_enabled(True)
             self._focus_error(getattr(exc, "code", ""))
+            return
+
+        self.committed_transaction_id = row.id
+        evidence = AnnualTransactionCommitEvidence(
+            "add" if self.transaction_id is None else "update",
+            row,
+        )
+        self._committed_evidence = evidence
+        ack = _deliver_commit_evidence(self._commit_handler, evidence)
+        _emit_commit_notifications(self, evidence)
+        if ack.evidence_taken:
+            self.accept()
+        else:
+            self.feedback_label.setText(
+                "交易已儲存，但畫面未能接管更新。"
+                "請關閉後重新開啟明細核對；不要再次送出。"
+            )
 
     def _show_failure(self, exc: BaseException, default: str) -> None:
         code = getattr(exc, "code", "") or (
@@ -315,6 +404,7 @@ class AnnualTransactionDeleteDialog(QDialog):
         transaction_id: int,
         *,
         system_log: object | None = None,
+        commit_handler: AnnualTransactionCommitHandler | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -323,7 +413,9 @@ class AnnualTransactionDeleteDialog(QDialog):
         self.setMinimumSize(460, 280)
         self._service = service
         self._system_log = system_log
+        self._commit_handler = commit_handler
         self.transaction_id = transaction_id
+        self._committed_evidence: AnnualTransactionCommitEvidence | None = None
         self._busy = False
 
         layout = QVBoxLayout(self)
@@ -377,11 +469,6 @@ class AnnualTransactionDeleteDialog(QDialog):
             row = self._service.delete(self.transaction_id, reason)
             if row.id != self.transaction_id or row.deleted_at is None:
                 raise RuntimeError("annual_transactions.delete.failed")
-            self.committed_evidence.emit(
-                AnnualTransactionCommitEvidence("delete", row)
-            )
-            self.committed.emit()
-            self.accept()
         except Exception as exc:
             code = getattr(exc, "code", "") or (
                 str(exc)
@@ -405,3 +492,16 @@ class AnnualTransactionDeleteDialog(QDialog):
             self.reason_input.setEnabled(True)
             if code == "annual_transactions.delete_reason.invalid":
                 _schedule_focus(self, self.reason_input)
+            return
+
+        evidence = AnnualTransactionCommitEvidence("delete", row)
+        self._committed_evidence = evidence
+        ack = _deliver_commit_evidence(self._commit_handler, evidence)
+        _emit_commit_notifications(self, evidence)
+        if ack.evidence_taken:
+            self.accept()
+        else:
+            self.feedback_label.setText(
+                "交易已刪除，但畫面未能接管更新。"
+                "請關閉後重新開啟明細核對；不要再次送出。"
+            )
