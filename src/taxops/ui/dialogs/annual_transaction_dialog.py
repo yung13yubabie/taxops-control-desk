@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 
 from PySide6.QtCore import QTimer, Signal
@@ -16,16 +17,74 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shiboken6 import isValid
 
-from ...i18n.errors import error_message
+from ...i18n.errors import ERROR_MESSAGES, error_message
 from ...i18n.labels import ANNUAL_TRANSACTION_CATEGORY_LABELS
+from ...repositories.annual_transactions import AnnualTransactionRow
 from ...services.annual_transactions import MAX_AMOUNT, AnnualTransactionsService
+
+
+def _sanitized_error_code(exc: BaseException) -> str:
+    candidate = getattr(exc, "code", "")
+    if not candidate:
+        candidate = str(exc)
+    if (
+        isinstance(candidate, str)
+        and candidate.startswith("annual_transactions.")
+        and candidate in ERROR_MESSAGES
+    ):
+        return candidate
+    return "system.unexpected"
+
+
+def _safe_system_log_error(
+    system_log: object | None,
+    message: str,
+    *,
+    operation: str,
+    exc: BaseException,
+    work_item_id: int | None = None,
+    transaction_id: int | None = None,
+) -> None:
+    if system_log is None:
+        return
+    detail: dict[str, object] = {
+        "code": _sanitized_error_code(exc),
+        "operation": operation,
+    }
+    if type(transaction_id) is int:
+        detail["transaction_id"] = transaction_id
+    if type(work_item_id) is int:
+        detail["work_item_id"] = work_item_id
+    try:
+        system_log.error(message, detail=detail)
+    except Exception:
+        # Diagnostic persistence must never replace the user-facing failure.
+        return
+
+
+def _schedule_focus(owner: QWidget, target: QWidget) -> None:
+    def focus_if_alive() -> None:
+        if isValid(owner) and isValid(target):
+            target.setFocus()
+
+    QTimer.singleShot(0, owner, focus_if_alive)
+
+
+@dataclass(frozen=True)
+class AnnualTransactionCommitEvidence:
+    """Immutable service result that the ledger must read back before success."""
+
+    operation: str
+    row: AnnualTransactionRow
 
 
 class AnnualTransactionDialog(QDialog):
     """Validated transaction form with no in-memory ledger state."""
 
     committed = Signal()
+    committed_evidence = Signal(object)
 
     def __init__(
         self,
@@ -33,6 +92,7 @@ class AnnualTransactionDialog(QDialog):
         work_item_id: int,
         *,
         transaction_id: int | None = None,
+        system_log: object | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -41,6 +101,7 @@ class AnnualTransactionDialog(QDialog):
         self.setMinimumSize(520, 440)
         self.resize(600, 520)
         self._service = service
+        self._system_log = system_log
         self.work_item_id = work_item_id
         self.transaction_id = transaction_id
         self.committed_transaction_id: int | None = None
@@ -67,11 +128,9 @@ class AnnualTransactionDialog(QDialog):
         self.amount_input = QLineEdit()
         self.amount_input.setObjectName("AnnualTransactionAmount")
         self.amount_input.setPlaceholderText("0 至 9,000,000,000,000")
-        self.amount_input.setMaxLength(18)
 
         self.reference_input = QLineEdit()
         self.reference_input.setObjectName("AnnualTransactionReference")
-        self.reference_input.setMaxLength(501)
 
         self.notes_input = QPlainTextEdit()
         self.notes_input.setObjectName("AnnualTransactionNotes")
@@ -125,6 +184,14 @@ class AnnualTransactionDialog(QDialog):
             self.reference_input.setText(row.reference or "")
             self.notes_input.setPlainText(row.notes or "")
         except Exception as exc:
+            _safe_system_log_error(
+                self._system_log,
+                "annual_transaction_ui.load.failed",
+                operation="load",
+                exc=exc,
+                work_item_id=self.work_item_id,
+                transaction_id=self.transaction_id,
+            )
             self._show_failure(exc, "讀取交易紀錄失敗，請關閉後再試。")
             self._set_form_enabled(False)
 
@@ -185,9 +252,23 @@ class AnnualTransactionDialog(QDialog):
             else:
                 row = self._service.update(self.transaction_id, *payload)
             self.committed_transaction_id = row.id
+            self.committed_evidence.emit(
+                AnnualTransactionCommitEvidence(
+                    "add" if self.transaction_id is None else "update",
+                    row,
+                )
+            )
             self.committed.emit()
             self.accept()
         except Exception as exc:
+            _safe_system_log_error(
+                self._system_log,
+                "annual_transaction_ui.mutation.failed",
+                operation="add" if self.transaction_id is None else "update",
+                exc=exc,
+                work_item_id=self.work_item_id,
+                transaction_id=self.transaction_id,
+            )
             self._show_failure(exc, "儲存交易紀錄失敗，輸入內容保持不變。")
             self._busy = False
             self._set_form_enabled(True)
@@ -219,19 +300,21 @@ class AnnualTransactionDialog(QDialog):
             "annual_transactions.notes.invalid": self.notes_input,
         }.get(code)
         if target is not None:
-            QTimer.singleShot(0, target.setFocus)
+            _schedule_focus(self, target)
 
 
 class AnnualTransactionDeleteDialog(QDialog):
     """Collect a mandatory reason before one audited soft deletion."""
 
     committed = Signal()
+    committed_evidence = Signal(object)
 
     def __init__(
         self,
         service: AnnualTransactionsService,
         transaction_id: int,
         *,
+        system_log: object | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -239,6 +322,7 @@ class AnnualTransactionDeleteDialog(QDialog):
         self.setWindowTitle("刪除交易紀錄")
         self.setMinimumSize(460, 280)
         self._service = service
+        self._system_log = system_log
         self.transaction_id = transaction_id
         self._busy = False
 
@@ -293,6 +377,9 @@ class AnnualTransactionDeleteDialog(QDialog):
             row = self._service.delete(self.transaction_id, reason)
             if row.id != self.transaction_id or row.deleted_at is None:
                 raise RuntimeError("annual_transactions.delete.failed")
+            self.committed_evidence.emit(
+                AnnualTransactionCommitEvidence("delete", row)
+            )
             self.committed.emit()
             self.accept()
         except Exception as exc:
@@ -300,6 +387,13 @@ class AnnualTransactionDeleteDialog(QDialog):
                 str(exc)
                 if str(exc).startswith("annual_transactions.")
                 else ""
+            )
+            _safe_system_log_error(
+                self._system_log,
+                "annual_transaction_ui.mutation.failed",
+                operation="delete",
+                exc=exc,
+                transaction_id=self.transaction_id,
             )
             self.feedback_label.setText(
                 error_message(code)
@@ -309,3 +403,5 @@ class AnnualTransactionDeleteDialog(QDialog):
             self._busy = False
             self.delete_button.setEnabled(True)
             self.reason_input.setEnabled(True)
+            if code == "annual_transactions.delete_reason.invalid":
+                _schedule_focus(self, self.reason_input)

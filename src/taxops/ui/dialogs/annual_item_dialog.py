@@ -31,8 +31,8 @@ class AnnualItemDialog(QDialog):
         self.splitter.addWidget(self.detail)
         self.splitter.addWidget(self.ledger)
         self.splitter.setStretchFactor(0, 1)
-        self.splitter.setStretchFactor(1, 1)
-        self.splitter.setSizes((460, 490))
+        self.splitter.setStretchFactor(1, 2)
+        self.splitter.setSizes((330, 540))
         layout.addWidget(self.splitter)
         self.detail.mutation_committed.connect(
             self._mark_committed_change

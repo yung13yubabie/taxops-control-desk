@@ -15,11 +15,24 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shiboken6 import isValid
 
 from ...i18n.errors import error_message
 from ...i18n.labels import ANNUAL_TRANSACTION_CATEGORY_LABELS
 from ...services.container import ServiceContainer
+from ..dialogs.annual_transaction_dialog import (
+    AnnualTransactionCommitEvidence,
+    _safe_system_log_error,
+)
 from .annual_overview_table import format_twd
+
+
+def _schedule_focus(owner: QWidget, target: QWidget) -> None:
+    def focus_if_alive() -> None:
+        if isValid(owner) and isValid(target):
+            target.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    QTimer.singleShot(0, owner, focus_if_alive)
 
 
 class AnnualTransactionPanel(QWidget):
@@ -42,12 +55,16 @@ class AnnualTransactionPanel(QWidget):
         self.setObjectName("AnnualTransactionPanel")
         self._container = container
         self._service = container.annual_transactions
+        self._system_log = getattr(container, "system_log", None)
         self.work_item_id = work_item_id
         self.page_size = 50
         self.offset = 0
         self.total = 0
         self._load_valid = False
         self._dialog_open = False
+        self._pending_commit_evidence: AnnualTransactionCommitEvidence | None = (
+            None
+        )
 
         font = self.font()
         font.setPointSize(11)
@@ -114,6 +131,7 @@ class AnnualTransactionPanel(QWidget):
         balance_grid = QGridLayout(balance_group)
         balance_grid.setHorizontalSpacing(10)
         balance_grid.setVerticalSpacing(4)
+        self._balance_caption_labels: dict[str, QLabel] = {}
         for index, (attr, label) in enumerate((
             ("tax_liability_label", "應納稅額"),
             ("client_tax_collection_label", "客戶稅款代收"),
@@ -133,10 +151,13 @@ class AnnualTransactionPanel(QWidget):
             value.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextSelectableByMouse
             )
+            metric = attr.removesuffix("_label")
+            caption = QLabel(label)
+            self._balance_caption_labels[metric] = caption
             setattr(self, attr, value)
-            row = index // 3
-            column = (index % 3) * 2
-            balance_grid.addWidget(QLabel(label), row, column)
+            row = index // 2
+            column = (index % 2) * 2
+            balance_grid.addWidget(caption, row, column)
             balance_grid.addWidget(value, row, column + 1)
             balance_grid.setColumnStretch(column + 1, 1)
         layout.addWidget(balance_group)
@@ -154,7 +175,10 @@ class AnnualTransactionPanel(QWidget):
         self.reload()
 
     def reload(self, *, after_commit: bool = False) -> None:
+        has_pending_commit = self._pending_commit_evidence is not None
         try:
+            if has_pending_commit:
+                self._verify_pending_commit()
             page = self._service.page(
                 self.work_item_id,
                 limit=self.page_size,
@@ -179,7 +203,8 @@ class AnnualTransactionPanel(QWidget):
             self._show_balance(balance)
             self._show_pagination()
             self._load_valid = True
-            if after_commit:
+            self._pending_commit_evidence = None
+            if after_commit or has_pending_commit:
                 self.feedback_label.setText(
                     "交易紀錄已儲存並重新核對帳務。"
                 )
@@ -187,8 +212,23 @@ class AnnualTransactionPanel(QWidget):
                 self.feedback_label.clear()
         except Exception as exc:
             self._load_valid = False
+            pending = self._pending_commit_evidence
+            _safe_system_log_error(
+                self._system_log,
+                "annual_transaction_ui.reload.failed",
+                operation=(
+                    "post_commit_readback"
+                    if has_pending_commit
+                    else "reload"
+                ),
+                exc=exc,
+                work_item_id=self.work_item_id,
+                transaction_id=(
+                    pending.row.id if pending is not None else None
+                ),
+            )
             code = getattr(exc, "code", "")
-            if after_commit:
+            if after_commit or has_pending_commit:
                 self.feedback_label.setText(
                     "資料已寫入但重新讀取失敗；為避免依舊資料繼續操作，"
                     "交易異動已停用，請重新讀取或關閉視窗。"
@@ -200,6 +240,28 @@ class AnnualTransactionPanel(QWidget):
                     else "讀取交易帳本失敗，請稍後再試。"
                 )
         self._apply_control_state()
+
+    def _verify_pending_commit(self) -> None:
+        evidence = self._pending_commit_evidence
+        if (
+            not isinstance(evidence, AnnualTransactionCommitEvidence)
+            or evidence.operation not in {"add", "update", "delete"}
+        ):
+            raise RuntimeError("annual transaction commit evidence invalid")
+        expected = evidence.row
+        include_deleted = evidence.operation == "delete"
+        observed = self._service.get(
+            expected.id,
+            include_deleted=include_deleted,
+        )
+        if (
+            observed is None
+            or observed.work_item_id != self.work_item_id
+            or observed != expected
+            or (include_deleted and observed.deleted_at is None)
+            or (not include_deleted and observed.deleted_at is not None)
+        ):
+            raise RuntimeError("annual transaction commit readback mismatch")
 
     def _apply_control_state(self) -> None:
         for button in (
@@ -281,21 +343,19 @@ class AnnualTransactionPanel(QWidget):
             self.feedback_label.setText(
                 f"請先選取要{action}的交易紀錄。"
             )
-            QTimer.singleShot(
-                0,
-                lambda: self.table.setFocus(
-                    Qt.FocusReason.OtherFocusReason
-                ),
-            )
+            _schedule_focus(self, self.table)
         return transaction_id
 
     def _open_add(self) -> None:
         from ..dialogs.annual_transaction_dialog import AnnualTransactionDialog
 
         dialog = AnnualTransactionDialog(
-            self._service, self.work_item_id, parent=self
+            self._service,
+            self.work_item_id,
+            system_log=self._system_log,
+            parent=self,
         )
-        dialog.committed.connect(self._on_mutation_committed)
+        dialog.committed_evidence.connect(self._on_mutation_committed)
         dialog.exec()
 
     def _open_edit(self) -> None:
@@ -313,9 +373,10 @@ class AnnualTransactionPanel(QWidget):
             self._service,
             self.work_item_id,
             transaction_id=transaction_id,
+            system_log=self._system_log,
             parent=self,
         )
-        dialog.committed.connect(self._on_mutation_committed)
+        dialog.committed_evidence.connect(self._on_mutation_committed)
         self._dialog_open = True
         try:
             dialog.exec()
@@ -338,16 +399,20 @@ class AnnualTransactionPanel(QWidget):
         dialog = AnnualTransactionDeleteDialog(
             self._service,
             transaction_id,
+            system_log=self._system_log,
             parent=self,
         )
-        dialog.committed.connect(self._on_mutation_committed)
+        dialog.committed_evidence.connect(self._on_mutation_committed)
         self._dialog_open = True
         try:
             dialog.exec()
         finally:
             self._dialog_open = False
 
-    def _on_mutation_committed(self) -> None:
+    def _on_mutation_committed(
+        self, evidence: AnnualTransactionCommitEvidence
+    ) -> None:
+        self._pending_commit_evidence = evidence
         self.mutation_committed.emit()
         self.reload(after_commit=True)
 
