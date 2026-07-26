@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 import pytest
 
 from PySide6.QtCore import QPoint, QRect, Qt
@@ -92,6 +93,88 @@ def test_unlinked_item_creates_first_request_and_renders_same_database_ids(
     assert workflow.request_page.isEnabled()
     assert workflow.feedback_label.text() == "第一筆索件已建立並完成資料核對。"
     assert workflow.result() == QDialog.DialogCode.Rejected
+
+
+def test_first_request_with_51_items_verifies_all_rows_without_requiring_one_ui_page(
+    qtbot, container, monkeypatch
+) -> None:
+    from taxops.ui.dialogs.annual_workflow_dialog import (
+        AnnualWorkflowDialog,
+        CreateLinkedRequestDialog,
+    )
+
+    _client, item = _work_item(container)
+    workflow = AnnualWorkflowDialog(container, item.id)
+    qtbot.addWidget(workflow)
+    names = tuple(f"年度文件 {index:03d}" for index in range(51))
+
+    def submit(dialog: CreateLinkedRequestDialog) -> int:
+        dialog.request_name_input.setText("跨頁完整核對")
+        dialog.items_input.setPlainText("\n".join(names))
+        qtbot.mouseClick(dialog.save_button, Qt.MouseButton.LeftButton)
+        return dialog.result()
+
+    monkeypatch.setattr(CreateLinkedRequestDialog, "exec", submit)
+    qtbot.mouseClick(workflow.create_button, Qt.MouseButton.LeftButton)
+
+    context = container.annual_work.get_item_context(item.id)
+    requests = container.doc_requests.list_by_engagement(
+        context.item.engagement_id, limit=50, offset=0
+    )
+    assert len(requests) == 1
+    request = requests[0]
+    assert container.doc_requests.count_items(request.id) == 51
+    assert len(workflow.request_page.item_ids()) == 50
+    assert workflow.request_page.pending_mutation_evidence is None
+    assert workflow.request_page.isEnabled()
+    assert workflow.retry_button.isHidden()
+    assert workflow.feedback_label.text() == "第一筆索件已建立並完成資料核對。"
+
+
+def test_embedded_request_and_item_pagination_reaches_the_201st_real_rows(
+    qtbot, container
+) -> None:
+    from taxops.services.document_requests import CreateDocumentRequestInput
+    from taxops.ui.dialogs.annual_workflow_dialog import AnnualWorkflowDialog
+
+    _client, item = _work_item(container)
+    linked = container.annual_work.create_linked_request(
+        item.id,
+        request_name="第一筆年度索件",
+        item_names=(),
+    )
+    for index in range(199):
+        container.doc_requests.create_request(
+            CreateDocumentRequestInput(
+                engagement_id=linked.engagement.id,
+                tax_type="cit",
+                period_name="115",
+                request_name=f"中間索件 {index:03d}",
+            )
+        )
+    item_names = tuple(f"跨頁項目 {index:03d}" for index in range(201))
+    target_request, target_items = container.doc_requests.create_request(
+        CreateDocumentRequestInput(
+            engagement_id=linked.engagement.id,
+            tax_type="cit",
+            period_name="115",
+            request_name="第 201 筆索件",
+            item_names=item_names,
+        )
+    )
+    workflow = AnnualWorkflowDialog(container, item.id)
+    qtbot.addWidget(workflow)
+
+    assert "共 201 筆" in workflow.request_page._request_page_label.text()
+    assert workflow.request_page.select_request_id(target_request.id)
+    assert "第 5 / 5 頁" in workflow.request_page._request_page_label.text()
+    assert workflow.request_page.request_id_at(0) == target_request.id
+
+    assert workflow.request_page.select_item_id(
+        target_request.id, target_items[-1].id
+    )
+    assert "第 5 / 5 頁" in workflow.request_page._item_page_label.text()
+    assert workflow.request_page.item_ids() == (target_items[-1].id,)
 
 
 def test_annual_item_dialog_opens_real_request_management_and_propagates_commit(
@@ -276,6 +359,57 @@ def test_link_existing_lists_only_same_client_and_reads_back_exact_id(
     assert workflow.request_page.isEnabled()
     assert workflow.has_committed_change
     assert workflow.feedback_label.text() == "既有案件已連結並完成資料核對。"
+
+
+def test_link_picker_reaches_the_201st_same_client_engagement_without_unbounded_load(
+    qtbot, container
+) -> None:
+    from taxops.ui.dialogs.annual_workflow_dialog import (
+        AnnualRequestCommitAck,
+        LinkExistingEngagementDialog,
+    )
+
+    client, item = _work_item(container)
+    target = container.engagements.create_engagement(
+        CreateEngagementInput(
+            client_id=client.id,
+            engagement_name="最早建立但仍須可選的案件",
+            tax_type="other",
+            period_name="115",
+        )
+    )
+    for index in range(200):
+        container.engagements.create_engagement(
+            CreateEngagementInput(
+                client_id=client.id,
+                engagement_name=f"後續案件 {index:03d}",
+                tax_type="other",
+                period_name="115",
+            )
+        )
+    dialog = LinkExistingEngagementDialog(
+        container,
+        item.id,
+        client_id=client.id,
+        commit_handler=lambda _evidence: AnnualRequestCommitAck(True, True),
+    )
+    qtbot.addWidget(dialog)
+
+    assert dialog.engagement_combo.count() == 50
+    assert "共 201 筆" in dialog.page_label.text()
+    for _ in range(4):
+        qtbot.mouseClick(dialog.next_button, Qt.MouseButton.LeftButton)
+
+    assert dialog.engagement_combo.count() == 1
+    assert dialog.engagement_combo.currentData() == target.id
+    assert "第 5 / 5 頁" in dialog.page_label.text()
+
+    dialog.search_input.setText("最早建立但仍須可選")
+    qtbot.mouseClick(dialog.search_button, Qt.MouseButton.LeftButton)
+
+    assert dialog.engagement_combo.count() == 1
+    assert dialog.engagement_combo.currentData() == target.id
+    assert "共 1 筆" in dialog.page_label.text()
 
 
 def test_deleted_linked_engagement_never_falls_back_to_unlinked_happy_path(
@@ -480,6 +614,96 @@ def test_committed_create_readback_failure_disables_then_retries_without_resubmi
     assert workflow.feedback_label.text() == "索件資料已重新讀取。"
 
 
+def test_committed_create_rejects_summary_whose_total_disagrees_with_exact_status_counts(
+    qtbot, container, monkeypatch
+) -> None:
+    from taxops.ui.dialogs.annual_workflow_dialog import (
+        AnnualWorkflowDialog,
+        CreateLinkedRequestDialog,
+    )
+
+    _client, item = _work_item(container)
+    workflow = AnnualWorkflowDialog(container, item.id)
+    qtbot.addWidget(workflow)
+    real_summary = container.annual_work.document_summary
+
+    def forged_summary(item_id):
+        summary = real_summary(item_id)
+        return replace(summary, total=summary.total + 1)
+
+    def submit(dialog: CreateLinkedRequestDialog) -> int:
+        dialog.request_name_input.setText("摘要總數不可假成功")
+        dialog.items_input.setPlainText("文件甲\n文件乙")
+        monkeypatch.setattr(
+            container.annual_work, "document_summary", forged_summary
+        )
+        qtbot.mouseClick(dialog.save_button, Qt.MouseButton.LeftButton)
+        return dialog.result()
+
+    monkeypatch.setattr(CreateLinkedRequestDialog, "exec", submit)
+    qtbot.mouseClick(workflow.create_button, Qt.MouseButton.LeftButton)
+
+    assert (
+        container.conn.execute(
+            "SELECT COUNT(*) FROM document_requests WHERE deleted_at IS NULL"
+        ).fetchone()[0]
+        == 1
+    )
+    assert workflow.has_committed_change
+    assert not workflow.request_page.isEnabled()
+    assert not workflow.retry_button.isHidden()
+    assert workflow.feedback_label.text() == (
+        "資料已寫入，但重新核對失敗；請按「重新讀取索件」，請勿再次送出。"
+    )
+
+
+def test_committed_create_requires_full_annual_item_version_equality(
+    qtbot, container, monkeypatch
+) -> None:
+    from taxops.ui.dialogs.annual_workflow_dialog import (
+        AnnualWorkflowDialog,
+        CreateLinkedRequestDialog,
+    )
+
+    _client, item = _work_item(container)
+    workflow = AnnualWorkflowDialog(container, item.id)
+    qtbot.addWidget(workflow)
+    real_context = container.annual_work.get_item_context
+
+    def stale_context(item_id):
+        context = real_context(item_id)
+        return replace(
+            context,
+            item=replace(
+                context.item,
+                updated_at=f"{context.item.updated_at}-stale",
+            ),
+        )
+
+    def submit(dialog: CreateLinkedRequestDialog) -> int:
+        dialog.request_name_input.setText("完整版本核對")
+        dialog.items_input.setPlainText("年度文件")
+        monkeypatch.setattr(
+            container.annual_work, "get_item_context", stale_context
+        )
+        qtbot.mouseClick(dialog.save_button, Qt.MouseButton.LeftButton)
+        return dialog.result()
+
+    monkeypatch.setattr(CreateLinkedRequestDialog, "exec", submit)
+    qtbot.mouseClick(workflow.create_button, Qt.MouseButton.LeftButton)
+
+    monkeypatch.setattr(
+        container.annual_work, "get_item_context", real_context
+    )
+    assert (
+        container.annual_work.get_item_context(item.id).item.engagement_id
+        is not None
+    )
+    assert workflow.has_committed_change
+    assert not workflow.request_page.isEnabled()
+    assert not workflow.retry_button.isHidden()
+
+
 def test_create_double_submit_calls_service_once_and_creates_one_request(
     qtbot, container, monkeypatch
 ) -> None:
@@ -628,6 +852,82 @@ def test_embedded_mutation_commit_with_summary_failure_locks_until_retry(
     assert workflow.request_page.request_id_at(0) == created.request.id
 
 
+def test_standalone_post_commit_ui_reload_failure_keeps_evidence_and_retries_without_resubmit(
+    qtbot, container, monkeypatch
+) -> None:
+    from taxops.ui.pages.document_requests_page import DocumentRequestsPage
+
+    _client, item = _work_item(container)
+    created = container.annual_work.create_linked_request(
+        item.id,
+        request_name="獨立頁核對恢復",
+        item_names=("總帳",),
+    )
+    page = DocumentRequestsPage(container)
+    qtbot.addWidget(page)
+    assert page.load_engagement(created.engagement.id)
+    assert page.select_request_id(created.request.id)
+    real_refresh = page._refresh_requests
+    failed = False
+
+    def fail_once() -> bool:
+        nonlocal failed
+        if not failed:
+            failed = True
+            return False
+        return real_refresh()
+
+    monkeypatch.setattr(page, "_refresh_requests", fail_once)
+
+    qtbot.mouseClick(page._follow_up_btn, Qt.MouseButton.LeftButton)
+
+    stored = container.doc_requests.get_request(created.request.id)
+    assert stored is not None
+    assert stored.follow_up_count == 1
+    assert page.pending_mutation_evidence is not None
+    assert not page.isEnabled()
+
+    assert page.retry_pending_mutation_verification()
+
+    stored = container.doc_requests.get_request(created.request.id)
+    assert stored is not None
+    assert stored.follow_up_count == 1
+    assert page.pending_mutation_evidence is None
+    assert page.isEnabled()
+    assert page.request_id_at(0) == created.request.id
+
+
+def test_select_request_propagates_first_item_page_failure_without_hidden_second_read(
+    qtbot, container, monkeypatch
+) -> None:
+    from taxops.ui.pages.document_requests_page import DocumentRequestsPage
+
+    _client, item = _work_item(container)
+    created = container.annual_work.create_linked_request(
+        item.id,
+        request_name="項目頁讀取失敗",
+        item_names=("不應顯示的舊資料",),
+    )
+    page = DocumentRequestsPage(container)
+    qtbot.addWidget(page)
+    assert page.load_engagement(created.engagement.id)
+    real_list_items = container.doc_requests.list_items
+    calls = 0
+
+    def fail_once(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("first item page failed")
+        return real_list_items(*args, **kwargs)
+
+    monkeypatch.setattr(container.doc_requests, "list_items", fail_once)
+
+    assert not page.select_request_id(created.request.id)
+    assert calls == 1
+    assert page.item_ids() == ()
+
+
 def test_global_item_status_change_is_reread_by_annual_workflow_same_ids(
     qtbot, container, monkeypatch
 ) -> None:
@@ -669,6 +969,50 @@ def test_global_item_status_change_is_reread_by_annual_workflow_same_ids(
 
     assert workflow.request_page.request_id_at(0) == created.request.id
     assert workflow.summary_item_counts.text().startswith("缺件 0、已收 1")
+
+
+def test_item_status_commit_evidence_contains_exact_parent_request_row(
+    qtbot, container, monkeypatch
+) -> None:
+    from taxops.i18n.status_labels import status_to_label
+    from taxops.ui.pages.document_requests_page import (
+        DocumentMutationAck,
+        DocumentRequestsPage,
+    )
+
+    _client, item = _work_item(container)
+    created = container.annual_work.create_linked_request(
+        item.id,
+        request_name="父索件精確證據",
+        item_names=("待收文件",),
+    )
+    page = DocumentRequestsPage(container)
+    qtbot.addWidget(page)
+    assert page.load_engagement(created.engagement.id)
+    assert page.select_item_id(created.request.id, created.items[0].id)
+    captured = []
+    page.set_mutation_commit_handler(
+        lambda evidence: (
+            captured.append(evidence)
+            or DocumentMutationAck(True, True)
+        )
+    )
+    monkeypatch.setattr(
+        "taxops.ui.pages.document_requests_page.QInputDialog.getItem",
+        lambda *_args, **_kwargs: (status_to_label("received"), True),
+    )
+
+    qtbot.mouseClick(page._item_status_btn, Qt.MouseButton.LeftButton)
+
+    assert len(captured) == 1
+    evidence = captured[0]
+    stored_request = container.doc_requests.get_request(created.request.id)
+    assert stored_request is not None
+    assert stored_request.status == "partially_received"
+    assert evidence.request_after == stored_request
+    assert evidence.affected_items == tuple(
+        container.doc_requests.list_items(created.request.id)
+    )
 
 
 def test_unexpected_workflow_load_logs_only_sanitized_ids(

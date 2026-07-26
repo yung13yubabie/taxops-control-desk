@@ -306,6 +306,39 @@ class EngagementsService:
     def count_by_client(self, client_id: int) -> int:
         return self._repo.count_by_client(client_id)
 
+    def search_by_client(
+        self,
+        client_id: int,
+        query: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[EngagementRow]:
+        if (
+            not isinstance(query, str)
+            or len(query) > 100
+            or any(ord(char) < 32 for char in query)
+            or not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 1 <= limit <= 200
+            or not isinstance(offset, int)
+            or isinstance(offset, bool)
+            or offset < 0
+        ):
+            raise EngagementValidationError("engagement.search.invalid")
+        return self._repo.search_by_client(
+            client_id, query.strip(), limit=limit, offset=offset
+        )
+
+    def count_search_by_client(self, client_id: int, query: str) -> int:
+        if (
+            not isinstance(query, str)
+            or len(query) > 100
+            or any(ord(char) < 32 for char in query)
+        ):
+            raise EngagementValidationError("engagement.search.invalid")
+        return self._repo.count_search_by_client(client_id, query.strip())
+
     def list_all(
         self,
         *,

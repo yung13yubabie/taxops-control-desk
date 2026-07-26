@@ -88,6 +88,30 @@ def test_create_request_accepts_custom_request_name(svc, engagement_id):
     assert req.request_name == "A公司第一批補件"
 
 
+def test_create_request_rejects_excessive_item_count_before_write(
+    svc, engagement_id, conn
+):
+    audit_before = conn.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+    ).fetchone()[0]
+
+    with pytest.raises(DocumentRequestValidationError) as caught:
+        svc.create_request(
+            _req_input(
+                engagement_id,
+                request_name="過大索件",
+                item_names=tuple(f"中文項目 {index}" for index in range(1001)),
+            )
+        )
+
+    assert caught.value.code == "doc_request.items.too_many"
+    assert svc.list_by_engagement(engagement_id) == []
+    assert (
+        conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+        == audit_before
+    )
+
+
 def test_create_request_blank_request_name_uses_default(svc, engagement_id):
     req, _ = svc.create_request(_req_input(engagement_id, request_name="   "))
     assert req.request_name == "2024Q1 vat request"
@@ -475,6 +499,45 @@ def test_add_items_bulk_empty_text_raises(svc, engagement_id):
     assert exc_info.value.code == "doc_request_item.bulk.empty"
 
 
+def test_add_items_bulk_late_invalid_name_is_all_or_nothing(
+    svc, engagement_id, conn
+):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    audit_before = conn.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+    ).fetchone()[0]
+
+    with pytest.raises(DocumentRequestValidationError) as caught:
+        svc.add_items_bulk(req.id, f"先驗證的有效中文項目\n{'錯' * 201}")
+
+    assert caught.value.code == "doc_request_item.name.invalid"
+    assert svc.list_items(req.id) == []
+    assert (
+        conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+        == audit_before
+    )
+
+
+def test_add_items_bulk_rejects_huge_chinese_before_any_write(
+    svc, engagement_id, conn
+):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    raw = "中" * 100_001
+    audit_before = conn.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+    ).fetchone()[0]
+
+    with pytest.raises(DocumentRequestValidationError) as caught:
+        svc.add_items_bulk(req.id, raw)
+
+    assert caught.value.code == "doc_request_item.bulk.too_large"
+    assert svc.list_items(req.id) == []
+    assert (
+        conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+        == audit_before
+    )
+
+
 def test_add_items_bulk_records_audit_per_item(svc, engagement_id, conn):
     req, _ = svc.create_request(_req_input(engagement_id))
     svc.add_items_bulk(req.id, "A\nB")
@@ -482,6 +545,26 @@ def test_add_items_bulk_records_audit_per_item(svc, engagement_id, conn):
         "SELECT action FROM audit_logs WHERE action = 'doc_request_item.create'"
     ).fetchall()
     assert len(rows) == 2
+
+
+def test_add_items_bulk_audit_failure_rolls_back_every_item_and_parent_status(
+    svc, engagement_id, monkeypatch
+):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    monkeypatch.setattr(
+        svc._audit,
+        "record",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("audit unavailable")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        svc.add_items_bulk(req.id, "中文文件甲\n中文文件乙")
+
+    snapshot = svc.read_request_snapshot(req.id)
+    assert snapshot.request == req
+    assert snapshot.items == ()
 
 
 def test_update_item_changes_name(svc, engagement_id):

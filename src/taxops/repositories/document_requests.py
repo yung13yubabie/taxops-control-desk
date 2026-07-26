@@ -148,13 +148,46 @@ class DocumentRequestsRepository:
         ).fetchone()
         return _row_to_request(row) if row else None
 
-    def list_all(self) -> list[DocumentRequestRow]:
+    def list_all(
+        self, *, limit: int = 200, offset: int = 0
+    ) -> list[DocumentRequestRow]:
+        limit, offset = _request_pagination(limit, offset)
         rows = self._conn.execute(
             "SELECT * FROM document_requests WHERE deleted_at IS NULL"
             f" AND {_ACTIVE_REQUEST_OWNER_SQL}"
-            " ORDER BY created_at ASC"
+            " ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?",
+            (limit, offset),
         ).fetchall()
         return [_row_to_request(r) for r in rows]
+
+    def count_all(self) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM document_requests"
+            " WHERE deleted_at IS NULL"
+            f" AND {_ACTIVE_REQUEST_OWNER_SQL}"
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def request_position(
+        self, request_id: int, *, engagement_id: int | None
+    ) -> int | None:
+        params: tuple[object, ...]
+        filter_sql = ""
+        if engagement_id is None:
+            params = (request_id,)
+        else:
+            filter_sql = " AND engagement_id = ?"
+            params = (engagement_id, request_id)
+        row = self._conn.execute(
+            "SELECT position FROM ("
+            " SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC, id ASC) - 1"
+            " AS position FROM document_requests"
+            " WHERE deleted_at IS NULL"
+            f" AND {_ACTIVE_REQUEST_OWNER_SQL}{filter_sql}"
+            ") WHERE id = ?",
+            params,
+        ).fetchone()
+        return int(row["position"]) if row else None
 
     def list_by_engagement(
         self,
@@ -172,6 +205,15 @@ class DocumentRequestsRepository:
             (engagement_id, limit, offset),
         ).fetchall()
         return [_row_to_request(r) for r in rows]
+
+    def count_by_engagement(self, engagement_id: int) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM document_requests"
+            " WHERE engagement_id = ? AND deleted_at IS NULL"
+            f" AND {_ACTIVE_REQUEST_OWNER_SQL}",
+            (engagement_id,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
 
     def update_request_metadata(
         self,
@@ -272,6 +314,44 @@ class DocumentRequestsRepository:
             (request_id,),
         ).fetchall()
         return [_row_to_item(r) for r in rows]
+
+    def list_items_page(
+        self,
+        request_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[DocumentRequestItemRow]:
+        limit, offset = _request_pagination(limit, offset)
+        rows = self._conn.execute(
+            "SELECT * FROM document_request_items WHERE request_id = ?"
+            f" AND {_ACTIVE_ITEM_OWNER_SQL}"
+            " ORDER BY id ASC LIMIT ? OFFSET ?",
+            (request_id, limit, offset),
+        ).fetchall()
+        return [_row_to_item(r) for r in rows]
+
+    def item_totals(self, request_id: int) -> tuple[int, int]:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c, COALESCE(SUM(LENGTH(item_name)), 0) AS chars"
+            " FROM document_request_items WHERE request_id = ?"
+            f" AND {_ACTIVE_ITEM_OWNER_SQL}",
+            (request_id,),
+        ).fetchone()
+        if row is None:
+            return 0, 0
+        return int(row["c"]), int(row["chars"])
+
+    def item_position(self, request_id: int, item_id: int) -> int | None:
+        row = self._conn.execute(
+            "SELECT position FROM ("
+            " SELECT id, ROW_NUMBER() OVER (ORDER BY id ASC) - 1 AS position"
+            " FROM document_request_items WHERE request_id = ?"
+            f" AND {_ACTIVE_ITEM_OWNER_SQL}"
+            ") WHERE id = ?",
+            (request_id, item_id),
+        ).fetchone()
+        return int(row["position"]) if row else None
 
     def update_item_name(
         self,

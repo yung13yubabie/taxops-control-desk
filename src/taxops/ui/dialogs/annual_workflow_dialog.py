@@ -35,7 +35,17 @@ from ...services.annual_work import (
     LinkedDocumentRequestResult,
 )
 from ...services.container import ServiceContainer
-from ..pages.document_requests_page import DocumentRequestsPage
+from ...services.document_requests import (
+    MAX_ITEM_NAMES_TOTAL_LENGTH,
+    MAX_ITEMS_PER_REQUEST,
+    DocumentRequestValidationError,
+    validate_bulk_item_text,
+)
+from ..pages.document_requests_page import (
+    DocumentMutationAck,
+    DocumentMutationEvidence,
+    DocumentRequestsPage,
+)
 
 
 def _error_code(exc: BaseException, fallback: str) -> str:
@@ -190,6 +200,13 @@ class CreateLinkedRequestDialog(QDialog):
         form.addRow("截止日", self.due_date_input)
         form.addRow("說明", self.notes_input)
         form.addRow("文件項目", self.items_input)
+        form.addRow(
+            "項目限制",
+            QLabel(
+                f"最多 {MAX_ITEMS_PER_REQUEST:,} 項，"
+                f"名稱總字數最多 {MAX_ITEM_NAMES_TOTAL_LENGTH:,} 字"
+            ),
+        )
         layout.addLayout(form, 1)
 
         self.feedback_label = QLabel()
@@ -247,14 +264,10 @@ class CreateLinkedRequestDialog(QDialog):
                 "索件說明不得超過 2,000 個字，且不可包含控制字元。",
                 self.notes_input,
             )
-        item_names = tuple(line.strip() for line in raw_items.splitlines())
-        if not item_names or any(not value for value in item_names):
-            return self._invalid("請輸入至少一個文件項目，每行一個。", self.items_input)
-        if any(len(value) > 200 or _contains_bad_control(value) for value in item_names):
-            return self._invalid(
-                "每個文件項目不得超過 200 個字，且不可包含控制字元。",
-                self.items_input,
-            )
+        try:
+            item_names = validate_bulk_item_text(raw_items)
+        except DocumentRequestValidationError as exc:
+            return self._invalid(error_message(exc.code), self.items_input)
         return (
             request_name,
             due_date or None,
@@ -361,13 +374,16 @@ class LinkExistingEngagementDialog(QDialog):
         self.client_id = client_id
         self._commit_handler = commit_handler
         self._busy = False
+        self._page = 0
+        self._page_size = 50
+        self._total = 0
         self.committed_engagement_id: int | None = None
         self.committed_evidence: AnnualRequestCommitEvidence | None = None
         self.evidence_handed_off = False
         self.setObjectName("LinkExistingEngagementDialog")
         self.setWindowTitle("連結既有案件")
-        self.setMinimumSize(520, 240)
-        self.resize(620, 280)
+        self.setMinimumSize(620, 400)
+        self.resize(680, 440)
         font = self.font()
         font.setPointSize(11)
         self.setFont(font)
@@ -381,11 +397,27 @@ class LinkExistingEngagementDialog(QDialog):
         hint = QLabel("只顯示此年度工作所屬客戶的有效案件。")
         hint.setWordWrap(True)
         layout.addWidget(hint)
+        search_row = QHBoxLayout()
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("搜尋案件名稱或期間")
+        self.search_input.setMaxLength(100)
+        self.search_button = QPushButton("搜尋")
+        search_row.addWidget(self.search_input, 1)
+        search_row.addWidget(self.search_button)
+        layout.addLayout(search_row)
         form = QFormLayout()
         self.engagement_combo = QComboBox()
         self.engagement_combo.setMinimumWidth(380)
         form.addRow("既有案件", self.engagement_combo)
         layout.addLayout(form)
+        page_row = QHBoxLayout()
+        self.previous_button = QPushButton("上一頁")
+        self.next_button = QPushButton("下一頁")
+        self.page_label = QLabel()
+        page_row.addWidget(self.previous_button)
+        page_row.addWidget(self.next_button)
+        page_row.addWidget(self.page_label, 1)
+        layout.addLayout(page_row)
         self.feedback_label = QLabel()
         self.feedback_label.setWordWrap(True)
         self.feedback_label.setStyleSheet("font-size: 14px;")
@@ -408,17 +440,58 @@ class LinkExistingEngagementDialog(QDialog):
         layout.addWidget(self.buttons)
         self.link_button.clicked.connect(self.link)
         self.cancel_button.clicked.connect(self.reject)
+        self.search_button.clicked.connect(self._start_search)
+        self.search_input.returnPressed.connect(self._start_search)
+        self.previous_button.clicked.connect(self._previous_page)
+        self.next_button.clicked.connect(self._next_page)
+        self._load_options()
+
+    def _start_search(self) -> None:
+        self._page = 0
+        self._load_options()
+
+    def _previous_page(self) -> None:
+        if self._page <= 0:
+            return
+        self._page -= 1
+        self._load_options()
+
+    def _next_page(self) -> None:
+        if (self._page + 1) * self._page_size >= self._total:
+            return
+        self._page += 1
         self._load_options()
 
     def _load_options(self) -> None:
+        query = self.search_input.text().strip()
         try:
-            engagements = self._container.engagements.list_by_client(
-                self.client_id,
-                order_by="updated_at",
-                order_dir="DESC",
-                limit=200,
-                offset=0,
-            )
+            if query:
+                self._total = (
+                    self._container.engagements.count_search_by_client(
+                        self.client_id, query
+                    )
+                )
+                engagements = (
+                    self._container.engagements.search_by_client(
+                        self.client_id,
+                        query,
+                        limit=self._page_size,
+                        offset=self._page * self._page_size,
+                    )
+                )
+            else:
+                self._total = (
+                    self._container.engagements.count_by_client(
+                        self.client_id
+                    )
+                )
+                engagements = self._container.engagements.list_by_client(
+                    self.client_id,
+                    order_by="updated_at",
+                    order_dir="DESC",
+                    limit=self._page_size,
+                    offset=self._page * self._page_size,
+                )
         except Exception as exc:
             _safe_log(
                 getattr(self._container, "system_log", None),
@@ -430,14 +503,38 @@ class LinkExistingEngagementDialog(QDialog):
             self.feedback_label.setText("既有案件讀取失敗，請關閉後再試。")
             self.link_button.setEnabled(False)
             return
+        self.engagement_combo.clear()
         for engagement in engagements:
             self.engagement_combo.addItem(
                 f"{engagement.engagement_name}｜{engagement.period_name}",
                 userData=engagement.id,
             )
+        page_count = max(
+            1, (self._total + self._page_size - 1) // self._page_size
+        )
+        more_hint = (
+            "；尚有更多案件"
+            if (self._page + 1) * self._page_size < self._total
+            else ""
+        )
+        self.page_label.setText(
+            f"第 {self._page + 1} / {page_count} 頁，共 {self._total} 筆"
+            f"{more_hint}"
+        )
+        self.previous_button.setEnabled(self._page > 0)
+        self.next_button.setEnabled(
+            (self._page + 1) * self._page_size < self._total
+        )
         if not engagements:
-            self.feedback_label.setText("此客戶目前沒有可連結的既有案件。")
+            self.feedback_label.setText(
+                "找不到符合條件的既有案件。"
+                if query
+                else "此客戶目前沒有可連結的既有案件。"
+            )
             self.link_button.setEnabled(False)
+        else:
+            self.feedback_label.clear()
+            self.link_button.setEnabled(True)
 
     def link(self) -> None:
         if self._busy or self.committed_engagement_id is not None:
@@ -532,6 +629,8 @@ class AnnualWorkflowDialog(QDialog):
         self.has_committed_change = False
         self._pending_evidence: AnnualRequestCommitEvidence | None = None
         self._pending_mutation_reload = False
+        self._last_context = None
+        self._last_summary = None
         self.setObjectName("AnnualWorkflowDialog")
         self.setWindowTitle("年度工作索件管理")
         self.setMinimumSize(900, 540)
@@ -608,6 +707,9 @@ class AnnualWorkflowDialog(QDialog):
             container, embedded=True, view_mode="full", parent=self
         )
         self.request_page.set_external_mutation_reload(True)
+        self.request_page.set_mutation_commit_handler(
+            self._take_document_mutation_evidence
+        )
         self.request_page.setEnabled(False)
         layout.addWidget(self.request_page, 1)
         close_row = QHBoxLayout()
@@ -623,9 +725,6 @@ class AnnualWorkflowDialog(QDialog):
         self.refresh_button.clicked.connect(self.reload)
         self.retry_button.clicked.connect(self.reload)
         self.close_button.clicked.connect(self.accept)
-        self.request_page.data_changed.connect(
-            self._on_embedded_data_changed
-        )
         self.reload(operation="load")
 
     def _set_failed(
@@ -682,6 +781,7 @@ class AnnualWorkflowDialog(QDialog):
                     "annual_work.engagement.client_mismatch"
                 )
         summary = self._container.annual_work.document_summary(self.item_id)
+        self._validate_summary(summary)
         return context, client, overview, summary
 
     def _render_models(
@@ -705,6 +805,8 @@ class AnnualWorkflowDialog(QDialog):
                 )
             )
         )
+        self._last_context = context
+        self._last_summary = summary
         engagement = overview.engagement
         if engagement is None:
             self.engagement_id_label.setText("—")
@@ -724,21 +826,29 @@ class AnnualWorkflowDialog(QDialog):
         self.link_button.setEnabled(False)
 
     def reload(self, *, operation: str = "reload") -> bool:
+        if (
+            operation == "reload"
+            and self.request_page.pending_mutation_evidence is not None
+        ):
+            succeeded = (
+                self.request_page.retry_pending_mutation_verification()
+            )
+            if succeeded:
+                self.feedback_label.setText(
+                    "索件異動已重新核對，未重複送出。"
+                )
+            return succeeded
         evidence = self._pending_evidence
         try:
             context, client, overview, summary = self._read_models()
             if evidence is not None:
-                self._verify_evidence(evidence, context, overview)
+                self._verify_evidence(
+                    evidence, context, overview, summary
+                )
             self._render_models(context, client, overview, summary)
             if evidence is not None and evidence.request_result is not None:
                 request_id = evidence.request_result.request.id
-                expected_item_ids = tuple(
-                    row.id for row in evidence.request_result.items
-                )
-                if (
-                    not self.request_page.select_request_id(request_id)
-                    or self.request_page.item_ids() != expected_item_ids
-                ):
+                if not self.request_page.select_request_id(request_id):
                     raise AnnualWorkError(
                         "annual_work.workflow.page_readback_mismatch"
                     )
@@ -771,25 +881,225 @@ class AnnualWorkflowDialog(QDialog):
         evidence: AnnualRequestCommitEvidence,
         context: object,
         overview: AnnualLinkedOverview,
+        summary: object,
     ) -> None:
         if (
-            context.item.id != evidence.item.id
+            context.item != evidence.item
+            or overview.item != evidence.item
             or context.item.engagement_id != evidence.engagement_id
             or overview.engagement is None
             or overview.engagement.id != evidence.engagement_id
         ):
             raise AnnualWorkError("annual_work.workflow.readback_mismatch")
+        if (
+            self._summary_values(summary)
+            != self._expected_summary_for_engagement(
+                evidence.engagement_id
+            )
+        ):
+            raise AnnualWorkError("annual_work.workflow.readback_mismatch")
         if evidence.request_result is None:
             return
         expected = evidence.request_result
-        request = self._container.doc_requests.get_request(expected.request.id)
-        if request != expected.request:
+        snapshot = self._container.doc_requests.read_request_snapshot(
+            expected.request.id
+        )
+        if snapshot.request != expected.request:
             raise AnnualWorkError("annual_work.workflow.readback_mismatch")
-        items = tuple(self._container.doc_requests.list_items(request.id))
-        if items != expected.items:
+        if snapshot.items != expected.items:
             raise AnnualWorkError("annual_work.workflow.readback_mismatch")
-        if request.id not in {row.id for row in overview.requests}:
+        if snapshot.request.engagement_id != evidence.engagement_id:
             raise AnnualWorkError("annual_work.workflow.readback_mismatch")
+
+    @staticmethod
+    def _summary_values(summary: object) -> dict[str, int]:
+        return {
+            name: int(getattr(summary, name))
+            for name in (
+                "request_count",
+                "missing",
+                "received",
+                "incomplete",
+                "invalid",
+                "accepted",
+                "pending_confirm",
+                "not_applicable",
+                "client_said_none",
+            )
+        }
+
+    @staticmethod
+    def _validate_summary(summary: object) -> None:
+        names = (
+            "request_count",
+            "total",
+            "missing",
+            "received",
+            "incomplete",
+            "invalid",
+            "accepted",
+            "pending_confirm",
+            "not_applicable",
+            "client_said_none",
+            "attachment_count",
+        )
+        values = {name: getattr(summary, name, None) for name in names}
+        if any(
+            type(value) is not int or value < 0
+            for value in values.values()
+        ):
+            raise AnnualWorkError(
+                "annual_work.workflow.readback_mismatch"
+            )
+        status_total = sum(
+            values[name]
+            for name in (
+                "missing",
+                "received",
+                "incomplete",
+                "invalid",
+                "accepted",
+                "pending_confirm",
+                "not_applicable",
+                "client_said_none",
+            )
+        )
+        if values["total"] != status_total:
+            raise AnnualWorkError(
+                "annual_work.workflow.readback_mismatch"
+            )
+
+    def _expected_summary_for_engagement(
+        self, engagement_id: int
+    ) -> dict[str, int]:
+        request_count = (
+            self._container.doc_requests.count_by_engagement(engagement_id)
+        )
+        values = {
+            "request_count": request_count,
+            "missing": 0,
+            "received": 0,
+            "incomplete": 0,
+            "invalid": 0,
+            "accepted": 0,
+            "pending_confirm": 0,
+            "not_applicable": 0,
+            "client_said_none": 0,
+        }
+        for offset in range(0, request_count, 200):
+            requests = self._container.doc_requests.list_by_engagement(
+                engagement_id, limit=200, offset=offset
+            )
+            for request in requests:
+                snapshot = (
+                    self._container.doc_requests.read_request_snapshot(
+                        request.id
+                    )
+                )
+                if snapshot.request != request:
+                    raise AnnualWorkError(
+                        "annual_work.workflow.readback_mismatch"
+                    )
+                for item in snapshot.items:
+                    values[item.item_status] += 1
+        return values
+
+    def _verify_document_mutation(
+        self, evidence: DocumentMutationEvidence
+    ) -> None:
+        previous_context = self._last_context
+        previous_summary = self._last_summary
+        if previous_context is None or previous_summary is None:
+            raise AnnualWorkError("annual_work.workflow.readback_mismatch")
+        context, client, overview, summary = self._read_models()
+        if (
+            context != previous_context
+            or evidence.engagement_id
+            != previous_context.item.engagement_id
+            or overview.item != previous_context.item
+        ):
+            raise AnnualWorkError("annual_work.workflow.readback_mismatch")
+        if evidence.request_deleted:
+            request = self._container.doc_requests.get_request(
+                evidence.request_id
+            )
+            if request is not None:
+                raise AnnualWorkError(
+                    "annual_work.workflow.readback_mismatch"
+                )
+            if any(
+                self._container.doc_requests.get_item(item.id) is not None
+                for item in evidence.items_before
+            ):
+                raise AnnualWorkError(
+                    "annual_work.workflow.readback_mismatch"
+                )
+        else:
+            snapshot = self._container.doc_requests.read_request_snapshot(
+                evidence.request_id
+            )
+            request = snapshot.request
+            if request.engagement_id != evidence.engagement_id:
+                raise AnnualWorkError(
+                    "annual_work.workflow.readback_mismatch"
+                )
+            if evidence.request_after is None or request != evidence.request_after:
+                raise AnnualWorkError(
+                    "annual_work.workflow.readback_mismatch"
+                )
+            if snapshot.items != evidence.expected_items():
+                raise AnnualWorkError(
+                    "annual_work.workflow.readback_mismatch"
+                )
+        expected_summary = self._summary_values(previous_summary)
+        for item in evidence.deleted_items:
+            expected_summary[item.item_status] -= 1
+        before_by_id = {row.id: row for row in evidence.items_before}
+        for item in evidence.affected_items:
+            previous = before_by_id.get(item.id)
+            if previous is not None:
+                expected_summary[previous.item_status] -= 1
+            expected_summary[item.item_status] += 1
+        if evidence.operation == "request.create":
+            expected_summary["request_count"] += 1
+        elif evidence.request_deleted:
+            expected_summary["request_count"] -= 1
+            for item in evidence.items_before:
+                expected_summary[item.item_status] -= 1
+        if self._summary_values(summary) != expected_summary:
+            raise AnnualWorkError("annual_work.workflow.readback_mismatch")
+        self._render_models(context, client, overview, summary)
+        if not evidence.request_deleted:
+            if not self.request_page.select_request_id(evidence.request_id):
+                raise AnnualWorkError(
+                    "annual_work.workflow.page_readback_mismatch"
+                )
+            if evidence.affected_items:
+                target = evidence.affected_items[-1]
+                if not self.request_page.select_item_id(
+                    evidence.request_id, target.id
+                ):
+                    self.feedback_label.setText(
+                        "異動項目已核對，位於其他項目頁。"
+                    )
+
+    def _take_document_mutation_evidence(
+        self, evidence: DocumentMutationEvidence
+    ) -> DocumentMutationAck:
+        self.has_committed_change = True
+        try:
+            self._verify_document_mutation(evidence)
+        except Exception as exc:
+            self._set_failed(
+                operation=evidence.operation,
+                exc=exc,
+                request_id=evidence.request_id,
+                engagement_id=evidence.engagement_id,
+                committed=True,
+            )
+            return DocumentMutationAck(True, False)
+        self.feedback_label.setText("索件資料已更新並重新核對。")
+        return DocumentMutationAck(True, True)
 
     def _take_commit_evidence(
         self, evidence: AnnualRequestCommitEvidence
