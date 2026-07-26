@@ -91,7 +91,7 @@ def test_annual_workbench_exposes_enabled_create_action(
     qtbot.addWidget(page)
     actions = actions_for_page(PAGE_ANNUAL_WORKBENCH)
 
-    assert len(actions) == 18
+    assert len(actions) == 28
     action = next(
         action for action in actions if action.button_label == "建立年度工作"
     )

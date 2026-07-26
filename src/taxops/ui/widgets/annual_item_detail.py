@@ -184,9 +184,17 @@ class AnnualItemDetail(QWidget):
             button.setEnabled(enabled)
         self.work_status_combo.setEnabled(enabled and not terminal)
 
-    def save(self) -> None:
+    def save(self) -> bool:
+        """Save the form and emit ``saved`` for the dialog's close-on-save path."""
+        return self._save(emit_saved=True)
+
+    def save_in_place(self) -> bool:
+        """Save the form without closing its parent dialog."""
+        return self._save(emit_saved=False)
+
+    def _save(self, *, emit_saved: bool) -> bool:
         if self._busy:
-            return
+            return False
         self._set_busy(True, "處理中，正在儲存年度工作明細。")
         try:
             previous_token = self.updated_at_token
@@ -195,12 +203,15 @@ class AnnualItemDetail(QWidget):
             )
             committed = self._record_mutation(updated, previous_token)
             if not self._load(after_commit=committed):
-                return
+                return False
             self.feedback_label.setText("年度工作明細已儲存。")
-            self.saved.emit()
+            if emit_saved:
+                self.saved.emit()
+            return True
         except Exception as exc:
             self._show_failure(exc, default="儲存失敗，輸入內容保持不變。")
             self._focus_error(getattr(exc, "code", ""))
+            return False
         finally:
             self._set_busy(False)
 
