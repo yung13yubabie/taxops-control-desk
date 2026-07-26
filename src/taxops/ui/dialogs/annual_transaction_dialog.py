@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Callable
 
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -131,29 +131,8 @@ def _deliver_commit_evidence(
     return ack
 
 
-def _emit_commit_notifications(
-    dialog: object,
-    evidence: AnnualTransactionCommitEvidence,
-) -> None:
-    for signal, argument in (
-        (getattr(dialog, "committed_evidence"), evidence),
-        (getattr(dialog, "committed"), None),
-    ):
-        try:
-            if argument is None:
-                signal.emit()
-            else:
-                signal.emit(argument)
-        except Exception:
-            # Notification listeners never own the synchronous handoff.
-            continue
-
-
 class AnnualTransactionDialog(QDialog):
     """Validated transaction form with no in-memory ledger state."""
-
-    committed = Signal()
-    committed_evidence = Signal(object)
 
     def __init__(
         self,
@@ -354,7 +333,6 @@ class AnnualTransactionDialog(QDialog):
         )
         self._committed_evidence = evidence
         ack = _deliver_commit_evidence(self._commit_handler, evidence)
-        _emit_commit_notifications(self, evidence)
         if ack.evidence_taken:
             self.accept()
         else:
@@ -394,9 +372,6 @@ class AnnualTransactionDialog(QDialog):
 
 class AnnualTransactionDeleteDialog(QDialog):
     """Collect a mandatory reason before one audited soft deletion."""
-
-    committed = Signal()
-    committed_evidence = Signal(object)
 
     def __init__(
         self,
@@ -497,7 +472,6 @@ class AnnualTransactionDeleteDialog(QDialog):
         evidence = AnnualTransactionCommitEvidence("delete", row)
         self._committed_evidence = evidence
         ack = _deliver_commit_evidence(self._commit_handler, evidence)
-        _emit_commit_notifications(self, evidence)
         if ack.evidence_taken:
             self.accept()
         else:

@@ -287,6 +287,7 @@ class AnnualTransactionPanel(QWidget):
             raise RuntimeError("annual transaction commit readback mismatch")
 
     def _apply_control_state(self) -> None:
+        self.table.setEnabled(self._load_valid)
         for button in (
             self.add_button,
             self.edit_button,
@@ -370,6 +371,8 @@ class AnnualTransactionPanel(QWidget):
         return transaction_id
 
     def _open_add(self) -> None:
+        if not self._load_valid:
+            return
         from ..dialogs.annual_transaction_dialog import AnnualTransactionDialog
 
         dialog = AnnualTransactionDialog(
@@ -382,13 +385,15 @@ class AnnualTransactionPanel(QWidget):
         dialog.exec()
 
     def _open_edit(self) -> None:
+        if not self._load_valid:
+            return
         transaction_id = self._require_selected("編輯")
         if transaction_id is None:
             return
         self._open_edit_transaction(transaction_id)
 
     def _open_edit_transaction(self, transaction_id: int) -> None:
-        if self._dialog_open:
+        if not self._load_valid or self._dialog_open:
             return
         from ..dialogs.annual_transaction_dialog import AnnualTransactionDialog
 
@@ -407,11 +412,15 @@ class AnnualTransactionPanel(QWidget):
             self._dialog_open = False
 
     def _open_edit_row(self, row: int, _column: int) -> None:
+        if not self._load_valid:
+            return
         transaction_id = self.transaction_id_at(row)
         if transaction_id is not None:
             self._open_edit_transaction(transaction_id)
 
     def _delete_selected(self) -> None:
+        if not self._load_valid:
+            return
         transaction_id = self._require_selected("刪除")
         if transaction_id is None or self._dialog_open:
             return
@@ -452,7 +461,7 @@ class AnnualTransactionPanel(QWidget):
             )
             self.feedback_label.setText(
                 "資料已儲存，但畫面更新失敗。"
-                "已停用交易操作，請按「重新載入交易」核對；"
+                "已停用交易操作，請按「重新讀取交易」核對；"
                 "不要再次新增。"
             )
             self._apply_control_state()
@@ -473,7 +482,7 @@ class AnnualTransactionPanel(QWidget):
             self._load_valid = False
             self.feedback_label.setText(
                 "資料已儲存，但畫面更新失敗。"
-                "已停用交易操作，請按「重新載入交易」核對；"
+                "已停用交易操作，請按「重新讀取交易」核對；"
                 "不要再次新增。"
             )
             self._apply_control_state()

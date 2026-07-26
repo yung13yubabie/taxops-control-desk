@@ -549,6 +549,141 @@ def test_panel_takes_evidence_before_parent_callback_failure_and_retry(
     assert item_dialog.has_committed_change is True
 
 
+def test_postcommit_failure_blocks_native_stale_row_double_click(
+    qtbot, container, monkeypatch
+) -> None:
+    item = _work_item(container)
+    service = container.annual_transactions
+    original = service.add(
+        item.id,
+        "fee_receivable",
+        2700,
+        "2026-07-01",
+    )
+    panel = AnnualTransactionPanel(container, item.id)
+    qtbot.addWidget(panel)
+    panel.show()
+    real_page = service.page
+    monkeypatch.setattr(
+        service,
+        "page",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AnnualTransactionError("annual_transactions.page.failed")
+        ),
+    )
+    _submit_panel_add(
+        qtbot,
+        monkeypatch,
+        panel,
+        category="tax_liability",
+        transaction_date="2026-07-25",
+        amount="2800",
+    )
+    pending = panel._pending_commit_evidence
+    assert pending is not None
+    original_before = service.get(original.id)
+    audit_count_before = service.connection.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+    ).fetchone()[0]
+    update_calls = 0
+    real_update = service.update
+    opened: list[int] = []
+
+    def observed_update(*args, **kwargs):
+        nonlocal update_calls
+        update_calls += 1
+        return real_update(*args, **kwargs)
+
+    def attempt_stale_edit(dialog) -> int:
+        opened.append(dialog.transaction_id)
+        dialog.amount_input.setText("9999")
+        qtbot.mouseClick(dialog.save_button, Qt.MouseButton.LeftButton)
+        return dialog.result()
+
+    monkeypatch.setattr(service, "update", observed_update)
+    monkeypatch.setattr(AnnualTransactionDialog, "exec", attempt_stale_edit)
+    cell = panel.table.item(0, 0)
+    rect = panel.table.visualItemRect(cell)
+    assert rect.isValid()
+
+    qtbot.mouseClick(
+        panel.table.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=rect.center(),
+    )
+    qtbot.mouseDClick(
+        panel.table.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=rect.center(),
+    )
+    QApplication.processEvents()
+
+    assert opened == []
+    assert update_calls == 0
+    assert panel._pending_commit_evidence is pending
+    assert service.get(original.id) == original_before
+    assert service.connection.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+    ).fetchone()[0] == audit_count_before
+    assert real_page(item.id, limit=100, offset=0).total == 2
+
+
+def test_postcommit_failure_guards_direct_mutation_handlers(
+    qtbot, container, monkeypatch
+) -> None:
+    item = _work_item(container)
+    service = container.annual_transactions
+    original = service.add(
+        item.id,
+        "fee_receivable",
+        2900,
+        "2026-07-01",
+    )
+    panel = AnnualTransactionPanel(container, item.id)
+    qtbot.addWidget(panel)
+    panel.show()
+    monkeypatch.setattr(
+        service,
+        "page",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AnnualTransactionError("annual_transactions.page.failed")
+        ),
+    )
+    _submit_panel_add(
+        qtbot,
+        monkeypatch,
+        panel,
+        category="tax_liability",
+        transaction_date="2026-07-25",
+        amount="3000",
+    )
+    pending = panel._pending_commit_evidence
+    assert pending is not None
+    opened: list[tuple[str, int | None]] = []
+
+    def record_edit(dialog) -> int:
+        opened.append(("edit", dialog.transaction_id))
+        return QDialog.DialogCode.Rejected
+
+    def record_delete(dialog) -> int:
+        opened.append(("delete", dialog.transaction_id))
+        return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(AnnualTransactionDialog, "exec", record_edit)
+    monkeypatch.setattr(AnnualTransactionDeleteDialog, "exec", record_delete)
+    panel.table.selectRow(0)
+
+    panel._open_add()
+    panel._open_edit()
+    panel._open_edit_row(0, 0)
+    panel._open_edit_transaction(original.id)
+    panel._delete_selected()
+
+    assert opened == []
+    assert panel._pending_commit_evidence is pending
+    assert service.get(original.id).amount == 2900
+
+
 def test_committed_add_is_verified_by_id_even_when_not_on_current_page(
     qtbot, container, monkeypatch
 ) -> None:
