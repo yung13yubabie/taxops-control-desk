@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -46,6 +47,8 @@ from ..pages.document_requests_page import (
     DocumentMutationEvidence,
     DocumentRequestsPage,
 )
+from ..widgets.annual_attachment_panel import AnnualAttachmentPanel
+from ..widgets.annual_task_panel import AnnualTaskPanel
 
 
 def _error_code(exc: BaseException, fallback: str) -> str:
@@ -615,7 +618,7 @@ class LinkExistingEngagementDialog(QDialog):
 
 
 class AnnualWorkflowDialog(QDialog):
-    """Fixed-desktop request management for one annual work item."""
+    """Fixed-desktop requests, attachments, and tasks for one annual item."""
 
     def __init__(
         self,
@@ -632,7 +635,7 @@ class AnnualWorkflowDialog(QDialog):
         self._last_context = None
         self._last_summary = None
         self.setObjectName("AnnualWorkflowDialog")
-        self.setWindowTitle("年度工作索件管理")
+        self.setWindowTitle("年度工作協作")
         self.setMinimumSize(900, 540)
         self.resize(1100, 680)
         font = self.font()
@@ -643,7 +646,7 @@ class AnnualWorkflowDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
         header = QHBoxLayout()
-        title = QLabel("年度工作索件管理")
+        title = QLabel("年度工作協作")
         title.setStyleSheet("font-size: 20px; font-weight: 700;")
         header.addWidget(title)
         header.addStretch(1)
@@ -711,7 +714,26 @@ class AnnualWorkflowDialog(QDialog):
             self._take_document_mutation_evidence
         )
         self.request_page.setEnabled(False)
-        layout.addWidget(self.request_page, 1)
+        self.attachment_panel = AnnualAttachmentPanel(
+            container,
+            item_id,
+            commit_observer=self._mark_collaboration_change,
+            parent=self,
+        )
+        self.task_panel = AnnualTaskPanel(
+            container,
+            item_id,
+            commit_observer=self._mark_collaboration_change,
+            parent=self,
+        )
+        self.attachment_panel.setEnabled(False)
+        self.task_panel.setEnabled(False)
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.addTab(self.request_page, "索件")
+        self.tabs.addTab(self.attachment_panel, "附件")
+        self.tabs.addTab(self.task_panel, "待辦")
+        layout.addWidget(self.tabs, 1)
         close_row = QHBoxLayout()
         close_row.addStretch(1)
         self.close_button = QPushButton(
@@ -813,6 +835,8 @@ class AnnualWorkflowDialog(QDialog):
             self.engagement_name_label.setText("—")
             self.state_label.setText("尚未連結案件")
             self.request_page.setEnabled(False)
+            self.attachment_panel.set_context(None, ())
+            self.task_panel.set_context(None)
             self.create_button.setEnabled(True)
             self.link_button.setEnabled(True)
             return
@@ -822,8 +846,13 @@ class AnnualWorkflowDialog(QDialog):
         if not self.request_page.load_engagement(engagement.id):
             raise AnnualWorkError("annual_work.workflow.page_read_failed")
         self.request_page.setEnabled(True)
+        self.attachment_panel.set_context(engagement.id, overview.requests)
+        self.task_panel.set_context(engagement.id)
         self.create_button.setEnabled(False)
         self.link_button.setEnabled(False)
+
+    def _mark_collaboration_change(self) -> None:
+        self.has_committed_change = True
 
     def reload(self, *, operation: str = "reload") -> bool:
         if (

@@ -269,7 +269,7 @@ def test_annual_item_dialog_opens_real_request_management_and_propagates_commit(
         == audit_count
     )
     assert dialog.has_committed_change
-    assert dialog.request_management_button.text() == "索件管理"
+    assert dialog.request_management_button.text() == "協作管理"
 
 
 def test_request_management_saves_dirty_annual_detail_before_workflow_reload(
