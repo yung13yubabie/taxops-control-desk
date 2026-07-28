@@ -607,6 +607,91 @@ def test_snapshot_operational_failure_logs_root_cause_and_does_not_claim_not_fou
 
 
 @pytest.mark.usefixtures("qapp")
+def test_snapshot_failure_button_does_not_log_or_commit_caller_transaction(
+    monkeypatch, container, request_with_item
+):
+    import sqlite3
+
+    from PySide6.QtWidgets import QMessageBox
+    from taxops.ui.pages.document_requests_page import DocumentRequestsPage
+
+    request, item = request_with_item
+    page = DocumentRequestsPage(
+        container, embedded=True, view_mode="items_only"
+    )
+    assert page.load_request_items(request.id)
+    page._item_table.selectRow(0)
+    assert page._delete_item_btn.isEnabled()
+    client_id = container.conn.execute(
+        "SELECT e.client_id FROM engagements e"
+        " JOIN document_requests dr ON dr.engagement_id = e.id"
+        " WHERE dr.id = ?",
+        (request.id,),
+    ).fetchone()[0]
+    original_note = container.conn.execute(
+        "SELECT note FROM clients WHERE id = ?", (client_id,)
+    ).fetchone()[0]
+    log_count = container.conn.execute(
+        "SELECT COUNT(*) FROM system_logs"
+    ).fetchone()[0]
+    monkeypatch.setattr(
+        container.doc_requests,
+        "read_request_snapshot",
+        lambda _request_id: (_ for _ in ()).throw(
+            sqlite3.OperationalError("caller transaction snapshot failure")
+        ),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda _parent, title, message: warnings.append((title, message)),
+    )
+
+    container.conn.execute("BEGIN")
+    container.conn.execute(
+        "UPDATE clients SET note = ? WHERE id = ?",
+        ("這筆必須回滾", client_id),
+    )
+    assert container.conn.in_transaction
+
+    page._delete_item_btn.click()
+
+    assert warnings == [
+        (
+            "無法讀取索件資料",
+            "索件資料讀取失敗，尚未進行任何變更，請重新整理後再試",
+        )
+    ]
+    assert container.conn.in_transaction
+    assert (
+        container.conn.execute(
+            "SELECT COUNT(*) FROM system_logs"
+        ).fetchone()[0]
+        == log_count
+    )
+    assert container.doc_requests.get_item(item.id) == item
+    container.conn.rollback()
+    assert (
+        container.conn.execute(
+            "SELECT note FROM clients WHERE id = ?", (client_id,)
+        ).fetchone()[0]
+        == original_note
+    )
+    assert (
+        container.conn.execute(
+            "SELECT COUNT(*) FROM system_logs"
+        ).fetchone()[0]
+        == log_count
+    )
+
+
+@pytest.mark.usefixtures("qapp")
 def test_items_only_reload_clamps_page_after_last_page_shrinks(
     container
 ):

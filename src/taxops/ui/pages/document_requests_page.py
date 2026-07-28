@@ -645,17 +645,33 @@ class DocumentRequestsPage(QWidget):
 
     def _clear_pending_recovery(self) -> None:
         self._recovery_panel.hide()
-        self._new_req_btn.setEnabled(True)
-        self._apply_request_selection()
-        # A successful post-commit reload can retain the selected item row
-        # without emitting a new selection signal.  Recompute item actions
-        # explicitly now that the pending-evidence guard has been cleared.
-        self._on_item_selection_changed()
-        if (
+        self._restore_mutation_buttons_from_selection()
+
+    def _restore_mutation_buttons_from_selection(self) -> None:
+        """Restore mutation actions from current widget state without reads."""
+        request_selected = len(
+            self._req_table.selectionModel().selectedRows(0)
+        ) == 1
+        item_rows = self._selected_item_rows()
+        item_selected = len(item_rows) == 1
+        any_items_selected = bool(item_rows)
+        items_only_request_loaded = (
             self._view_mode == "items_only"
             and self._items_only_request_id is not None
-        ):
-            self._add_item_btn.setEnabled(True)
+        )
+        self._new_req_btn.setEnabled(True)
+        self._edit_req_btn.setEnabled(request_selected)
+        self._mark_requested_btn.setEnabled(request_selected)
+        self._request_status_btn.setEnabled(request_selected)
+        self._follow_up_btn.setEnabled(request_selected)
+        self._delete_req_btn.setEnabled(request_selected)
+        self._add_item_btn.setEnabled(
+            request_selected or items_only_request_loaded
+        )
+        self._item_status_btn.setEnabled(item_selected)
+        self._edit_item_btn.setEnabled(item_selected)
+        self._delete_item_btn.setEnabled(item_selected)
+        self._bulk_delete_items_btn.setEnabled(any_items_selected)
 
     def _mutation_is_pending(self) -> bool:
         if self._pending_mutation is None:
@@ -1250,15 +1266,25 @@ class DocumentRequestsPage(QWidget):
             if item_id is not None:
                 detail["item_id"] = item_id
             try:
-                self._container.system_log.error(
-                    "document request snapshot failed",
-                    exc=err,
-                    detail=detail,
+                log_connection = self._container.system_log.connection
+                logger_has_caller_transaction = bool(
+                    log_connection.in_transaction
                 )
             except Exception:
-                # Logging must never turn a safe pre-mutation read failure into
-                # a second user-visible crash.
-                pass
+                # Logger introspection is diagnostic-only.  If its transaction
+                # ownership cannot be proven safe, skip the durable log.
+                logger_has_caller_transaction = True
+            if not logger_has_caller_transaction:
+                try:
+                    self._container.system_log.error(
+                        "document request snapshot failed",
+                        exc=err,
+                        detail=detail,
+                    )
+                except Exception:
+                    # A logger failure must not mask the original snapshot
+                    # failure or turn it into a second user-visible crash.
+                    pass
             QMessageBox.warning(
                 self,
                 "無法讀取索件資料",

@@ -927,7 +927,11 @@ def test_standalone_post_commit_ui_reload_failure_keeps_evidence_and_retries_wit
     assert page.load_engagement(created.engagement.id)
     assert page.select_request_id(created.request.id)
     real_refresh = page._refresh_requests
+    real_count_items = container.doc_requests.count_items
+    real_list_items = container.doc_requests.list_items
     failed = False
+    item_count_reads = 0
+    item_reads = 0
 
     def fail_once() -> bool:
         nonlocal failed
@@ -936,7 +940,33 @@ def test_standalone_post_commit_ui_reload_failure_keeps_evidence_and_retries_wit
             return False
         return real_refresh()
 
+    def allow_one_item_count_read(*args, **kwargs):
+        nonlocal item_count_reads
+        item_count_reads += 1
+        if item_count_reads > 1:
+            raise AssertionError(
+                "recovery success must not trigger a second item count read"
+            )
+        return real_count_items(*args, **kwargs)
+
+    def allow_one_item_page_read(*args, **kwargs):
+        nonlocal item_reads
+        item_reads += 1
+        if item_reads > 1:
+            raise AssertionError(
+                "recovery success must not trigger a second item page read"
+            )
+        return real_list_items(*args, **kwargs)
+
     monkeypatch.setattr(page, "_refresh_requests", fail_once)
+    monkeypatch.setattr(
+        container.doc_requests,
+        "count_items",
+        allow_one_item_count_read,
+    )
+    monkeypatch.setattr(
+        container.doc_requests, "list_items", allow_one_item_page_read
+    )
 
     qtbot.mouseClick(page._follow_up_btn, Qt.MouseButton.LeftButton)
 
@@ -968,6 +998,12 @@ def test_standalone_post_commit_ui_reload_failure_keeps_evidence_and_retries_wit
     assert page.pending_mutation_evidence is None
     assert page.isEnabled()
     assert page.request_id_at(0) == created.request.id
+    assert item_count_reads == 1
+    assert item_reads == 1
+    assert page._item_table.rowCount() == 1
+    assert page._follow_up_btn.isEnabled()
+    page._item_table.selectRow(0)
+    assert page._item_status_btn.isEnabled()
 
 
 def test_select_request_propagates_first_item_page_failure_without_hidden_second_read(
