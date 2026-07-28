@@ -1,5 +1,47 @@
 # DECISIONS
 
+## 2026-07-28 - Annual collaboration reuses formal workflow data
+
+### Decision
+
+The annual workbench does not create parallel request, attachment, or task
+records. It links one annual item to a formal engagement and uses the existing
+request, attachment, and workflow-task services with their original SQLite
+IDs. Every unbounded-looking UI list is exposed through count plus bounded
+pagination.
+
+### Rationale
+
+Parallel tables or UI-only success state would diverge from the application's
+normal pages and could produce false success, duplicate work, or missing audit
+evidence.
+
+### Impact
+
+Changes made from either the annual workbench or the normal workflow pages are
+visible after readback. A committed operation whose readback fails must lock
+mutation controls and offer retry without resubmitting.
+
+## 2026-07-28 - Fixed desktop size uses reachable scroll containers
+
+### Decision
+
+The annual collaboration dialog has a real 900x540 minimum and hosts the
+request, attachment, and task pages in widget-resizable scroll areas.
+Destructive attachment archive and annual-task delete actions require explicit
+confirmation.
+
+### Rationale
+
+Qt child size hints previously expanded the shown dialog beyond the advertised
+height, hiding the fixed-desktop failure from coordinate-only tests.
+
+### Impact
+
+Geometry tests must assert the actual shown window size. Content may scroll,
+but actions must remain reachable without silently expanding or clipping the
+window.
+
 ## 2026-07-18 - Compliance deadlines remain explicit suggestions
 
 ### Decision

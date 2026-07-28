@@ -1,5 +1,32 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-07-28 - v0.30 release candidate)
+
+- Annual workbench implementation and formal request/attachment/task
+  collaboration are committed through `2034123`; the Ruff baseline cleanup is
+  `01f9135`.
+- The attachment selector independently paginates requests in batches of 50,
+  reaches request #201, and refreshes immediately after embedded request
+  creation or deletion.
+- Parent and per-panel read failures clear stale data and lock every mutation
+  until a read-only retry succeeds. Attachment archive and annual-task delete
+  have explicit confirmation and exact audit target assertions.
+- A real Qt show-path test proves the collaboration window stays 900x540 with
+  scrollable tabs. A real header-drag test and caller-owned transaction
+  sentinel cover the settings persistence corrections.
+- Focused evidence: 197 backend/data-boundary tests pass, 73 slow settings/task
+  UI tests pass, and the annual collaboration/request/settings/action group
+  passes after correcting one stale method call. Ruff, compileall, and diff
+  checks pass.
+- Remaining work: receive final independent re-review, run the full ordered
+  coverage gate at 90% or higher, perform normal-entry UI smoke, build the
+  v0.30.0 EXE in the exact-pinned release environment, run EXE smoke, create
+  and read back the ZIP, compute SHA-256, and prepare the manual acceptance
+  checklist. Do not claim release completion before these steps pass.
+- Next reader order: `.ai/spec-kit.md`, `.ai/CURRENT_STATE.md`,
+  `.ai/TASKS.md`, `.ai/DECISIONS.md`, then
+  `docs/superpowers/plans/2026-07-16-annual-workbench-ui-release.md`.
+
 ## Latest Handoff Update (2026-07-18 - compliance profiles and period rules)
 
 - `compliance_rules` now builds immutable, stable-key drafts for monthly

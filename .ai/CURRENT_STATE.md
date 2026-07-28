@@ -1,5 +1,24 @@
 # CURRENT_STATE
 
+## 2026-07-28 v0.30 release candidate
+
+- The annual workbench, client-year generation, editable annual detail,
+  transaction ledger, formal engagement/request linkage, and annual
+  collaboration tabs are implemented on `feature/v030-annual-workbench`.
+- Annual collaboration uses the same SQLite IDs as the existing request,
+  attachment, and task modules. Request options, attachments, and tasks are
+  bounded and paginated; request #201 is selectable for attachment scope.
+- Embedded request create/delete immediately refreshes the attachment selector
+  and annual summary. Readback failures clear stale rows, lock mutations, and
+  expose read-only retry without resubmitting the committed operation.
+- The real shown collaboration dialog remains 900x540 and wraps each tab in a
+  scroll area. Attachment archive and annual-task delete require confirmation.
+- Ruff 0.15.15 is pinned. `ruff check src tests build_tools`, compileall, and
+  focused annual collaboration/request/settings tests pass.
+- Full branch coverage, normal-entry application smoke, versioned EXE build,
+  ZIP readback, SHA-256, and manual acceptance are still pending. They must not
+  be reported as complete until fresh evidence exists.
+
 ## 2026-07-16 v0.30 implementation worktree
 
 - Active work is isolated in `.worktrees/v030-annual-workbench` on

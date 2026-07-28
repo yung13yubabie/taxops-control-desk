@@ -4,7 +4,7 @@
 
 ### TODO
 
-- [ ] Build the annual accounting/tax workbench with one client-year parent,
+- [x] Build the annual accounting/tax workbench with one client-year parent,
   independent work/filing/document/tax/fee states, ledger-derived balances,
   and bidirectional links to existing engagements and document requests.
 - [ ] Complete real user-path and 1366x768 plus 100/125/150% scaling checks.
@@ -17,8 +17,8 @@
 - [ ] Independently re-review the registry industry search/display/apply slice.
 - [ ] Independently review the annual compliance profile repository, pure
   period rules, atomic partial-upsert service, and safe audit contract.
-- [ ] Implement and independently review the remaining annual workspace,
-  work-item, transaction, and workflow-integration services on migration 0028.
+- [ ] Complete final independent re-review of the annual collaboration and
+  release-readiness corrections.
 
 ### BLOCKED
 
@@ -52,6 +52,16 @@
   notes, reject overlong or mistyped values, derive verified special-year
   filing windows without holiday guesses, and suppress writes/audits for an
   exactly unchanged payload.
+- [x] Implement annual workspace preview/confirmation, annual item editing and
+  lifecycle actions, ledger-derived balances, and bidirectional engagement and
+  document-request links.
+- [x] Add formal annual attachment/task collaboration with bounded pagination,
+  exact post-commit evidence, stale-state locking, read-only retry, destructive
+  confirmation, and request #201 selector coverage.
+- [x] Make the actual shown annual collaboration window remain 900x540 by
+  placing each work tab in a scrollable container.
+- [x] Establish a no-ignore Ruff baseline; `ruff check src tests build_tools`
+  and compileall pass.
 
 ## 2026-07-12 Branch coverage and happy-path hardening
 
