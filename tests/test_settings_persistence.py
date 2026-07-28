@@ -81,3 +81,27 @@ def test_setting_update_rolls_back_when_audit_fails(
         container.settings.set_setting("tax_cache.query_mode", "allow_online")
 
     assert container.settings.get("tax_cache.query_mode") == original
+
+
+def test_setting_update_never_commits_caller_owned_transaction(
+    container: ServiceContainer,
+) -> None:
+    original = container.settings.get("tax_cache.query_mode")
+    audit_before = container.conn.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+    ).fetchone()[0]
+    container.conn.execute("BEGIN")
+
+    with pytest.raises(SettingsValidationError) as caught:
+        container.settings.set_setting(
+            "tax_cache.query_mode", "allow_online"
+        )
+
+    assert caught.value.code == "settings.transaction.already_active"
+    assert container.conn.in_transaction
+    assert container.settings.get("tax_cache.query_mode") == original
+    assert (
+        container.conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+        == audit_before
+    )
+    container.conn.rollback()

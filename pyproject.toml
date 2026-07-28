@@ -12,6 +12,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0,<9.0",
+  "pytest-qt>=4.5,<5.0",
   "pytest-cov>=7.0,<8.0",
   "pyinstaller>=6.3,<7.0",
 ]

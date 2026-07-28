@@ -42,6 +42,8 @@ class SettingsService:
         return self._repo.get_all()
 
     def set_setting(self, key: str, value: str) -> str:
+        if self._conn.in_transaction:
+            raise SettingsValidationError("settings.transaction.already_active")
         if key not in ALLOWED_KEYS:
             raise SettingsValidationError("settings.save.failed")
         cleaned = sanitize_user_text(value, max_length=500)

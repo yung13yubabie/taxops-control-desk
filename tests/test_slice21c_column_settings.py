@@ -207,7 +207,7 @@ def test_resize_and_auto_resize_persist_only_visible_columns(qapp, container):
     settings.install()
     table.setColumnHidden(_TEST_COLS.index("owner"), True)
     table.setColumnWidth(_TEST_COLS.index("id"), 155)
-    settings._on_section_resized(0, 100, 155)
+    settings._save_widths()
     settings._on_auto_resize_all()
 
     stored = json.loads(container.settings.get("ui.engagements.column_widths"))
