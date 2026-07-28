@@ -17,13 +17,37 @@ _ACTIVE_ATTACHMENT_OWNER_SQL = (
     "((attachments.engagement_id IS NOT NULL AND EXISTS ("
     "SELECT 1 FROM engagements e"
     " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
-    " WHERE e.id = attachments.engagement_id AND e.deleted_at IS NULL))"
+    " WHERE e.id = attachments.engagement_id AND e.deleted_at IS NULL)"
+    " AND (attachments.request_id IS NULL OR EXISTS ("
+    "SELECT 1 FROM document_requests dr"
+    " WHERE dr.id = attachments.request_id"
+    " AND dr.engagement_id = attachments.engagement_id"
+    " AND dr.deleted_at IS NULL)))"
     " OR (attachments.lease_id IS NOT NULL AND EXISTS ("
     "SELECT 1 FROM client_leases l"
     " JOIN clients c ON c.id = l.client_id AND c.deleted_at IS NULL"
     " WHERE l.id = attachments.lease_id"
     " AND l.client_id = attachments.client_id)))"
 )
+
+_ACTIVE_ENGAGEMENT_HISTORY_OWNER_SQL = (
+    "EXISTS (SELECT 1 FROM engagements e"
+    " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+    " WHERE e.id = attachments.engagement_id AND e.deleted_at IS NULL)"
+)
+
+
+def _attachment_pagination(limit: object, offset: object) -> tuple[int, int]:
+    if (
+        not isinstance(limit, int)
+        or isinstance(limit, bool)
+        or not 1 <= limit <= 200
+        or not isinstance(offset, int)
+        or isinstance(offset, bool)
+        or not 0 <= offset <= 1_000_000
+    ):
+        raise ValueError("attachment.pagination.invalid")
+    return limit, offset
 
 
 @dataclass(frozen=True)
@@ -208,7 +232,7 @@ class AttachmentsRepository:
         rows = self._conn.execute(
             f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments WHERE {where}"
             f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
-            " ORDER BY uploaded_at DESC",
+            " ORDER BY uploaded_at DESC, id DESC",
             (engagement_id,),
         ).fetchall()
         return [_row(r) for r in rows]
@@ -217,7 +241,7 @@ class AttachmentsRepository:
         rows = self._conn.execute(
             f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments WHERE status != 'archived'"
             f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
-            " ORDER BY uploaded_at DESC"
+            " ORDER BY uploaded_at DESC, id DESC"
         ).fetchall()
         return [_row(r) for r in rows]
 
@@ -232,10 +256,136 @@ class AttachmentsRepository:
         rows = self._conn.execute(
             f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments WHERE {where}"
             f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
-            " ORDER BY uploaded_at DESC",
+            " ORDER BY uploaded_at DESC, id DESC",
             (request_id,),
         ).fetchall()
         return [_row(r) for r in rows]
+
+    def page_all(
+        self, *, limit: int = 200, offset: int = 0
+    ) -> list[AttachmentRow]:
+        limit, offset = _attachment_pagination(limit, offset)
+        rows = self._conn.execute(
+            f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments"
+            " WHERE status != 'archived'"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
+            " ORDER BY uploaded_at DESC, id DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        return [_row(row) for row in rows]
+
+    def count_all(self) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM attachments"
+            " WHERE status != 'archived'"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def page_by_engagement(
+        self,
+        engagement_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[AttachmentRow]:
+        limit, offset = _attachment_pagination(limit, offset)
+        rows = self._conn.execute(
+            f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments"
+            " WHERE engagement_id = ? AND status != 'archived'"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
+            " ORDER BY uploaded_at DESC, id DESC LIMIT ? OFFSET ?",
+            (engagement_id, limit, offset),
+        ).fetchall()
+        return [_row(row) for row in rows]
+
+    def count_by_engagement(self, engagement_id: int) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM attachments"
+            " WHERE engagement_id = ? AND status != 'archived'"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}",
+            (engagement_id,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def page_by_request(
+        self,
+        request_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[AttachmentRow]:
+        limit, offset = _attachment_pagination(limit, offset)
+        rows = self._conn.execute(
+            f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments"
+            " WHERE request_id = ? AND status != 'archived'"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
+            " ORDER BY uploaded_at DESC, id DESC LIMIT ? OFFSET ?",
+            (request_id, limit, offset),
+        ).fetchall()
+        return [_row(row) for row in rows]
+
+    def count_by_request(self, request_id: int) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM attachments"
+            " WHERE request_id = ? AND status != 'archived'"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}",
+            (request_id,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def request_history_belongs_to_active_engagement(
+        self, engagement_id: int, request_id: int
+    ) -> bool:
+        row = self._conn.execute(
+            "SELECT 1 FROM document_requests dr"
+            " JOIN engagements e ON e.id = dr.engagement_id"
+            "  AND e.deleted_at IS NULL"
+            " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+            " WHERE dr.id = ? AND dr.engagement_id = ?",
+            (request_id, engagement_id),
+        ).fetchone()
+        return row is not None
+
+    def page_request_history(
+        self,
+        engagement_id: int,
+        request_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[AttachmentRow]:
+        limit, offset = _attachment_pagination(limit, offset)
+        rows = self._conn.execute(
+            f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments"
+            " WHERE engagement_id = ? AND request_id = ?"
+            f" AND {_ACTIVE_ENGAGEMENT_HISTORY_OWNER_SQL}"
+            " ORDER BY uploaded_at DESC, id DESC LIMIT ? OFFSET ?",
+            (engagement_id, request_id, limit, offset),
+        ).fetchall()
+        return [_row(row) for row in rows]
+
+    def count_request_history(
+        self, engagement_id: int, request_id: int
+    ) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM attachments"
+            " WHERE engagement_id = ? AND request_id = ?"
+            f" AND {_ACTIVE_ENGAGEMENT_HISTORY_OWNER_SQL}",
+            (engagement_id, request_id),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def get_request_history_attachment(
+        self, engagement_id: int, request_id: int, attachment_id: int
+    ) -> AttachmentRow | None:
+        row = self._conn.execute(
+            f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments"
+            " WHERE id = ? AND engagement_id = ? AND request_id = ?"
+            f" AND {_ACTIVE_ENGAGEMENT_HISTORY_OWNER_SQL}",
+            (attachment_id, engagement_id, request_id),
+        ).fetchone()
+        return _row(row) if row else None
 
     def update_status(
         self,
@@ -245,10 +395,10 @@ class AttachmentsRepository:
         accepted_at: str | None = None,
     ) -> AttachmentRow | None:
         self._conn.execute(
-            """
+            f"""
             UPDATE attachments
                SET status = ?, accepted_by = ?, accepted_at = ?
-             WHERE id = ?
+             WHERE id = ? AND {_ACTIVE_ATTACHMENT_OWNER_SQL}
             """,
             (status, accepted_by, accepted_at, attachment_id),
         )

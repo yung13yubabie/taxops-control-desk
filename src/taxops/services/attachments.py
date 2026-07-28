@@ -240,22 +240,91 @@ class AttachmentsService:
         row = self._repo.get(attachment_id)
         if row is None:
             raise AttachmentValidationError("attachment.not_found")
-        try:
-            path = resolve_safe_path(self._attachments_dir, row.stored_filename)
-        except FileGuardError as e:
-            raise AttachmentValidationError(e.code) from e
-        if not path.is_file():
-            raise AttachmentValidationError("attachment.not_found")
-        return path
+        return self._resolve_stored_file(row)
 
     def list_all(self) -> list[AttachmentRow]:
         return self._repo.list_all()
 
+    def page_all(
+        self, *, limit: int = 200, offset: int = 0
+    ) -> list[AttachmentRow]:
+        self._validate_pagination(limit, offset)
+        return self._repo.page_all(limit=limit, offset=offset)
+
+    def count_all(self) -> int:
+        return self._repo.count_all()
+
     def list_by_engagement(self, engagement_id: int) -> list[AttachmentRow]:
         return self._repo.list_by_engagement(engagement_id)
 
+    def page_by_engagement(
+        self,
+        engagement_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[AttachmentRow]:
+        self._validate_pagination(limit, offset)
+        return self._repo.page_by_engagement(
+            engagement_id, limit=limit, offset=offset
+        )
+
+    def count_by_engagement(self, engagement_id: int) -> int:
+        return self._repo.count_by_engagement(engagement_id)
+
     def list_by_request(self, request_id: int) -> list[AttachmentRow]:
         return self._repo.list_by_request(request_id)
+
+    def page_by_request(
+        self,
+        request_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[AttachmentRow]:
+        self._validate_pagination(limit, offset)
+        return self._repo.page_by_request(
+            request_id, limit=limit, offset=offset
+        )
+
+    def count_by_request(self, request_id: int) -> int:
+        return self._repo.count_by_request(request_id)
+
+    def page_request_history_attachments(
+        self,
+        engagement_id: int,
+        request_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[AttachmentRow]:
+        """Read preserved evidence for an active owner's deleted request."""
+        self._validate_pagination(limit, offset)
+        self._require_request_history_owner(engagement_id, request_id)
+        return self._repo.page_request_history(
+            engagement_id,
+            request_id,
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_request_history_attachments(
+        self, engagement_id: int, request_id: int
+    ) -> int:
+        self._require_request_history_owner(engagement_id, request_id)
+        return self._repo.count_request_history(engagement_id, request_id)
+
+    def resolve_request_history_file_path(
+        self, engagement_id: int, request_id: int, attachment_id: int
+    ) -> Path:
+        """Resolve one historical request file through an exact owner guard."""
+        self._require_request_history_owner(engagement_id, request_id)
+        row = self._repo.get_request_history_attachment(
+            engagement_id, request_id, attachment_id
+        )
+        if row is None:
+            raise AttachmentValidationError("attachment.not_found")
+        return self._resolve_stored_file(row)
 
     def list_by_lease(
         self, lease_id: int, *, include_archived: bool = False
@@ -273,6 +342,35 @@ class AttachmentsService:
         ):
             raise AttachmentValidationError("attachment.lease_not_found")
         return self._repo.list_by_lease(lease_id, include_archived=True)
+
+    @staticmethod
+    def _validate_pagination(limit: object, offset: object) -> None:
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 1 <= limit <= 200
+            or not isinstance(offset, int)
+            or isinstance(offset, bool)
+            or not 0 <= offset <= 1_000_000
+        ):
+            raise AttachmentValidationError("attachment.pagination.invalid")
+
+    def _require_request_history_owner(
+        self, engagement_id: int, request_id: int
+    ) -> None:
+        if not self._repo.request_history_belongs_to_active_engagement(
+            engagement_id, request_id
+        ):
+            raise AttachmentValidationError("attachment.request_not_found")
+
+    def _resolve_stored_file(self, row: AttachmentRow) -> Path:
+        try:
+            path = resolve_safe_path(self._attachments_dir, row.stored_filename)
+        except FileGuardError as exc:
+            raise AttachmentValidationError(exc.code) from exc
+        if not path.is_file():
+            raise AttachmentValidationError("attachment.not_found")
+        return path
 
     def _update_status_or_raise(
         self, attachment_id: int, **kwargs
