@@ -246,6 +246,38 @@ def test_annual_task_lists_are_isolated_by_exact_annual_owner(
     assert tasks.count_by_annual_work_item(second_item.id) == 1
 
 
+def test_mismatched_annual_client_engagement_tuple_is_fail_closed(
+    container: object,
+) -> None:
+    first_client, first_item = _annual_item(
+        container, client_code="ANNUAL-TASK-CORRUPT-A"
+    )
+    second_client, second_item = _annual_item(
+        container, client_code="ANNUAL-TASK-CORRUPT-B"
+    )
+    annual = getattr(container, "annual_work")
+    tasks = getattr(container, "tasks")
+    first = annual.create_linked_task(first_item.id, title="甲客戶年度任務")
+    second = annual.create_linked_task(second_item.id, title="乙客戶年度任務")
+    getattr(container, "conn").execute(
+        "UPDATE workflow_tasks SET client_id = ?, engagement_id = ?"
+        " WHERE id = ?",
+        (second_client.id, second.engagement_id, first.id),
+    )
+    getattr(container, "conn").commit()
+    audit_before = getattr(container, "audit")._repo.count()
+
+    assert first_client.id != second_client.id
+    assert tasks.get_task(first.id) is None
+    assert tasks.list_by_annual_work_item(first_item.id) == []
+    assert tasks.count_by_annual_work_item(first_item.id) == 0
+    assert tasks.list_by_annual_work_item(second_item.id) == [second]
+    with pytest.raises(TaskValidationError) as child:
+        tasks.create_child_task(first.id, "不得繼承污染 ownership")
+    assert child.value.code == "task.parent.not_found"
+    assert getattr(container, "audit")._repo.count() == audit_before
+
+
 def test_deleted_annual_task_is_excluded_from_count_and_pages(
     container: object,
 ) -> None:
