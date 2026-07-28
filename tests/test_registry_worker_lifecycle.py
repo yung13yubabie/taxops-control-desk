@@ -5,8 +5,9 @@ import time
 import logging
 
 import pytest
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Signal
 from PySide6.QtWidgets import QApplication
+from shiboken6 import isValid
 
 from taxops.core.paths import ensure_paths
 from taxops.services.registry_download import DownloadError
@@ -172,3 +173,6 @@ def test_settings_page_keeps_operation_active_until_worker_cleanup_finishes(
         page._restore_btn,
     ):
         assert control.isEnabled()
+    QCoreApplication.sendPostedEvents(worker, QEvent.Type.DeferredDelete)
+    qapp.processEvents()
+    assert not isValid(worker)
