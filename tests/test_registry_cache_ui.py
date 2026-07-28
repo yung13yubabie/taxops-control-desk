@@ -10,12 +10,19 @@ Verifies:
 
 from __future__ import annotations
 
+import io
 import sqlite3
+import threading
+import zipfile as _zipfile
 from pathlib import Path
 
 import pytest
 
 from taxops.i18n.errors import ERROR_MESSAGES
+from taxops.core.paths import AppPaths
+from taxops.db.connection import open_connection
+from taxops.db.migrate import apply_migrations
+from taxops.services.container import build_container
 from taxops.services.registry.importer import (
     TaxRegistryImportError,
     TaxRegistryImporter,
@@ -167,15 +174,6 @@ def test_max_zip_bytes_is_500mb() -> None:
 # ---------------------------------------------------------------------------
 # Thread integration smoke: worker opens its own connection (no cross-thread)
 # ---------------------------------------------------------------------------
-
-import io
-import threading
-import zipfile as _zipfile
-
-from taxops.core.paths import AppPaths
-from taxops.db.connection import open_connection
-from taxops.db.migrate import apply_migrations
-from taxops.services.container import build_container
 
 
 def _make_minimal_bgmopen1_zip(tmp_path: Path) -> Path:

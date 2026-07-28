@@ -26,8 +26,6 @@ import logging
 
 from ...core.clock import today_iso
 from ...i18n import BUTTON_LABELS, NAV_LABELS, TABLE_HEADERS, error_message
-
-_log = logging.getLogger(__name__)
 from ...services.clients import ClientValidationError
 from ...services.container import ServiceContainer
 from ..dialogs.bulk_import_wizard import BulkImportWizard
@@ -36,6 +34,8 @@ from ..dialogs.new_client_dialog import NewClientDialog
 from ..style import TEXT_MUTED, toolbar_icon
 from ..widgets.empty_state import EmptyState
 from ..widgets.flow_layout import FlowLayout
+
+_log = logging.getLogger(__name__)
 
 _PAGE_SIZE = 50
 

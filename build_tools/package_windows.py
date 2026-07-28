@@ -56,7 +56,7 @@ def build() -> None:
 
     if _EXE.exists():
         size_mb = _EXE.stat().st_size / (1024 * 1024)
-        print(f"\nBuild succeeded.")
+        print("\nBuild succeeded.")
         print(f"  EXE: {_EXE}")
         print(f"  Size: {size_mb:.1f} MB")
     else:

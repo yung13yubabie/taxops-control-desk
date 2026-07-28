@@ -11,8 +11,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-_log = logging.getLogger(__name__)
-
 from ..core.clock import now_iso
 from ..repositories.attachments import AttachmentRow, AttachmentsRepository
 from ..security.file_guard import (
@@ -23,6 +21,8 @@ from ..security.file_guard import (
     sha256_file,
 )
 from .audit import AuditService
+
+_log = logging.getLogger(__name__)
 
 
 class AttachmentValidationError(Exception):

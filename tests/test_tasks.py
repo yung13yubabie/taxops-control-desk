@@ -13,7 +13,6 @@ from taxops.services.tasks import (
     CreateTaskInput,
     TaskValidationError,
     TasksService,
-    VALID_TASK_STATUSES,
 )
 
 

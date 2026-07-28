@@ -9,6 +9,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from ..core.text import sanitize_user_text
+from ..repositories.clients import ClientsRepository
+from .clients import ClientValidationError, ClientsService, CreateClientInput
+
 _log = logging.getLogger(__name__)
 
 MAX_BULK_ROWS = 10_000
@@ -16,10 +20,6 @@ MAX_BULK_COLUMNS = 100
 MAX_BULK_CELL_CHARS = 10_000
 MAX_BULK_FILE_BYTES = 50 * 1024 * 1024
 MAX_BULK_CLIPBOARD_CHARS = 5_000_000
-
-from ..core.text import sanitize_user_text
-from ..repositories.clients import ClientsRepository
-from .clients import ClientValidationError, ClientsService, CreateClientInput
 
 BULK_FIELDS = [
     "client_code",
@@ -282,7 +282,6 @@ def validate_rows(
 
     ``mapping`` maps original header → canonical field name.
     """
-    reverse: dict[str, str] = {v: k for k, v in mapping.items()}
     results: list[BulkValidationRow] = []
 
     for raw in raw_rows:

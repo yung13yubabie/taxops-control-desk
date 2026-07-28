@@ -31,8 +31,6 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-_log = logging.getLogger(__name__)
-
 from ...core.clock import now_iso, today_iso
 from ...repositories.tax_registry import (
     TaxCacheMetadataRepository,
@@ -41,6 +39,8 @@ from ...repositories.tax_registry import (
 from ..audit import AuditService
 from ..system_log import SystemLogService
 from .parser import TaxRegistryEntry
+
+_log = logging.getLogger(__name__)
 
 BUNDLE_FORMAT_VERSION = 1
 MANIFEST_NAME = "manifest.json"

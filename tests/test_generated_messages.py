@@ -235,7 +235,7 @@ def test_generate_persists_to_db(conn, gen_svc):
 def test_generate_records_audit(conn, gen_svc):
     _, req_id = _seed_request(conn)
     payload = GenerateMessageInput(request_id=req_id, template_id=1)
-    msg = gen_svc.generate(payload)
+    gen_svc.generate(payload)
     row = conn.execute(
         "SELECT action FROM audit_logs WHERE action = 'gen_message.create' ORDER BY id DESC LIMIT 1"
     ).fetchone()

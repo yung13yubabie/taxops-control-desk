@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 
 import pytest
 
 from taxops.security.file_guard import (
-    ALLOWED_EXTENSIONS,
-    BLOCKED_EXTENSIONS,
     MAX_FILE_SIZE,
     FileGuardError,
     check_extension,

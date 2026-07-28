@@ -62,7 +62,9 @@ def _freeze_annual_item_clock(
     monkeypatch: pytest.MonkeyPatch,
     timestamp: str,
 ) -> None:
-    fixed = lambda: timestamp
+    def fixed() -> str:
+        return timestamp
+
     monkeypatch.setattr(annual_work_module, "now_iso", fixed, raising=False)
     monkeypatch.setattr(
         annual_work_repository_module,

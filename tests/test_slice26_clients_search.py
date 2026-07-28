@@ -351,7 +351,7 @@ def test_page_label_format_combined() -> None:
 
 def test_sidebar_save_failure_logs_warning(capsys) -> None:
     """sidebar collapse/expand setting save failure must call system_log.warn, not swallow silently."""
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import MagicMock
 
     _make_app()
     conn = _fresh_conn()

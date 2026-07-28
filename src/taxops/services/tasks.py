@@ -9,10 +9,10 @@ import unicodedata
 from dataclasses import dataclass
 
 from ..core.text import sanitize_user_text
-
-_log = logging.getLogger(__name__)
 from ..repositories.tasks import TaskRow, TasksRepository
 from .audit import AuditService
+
+_log = logging.getLogger(__name__)
 
 VALID_PRIORITIES = frozenset({"low", "normal", "high", "urgent"})
 

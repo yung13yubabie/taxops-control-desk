@@ -21,7 +21,6 @@ from taxops.services.recurring_billing import (
     RecurringBillingService,
     UpdateLineInput,
     UpdatePlanInput,
-    _billing_dates,
     _clamp_day,
 )
 

@@ -7,11 +7,11 @@ import json
 import logging
 from dataclasses import dataclass
 
-_log = logging.getLogger(__name__)
-
 from ..repositories.document_requests import DocumentRequestsRepository
 from ..repositories.late_fee import LateFeeRow, LateFeeRepository
 from .audit import AuditService
+
+_log = logging.getLogger(__name__)
 
 _MANUAL_REVIEW_TAX_TYPES = frozenset({"labor_health"})
 

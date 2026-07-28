@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-_log = logging.getLogger(__name__)
-
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
@@ -29,6 +27,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from ...i18n import error_message
+from ...security.image_guard import ImageGuardError, validate_image_file
+from ...services.attachments import AttachmentValidationError, UploadAttachmentInput
+from ...services.container import ServiceContainer
+from ..style import toolbar_icon
+from ..widgets.flow_layout import FlowLayout
 
 try:  # PySide6 ships QtPdf on the supported Windows build.
     from PySide6.QtPdf import QPdfDocument
@@ -37,12 +41,7 @@ except Exception:  # pragma: no cover - fallback for minimal Qt installs.
     QPdfDocument = None  # type: ignore[assignment]
     QPdfView = None  # type: ignore[assignment]
 
-from ...i18n import error_message
-from ...security.image_guard import ImageGuardError, validate_image_file
-from ...services.attachments import AttachmentValidationError, UploadAttachmentInput
-from ...services.container import ServiceContainer
-from ..style import toolbar_icon
-from ..widgets.flow_layout import FlowLayout
+_log = logging.getLogger(__name__)
 
 _IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"})
 _TEXT_EXTS = frozenset({".txt", ".csv", ".log", ".xml", ".json", ".md"})

@@ -14,7 +14,6 @@ import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -595,7 +594,7 @@ class TestRegistryApplyDialog:
         from taxops.ui.dialogs.registry_apply_dialog import RegistryApplyDialog
 
         container = _fresh_container()
-        client_id = _seed_client(container, client_code="AUDIT1", client_name="舊名", address="舊地址")
+        _seed_client(container, client_code="AUDIT1", client_name="舊名", address="舊地址")
         reg_row = self._make_fake_registry_row(
             container.conn,
             tax_id="99887766",

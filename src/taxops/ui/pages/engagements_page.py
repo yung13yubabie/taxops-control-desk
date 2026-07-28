@@ -19,7 +19,6 @@ from __future__ import annotations
 import datetime
 import logging
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,

@@ -24,8 +24,6 @@ import sys
 from pathlib import Path
 from typing import Callable, Any
 
-_log = logging.getLogger(__name__)
-
 from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtGui import QCloseEvent, QGuiApplication
 from PySide6.QtWidgets import (
@@ -64,6 +62,8 @@ from ..dialogs.mismatch_review_dialog import MismatchItem, MismatchReviewDialog
 from ..action_registry import PAGE_SETTINGS, actions_for_page
 from ..style import TEXT_MUTED
 from ..widgets.flow_layout import FlowLayout
+
+_log = logging.getLogger(__name__)
 
 _QUERY_MODE_LABELS = {
     "local_only": "僅使用本機快取",
