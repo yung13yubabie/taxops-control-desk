@@ -297,6 +297,8 @@ class TasksService:
             or child.engagement_id != parent.engagement_id
         ):
             raise TaskValidationError("task.parent.context_mismatch")
+        if child.annual_work_item_id != parent.annual_work_item_id:
+            raise TaskValidationError("task.parent.annual_context_mismatch")
         # 2-level cap: parent must be a root (no grandparent).
         if parent.parent_task_id is not None:
             raise TaskValidationError("task.parent.depth_exceeded")
@@ -330,6 +332,7 @@ class TasksService:
                 engagement_id=parent.engagement_id,
                 client_id=parent.client_id,
                 parent_task_id=parent.id,
+                annual_work_item_id=parent.annual_work_item_id,
                 title=clean_title,
                 assignee=parent.assignee,
                 due_date=None,
@@ -635,3 +638,10 @@ class TasksService:
             )
         except ValueError as exc:
             raise TaskValidationError(str(exc)) from exc
+
+    def count_by_annual_work_item(self, item_id: int) -> int:
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise TaskValidationError("task.annual_work_item_id.invalid")
+        if self._repo.get_annual_work_context(item_id) is None:
+            raise TaskValidationError("task.annual_work_item_not_found")
+        return self._repo.count_by_annual_work_item(item_id)

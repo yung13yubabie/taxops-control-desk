@@ -292,7 +292,7 @@ class TasksRepository:
         if (
             not isinstance(limit, int)
             or isinstance(limit, bool)
-            or not 1 <= limit <= 500
+            or not 1 <= limit <= 200
             or not isinstance(offset, int)
             or isinstance(offset, bool)
             or not 0 <= offset <= 1_000_000
@@ -305,6 +305,15 @@ class TasksRepository:
             (item_id, limit, offset),
         ).fetchall()
         return [_row_to_task(row) for row in rows]
+
+    def count_by_annual_work_item(self, item_id: int) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM workflow_tasks"
+            " WHERE annual_work_item_id = ? AND deleted_at IS NULL"
+            f" AND {_ACTIVE_OWNER_SQL}",
+            (item_id,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
 
     def update_parent(self, task_id: int, parent_task_id: int | None) -> TaskRow | None:
         ts = now_iso()
