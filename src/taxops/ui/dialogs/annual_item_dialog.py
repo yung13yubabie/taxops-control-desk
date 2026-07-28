@@ -44,6 +44,9 @@ class AnnualItemDialog(QDialog):
         self.request_management_button = QPushButton(
             BUTTON_LABELS["annual.request_management"]
         )
+        self.request_management_button.setStyleSheet(
+            "font-size: 14px; font-weight: 600;"
+        )
         workflow_row.addWidget(self.request_management_button)
         layout.addLayout(workflow_row)
         self.splitter = QSplitter(Qt.Orientation.Horizontal, self)

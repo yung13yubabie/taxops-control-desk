@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 
 from PySide6.QtCore import QPoint, QRect, Qt
-from PySide6.QtWidgets import QDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from taxops.services.clients import CreateClientInput
 from taxops.services.compliance_profiles import ComplianceProfileItemInput
@@ -1239,11 +1239,18 @@ def test_workflow_failure_does_not_log_or_commit_caller_owned_transaction(
 
 
 def test_fixed_desktop_geometry_keeps_entry_header_retry_and_embedded_actions_reachable(
-    qtbot, container
+    qtbot, container, request
 ) -> None:
     from taxops.services.annual_work import AnnualWorkError
     from taxops.ui.dialogs.annual_item_dialog import AnnualItemDialog
     from taxops.ui.dialogs.annual_workflow_dialog import AnnualWorkflowDialog
+    from taxops.ui.style import apply as apply_style
+
+    app = QApplication.instance()
+    assert app is not None
+    previous_stylesheet = app.styleSheet()
+    request.addfinalizer(lambda: app.setStyleSheet(previous_stylesheet))
+    apply_style(app)
 
     def inside(parent, child) -> bool:
         top_left = child.mapTo(parent, QPoint(0, 0))
