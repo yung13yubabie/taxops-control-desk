@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QTableWidget,
@@ -72,6 +73,7 @@ class AnnualTaskPanel(QWidget):
         self._total = 0
         self._rows: tuple[TaskRow, ...] = ()
         self._pending_mutation: TaskMutationEvidence | None = None
+        self._read_blocked = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -185,6 +187,7 @@ class AnnualTaskPanel(QWidget):
         self._page = 0
         self.setEnabled(engagement_id is not None)
         if engagement_id is None:
+            self._read_blocked = False
             self._total = 0
             self._rows = ()
             self.feedback_label.setText("請先建立或連結正式案件，再建立年度待辦。")
@@ -231,6 +234,7 @@ class AnnualTaskPanel(QWidget):
             return False
         self._total = total
         self._rows = rows
+        self._read_blocked = False
         self._render()
         return True
 
@@ -372,6 +376,15 @@ class AnnualTaskPanel(QWidget):
         selected = self._selected_row()
         if selected is None or self._pending_mutation is not None:
             return
+        reply = QMessageBox.question(
+            self,
+            "刪除年度待辦",
+            f"確定要刪除待辦「{selected.title}」？此操作無法復原。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
         try:
             count_before = self._container.tasks.count_by_annual_work_item(
                 self.item_id
@@ -422,11 +435,14 @@ class AnnualTaskPanel(QWidget):
             f"第 {self._page + 1} / {pages} 頁，共 {self._total} 筆"
         )
         self.previous_button.setEnabled(
-            self._page > 0 and self._pending_mutation is None
+            self._page > 0
+            and self._pending_mutation is None
+            and not self._read_blocked
         )
         self.next_button.setEnabled(
             (self._page + 1) * _PAGE_SIZE < self._total
             and self._pending_mutation is None
+            and not self._read_blocked
         )
         self._restore_buttons()
 
@@ -452,7 +468,7 @@ class AnnualTaskPanel(QWidget):
         return False
 
     def _restore_buttons(self) -> None:
-        locked = self._pending_mutation is not None
+        locked = self._pending_mutation is not None or self._read_blocked
         has_context = self._engagement_id is not None
         selected = self._selected_row()
         transitions = (
@@ -471,6 +487,10 @@ class AnnualTaskPanel(QWidget):
         self.delete_button.setEnabled(selected is not None and not locked)
 
     def _read_failed(self, exc: BaseException, *, committed: bool) -> None:
+        self._read_blocked = True
+        self._rows = ()
+        self._total = 0
+        self._render()
         self.feedback_label.setText(
             (
                 "資料可能已寫入，請勿重送。待辦核對失敗，請按「重新核對待辦」。"

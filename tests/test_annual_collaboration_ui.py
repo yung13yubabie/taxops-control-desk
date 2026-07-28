@@ -4,7 +4,8 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, QSize, Qt
+from PySide6.QtWidgets import QMessageBox, QScrollArea
 
 from taxops.services.clients import CreateClientInput
 from taxops.services.compliance_profiles import ComplianceProfileItemInput
@@ -58,6 +59,10 @@ def test_annual_collaboration_dialog_has_fixed_desktop_tabs(
     dialog.resize(900, 540)
     dialog.show()
     qtbot.waitExposed(dialog)
+    assert dialog.size() == QSize(900, 540)
+    assert isinstance(dialog.request_scroll, QScrollArea)
+    assert isinstance(dialog.attachment_scroll, QScrollArea)
+    assert isinstance(dialog.task_scroll, QScrollArea)
     for index, (panel, buttons) in enumerate(
         (
             (
@@ -318,12 +323,34 @@ def test_annual_attachment_accept_reject_archive_and_failure_feedback(
     assert rejected.status == "rejected"
     assert panel.feedback_label.text() == "附件已標記退回並完成資料核對。"
 
+    monkeypatch.setattr(
+        "taxops.ui.widgets.annual_attachment_panel.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.No,
+    )
+    qtbot.mouseClick(panel.archive_button, Qt.MouseButton.LeftButton)
+    assert container.attachments.get(attachment_id) == rejected
+
+    monkeypatch.setattr(
+        "taxops.ui.widgets.annual_attachment_panel.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
     qtbot.mouseClick(panel.archive_button, Qt.MouseButton.LeftButton)
     archived = container.attachments.get(attachment_id)
     assert archived is not None
     assert archived.status == "archived"
     assert panel.attachment_ids() == ()
     assert panel.feedback_label.text() == "附件已封存並完成資料核對。"
+    audit_rows = container.conn.execute(
+        "SELECT action, target_id FROM audit_logs "
+        "WHERE target_type = 'attachment' AND target_id = ? ORDER BY id",
+        (str(attachment_id),),
+    ).fetchall()
+    assert [tuple(row) for row in audit_rows] == [
+        ("attachment.upload", str(attachment_id)),
+        ("attachment.accept", str(attachment_id)),
+        ("attachment.reject", str(attachment_id)),
+        ("attachment.delete", str(attachment_id)),
+    ]
 
 
 def test_annual_task_status_delete_invalid_input_and_failure_feedback(
@@ -370,10 +397,38 @@ def test_annual_task_status_delete_invalid_input_and_failure_feedback(
     assert "更新待辦狀態失敗，資料未變更" in panel.feedback_label.text()
     monkeypatch.setattr(container.tasks, "set_status", real_set_status)
 
+    monkeypatch.setattr(
+        "taxops.ui.widgets.annual_task_panel.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.No,
+    )
+    qtbot.mouseClick(panel.delete_button, Qt.MouseButton.LeftButton)
+    assert container.tasks.get_task(task_id) == doing
+
+    monkeypatch.setattr(
+        "taxops.ui.widgets.annual_task_panel.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
     qtbot.mouseClick(panel.delete_button, Qt.MouseButton.LeftButton)
     assert container.tasks.get_task(task_id) is None
     assert panel.task_ids() == ()
     assert panel.feedback_label.text() == "待辦已刪除並完成資料核對。"
+    audit_rows = container.conn.execute(
+        "SELECT action, target_id FROM audit_logs "
+        "WHERE target_type = 'task' AND target_id = ? ORDER BY id",
+        (str(task_id),),
+    ).fetchall()
+    assert [tuple(row) for row in audit_rows] == [
+        ("task.create", str(task_id)),
+        ("task.status_change", str(task_id)),
+        ("task.delete", str(task_id)),
+    ]
+    annual_audit = container.conn.execute(
+        "SELECT action, target_id, detail_json FROM audit_logs "
+        "WHERE action = 'annual_work.task.create' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert annual_audit is not None
+    assert annual_audit["target_id"] == str(item.id)
+    assert f'"task_id": {task_id}' in annual_audit["detail_json"]
 
 
 def test_collaboration_panel_initial_read_failure_has_read_only_retry(
@@ -407,8 +462,12 @@ def test_collaboration_panel_initial_read_failure_has_read_only_retry(
     assert not task_panel.reload()
     assert attachment_panel.pending_mutation_evidence is None
     assert task_panel.pending_mutation_evidence is None
+    assert attachment_panel.attachment_ids() == ()
+    assert task_panel.task_ids() == ()
     assert "附件讀取失敗" in attachment_panel.feedback_label.text()
     assert "待辦讀取失敗" in task_panel.feedback_label.text()
+    assert not attachment_panel.upload_button.isEnabled()
+    assert not task_panel.create_button.isEnabled()
     assert not attachment_panel.retry_button.isHidden()
     assert not task_panel.retry_button.isHidden()
 
@@ -434,6 +493,90 @@ def test_collaboration_panel_initial_read_failure_has_read_only_retry(
     assert task_panel.feedback_label.text() == "待辦已重新讀取。"
 
 
+def test_attachment_filter_failure_clears_old_scope_and_locks_mutations(
+    qtbot, container, monkeypatch, tmp_path: Path
+) -> None:
+    from taxops.ui.dialogs.annual_workflow_dialog import AnnualWorkflowDialog
+
+    _client, item, _engagement, request = _linked_item(container)
+    source = tmp_path / "舊範圍附件.pdf"
+    source.write_bytes(b"old scope must not remain actionable")
+    dialog = AnnualWorkflowDialog(container, item.id)
+    qtbot.addWidget(dialog)
+    panel = dialog.attachment_panel
+    monkeypatch.setattr(
+        "taxops.ui.widgets.annual_attachment_panel.QFileDialog.getOpenFileName",
+        lambda *_args, **_kwargs: (str(source), "PDF (*.pdf)"),
+    )
+    qtbot.mouseClick(panel.upload_button, Qt.MouseButton.LeftButton)
+    old_id = panel.selected_attachment_id()
+    assert old_id is not None
+    real_count = container.attachments.count_by_request
+    monkeypatch.setattr(
+        container.attachments,
+        "count_by_request",
+        lambda _request_id: (_ for _ in ()).throw(
+            RuntimeError("new request scope unavailable")
+        ),
+    )
+
+    panel.request_combo.setCurrentIndex(panel.request_combo.findData(request.id))
+
+    assert panel.attachment_ids() == ()
+    assert panel.selected_attachment_id() is None
+    assert not panel.upload_button.isEnabled()
+    assert not panel.accept_button.isEnabled()
+    assert not panel.reject_button.isEnabled()
+    assert not panel.archive_button.isEnabled()
+    assert not panel.next_button.isEnabled()
+    assert not panel.retry_button.isHidden()
+    assert container.attachments.get(old_id) is not None
+
+    monkeypatch.setattr(
+        container.attachments, "count_by_request", real_count
+    )
+    qtbot.mouseClick(panel.retry_button, Qt.MouseButton.LeftButton)
+    assert panel.upload_button.isEnabled()
+    assert panel.retry_button.isHidden()
+    assert panel.attachment_ids() == ()
+
+
+def test_parent_context_failure_disables_all_tabs_until_read_only_retry(
+    qtbot, container, monkeypatch
+) -> None:
+    from taxops.ui.dialogs.annual_workflow_dialog import AnnualWorkflowDialog
+
+    _client, item, _engagement, _request = _linked_item(container)
+    dialog = AnnualWorkflowDialog(container, item.id)
+    qtbot.addWidget(dialog)
+    real_get_context = container.annual_work.get_item_context
+    monkeypatch.setattr(
+        container.annual_work,
+        "get_item_context",
+        lambda _item_id: (_ for _ in ()).throw(
+            RuntimeError("annual context unavailable")
+        ),
+    )
+
+    qtbot.mouseClick(dialog.refresh_button, Qt.MouseButton.LeftButton)
+
+    assert not dialog.request_page.isEnabled()
+    assert not dialog.attachment_panel.isEnabled()
+    assert not dialog.task_panel.isEnabled()
+    assert not dialog.retry_button.isHidden()
+    assert "索件資料讀取失敗" in dialog.feedback_label.text()
+
+    monkeypatch.setattr(
+        container.annual_work, "get_item_context", real_get_context
+    )
+    qtbot.mouseClick(dialog.retry_button, Qt.MouseButton.LeftButton)
+
+    assert dialog.request_page.isEnabled()
+    assert dialog.attachment_panel.isEnabled()
+    assert dialog.task_panel.isEnabled()
+    assert dialog.retry_button.isHidden()
+
+
 def test_attachment_panel_defensive_evidence_and_no_context_guards(
     qtbot, container, monkeypatch, tmp_path: Path
 ) -> None:
@@ -450,7 +593,7 @@ def test_attachment_panel_defensive_evidence_and_no_context_guards(
     dialog = AnnualWorkflowDialog(container, item.id)
     qtbot.addWidget(dialog)
     panel = dialog.attachment_panel
-    panel.set_context(None, ())
+    panel.set_context(None)
     assert panel._read_count(None) == 0
     assert panel._read_page(None, offset=0) == ()
     panel._upload()
@@ -458,7 +601,7 @@ def test_attachment_panel_defensive_evidence_and_no_context_guards(
     panel._next_page()
     assert container.attachments.count_by_engagement(engagement.id) == 0
 
-    panel.set_context(engagement.id, (request,))
+    panel.set_context(engagement.id)
     monkeypatch.setattr(
         "taxops.ui.widgets.annual_attachment_panel.QFileDialog.getOpenFileName",
         lambda *_args, **_kwargs: ("", ""),

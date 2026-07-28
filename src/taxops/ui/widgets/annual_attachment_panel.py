@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -22,7 +23,6 @@ from PySide6.QtWidgets import (
 
 from ...i18n import error_message
 from ...repositories.attachments import AttachmentRow
-from ...repositories.document_requests import DocumentRequestRow
 from ...services.attachments import UploadAttachmentInput
 from ...services.container import ServiceContainer
 
@@ -69,8 +69,11 @@ class AnnualAttachmentPanel(QWidget):
         self._engagement_id: int | None = None
         self._page = 0
         self._total = 0
+        self._request_option_page = 0
+        self._request_option_total = 0
         self._rows: tuple[AttachmentRow, ...] = ()
         self._pending_mutation: AttachmentMutationEvidence | None = None
+        self._read_blocked = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -107,6 +110,12 @@ class AnnualAttachmentPanel(QWidget):
         action_row.addWidget(self.reject_button)
         action_row.addWidget(self.archive_button)
         action_row.addStretch(1)
+        self.request_option_page_label = QLabel("索件選項第 1 / 1 頁，共 0 筆")
+        self.request_option_previous_button = QPushButton("索件選項上一頁")
+        self.request_option_next_button = QPushButton("索件選項下一頁")
+        action_row.addWidget(self.request_option_page_label)
+        action_row.addWidget(self.request_option_previous_button)
+        action_row.addWidget(self.request_option_next_button)
         layout.addLayout(action_row)
 
         self.feedback_label = QLabel()
@@ -150,6 +159,12 @@ class AnnualAttachmentPanel(QWidget):
         self.retry_button.clicked.connect(self.retry_pending_verification)
         self.previous_button.clicked.connect(self._previous_page)
         self.next_button.clicked.connect(self._next_page)
+        self.request_option_previous_button.clicked.connect(
+            self._previous_request_option_page
+        )
+        self.request_option_next_button.clicked.connect(
+            self._next_request_option_page
+        )
         self._render()
 
     @property
@@ -159,10 +174,32 @@ class AnnualAttachmentPanel(QWidget):
     def set_context(
         self,
         engagement_id: int | None,
-        requests: tuple[DocumentRequestRow, ...],
     ) -> bool:
+        same_engagement = engagement_id == self._engagement_id
         selected_request_id = self.request_combo.currentData()
         self._engagement_id = engagement_id
+        if not same_engagement:
+            self._request_option_page = 0
+        self._page = 0
+        self.setEnabled(engagement_id is not None)
+        if engagement_id is None:
+            self._read_blocked = False
+            self._request_option_total = 0
+            self._replace_request_options((), None)
+            self._total = 0
+            self._rows = ()
+            self.feedback_label.setText("請先建立或連結正式案件，再管理共用附件。")
+            self._render()
+            return True
+        if not self._load_request_options(
+            selected_request_id if same_engagement else None
+        ):
+            return False
+        return self.reload()
+
+    def _replace_request_options(
+        self, requests: tuple[object, ...], selected_request_id: object
+    ) -> None:
         self.request_combo.blockSignals(True)
         self.request_combo.clear()
         self.request_combo.addItem(
@@ -175,14 +212,60 @@ class AnnualAttachmentPanel(QWidget):
         selected_index = self.request_combo.findData(selected_request_id)
         self.request_combo.setCurrentIndex(max(0, selected_index))
         self.request_combo.blockSignals(False)
-        self._page = 0
-        self.setEnabled(engagement_id is not None)
-        if engagement_id is None:
-            self._total = 0
-            self._rows = ()
-            self.feedback_label.setText("請先建立或連結正式案件，再管理共用附件。")
-            self._render()
+
+    def _load_request_options(
+        self, selected_request_id: int | None = None
+    ) -> bool:
+        if self._engagement_id is None:
+            self._request_option_total = 0
+            self._replace_request_options((), None)
+            self._render_request_option_page()
             return True
+        try:
+            total = self._container.doc_requests.count_by_engagement(
+                self._engagement_id
+            )
+            last_page = max(0, (total - 1) // _PAGE_SIZE)
+            self._request_option_page = min(
+                self._request_option_page, last_page
+            )
+            requests = tuple(
+                self._container.doc_requests.list_by_engagement(
+                    self._engagement_id,
+                    limit=_PAGE_SIZE,
+                    offset=self._request_option_page * _PAGE_SIZE,
+                )
+            )
+        except Exception as exc:
+            self._read_failed(
+                exc, committed=self._pending_mutation is not None
+            )
+            return False
+        self._request_option_total = total
+        self._replace_request_options(requests, selected_request_id)
+        self._render_request_option_page()
+        return True
+
+    def select_request_id(self, request_id: int) -> bool:
+        if self._engagement_id is None:
+            return False
+        try:
+            position = self._container.doc_requests.request_position(
+                request_id, engagement_id=self._engagement_id
+            )
+        except Exception as exc:
+            self._read_failed(exc, committed=False)
+            return False
+        if position is None:
+            return False
+        self._request_option_page = position // _PAGE_SIZE
+        if not self._load_request_options(request_id):
+            return False
+        selected_index = self.request_combo.findData(request_id)
+        if selected_index < 0:
+            return False
+        self.request_combo.setCurrentIndex(selected_index)
+        self._page = 0
         return self.reload()
 
     def attachment_ids(self) -> tuple[int, ...]:
@@ -251,6 +334,7 @@ class AnnualAttachmentPanel(QWidget):
             return False
         self._total = total
         self._rows = rows
+        self._read_blocked = False
         self._render()
         return True
 
@@ -378,6 +462,16 @@ class AnnualAttachmentPanel(QWidget):
         selected = self._selected_row()
         if selected is None:
             return
+        reply = QMessageBox.question(
+            self,
+            "確認封存附件",
+            f"確定要封存附件「{selected.original_filename}」？\n"
+            "附件會從作用中清單隱藏，但仍保留歷史與稽核紀錄。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
         request_id = self._request_id()
         try:
             count_before = self._read_count(request_id)
@@ -410,6 +504,49 @@ class AnnualAttachmentPanel(QWidget):
             self._page += 1
             self.reload()
 
+    def _previous_request_option_page(self) -> None:
+        if (
+            self._request_option_page > 0
+            and self._pending_mutation is None
+            and not self._read_blocked
+        ):
+            self._request_option_page -= 1
+            self._page = 0
+            if self._load_request_options():
+                self.reload()
+
+    def _next_request_option_page(self) -> None:
+        if (
+            (self._request_option_page + 1) * _PAGE_SIZE
+            < self._request_option_total
+            and self._pending_mutation is None
+            and not self._read_blocked
+        ):
+            self._request_option_page += 1
+            self._page = 0
+            if self._load_request_options():
+                self.reload()
+
+    def _render_request_option_page(self) -> None:
+        pages = max(
+            1,
+            (self._request_option_total + _PAGE_SIZE - 1) // _PAGE_SIZE,
+        )
+        self.request_option_page_label.setText(
+            "索件選項第 "
+            f"{self._request_option_page + 1} / {pages} 頁，"
+            f"共 {self._request_option_total} 筆"
+        )
+        locked = self._pending_mutation is not None or self._read_blocked
+        self.request_option_previous_button.setEnabled(
+            self._request_option_page > 0 and not locked
+        )
+        self.request_option_next_button.setEnabled(
+            (self._request_option_page + 1) * _PAGE_SIZE
+            < self._request_option_total
+            and not locked
+        )
+
     def _render(self) -> None:
         self.table.blockSignals(True)
         self.table.setRowCount(0)
@@ -434,12 +571,16 @@ class AnnualAttachmentPanel(QWidget):
             f"第 {self._page + 1} / {pages} 頁，共 {self._total} 筆"
         )
         self.previous_button.setEnabled(
-            self._page > 0 and self._pending_mutation is None
+            self._page > 0
+            and self._pending_mutation is None
+            and not self._read_blocked
         )
         self.next_button.setEnabled(
             (self._page + 1) * _PAGE_SIZE < self._total
             and self._pending_mutation is None
+            and not self._read_blocked
         )
+        self._render_request_option_page()
         self._restore_buttons()
 
     def _select_id(self, attachment_id: int) -> bool:
@@ -454,16 +595,31 @@ class AnnualAttachmentPanel(QWidget):
         return False
 
     def _restore_buttons(self) -> None:
-        locked = self._pending_mutation is not None
+        locked = self._pending_mutation is not None or self._read_blocked
         has_context = self._engagement_id is not None
         has_selection = self._selected_row() is not None
         self.request_combo.setEnabled(has_context and not locked)
+        self.request_option_previous_button.setEnabled(
+            has_context
+            and self._request_option_page > 0
+            and not locked
+        )
+        self.request_option_next_button.setEnabled(
+            has_context
+            and (self._request_option_page + 1) * _PAGE_SIZE
+            < self._request_option_total
+            and not locked
+        )
         self.upload_button.setEnabled(has_context and not locked)
         self.accept_button.setEnabled(has_selection and not locked)
         self.reject_button.setEnabled(has_selection and not locked)
         self.archive_button.setEnabled(has_selection and not locked)
 
     def _read_failed(self, exc: BaseException, *, committed: bool) -> None:
+        self._read_blocked = True
+        self._rows = ()
+        self._total = 0
+        self._render()
         self.feedback_label.setText(
             (
                 "資料可能已寫入，請勿重送。附件核對失敗，請按「重新核對附件」。"

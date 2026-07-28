@@ -12,6 +12,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QApplication, QTableWidget
 
 
@@ -213,6 +214,59 @@ def test_resize_and_auto_resize_persist_only_visible_columns(qapp, container):
     stored = json.loads(container.settings.get("ui.engagements.column_widths"))
     assert "owner" not in stored
     assert stored["id"] > 0
+
+
+def test_real_header_drag_persists_once_through_resize_signal(
+    qtbot, container
+) -> None:
+    from taxops.ui.widgets.column_settings import ColumnSettings
+
+    container.settings.set_setting("ui.engagements.column_widths", "")
+    table = _make_table(qtbot)
+    qtbot.addWidget(table)
+    settings = ColumnSettings(
+        table,
+        "engagements",
+        _TEST_COLS,
+        _TEST_CORE,
+        _TEST_HEADERS,
+        container.settings,
+    )
+    settings.install()
+    table.resize(720, 260)
+    table.show()
+    qtbot.waitExposed(table)
+    header = table.horizontalHeader()
+    old_width = table.columnWidth(0)
+    audit_before = container.conn.execute(
+        "SELECT COUNT(*) FROM audit_logs WHERE action = 'settings.update'"
+    ).fetchone()[0]
+    divider_x = header.sectionViewportPosition(0) + old_width - 1
+
+    qtbot.mousePress(
+        header.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=QPoint(divider_x, header.height() // 2),
+    )
+    qtbot.mouseMove(
+        header.viewport(),
+        pos=QPoint(divider_x + 24, header.height() // 2),
+    )
+    qtbot.mouseRelease(
+        header.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=QPoint(divider_x + 24, header.height() // 2),
+    )
+
+    qtbot.waitUntil(lambda: table.columnWidth(0) != old_width, timeout=1000)
+    stored = json.loads(
+        container.settings.get("ui.engagements.column_widths")
+    )
+    assert stored["id"] == table.columnWidth(0)
+    audit_after = container.conn.execute(
+        "SELECT COUNT(*) FROM audit_logs WHERE action = 'settings.update'"
+    ).fetchone()[0]
+    assert audit_after == audit_before + 1
 
 
 @pytest.mark.usefixtures("qapp")

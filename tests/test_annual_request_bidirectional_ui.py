@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 
 from PySide6.QtCore import QPoint, QRect, Qt
-from PySide6.QtWidgets import QDialog
+from PySide6.QtWidgets import QDialog, QMessageBox
 
 from taxops.services.clients import CreateClientInput
 from taxops.services.compliance_profiles import ComplianceProfileItemInput
@@ -175,6 +175,59 @@ def test_embedded_request_and_item_pagination_reaches_the_201st_real_rows(
     )
     assert "第 5 / 5 頁" in workflow.request_page._item_page_label.text()
     assert workflow.request_page.item_ids() == (target_items[-1].id,)
+    assert "共 201 筆" in (
+        workflow.attachment_panel.request_option_page_label.text()
+    )
+    assert workflow.attachment_panel.select_request_id(target_request.id)
+    assert "第 5 / 5 頁" in (
+        workflow.attachment_panel.request_option_page_label.text()
+    )
+    assert workflow.attachment_panel.request_combo.currentData() == (
+        target_request.id
+    )
+
+
+@pytest.mark.usefixtures("accept_document_item_template_dialog")
+def test_embedded_request_create_and_delete_refresh_attachment_selector(
+    qtbot, container, monkeypatch
+) -> None:
+    from taxops.ui.dialogs.annual_workflow_dialog import AnnualWorkflowDialog
+
+    _client, item = _work_item(container)
+    linked = container.annual_work.create_linked_request(
+        item.id,
+        request_name="原有索件",
+        item_names=(),
+    )
+    workflow = AnnualWorkflowDialog(container, item.id)
+    qtbot.addWidget(workflow)
+
+    qtbot.mouseClick(
+        workflow.request_page._new_req_btn, Qt.MouseButton.LeftButton
+    )
+
+    requests = container.doc_requests.list_by_engagement(
+        linked.engagement.id, limit=50, offset=0
+    )
+    created = next(row for row in requests if row.id != linked.request.id)
+    assert workflow.attachment_panel.request_combo.currentData() == created.id
+    assert (
+        workflow.attachment_panel.request_combo.findData(created.id) >= 0
+    )
+    assert workflow.summary_request_count.text() == "2"
+
+    monkeypatch.setattr(
+        "taxops.ui.pages.document_requests_page.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    assert workflow.request_page.select_request_id(created.id)
+    qtbot.mouseClick(
+        workflow.request_page._delete_req_btn, Qt.MouseButton.LeftButton
+    )
+
+    assert container.doc_requests.get_request(created.id) is None
+    assert workflow.attachment_panel.request_combo.findData(created.id) == -1
+    assert workflow.summary_request_count.text() == "1"
 
 
 def test_expected_annual_summary_uses_bounded_aggregate_without_snapshots(

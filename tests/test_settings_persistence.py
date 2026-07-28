@@ -91,6 +91,10 @@ def test_setting_update_never_commits_caller_owned_transaction(
         "SELECT COUNT(*) FROM audit_logs"
     ).fetchone()[0]
     container.conn.execute("BEGIN")
+    container.conn.execute(
+        "INSERT INTO app_settings(key, value, updated_at) VALUES (?, ?, ?)",
+        ("test.caller_sentinel", "must survive service rejection", "2026-07-28"),
+    )
 
     with pytest.raises(SettingsValidationError) as caught:
         container.settings.set_setting(
@@ -99,9 +103,23 @@ def test_setting_update_never_commits_caller_owned_transaction(
 
     assert caught.value.code == "settings.transaction.already_active"
     assert container.conn.in_transaction
+    assert (
+        container.conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            ("test.caller_sentinel",),
+        ).fetchone()[0]
+        == "must survive service rejection"
+    )
     assert container.settings.get("tax_cache.query_mode") == original
     assert (
         container.conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
         == audit_before
     )
     container.conn.rollback()
+    assert (
+        container.conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            ("test.caller_sentinel",),
+        ).fetchone()
+        is None
+    )

@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -404,7 +405,7 @@ class LinkExistingEngagementDialog(QDialog):
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("搜尋案件名稱或期間")
         self.search_input.setMaxLength(100)
-        self.search_button = QPushButton("搜尋")
+        self.search_button = QPushButton("搜尋案件")
         search_row.addWidget(self.search_input, 1)
         search_row.addWidget(self.search_button)
         layout.addLayout(search_row)
@@ -414,8 +415,8 @@ class LinkExistingEngagementDialog(QDialog):
         form.addRow("既有案件", self.engagement_combo)
         layout.addLayout(form)
         page_row = QHBoxLayout()
-        self.previous_button = QPushButton("上一頁")
-        self.next_button = QPushButton("下一頁")
+        self.previous_button = QPushButton("案件上一頁")
+        self.next_button = QPushButton("案件下一頁")
         self.page_label = QLabel()
         page_row.addWidget(self.previous_button)
         page_row.addWidget(self.next_button)
@@ -730,9 +731,12 @@ class AnnualWorkflowDialog(QDialog):
         self.task_panel.setEnabled(False)
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
-        self.tabs.addTab(self.request_page, "索件")
-        self.tabs.addTab(self.attachment_panel, "附件")
-        self.tabs.addTab(self.task_panel, "待辦")
+        self.request_scroll = self._scroll_page(self.request_page)
+        self.attachment_scroll = self._scroll_page(self.attachment_panel)
+        self.task_scroll = self._scroll_page(self.task_panel)
+        self.tabs.addTab(self.request_scroll, "索件")
+        self.tabs.addTab(self.attachment_scroll, "附件")
+        self.tabs.addTab(self.task_scroll, "待辦")
         layout.addWidget(self.tabs, 1)
         close_row = QHBoxLayout()
         close_row.addStretch(1)
@@ -748,6 +752,14 @@ class AnnualWorkflowDialog(QDialog):
         self.retry_button.clicked.connect(self.reload)
         self.close_button.clicked.connect(self.accept)
         self.reload(operation="load")
+
+    @staticmethod
+    def _scroll_page(page: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(page)
+        return scroll
 
     def _set_failed(
         self,
@@ -769,6 +781,8 @@ class AnnualWorkflowDialog(QDialog):
             engagement_id=engagement_id,
         )
         self.request_page.setEnabled(False)
+        self.attachment_panel.setEnabled(False)
+        self.task_panel.setEnabled(False)
         self.create_button.setEnabled(False)
         self.link_button.setEnabled(False)
         self.retry_button.show()
@@ -835,7 +849,7 @@ class AnnualWorkflowDialog(QDialog):
             self.engagement_name_label.setText("—")
             self.state_label.setText("尚未連結案件")
             self.request_page.setEnabled(False)
-            self.attachment_panel.set_context(None, ())
+            self.attachment_panel.set_context(None)
             self.task_panel.set_context(None)
             self.create_button.setEnabled(True)
             self.link_button.setEnabled(True)
@@ -846,8 +860,10 @@ class AnnualWorkflowDialog(QDialog):
         if not self.request_page.load_engagement(engagement.id):
             raise AnnualWorkError("annual_work.workflow.page_read_failed")
         self.request_page.setEnabled(True)
-        self.attachment_panel.set_context(engagement.id, overview.requests)
-        self.task_panel.set_context(engagement.id)
+        if not self.attachment_panel.set_context(engagement.id):
+            raise AnnualWorkError("annual_work.workflow.page_read_failed")
+        if not self.task_panel.set_context(engagement.id):
+            raise AnnualWorkError("annual_work.workflow.page_read_failed")
         self.create_button.setEnabled(False)
         self.link_button.setEnabled(False)
 
@@ -1082,6 +1098,12 @@ class AnnualWorkflowDialog(QDialog):
             raise AnnualWorkError("annual_work.workflow.readback_mismatch")
         self._render_models(context, client, overview, summary)
         if not evidence.request_deleted:
+            if not self.attachment_panel.select_request_id(
+                evidence.request_id
+            ):
+                raise AnnualWorkError(
+                    "annual_work.workflow.page_readback_mismatch"
+                )
             if not self.request_page.select_request_id(evidence.request_id):
                 raise AnnualWorkError(
                     "annual_work.workflow.page_readback_mismatch"
