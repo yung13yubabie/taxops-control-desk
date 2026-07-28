@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
+
+import pytest
+
+from build_tools import smoke_test_exe
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,3 +52,36 @@ def test_smoke_test_waits_after_force_kill() -> None:
 
     assert "proc.kill()" in smoke
     assert "proc.wait(timeout=5)" in smoke
+
+
+def test_exe_smoke_requires_latest_annual_schema(tmp_path: Path) -> None:
+    db_path = tmp_path / "taxops.sqlite"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE schema_migrations("
+            "version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+            ("0028_annual_compliance", "2026-07-28T00:00:00"),
+        )
+
+    smoke_test_exe._check_schema_current(db_path)
+
+
+def test_exe_smoke_rejects_database_without_latest_schema(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "taxops.sqlite"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE schema_migrations("
+            "version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"
+        )
+
+    with pytest.raises(SystemExit) as exc:
+        smoke_test_exe._check_schema_current(db_path)
+
+    assert exc.value.code == 1
+    assert "0028_annual_compliance" in capsys.readouterr().out
