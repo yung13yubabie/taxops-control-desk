@@ -177,6 +177,62 @@ def test_embedded_request_and_item_pagination_reaches_the_201st_real_rows(
     assert workflow.request_page.item_ids() == (target_items[-1].id,)
 
 
+def test_expected_annual_summary_uses_bounded_aggregate_without_snapshots(
+    qtbot, container, monkeypatch
+) -> None:
+    from types import SimpleNamespace
+
+    from taxops.ui.dialogs.annual_workflow_dialog import AnnualWorkflowDialog
+
+    _client, item = _work_item(container)
+    linked = container.annual_work.create_linked_request(
+        item.id,
+        request_name="聚合驗證",
+        item_names=(),
+    )
+    workflow = AnnualWorkflowDialog(container, item.id)
+    qtbot.addWidget(workflow)
+    aggregate = SimpleNamespace(
+        request_count=201,
+        total=201_000,
+        missing=200_993,
+        received=1,
+        incomplete=1,
+        invalid=1,
+        accepted=1,
+        pending_confirm=1,
+        not_applicable=1,
+        client_said_none=1,
+    )
+    aggregate_calls: list[int] = []
+    snapshot_calls: list[int] = []
+    monkeypatch.setattr(
+        container.doc_requests,
+        "summary_by_engagement",
+        lambda engagement_id: (
+            aggregate_calls.append(engagement_id) or aggregate
+        ),
+    )
+    monkeypatch.setattr(
+        container.doc_requests,
+        "read_request_snapshot",
+        lambda request_id: snapshot_calls.append(request_id),
+    )
+
+    values = workflow._expected_summary_for_engagement(
+        linked.engagement.id
+    )
+
+    assert values["request_count"] == 201
+    assert sum(
+        value
+        for key, value in values.items()
+        if key != "request_count"
+    ) == 201_000
+    assert aggregate_calls == [linked.engagement.id]
+    assert snapshot_calls == []
+
+
 def test_annual_item_dialog_opens_real_request_management_and_propagates_commit(
     qtbot, container, monkeypatch
 ) -> None:
@@ -865,6 +921,9 @@ def test_standalone_post_commit_ui_reload_failure_keeps_evidence_and_retries_wit
     )
     page = DocumentRequestsPage(container)
     qtbot.addWidget(page)
+    page.resize(1100, 680)
+    page.show()
+    qtbot.waitExposed(page)
     assert page.load_engagement(created.engagement.id)
     assert page.select_request_id(created.request.id)
     real_refresh = page._refresh_requests
@@ -885,9 +944,23 @@ def test_standalone_post_commit_ui_reload_failure_keeps_evidence_and_retries_wit
     assert stored is not None
     assert stored.follow_up_count == 1
     assert page.pending_mutation_evidence is not None
-    assert not page.isEnabled()
+    assert page.isEnabled()
+    assert page._recovery_panel.isVisible()
+    assert page._recovery_retry_button.isVisible()
+    assert page._recovery_retry_button.isEnabled()
+    assert "資料可能已寫入，請勿重送" in page._recovery_label.text()
+    assert not page._follow_up_btn.isEnabled()
 
-    assert page.retry_pending_mutation_verification()
+    page._on_follow_up()
+    assert (
+        container.doc_requests.get_request(
+            created.request.id
+        ).follow_up_count
+        == 1
+    )
+    qtbot.mouseClick(
+        page._recovery_retry_button, Qt.MouseButton.LeftButton
+    )
 
     stored = container.doc_requests.get_request(created.request.id)
     assert stored is not None

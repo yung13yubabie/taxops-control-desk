@@ -12,6 +12,7 @@ from ..core.text import sanitize_user_text
 from ..repositories.document_requests import (
     DocumentRequestItemRow,
     DocumentRequestRow,
+    DocumentRequestSummaryRow,
     DocumentRequestsRepository,
 )
 from .audit import AuditService
@@ -519,11 +520,42 @@ class DocumentRequestsService:
     def _update_item_result(
         self, item_id: int, item_name: str, notes: str | None = None
     ) -> DocumentItemsMutationResult:
+        if (
+            not isinstance(item_name, str)
+            or len(item_name) > 200
+            or _has_disallowed_control(item_name)
+        ):
+            raise DocumentRequestValidationError(
+                "doc_request_item.name.invalid"
+            )
         name = sanitize_user_text(item_name, max_length=200)
         if not name:
             raise DocumentRequestValidationError("doc_request_item.name.required")
+        if notes is not None and (
+            not isinstance(notes, str)
+            or len(notes) > 500
+            or _has_disallowed_control(notes)
+        ):
+            raise DocumentRequestValidationError(
+                "doc_request_item.notes.invalid"
+            )
         notes_clean = sanitize_user_text(notes, max_length=500) or None
         with self._conn:
+            existing = self._repo.get_item(item_id)
+            if existing is None:
+                raise DocumentRequestValidationError(
+                    "doc_request_item.not_found"
+                )
+            _, existing_chars = self._repo.item_totals(
+                existing.request_id
+            )
+            replacing_total = (
+                existing_chars - len(existing.item_name) + len(name)
+            )
+            if replacing_total > MAX_ITEM_NAMES_TOTAL_LENGTH:
+                raise DocumentRequestValidationError(
+                    "doc_request_item.bulk.too_large"
+                )
             item = self._repo.update_item_name(item_id, item_name=name, notes=notes_clean)
             if item is None:
                 raise DocumentRequestValidationError("doc_request_item.not_found")
@@ -751,6 +783,19 @@ class DocumentRequestsService:
 
     def count_by_engagement(self, engagement_id: int) -> int:
         return self._repo.count_by_engagement(engagement_id)
+
+    def summary_by_engagement(
+        self, engagement_id: int
+    ) -> DocumentRequestSummaryRow:
+        if (
+            not isinstance(engagement_id, int)
+            or isinstance(engagement_id, bool)
+            or engagement_id <= 0
+        ):
+            raise DocumentRequestValidationError(
+                "doc_request.engagement_id.invalid"
+            )
+        return self._repo.summary_by_engagement(engagement_id)
 
     def request_position(
         self, request_id: int, *, engagement_id: int | None

@@ -224,6 +224,32 @@ class DocumentRequestsPage(QWidget):
         self._context_banner.setWordWrap(True)
         outer.addWidget(self._context_banner)
 
+        self._recovery_panel = QWidget()
+        self._recovery_panel.setObjectName(
+            "DocumentMutationRecoveryPanel"
+        )
+        self._recovery_panel.setStyleSheet(
+            "QWidget#DocumentMutationRecoveryPanel {"
+            " background-color: #FFF7ED;"
+            " border: 1px solid #FDBA74;"
+            " border-radius: 6px;"
+            "}"
+        )
+        recovery_layout = QHBoxLayout(self._recovery_panel)
+        recovery_layout.setContentsMargins(12, 8, 12, 8)
+        recovery_layout.setSpacing(10)
+        self._recovery_label = QLabel()
+        self._recovery_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._recovery_label.setWordWrap(True)
+        self._recovery_label.setStyleSheet(
+            "font-size: 14px; color: #9A3412;"
+        )
+        self._recovery_retry_button = QPushButton("重新核對")
+        recovery_layout.addWidget(self._recovery_label, 1)
+        recovery_layout.addWidget(self._recovery_retry_button)
+        self._recovery_panel.hide()
+        outer.addWidget(self._recovery_panel)
+
         # Engagement selector row (hidden in embedded mode — the parent
         # EngagementsPage picks the engagement via its master list).
         filter_row = QHBoxLayout()
@@ -303,6 +329,19 @@ class DocumentRequestsPage(QWidget):
             self._export_btn,
         ):
             toolbar.addWidget(btn)
+        self._mutation_buttons = (
+            self._new_req_btn,
+            self._edit_req_btn,
+            self._mark_requested_btn,
+            self._request_status_btn,
+            self._follow_up_btn,
+            self._delete_req_btn,
+            self._add_item_btn,
+            self._edit_item_btn,
+            self._delete_item_btn,
+            self._bulk_delete_items_btn,
+            self._item_status_btn,
+        )
         outer.addWidget(toolbar_widget)
 
         # Empty state shown when no engagements exist at all
@@ -485,6 +524,9 @@ class DocumentRequestsPage(QWidget):
         self._request_next_btn.clicked.connect(self._next_request_page)
         self._item_previous_btn.clicked.connect(self._previous_item_page)
         self._item_next_btn.clicked.connect(self._next_item_page)
+        self._recovery_retry_button.clicked.connect(
+            self._on_recovery_retry_clicked
+        )
 
     # ------------------------------------------------------------------
     # Public API called by MainWindow / EngagementsPage
@@ -583,6 +625,48 @@ class DocumentRequestsPage(QWidget):
         self,
     ) -> DocumentMutationEvidence | None:
         return self._pending_mutation
+
+    def _show_pending_recovery(self, *, retry_failed: bool = False) -> None:
+        self._recovery_label.setText(
+            (
+                "重新核對仍失敗；資料可能已寫入，請勿重送。"
+                "請確認資料庫可用後再按「重新核對」。"
+            )
+            if retry_failed
+            else (
+                "資料可能已寫入，請勿重送。"
+                "請按「重新核對」確認目前資料。"
+            )
+        )
+        self._recovery_panel.show()
+        self._recovery_retry_button.setEnabled(True)
+        for button in self._mutation_buttons:
+            button.setEnabled(False)
+
+    def _clear_pending_recovery(self) -> None:
+        self._recovery_panel.hide()
+        self._new_req_btn.setEnabled(True)
+        self._apply_request_selection()
+        # A successful post-commit reload can retain the selected item row
+        # without emitting a new selection signal.  Recompute item actions
+        # explicitly now that the pending-evidence guard has been cleared.
+        self._on_item_selection_changed()
+        if (
+            self._view_mode == "items_only"
+            and self._items_only_request_id is not None
+        ):
+            self._add_item_btn.setEnabled(True)
+
+    def _mutation_is_pending(self) -> bool:
+        if self._pending_mutation is None:
+            return False
+        self._show_pending_recovery()
+        return True
+
+    def _on_recovery_retry_clicked(self) -> None:
+        self._recovery_retry_button.setEnabled(False)
+        if not self.retry_pending_mutation_verification():
+            self._show_pending_recovery(retry_failed=True)
 
     # ------------------------------------------------------------------
     # Combo population and selection sync
@@ -896,6 +980,10 @@ class DocumentRequestsPage(QWidget):
             self._item_total = self._container.doc_requests.count_items(
                 request_id
             )
+            max_page = max(
+                0, (self._item_total - 1) // _PAGE_SIZE
+            )
+            self._item_page = min(self._item_page, max_page)
             items = self._container.doc_requests.list_items(
                 request_id,
                 limit=_PAGE_SIZE,
@@ -974,7 +1062,7 @@ class DocumentRequestsPage(QWidget):
         self._generate_btn.setEnabled(has_sel)
         if has_sel:
             self._update_request_detail(self._selected_request_id())
-            return self._load_items_for_selected()
+            succeeded = self._load_items_for_selected()
         else:
             self._item_table.setRowCount(0)
             self._show_no_request_detail()
@@ -982,7 +1070,11 @@ class DocumentRequestsPage(QWidget):
             self._edit_item_btn.setEnabled(False)
             self._delete_item_btn.setEnabled(False)
             self._bulk_delete_items_btn.setEnabled(False)
-            return True
+            succeeded = True
+        if self._pending_mutation is not None:
+            for button in self._mutation_buttons:
+                button.setEnabled(False)
+        return succeeded
 
     def _on_item_selection_changed(self) -> None:
         rows = self._selected_item_rows()
@@ -992,6 +1084,9 @@ class DocumentRequestsPage(QWidget):
         self._edit_item_btn.setEnabled(single)
         self._delete_item_btn.setEnabled(single)
         self._bulk_delete_items_btn.setEnabled(multi)
+        if self._pending_mutation is not None:
+            for button in self._mutation_buttons:
+                button.setEnabled(False)
 
     def _selected_request_id(self) -> int | None:
         # In items_only mode, the request table is hidden — fall back to the
@@ -1119,6 +1214,58 @@ class DocumentRequestsPage(QWidget):
         )
         return snapshot.request, snapshot.items
 
+    def _snapshot_for_action(
+        self,
+        request_id: int,
+        *,
+        operation: str,
+        item_id: int | None = None,
+    ) -> (
+        tuple[DocumentRequestRow, tuple[DocumentRequestItemRow, ...]]
+        | None
+    ):
+        """Read mutation evidence without misreporting infrastructure errors.
+
+        A missing request is stale UI state and is safe to refresh.  Database
+        and other unexpected failures must remain distinguishable: no
+        mutation has run yet, so show a retryable read failure and preserve
+        the technical cause in the system log.
+        """
+        try:
+            return self._snapshot(request_id)
+        except DocumentRequestValidationError as exc:
+            QMessageBox.warning(
+                self,
+                "無法讀取索件資料",
+                error_message(exc.code),
+            )
+            if exc.code == "doc_request.not_found":
+                self._refresh_requests()
+            return None
+        except Exception as err:
+            detail: dict[str, object] = {
+                "operation": operation,
+                "request_id": request_id,
+            }
+            if item_id is not None:
+                detail["item_id"] = item_id
+            try:
+                self._container.system_log.error(
+                    "document request snapshot failed",
+                    exc=err,
+                    detail=detail,
+                )
+            except Exception:
+                # Logging must never turn a safe pre-mutation read failure into
+                # a second user-visible crash.
+                pass
+            QMessageBox.warning(
+                self,
+                "無法讀取索件資料",
+                error_message("doc_request.snapshot.failed"),
+            )
+            return None
+
     @staticmethod
     def _request_after(
         result: DocumentItemsMutationResult, request_id: int
@@ -1190,11 +1337,12 @@ class DocumentRequestsPage(QWidget):
                 self._mutation_handler is None
                 and not self._refresh_requests()
             ):
-                self.setEnabled(False)
+                self._show_pending_recovery()
                 return False
             self._pending_mutation = None
+            self._clear_pending_recovery()
             return True
-        self.setEnabled(False)
+        self._show_pending_recovery()
         return False
 
     def retry_pending_mutation_verification(self) -> bool:
@@ -1224,11 +1372,13 @@ class DocumentRequestsPage(QWidget):
             ):
                 return False
             self._pending_mutation = None
-            self.setEnabled(True)
+            self._clear_pending_recovery()
             return True
         return False
 
     def _on_new_request(self) -> None:
+        if self._mutation_is_pending():
+            return
         eng_id = self._engagement_id
         global_mode = eng_id is None
         if global_mode:
@@ -1284,15 +1434,17 @@ class DocumentRequestsPage(QWidget):
         )
 
     def _on_edit_request(self) -> None:
+        if self._mutation_is_pending():
+            return
         req_id = self._selected_request_id()
         if req_id is None:
             return
-        try:
-            existing, items_before = self._snapshot(req_id)
-        except Exception:
-            QMessageBox.warning(self, "找不到索件批次", error_message("doc_request.not_found"))
-            self._refresh_requests()
+        snapshot = self._snapshot_for_action(
+            req_id, operation="request.update"
+        )
+        if snapshot is None:
             return
+        existing, items_before = snapshot
         new_name, ok = QInputDialog.getText(
             self,
             "編輯批次名稱",
@@ -1331,13 +1483,17 @@ class DocumentRequestsPage(QWidget):
         )
 
     def _on_mark_requested(self) -> None:
+        if self._mutation_is_pending():
+            return
         req_id = self._selected_request_id()
         if req_id is None:
             return
-        try:
-            before, items_before = self._snapshot(req_id)
-        except Exception:
+        snapshot = self._snapshot_for_action(
+            req_id, operation="request.mark_requested"
+        )
+        if snapshot is None:
             return
+        before, items_before = snapshot
         try:
             updated = self._container.doc_requests.mark_requested(req_id)
         except DocumentRequestValidationError as exc:
@@ -1363,6 +1519,8 @@ class DocumentRequestsPage(QWidget):
         )
 
     def _on_set_request_status(self) -> None:
+        if self._mutation_is_pending():
+            return
         req_id = self._selected_request_id()
         if req_id is None:
             return
@@ -1389,10 +1547,12 @@ class DocumentRequestsPage(QWidget):
         status = label_to_value.get(label)
         if status is None:
             return
-        try:
-            before, items_before = self._snapshot(req_id)
-        except Exception:
+        snapshot = self._snapshot_for_action(
+            req_id, operation="request.status"
+        )
+        if snapshot is None:
             return
+        before, items_before = snapshot
         try:
             updated = self._container.doc_requests.set_request_status(
                 req_id, status
@@ -1420,13 +1580,17 @@ class DocumentRequestsPage(QWidget):
         )
 
     def _on_follow_up(self) -> None:
+        if self._mutation_is_pending():
+            return
         req_id = self._selected_request_id()
         if req_id is None:
             return
-        try:
-            before, items_before = self._snapshot(req_id)
-        except Exception:
+        snapshot = self._snapshot_for_action(
+            req_id, operation="request.follow_up"
+        )
+        if snapshot is None:
             return
+        before, items_before = snapshot
         try:
             updated = self._container.doc_requests.add_follow_up(req_id)
         except DocumentRequestValidationError as exc:
@@ -1452,6 +1616,8 @@ class DocumentRequestsPage(QWidget):
         )
 
     def _on_delete_request(self) -> None:
+        if self._mutation_is_pending():
+            return
         req_id = self._selected_request_id()
         if req_id is None:
             return
@@ -1464,10 +1630,12 @@ class DocumentRequestsPage(QWidget):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        try:
-            before, items_before = self._snapshot(req_id)
-        except Exception:
+        snapshot = self._snapshot_for_action(
+            req_id, operation="request.delete"
+        )
+        if snapshot is None:
             return
+        before, items_before = snapshot
         try:
             self._container.doc_requests.delete_request(req_id)
         except DocumentRequestValidationError as exc:
@@ -1494,13 +1662,17 @@ class DocumentRequestsPage(QWidget):
         )
 
     def _on_add_item(self) -> None:
+        if self._mutation_is_pending():
+            return
         req_id = self._selected_request_id()
         if req_id is None:
             return
-        try:
-            before, items_before = self._snapshot(req_id)
-        except Exception:
+        snapshot = self._snapshot_for_action(
+            req_id, operation="item.add_bulk"
+        )
+        if snapshot is None:
             return
+        before, items_before = snapshot
         dlg = AddDocumentItemDialog(self._container.doc_requests, req_id, parent=self)
         if dlg.exec() == AddDocumentItemDialog.DialogCode.Accepted:
             result = dlg.mutation_result
@@ -1520,16 +1692,22 @@ class DocumentRequestsPage(QWidget):
             )
 
     def _on_edit_item(self) -> None:
+        if self._mutation_is_pending():
+            return
         item_id = self._selected_item_id()
         if item_id is None:
             return
         req_id = self._selected_request_id()
         if req_id is None:
             return
-        try:
-            before, items_before = self._snapshot(req_id)
-        except Exception:
+        snapshot = self._snapshot_for_action(
+            req_id,
+            operation="item.update",
+            item_id=item_id,
+        )
+        if snapshot is None:
             return
+        before, items_before = snapshot
         item_row = self._selected_item_row()
         if item_row is None:
             return
@@ -1577,6 +1755,8 @@ class DocumentRequestsPage(QWidget):
         )
 
     def _on_bulk_delete_items(self) -> None:
+        if self._mutation_is_pending():
+            return
         ids = self._selected_item_ids()
         if not ids:
             return
@@ -1592,10 +1772,12 @@ class DocumentRequestsPage(QWidget):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        try:
-            before, items_before = self._snapshot(req_id)
-        except Exception:
+        snapshot = self._snapshot_for_action(
+            req_id, operation="item.delete_bulk"
+        )
+        if snapshot is None:
             return
+        before, items_before = snapshot
         try:
             result = self._container.doc_requests.delete_items_bulk(
                 ids, with_request=True
@@ -1631,6 +1813,8 @@ class DocumentRequestsPage(QWidget):
             )
 
     def _on_delete_item(self) -> None:
+        if self._mutation_is_pending():
+            return
         item_id = self._selected_item_id()
         if item_id is None:
             return
@@ -1646,10 +1830,14 @@ class DocumentRequestsPage(QWidget):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        try:
-            before, items_before = self._snapshot(req_id)
-        except Exception:
+        snapshot = self._snapshot_for_action(
+            req_id,
+            operation="item.delete",
+            item_id=item_id,
+        )
+        if snapshot is None:
             return
+        before, items_before = snapshot
         try:
             result = self._container.doc_requests.delete_item(
                 item_id, with_request=True
@@ -1680,6 +1868,8 @@ class DocumentRequestsPage(QWidget):
         )
 
     def _on_set_item_status(self) -> None:
+        if self._mutation_is_pending():
+            return
         item_id = self._selected_item_id()
         if item_id is None:
             return
@@ -1709,10 +1899,14 @@ class DocumentRequestsPage(QWidget):
         target = label_to_value.get(label)
         if target is None:
             return
-        try:
-            before, items_before = self._snapshot(req_id)
-        except Exception:
+        snapshot = self._snapshot_for_action(
+            req_id,
+            operation="item.status",
+            item_id=item_id,
+        )
+        if snapshot is None:
             return
+        before, items_before = snapshot
         try:
             result = self._container.doc_requests.set_item_status(
                 item_id,

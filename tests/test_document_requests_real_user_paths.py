@@ -8,6 +8,7 @@ button, so no test double writes to the service directly.
 
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -486,6 +487,173 @@ def test_item_action_unexpected_failures_from_real_buttons_are_visible(
         (item.id,),
     ).fetchone()
     assert tuple(row) == ("原始發票", "missing")
+
+
+@pytest.mark.usefixtures("qapp")
+def test_snapshot_validation_failure_is_visible_and_refreshes_stale_request(
+    monkeypatch, container, request_with_item
+):
+    from PySide6.QtWidgets import QMessageBox
+    from taxops.services.document_requests import (
+        DocumentRequestValidationError,
+    )
+    from taxops.ui.pages.document_requests_page import DocumentRequestsPage
+
+    request, _item = request_with_item
+    page = DocumentRequestsPage(container)
+    assert page.load_engagement(request.engagement_id)
+    page._req_table.selectRow(0)
+    warnings = []
+    refreshes = 0
+    real_refresh = page._refresh_requests
+
+    def counted_refresh():
+        nonlocal refreshes
+        refreshes += 1
+        return real_refresh()
+
+    monkeypatch.setattr(
+        container.doc_requests,
+        "read_request_snapshot",
+        lambda _request_id: (_ for _ in ()).throw(
+            DocumentRequestValidationError("doc_request.not_found")
+        ),
+    )
+    monkeypatch.setattr(page, "_refresh_requests", counted_refresh)
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda _parent, title, message: warnings.append(
+            (title, message)
+        ),
+    )
+
+    page._follow_up_btn.click()
+
+    assert warnings == [
+        (
+            "無法讀取索件資料",
+            "找不到指定索件批次，可能已被刪除",
+        )
+    ]
+    assert refreshes == 1
+    assert (
+        container.doc_requests.get_request(request.id).follow_up_count
+        == 0
+    )
+
+
+@pytest.mark.usefixtures("qapp")
+def test_snapshot_operational_failure_logs_root_cause_and_does_not_claim_not_found(
+    monkeypatch, container, request_with_item
+):
+    import sqlite3
+
+    from PySide6.QtWidgets import QMessageBox
+    from taxops.ui.pages.document_requests_page import DocumentRequestsPage
+
+    request, item = request_with_item
+    page = DocumentRequestsPage(
+        container, embedded=True, view_mode="items_only"
+    )
+    assert page.load_request_items(request.id)
+    page._item_table.selectRow(0)
+    warnings = []
+    monkeypatch.setattr(
+        container.doc_requests,
+        "read_request_snapshot",
+        lambda _request_id: (_ for _ in ()).throw(
+            sqlite3.OperationalError("database is locked")
+        ),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda _parent, title, message: warnings.append(
+            (title, message)
+        ),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+
+    page._on_delete_item()
+
+    assert warnings == [
+        (
+            "無法讀取索件資料",
+            "索件資料讀取失敗，尚未進行任何變更，請重新整理後再試",
+        )
+    ]
+    row = container.conn.execute(
+        "SELECT item_name, item_status FROM document_request_items"
+        " WHERE id = ?",
+        (item.id,),
+    ).fetchone()
+    assert tuple(row) == ("原始發票", "missing")
+    log_row = container.conn.execute(
+        "SELECT message, detail_json FROM system_logs"
+        " ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert log_row["message"] == "document request snapshot failed"
+    detail = json.loads(log_row["detail_json"])
+    assert detail["operation"] == "item.delete"
+    assert detail["request_id"] == request.id
+    assert detail["item_id"] == item.id
+    assert detail["exc_type"] == "OperationalError"
+    assert "database is locked" in detail["traceback"]
+
+
+@pytest.mark.usefixtures("qapp")
+def test_items_only_reload_clamps_page_after_last_page_shrinks(
+    container
+):
+    from taxops.services.clients import CreateClientInput
+    from taxops.services.document_requests import CreateDocumentRequestInput
+    from taxops.services.engagements import CreateEngagementInput
+    from taxops.ui.pages.document_requests_page import DocumentRequestsPage
+
+    client = container.clients.create_client(
+        CreateClientInput(
+            client_code="C-PAGE-CLAMP",
+            client_name="分頁回夾測試客戶",
+        )
+    )
+    engagement = container.engagements.create_engagement(
+        CreateEngagementInput(
+            client_id=client.id,
+            engagement_name="115 年度分頁案件",
+            tax_type="cit",
+            period_name="115",
+        )
+    )
+    request, items = container.doc_requests.create_request(
+        CreateDocumentRequestInput(
+            engagement_id=engagement.id,
+            tax_type="cit",
+            period_name="115",
+            request_name="跨頁縮減索件",
+            item_names=tuple(
+                f"文件項目 {index:02d}" for index in range(51)
+            ),
+        )
+    )
+    page = DocumentRequestsPage(
+        container, embedded=True, view_mode="items_only"
+    )
+    assert page.load_request_items(request.id)
+    page._item_next_btn.click()
+    assert page.item_ids() == (items[-1].id,)
+    assert page._item_page == 1
+
+    container.doc_requests.delete_item(items[-1].id)
+    assert page.load_request_items(request.id)
+
+    assert page._item_page == 0
+    assert page.item_ids() == tuple(item.id for item in items[:-1])
+    assert "第 1 / 1 頁，共 50 筆" == page._item_page_label.text()
 
 
 @pytest.mark.usefixtures("qapp")

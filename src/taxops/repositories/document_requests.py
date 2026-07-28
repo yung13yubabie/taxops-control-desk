@@ -65,6 +65,22 @@ class DocumentRequestItemRow:
     updated_at: str
 
 
+@dataclass(frozen=True)
+class DocumentRequestSummaryRow:
+    """Bounded aggregate for all active requests owned by one engagement."""
+
+    request_count: int = 0
+    total: int = 0
+    missing: int = 0
+    received: int = 0
+    incomplete: int = 0
+    invalid: int = 0
+    accepted: int = 0
+    pending_confirm: int = 0
+    not_applicable: int = 0
+    client_said_none: int = 0
+
+
 def _row_to_request(row: sqlite3.Row) -> DocumentRequestRow:
     keys = row.keys()
     request_name = row["request_name"] if "request_name" in keys else None
@@ -214,6 +230,61 @@ class DocumentRequestsRepository:
             (engagement_id,),
         ).fetchone()
         return int(row["c"]) if row else 0
+
+    def summary_by_engagement(
+        self, engagement_id: int
+    ) -> DocumentRequestSummaryRow:
+        """Return request and item status counts in one parameterized query."""
+        row = self._conn.execute(
+            "WITH active_requests AS ("
+            " SELECT dr.id FROM document_requests dr"
+            " JOIN engagements e ON e.id = dr.engagement_id"
+            "  AND e.deleted_at IS NULL"
+            " JOIN clients c ON c.id = e.client_id"
+            "  AND c.deleted_at IS NULL"
+            " WHERE dr.engagement_id = ? AND dr.deleted_at IS NULL"
+            "), item_counts AS ("
+            " SELECT COUNT(*) AS total,"
+            " SUM(CASE WHEN dri.item_status = 'missing'"
+            "     THEN 1 ELSE 0 END) AS missing,"
+            " SUM(CASE WHEN dri.item_status = 'received'"
+            "     THEN 1 ELSE 0 END) AS received,"
+            " SUM(CASE WHEN dri.item_status = 'incomplete'"
+            "     THEN 1 ELSE 0 END) AS incomplete,"
+            " SUM(CASE WHEN dri.item_status = 'invalid'"
+            "     THEN 1 ELSE 0 END) AS invalid,"
+            " SUM(CASE WHEN dri.item_status = 'accepted'"
+            "     THEN 1 ELSE 0 END) AS accepted,"
+            " SUM(CASE WHEN dri.item_status = 'pending_confirm'"
+            "     THEN 1 ELSE 0 END) AS pending_confirm,"
+            " SUM(CASE WHEN dri.item_status = 'not_applicable'"
+            "     THEN 1 ELSE 0 END) AS not_applicable,"
+            " SUM(CASE WHEN dri.item_status = 'client_said_none'"
+            "     THEN 1 ELSE 0 END) AS client_said_none"
+            " FROM document_request_items dri"
+            " JOIN active_requests ar ON ar.id = dri.request_id"
+            ") SELECT"
+            " (SELECT COUNT(*) FROM active_requests) AS request_count,"
+            " COALESCE(ic.total, 0) AS total,"
+            " COALESCE(ic.missing, 0) AS missing,"
+            " COALESCE(ic.received, 0) AS received,"
+            " COALESCE(ic.incomplete, 0) AS incomplete,"
+            " COALESCE(ic.invalid, 0) AS invalid,"
+            " COALESCE(ic.accepted, 0) AS accepted,"
+            " COALESCE(ic.pending_confirm, 0) AS pending_confirm,"
+            " COALESCE(ic.not_applicable, 0) AS not_applicable,"
+            " COALESCE(ic.client_said_none, 0) AS client_said_none"
+            " FROM item_counts ic",
+            (engagement_id,),
+        ).fetchone()
+        if row is None:
+            return DocumentRequestSummaryRow()
+        return DocumentRequestSummaryRow(
+            **{
+                field: int(row[field] or 0)
+                for field in DocumentRequestSummaryRow.__dataclass_fields__
+            }
+        )
 
     def update_request_metadata(
         self,

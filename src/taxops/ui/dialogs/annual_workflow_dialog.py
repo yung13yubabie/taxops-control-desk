@@ -972,36 +972,19 @@ class AnnualWorkflowDialog(QDialog):
     def _expected_summary_for_engagement(
         self, engagement_id: int
     ) -> dict[str, int]:
-        request_count = (
-            self._container.doc_requests.count_by_engagement(engagement_id)
+        summary = self._container.doc_requests.summary_by_engagement(
+            engagement_id
         )
-        values = {
-            "request_count": request_count,
-            "missing": 0,
-            "received": 0,
-            "incomplete": 0,
-            "invalid": 0,
-            "accepted": 0,
-            "pending_confirm": 0,
-            "not_applicable": 0,
-            "client_said_none": 0,
-        }
-        for offset in range(0, request_count, 200):
-            requests = self._container.doc_requests.list_by_engagement(
-                engagement_id, limit=200, offset=offset
+        values = self._summary_values(summary)
+        item_total = sum(
+            value
+            for name, value in values.items()
+            if name != "request_count"
+        )
+        if item_total != summary.total:
+            raise AnnualWorkError(
+                "annual_work.workflow.readback_mismatch"
             )
-            for request in requests:
-                snapshot = (
-                    self._container.doc_requests.read_request_snapshot(
-                        request.id
-                    )
-                )
-                if snapshot.request != request:
-                    raise AnnualWorkError(
-                        "annual_work.workflow.readback_mismatch"
-                    )
-                for item in snapshot.items:
-                    values[item.item_status] += 1
         return values
 
     def _verify_document_mutation(
