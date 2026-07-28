@@ -4,7 +4,15 @@ import sqlite3
 import threading
 import time
 
-from PySide6.QtCore import QObject, QThread, Signal, qInstallMessageHandler
+from PySide6.QtCore import (
+    QCoreApplication,
+    QEvent,
+    QObject,
+    QThread,
+    Signal,
+    qInstallMessageHandler,
+)
+from shiboken6 import isValid
 
 
 def _wait_until(qapp, predicate, timeout: float = 5.0) -> None:
@@ -14,6 +22,15 @@ def _wait_until(qapp, predicate, timeout: float = 5.0) -> None:
         time.sleep(0.005)
     qapp.processEvents()
     assert predicate()
+
+
+def _flush_controlled_worker_delete(qapp, worker: QObject) -> None:
+    """Consume deleteLater while the worker's owning dialog is still alive."""
+    QCoreApplication.sendPostedEvents(worker, QEvent.Type.DeferredDelete)
+    qapp.processEvents()
+    assert not isValid(worker)
+    if _ControlledWorker.instance is worker:
+        _ControlledWorker.instance = None
 
 
 def test_shared_local_worker_uses_fresh_readonly_connection_and_closes(
@@ -142,6 +159,7 @@ def test_new_client_name_search_is_async_busy_and_safe_to_close(
     assert dialog._local_worker is None
     assert dialog._search_btn.isEnabled()
     assert dialog.save_button.isEnabled()
+    _flush_controlled_worker_delete(qapp, worker)
     dialog.reject()
     assert not dialog.isVisible()
 
@@ -166,6 +184,7 @@ def test_new_client_stale_async_result_is_ignored_and_error_recovers_controls(
     )
     qapp.processEvents()
     assert dialog._result_combo.count() == 0
+    _flush_controlled_worker_delete(qapp, worker)
     assert "已忽略" in dialog._search_status.text()
 
     dialog._search_btn.click()
@@ -177,6 +196,7 @@ def test_new_client_stale_async_result_is_ignored_and_error_recovers_controls(
     assert dialog._search_btn.isEnabled()
     assert dialog.save_button.isEnabled()
     assert "逾時" in dialog._search_status.text()
+    _flush_controlled_worker_delete(qapp, worker)
 
 
 def test_new_client_exact_tax_id_remains_synchronous(container, qapp, monkeypatch):
