@@ -378,7 +378,11 @@ class AnnualAttachmentPanel(QWidget):
     def retry_pending_verification(self) -> bool:
         evidence = self._pending_mutation
         if evidence is None:
-            succeeded = self.reload()
+            selected_request_id = self._request_id()
+            succeeded = self._load_request_options(selected_request_id)
+            if succeeded:
+                self._page = 0
+                succeeded = self.reload()
             if succeeded:
                 self.retry_button.hide()
                 self._restore_buttons()

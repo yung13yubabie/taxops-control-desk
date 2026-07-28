@@ -230,6 +230,12 @@ def test_annual_task_create_and_complete_use_same_database_id(
     assert panel.row_for_task_id(task.id).status == "done"
     assert panel.feedback_label.text() == "待辦已完成並完成資料核對。"
     assert dialog.has_committed_change
+    audit = container.conn.execute(
+        "SELECT action, target_id FROM audit_logs "
+        "WHERE action = 'task.complete' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert audit is not None
+    assert tuple(audit) == ("task.complete", str(task.id))
 
 
 def test_annual_task_committed_readback_failure_retries_without_duplicate(
@@ -539,6 +545,73 @@ def test_attachment_filter_failure_clears_old_scope_and_locks_mutations(
     assert panel.upload_button.isEnabled()
     assert panel.retry_button.isHidden()
     assert panel.attachment_ids() == ()
+
+
+def test_attachment_request_option_pagination_failure_retries_same_page(
+    qtbot, container, monkeypatch
+) -> None:
+    from taxops.services.document_requests import CreateDocumentRequestInput
+    from taxops.ui.dialogs.annual_workflow_dialog import AnnualWorkflowDialog
+
+    _client, item, engagement, _request = _linked_item(container)
+    for index in range(50):
+        container.doc_requests.create_request(
+            CreateDocumentRequestInput(
+                engagement_id=engagement.id,
+                tax_type="cit",
+                period_name="115",
+                request_name=f"分頁索件 {index:02d}",
+            )
+        )
+    dialog = AnnualWorkflowDialog(container, item.id)
+    qtbot.addWidget(dialog)
+    panel = dialog.attachment_panel
+    assert "第 1 / 2 頁，共 51 筆" in (
+        panel.request_option_page_label.text()
+    )
+    real_list = container.doc_requests.list_by_engagement
+    failed = False
+
+    def fail_second_page(engagement_id, *, limit=200, offset=0):
+        nonlocal failed
+        if offset == 50 and not failed:
+            failed = True
+            raise RuntimeError("request options temporarily unavailable")
+        return real_list(engagement_id, limit=limit, offset=offset)
+
+    monkeypatch.setattr(
+        container.doc_requests,
+        "list_by_engagement",
+        fail_second_page,
+    )
+
+    qtbot.mouseClick(
+        panel.request_option_next_button, Qt.MouseButton.LeftButton
+    )
+
+    assert failed
+    assert not panel.upload_button.isEnabled()
+    assert not panel.request_option_next_button.isEnabled()
+    assert not panel.retry_button.isHidden()
+    assert "附件讀取失敗" in panel.feedback_label.text()
+
+    qtbot.mouseClick(panel.retry_button, Qt.MouseButton.LeftButton)
+
+    assert panel.retry_button.isHidden()
+    assert panel.upload_button.isEnabled()
+    assert "第 2 / 2 頁，共 51 筆" in (
+        panel.request_option_page_label.text()
+    )
+    assert panel.request_combo.count() == 2
+    assert panel.request_option_previous_button.isEnabled()
+
+    qtbot.mouseClick(
+        panel.request_option_previous_button, Qt.MouseButton.LeftButton
+    )
+    assert "第 1 / 2 頁，共 51 筆" in (
+        panel.request_option_page_label.text()
+    )
+    assert panel.request_option_next_button.isEnabled()
 
 
 def test_parent_context_failure_disables_all_tabs_until_read_only_retry(

@@ -132,6 +132,16 @@ def test_create_annual_workspace_action_contract_is_enabled_and_precise() -> Non
     assert search.success_text == "找到 N 筆客戶。"
     assert search.failure_text == "載入客戶失敗，請稍後再試。"
 
+    for label in ("搜尋案件", "案件上一頁", "案件下一頁"):
+        contract = by_label[label]
+        assert "count_by_client/list_by_client" in contract.service
+        assert "count_search_by_client/search_by_client" in contract.service
+        assert "count_by_client/list_by_client" in contract.repository
+        assert (
+            "count_search_by_client/search_by_client"
+            in contract.repository
+        )
+
     preview = by_label["載入預覽"]
     assert preview.handler == "AnnualWorkspaceDialog._load_preview"
     assert preview.service == "AnnualWorkService.preview"

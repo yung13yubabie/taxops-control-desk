@@ -657,7 +657,7 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
         success_text="",
         failure_text="附件讀取失敗，請重新核對。",
         audit_action=None,
-        test_marker="test_embedded_request_and_item_pagination_reaches_the_201st_real_rows",
+        test_marker="test_attachment_request_option_pagination_failure_retries_same_page",
         enabled=True,
     ),
     UIActionContract(
@@ -669,7 +669,7 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
         success_text="",
         failure_text="附件讀取失敗，請重新核對。",
         audit_action=None,
-        test_marker="test_embedded_request_and_item_pagination_reaches_the_201st_real_rows",
+        test_marker="test_attachment_request_option_pagination_failure_retries_same_page",
         enabled=True,
     ),
     UIActionContract(
@@ -784,8 +784,14 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
         button_label="搜尋案件",
         page=PAGE_ANNUAL_WORKBENCH,
         handler="LinkExistingEngagementDialog._start_search",
-        service="EngagementsService.count/list_by_client",
-        repository="EngagementsRepository.count/list_by_client",
+        service=(
+            "EngagementsService.count_by_client/list_by_client + "
+            "count_search_by_client/search_by_client"
+        ),
+        repository=(
+            "EngagementsRepository.count_by_client/list_by_client + "
+            "count_search_by_client/search_by_client"
+        ),
         success_text="",
         failure_text="既有案件讀取失敗，請稍後再試。",
         audit_action=None,
@@ -796,8 +802,14 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
         button_label="案件上一頁",
         page=PAGE_ANNUAL_WORKBENCH,
         handler="LinkExistingEngagementDialog._previous_page",
-        service="EngagementsService.list_by_client",
-        repository="EngagementsRepository.list_by_client",
+        service=(
+            "EngagementsService.count_by_client/list_by_client + "
+            "count_search_by_client/search_by_client"
+        ),
+        repository=(
+            "EngagementsRepository.count_by_client/list_by_client + "
+            "count_search_by_client/search_by_client"
+        ),
         success_text="",
         failure_text="既有案件讀取失敗，請稍後再試。",
         audit_action=None,
@@ -808,8 +820,14 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
         button_label="案件下一頁",
         page=PAGE_ANNUAL_WORKBENCH,
         handler="LinkExistingEngagementDialog._next_page",
-        service="EngagementsService.list_by_client",
-        repository="EngagementsRepository.list_by_client",
+        service=(
+            "EngagementsService.count_by_client/list_by_client + "
+            "count_search_by_client/search_by_client"
+        ),
+        repository=(
+            "EngagementsRepository.count_by_client/list_by_client + "
+            "count_search_by_client/search_by_client"
+        ),
         success_text="",
         failure_text="既有案件讀取失敗，請稍後再試。",
         audit_action=None,
