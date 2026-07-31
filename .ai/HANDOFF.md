@@ -1,5 +1,38 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-07-31 - v0.30 acceptance package)
+
+- The annual workbench/client-master implementation is committed through
+  `7320e9e`. No production data or release artifact is committed.
+- Clean verification passes 2663 tests with 90.18% branch coverage. Evidence
+  is the ignored local file `.ai/coverage-v030-final-20260731.json` (SHA-256
+  `5DD239D7B3C0089C6666D3DB259A17FC8540414D635E3F14DB8D640EDDBB6485`).
+- Two stale Qt `DeferredDelete` test-double leaks were fixed without removing
+  the global cleanup that exposed them. Three edge-test commits add 101 annual
+  service, real-widget failure, and worker lifecycle cases.
+- A separate normal-entry/user-path smoke now passes 92 tests. It exposed the actual app
+  stylesheet reducing the annual collaboration entry action to 13px. The
+  button now explicitly remains 14px, and standalone/order-polluted/full-file
+  regressions pass.
+- Isolated release environment: Python 3.11.9, PyInstaller 6.11.1, PySide6
+  6.10.2; `pip check` reports no broken requirements.
+- `dist/TaxOpsControlDesk-v0.30.0-win64.zip` is 50,095,302 bytes with SHA-256
+  `C42ADDC2761C6748252D91B9B35F73F7952229A94F9CF082CA4DA559AE0F4E9A`.
+  All 192 entries (191 files) read back, exactly match the build tree, and have
+  no forbidden paths. The extracted EXE stays alive for eight seconds with
+  migration `0028_annual_compliance`.
+- Windows reads FileVersion/ProductVersion `0.30.0.0`, ProductName
+  `TaxOps Control Desk`, and OriginalFilename `TaxOpsControlDesk.exe` from the
+  EXE. The artifact is intentionally reported as unsigned, not a signed release.
+- Remaining: the owner must perform the visible checklist in
+  `docs/packaging_checklist.md`, especially DPI/clipping, fixed billing,
+  annual workbench, notes, template placeholders, same-name registry choices,
+  SmartScreen, and persistence after restart. Do not call this a signed or
+  visually accepted release yet.
+- Next reader order: `.ai/spec-kit.md`, `.ai/CURRENT_STATE.md`,
+  `.ai/TASKS.md`, `.ai/DECISIONS.md`, then
+  `docs/packaging_checklist.md`.
+
 ## Latest Handoff Update (2026-07-28 - v0.30 release candidate)
 
 - Annual workbench implementation and formal request/attachment/task

@@ -1,5 +1,46 @@
 # DECISIONS
 
+## 2026-07-31 - Qt coverage evidence uses explicit process isolation
+
+### Decision
+
+QObject test doubles connected to production `deleteLater()` must consume
+their own `DeferredDelete` event while the owning widget is still alive. The
+full Windows branch-coverage run may split Qt-heavy test files across fresh,
+sequential Python processes and append one coverage database, but it may not
+omit tests or accept a native crash as a pass.
+
+### Rationale
+
+Two controlled worker doubles left deferred deletes behind. A later registry
+test's legitimate global cleanup then triggered a PySide6 native abort. One
+long process therefore mixed product coverage with stale native test state.
+
+### Impact
+
+Release evidence records file count and passed-test totals for every segment,
+then applies one branch-aware fail-under gate to the merged data. Test doubles
+that emit `finished` require explicit lifetime assertions.
+
+## 2026-07-31 - Acceptance ZIP must prove the extracted EXE path
+
+### Decision
+
+Windows acceptance requires both build-tree EXE smoke and a second smoke from
+a freshly extracted delivery ZIP. Both use isolated `LOCALAPPDATA`, remain
+alive through the startup interval, and verify the latest schema migration.
+
+### Rationale
+
+Checking only that a database file exists, or only running the pre-ZIP EXE,
+can report success for an old schema or a broken archive.
+
+### Impact
+
+Packaging handoff includes ZIP entry readback, forbidden-path scan, checksum,
+extracted-EXE startup, latest-migration evidence, and an explicit manual UI
+boundary.
+
 ## 2026-07-28 - Annual collaboration reuses formal workflow data
 
 ### Decision

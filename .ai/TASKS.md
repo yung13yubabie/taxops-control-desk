@@ -7,18 +7,14 @@
 - [x] Build the annual accounting/tax workbench with one client-year parent,
   independent work/filing/document/tax/fee states, ledger-derived balances,
   and bidirectional links to existing engagements and document requests.
-- [ ] Complete real user-path and 1366x768 plus 100/125/150% scaling checks.
-- [ ] Run the full branch-coverage gate at 90% or higher without exclusions or
+- [ ] Complete owner acceptance at 1366x768 and 100/125/150/200% scaling.
+- [x] Run the full branch-coverage gate at 90% or higher without exclusions or
   pragma inflation, then build and smoke-test the offline Windows EXE.
 
 ### DOING
 
-- [ ] Independently review the shared client profile and multiple-lease UI.
-- [ ] Independently re-review the registry industry search/display/apply slice.
-- [ ] Independently review the annual compliance profile repository, pure
-  period rules, atomic partial-upsert service, and safe audit contract.
-- [ ] Complete final independent re-review of the annual collaboration and
-  release-readiness corrections.
+- [ ] Owner manual acceptance of the packaged EXE using
+  `docs/packaging_checklist.md`.
 
 ### BLOCKED
 
@@ -62,6 +58,21 @@
   placing each work tab in a scrollable container.
 - [x] Establish a no-ignore Ruff baseline; `ruff check src tests build_tools`
   and compileall pass.
+- [x] Fix two test-double `DeferredDelete` leaks that caused order-dependent
+  PySide6 native aborts; keep the global cleanup assertion intact.
+- [x] Add 101 high-value annual service, workflow-dialog, and client-search
+  edge tests; verify 2663 tests and 90.18% branch coverage from clean data.
+- [x] Run 92 normal-entry/high-risk user-path smoke tests and fix the annual
+  request-management typography regression under the real app stylesheet.
+- [x] Build v0.30.0 in the exact-pinned isolated Python 3.11.9 environment;
+  smoke the build-tree and ZIP-extracted EXEs through migration 0028.
+- [x] Embed and verify Windows FileVersion/ProductVersion `0.30.0.0`, product
+  name, original filename, and file description in the packaged EXE.
+- [x] Read all 192 ZIP entries (191 files), reject source/test/private paths,
+  prove exact build-tree file/hash parity, and record the 50,095,302-byte
+  artifact SHA-256.
+- [x] Complete final independent code-quality and artifact-readiness reviews;
+  resolve the version-resource blocker and documentation overclaim they found.
 
 ## 2026-07-12 Branch coverage and happy-path hardening
 

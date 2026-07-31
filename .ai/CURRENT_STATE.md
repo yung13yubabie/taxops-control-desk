@@ -1,6 +1,6 @@
 # CURRENT_STATE
 
-## 2026-07-28 v0.30 release candidate
+## 2026-07-31 v0.30 manual-acceptance candidate
 
 - The annual workbench, client-year generation, editable annual detail,
   transaction ledger, formal engagement/request linkage, and annual
@@ -13,11 +13,28 @@
   expose read-only retry without resubmitting the committed operation.
 - The real shown collaboration dialog remains 900x540 and wraps each tab in a
   scroll area. Attachment archive and annual-task delete require confirmation.
-- Ruff 0.15.15 is pinned. `ruff check src tests build_tools`, compileall, and
-  focused annual collaboration/request/settings tests pass.
-- Full branch coverage, normal-entry application smoke, versioned EXE build,
-  ZIP readback, SHA-256, and manual acceptance are still pending. They must not
-  be reported as complete until fresh evidence exists.
+- Ruff 0.15.15 is pinned. Compileall, `ruff check src tests build_tools`, and
+  `git diff --check` pass.
+- A clean branch-aware measurement passes at 90.18%: 2663 tests pass across
+  111 test files, including the two real 1.7-million-row registry imports.
+  Qt-heavy registry files run in fresh sequential processes so native object
+  state cannot cross file boundaries; no test is omitted.
+- Normal-entry and high-risk user-path smoke passes 92 tests. It exposed and
+  fixed an app-stylesheet-only 13px annual-action regression that the earlier
+  alphabetical full suite did not expose.
+- The v0.30.0 onedir EXE is built with isolated Python 3.11.9,
+  PyInstaller 6.11.1, and PySide6 6.10.2. Both the build-tree EXE and the EXE
+  extracted from the delivery ZIP stay alive for eight seconds, create an
+  isolated SQLite database, and contain migration `0028_annual_compliance`.
+  Windows reports FileVersion/ProductVersion `0.30.0.0`, ProductName
+  `TaxOps Control Desk`, and OriginalFilename `TaxOpsControlDesk.exe`.
+- Manual-acceptance artifact:
+  `dist/TaxOpsControlDesk-v0.30.0-win64.zip` (50,095,302 bytes), SHA-256
+  `C42ADDC2761C6748252D91B9B35F73F7952229A94F9CF082CA4DA559AE0F4E9A`.
+  All 192 entries (191 files) read back; the archive exactly matches the build
+  tree, and forbidden source/test/private paths are absent.
+- Visible DPI, clipping, SmartScreen, long-running office workflow, and real
+  user-data acceptance remain manual and must not be reported as complete.
 
 ## 2026-07-16 v0.30 implementation worktree
 

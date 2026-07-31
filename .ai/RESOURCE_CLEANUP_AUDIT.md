@@ -1,5 +1,21 @@
 # RESOURCE CLEANUP AUDIT
 
+## 2026-07-31 - v0.30 Qt cleanup and packaged-process closeout
+
+- Two QObject test doubles emitted `finished` into production
+  `worker.deleteLater()` connections but did not consume `DeferredDelete`
+  before their owner widgets were torn down. A later global flush exposed the
+  stale wrappers as a native PySide6 abort.
+- Both tests now flush the exact worker while its owner is alive and assert the
+  Shiboken wrapper is invalid. Minimal polluted-order, full related-file, and
+  clean process-isolated coverage runs pass.
+- The complete 2663-test coverage run uses sequential fresh processes for the
+  47 Qt/registry files after the stable 64-file first segment. All 111 files
+  run; this is isolation, not deselection.
+- Build-tree and ZIP-extracted EXE smoke processes are terminated and waited.
+  Post-smoke process inspection reports no TaxOps, pytest, or PyInstaller
+  residual process.
+
 ## 2026-07-23 - Annual workspace client search worker
 
 - Annual-workspace client search now uses a fresh read-only SQLite QThread

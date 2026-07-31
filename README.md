@@ -27,9 +27,15 @@ TaxOps Control Desk 是面向臺灣記帳士／會計師事務所的 Windows 離
 ## 驗證狀態
 
 - 全專案 branch coverage 門檻：`90%`
-- v0.30.0 發佈候選必須重新完成完整測試與 branch-aware coverage
-  `>= 90%`；不得沿用 v0.29.0 的數字。
-- 自動化 EXE smoke 只驗證啟動與本機資料庫建立；視覺、縮放、長時間操作與實際事務所流程仍需人工驗收。
+- v0.30.0 已從空白 coverage 資料重新驗證：`2663 passed`，
+  branch-aware coverage `90.18%`，未排除真實 170 萬筆工商資料匯入測試。
+- 正常應用入口與高風險使用者路徑 smoke：`92 passed`；已修正正式
+  stylesheet 下年度索件主入口退回 13px 的順序相依問題。
+- Windows EXE 由隔離 Python 3.11.9、PyInstaller 6.11.1、PySide6 6.10.2
+  建置。工作目錄及 ZIP 解壓後的 EXE 都存活 8 秒、建立 SQLite，並套用
+  `0028_annual_compliance`。
+- 人工驗收 ZIP：`dist/TaxOpsControlDesk-v0.30.0-win64.zip`；視覺、DPI、
+  長時間操作、SmartScreen 與實際事務所資料仍需人工驗收。
 
 ## 開發與驗證
 
