@@ -73,6 +73,12 @@
   artifact SHA-256.
 - [x] Complete final independent code-quality and artifact-readiness reviews;
   resolve the version-resource blocker and documentation overclaim they found.
+- [x] Replay the original feature objective through 368 data/service and 184
+  real Qt UI tests: split addresses, multiple leases, industry lookup,
+  annual/custom work, six-category money ledger, navigation, and fixed layout.
+- [x] Render the real Windows Qt UI at the host's 125% DPI and verify a
+  1366x768 logical annual page plus a scrollable 760x720 client/multiple-lease
+  dialog with every required action inside the visible boundary.
 
 ## 2026-07-12 Branch coverage and happy-path hardening
 

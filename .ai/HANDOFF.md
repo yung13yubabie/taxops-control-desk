@@ -24,6 +24,14 @@
 - Windows reads FileVersion/ProductVersion `0.30.0.0`, ProductName
   `TaxOps Control Desk`, and OriginalFilename `TaxOpsControlDesk.exe` from the
   EXE. The artifact is intentionally reported as unsigned, not a signed release.
+- Original-goal replay on 2026-07-31 passes 368 data/service tests plus 184
+  real Qt UI tests. Native Windows rendering at the host's 125% DPI verifies a
+  1366x768 logical annual workbench with 34 generated rows and every primary
+  control inside the page. A 760x720 client dialog shows separate addresses,
+  scrolls to two leases, and keeps its fixed save actions reachable.
+- Windows Computer Use remains unavailable because its native control pipe is
+  absent. The rendered-widget evidence must not be relabeled as human mouse,
+  SmartScreen, or 100/150/200% host-DPI acceptance.
 - Remaining: the owner must perform the visible checklist in
   `docs/packaging_checklist.md`, especially DPI/clipping, fixed billing,
   annual workbench, notes, template placeholders, same-name registry choices,

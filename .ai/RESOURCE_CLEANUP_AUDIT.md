@@ -15,6 +15,15 @@
 - Build-tree and ZIP-extracted EXE smoke processes are terminated and waited.
   Post-smoke process inspection reports no TaxOps, pytest, or PyInstaller
   residual process.
+- The original-goal replay runs the 368-test data/service segment and the
+  184-test Qt UI segment sequentially so they do not race on QApplication,
+  temporary SQLite, or generated assets. The first combined command exceeded
+  its 300-second command budget and was correctly reported as timeout rather
+  than pass; both bounded segments then completed successfully.
+- Native 125% Qt render checks use isolated temporary SQLite roots, close their
+  ServiceContainer connections and windows, and remove those data roots. The
+  follow-up hygiene report lists only its own diagnostic Python processes, not
+  TaxOps, pytest, or PyInstaller remnants.
 
 ## 2026-07-23 - Annual workspace client search worker
 

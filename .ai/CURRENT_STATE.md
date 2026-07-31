@@ -22,6 +22,18 @@
 - Normal-entry and high-risk user-path smoke passes 92 tests. It exposed and
   fixed an app-stylesheet-only 13px annual-action regression that the earlier
   alphabetical full suite did not expose.
+- A requirement-focused replay passes 368 data/service tests and 184 real Qt
+  UI tests. It directly covers the split registered/contact addresses,
+  atomic multiple leases, offline industry search/application, annual draft
+  generation and custom rows, exact six-category tax/fee ledger balances,
+  navigation, error feedback, and fixed-desktop geometry.
+- Native Windows Qt rendering at the host's actual 125% DPI produces a
+  1366x768 logical annual workbench (1708x960 physical pixels) with 34 real
+  generated rows. Create/filter/refresh/detail/paging controls remain visible
+  and inside the page. A 760x720 client edit dialog keeps registered and
+  contact addresses reachable, scrolls to two leases, and retains fixed save
+  actions. This is widget-render evidence, not owner mouse/SmartScreen
+  acceptance or proof of 100/150/200% host settings.
 - The v0.30.0 onedir EXE is built with isolated Python 3.11.9,
   PyInstaller 6.11.1, and PySide6 6.10.2. Both the build-tree EXE and the EXE
   extracted from the delivery ZIP stay alive for eight seconds, create an
