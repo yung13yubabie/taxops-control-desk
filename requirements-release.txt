@@ -1,4 +1,4 @@
-# Exact Windows release environment used for TaxOps Control Desk v0.25.0.
+# Exact Windows release environment used for TaxOps Control Desk v0.30.0.
 # Install in a fresh virtual environment to avoid global PySide/Shiboken pickup.
 altgraph==0.17.5
 et_xmlfile==2.0.0

@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 
 from build_tools import smoke_test_exe
+from taxops import __version__
+from taxops.db.migrations import MIGRATIONS
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +27,21 @@ def test_pyinstaller_spec_embeds_windows_icon() -> None:
     assert "icon=" in spec
     assert '("assets/app_icon.ico", "assets")' in spec
     assert (ROOT / "assets" / "app_icon.ico").exists()
+
+
+def test_pyinstaller_spec_embeds_matching_windows_version_resource() -> None:
+    spec = (ROOT / "TaxOpsControlDesk.spec").read_text(encoding="utf-8")
+    version_file = ROOT / "build_tools" / "windows_version_info.txt"
+    version_text = version_file.read_text(encoding="utf-8")
+    major, minor, patch = (int(part) for part in __version__.split("."))
+
+    assert 'version="build_tools/windows_version_info.txt"' in spec
+    assert f"filevers=({major}, {minor}, {patch}, 0)" in version_text
+    assert f"prodvers=({major}, {minor}, {patch}, 0)" in version_text
+    assert f"u'FileVersion', u'{__version__}.0'" in version_text
+    assert f"u'ProductVersion', u'{__version__}.0'" in version_text
+    assert "u'OriginalFilename', u'TaxOpsControlDesk.exe'" in version_text
+    assert "u'ProductName', u'TaxOps Control Desk'" in version_text
 
 
 def test_app_sets_windows_app_user_model_id() -> None:
@@ -85,3 +102,7 @@ def test_exe_smoke_rejects_database_without_latest_schema(
 
     assert exc.value.code == 1
     assert "0028_annual_compliance" in capsys.readouterr().out
+
+
+def test_exe_smoke_latest_migration_matches_registry_tail() -> None:
+    assert smoke_test_exe._LATEST_MIGRATION == MIGRATIONS[-1][0]

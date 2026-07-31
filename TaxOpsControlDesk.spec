@@ -61,6 +61,7 @@ exe = EXE(
     upx=True,
     console=False,          # No console window in production
     icon="assets/app_icon.ico",
+    version="build_tools/windows_version_info.txt",
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
