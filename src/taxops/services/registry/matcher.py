@@ -138,7 +138,7 @@ class RegistryMatcher:
         registry_name = (row["business_name"] or "").strip()
         registry_address = (row["business_address"] or "").strip()
         client_name = (client.client_name or "").strip()
-        client_address = (client.address or "").strip()
+        client_address = (client.registered_address or "").strip()
 
         differences: dict[str, dict[str, str]] = {}
         if registry_name != client_name:

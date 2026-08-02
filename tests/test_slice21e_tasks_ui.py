@@ -649,10 +649,13 @@ def test_single_task_buttons_keep_failures_visible_and_state_unchanged(
 
 
 def test_task_filter_buttons_render_exact_due_and_overdue_rows(
-    qapp, container, clients
+    qapp, container, clients, monkeypatch
 ):
     from taxops.ui.action_registry import FilterKey
 
+    monkeypatch.setattr(
+        "taxops.ui.pages.tasks_page.today_iso", lambda: "2026-07-12"
+    )
     container.tasks.create_task(
         CreateTaskInput(
             engagement_id=None,

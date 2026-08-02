@@ -26,15 +26,6 @@ from PySide6.QtWidgets import (
 )
 
 from ...i18n import DISABLED_TOOLTIP, error_message
-from ..style import TEXT_MUTED
-
-_log = logging.getLogger(__name__)
-
-_PASTE_TEMPLATE = (
-    "客戶代號\t客戶名稱\t統一編號\t聯絡人\t聯絡電話\t地址\t備註\n"
-    "A001\t測試公司甲\t12345678\t王小姐\t0912345678\t台北市中正區重慶南路一段\t第一筆\n"
-    "A002\t測試公司乙\t87654321\t陳先生\t0922333444\t新北市板橋區文化路一段\t第二筆"
-)
 from ...repositories.clients import ClientsRepository
 from ...services.clients import ClientsService
 from ...services.clients_bulk import (
@@ -51,6 +42,15 @@ from ...services.clients_bulk import (
     parse_csv,
     parse_excel,
     validate_rows,
+)
+from ..style import TEXT_MUTED
+
+_log = logging.getLogger(__name__)
+
+_PASTE_TEMPLATE = (
+    "客戶代號\t客戶名稱\t統一編號\t聯絡人\t聯絡電話\t地址\t備註\n"
+    "A001\t測試公司甲\t12345678\t王小姐\t0912345678\t台北市中正區重慶南路一段\t第一筆\n"
+    "A002\t測試公司乙\t87654321\t陳先生\t0922333444\t新北市板橋區文化路一段\t第二筆"
 )
 
 _STEP_TITLES = [

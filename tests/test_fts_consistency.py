@@ -110,6 +110,8 @@ def test_engagement_create_fts_failure_rolls_back_core_and_audit(tmp_path):
     conn.commit()
 
     class _FailingSearchRepo:
+        connection = conn
+
         def add_engagement(self, *args, **kwargs):
             raise sqlite3.OperationalError("simulated FTS write failure")
 

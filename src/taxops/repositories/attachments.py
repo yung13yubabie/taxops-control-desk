@@ -7,17 +7,53 @@ from dataclasses import dataclass
 
 from ..core.clock import now_iso
 
+_ATTACHMENT_COLUMNS = (
+    "id, engagement_id, request_id, client_id, lease_id, original_filename, "
+    "stored_filename, file_hash_sha256, file_size, mime_type, extension, "
+    "uploaded_by, uploaded_at, source, status, notes, accepted_by, accepted_at"
+)
+
 _ACTIVE_ATTACHMENT_OWNER_SQL = (
+    "((attachments.engagement_id IS NOT NULL AND EXISTS ("
+    "SELECT 1 FROM engagements e"
+    " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+    " WHERE e.id = attachments.engagement_id AND e.deleted_at IS NULL)"
+    " AND (attachments.request_id IS NULL OR EXISTS ("
+    "SELECT 1 FROM document_requests dr"
+    " WHERE dr.id = attachments.request_id"
+    " AND dr.engagement_id = attachments.engagement_id"
+    " AND dr.deleted_at IS NULL)))"
+    " OR (attachments.lease_id IS NOT NULL AND EXISTS ("
+    "SELECT 1 FROM client_leases l"
+    " JOIN clients c ON c.id = l.client_id AND c.deleted_at IS NULL"
+    " WHERE l.id = attachments.lease_id"
+    " AND l.client_id = attachments.client_id)))"
+)
+
+_ACTIVE_ENGAGEMENT_HISTORY_OWNER_SQL = (
     "EXISTS (SELECT 1 FROM engagements e"
     " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
     " WHERE e.id = attachments.engagement_id AND e.deleted_at IS NULL)"
 )
 
 
+def _attachment_pagination(limit: object, offset: object) -> tuple[int, int]:
+    if (
+        not isinstance(limit, int)
+        or isinstance(limit, bool)
+        or not 1 <= limit <= 200
+        or not isinstance(offset, int)
+        or isinstance(offset, bool)
+        or not 0 <= offset <= 1_000_000
+    ):
+        raise ValueError("attachment.pagination.invalid")
+    return limit, offset
+
+
 @dataclass(frozen=True)
 class AttachmentRow:
     id: int
-    engagement_id: int
+    engagement_id: int | None
     request_id: int | None
     original_filename: str
     stored_filename: str
@@ -32,6 +68,8 @@ class AttachmentRow:
     notes: str | None
     accepted_by: str | None
     accepted_at: str | None
+    client_id: int | None = None
+    lease_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -47,6 +85,8 @@ def _row(r: sqlite3.Row) -> AttachmentRow:
         id=r["id"],
         engagement_id=r["engagement_id"],
         request_id=r["request_id"],
+        client_id=r["client_id"],
+        lease_id=r["lease_id"],
         original_filename=r["original_filename"],
         stored_filename=r["stored_filename"],
         file_hash_sha256=r["file_hash_sha256"],
@@ -175,7 +215,7 @@ class AttachmentsRepository:
 
     def get(self, attachment_id: int) -> AttachmentRow | None:
         r = self._conn.execute(
-            "SELECT * FROM attachments WHERE id = ?"
+            f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments WHERE id = ?"
             f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}",
             (attachment_id,),
         ).fetchone()
@@ -190,18 +230,18 @@ class AttachmentsRepository:
             else "engagement_id = ? AND status != 'archived'"
         )
         rows = self._conn.execute(
-            f"SELECT * FROM attachments WHERE {where}"
+            f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments WHERE {where}"
             f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
-            " ORDER BY uploaded_at DESC",
+            " ORDER BY uploaded_at DESC, id DESC",
             (engagement_id,),
         ).fetchall()
         return [_row(r) for r in rows]
 
     def list_all(self) -> list[AttachmentRow]:
         rows = self._conn.execute(
-            "SELECT * FROM attachments WHERE status != 'archived'"
+            f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments WHERE status != 'archived'"
             f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
-            " ORDER BY uploaded_at DESC"
+            " ORDER BY uploaded_at DESC, id DESC"
         ).fetchall()
         return [_row(r) for r in rows]
 
@@ -214,12 +254,138 @@ class AttachmentsRepository:
             else "request_id = ? AND status != 'archived'"
         )
         rows = self._conn.execute(
-            f"SELECT * FROM attachments WHERE {where}"
+            f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments WHERE {where}"
             f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
-            " ORDER BY uploaded_at DESC",
+            " ORDER BY uploaded_at DESC, id DESC",
             (request_id,),
         ).fetchall()
         return [_row(r) for r in rows]
+
+    def page_all(
+        self, *, limit: int = 200, offset: int = 0
+    ) -> list[AttachmentRow]:
+        limit, offset = _attachment_pagination(limit, offset)
+        rows = self._conn.execute(
+            f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments"
+            " WHERE status != 'archived'"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
+            " ORDER BY uploaded_at DESC, id DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        return [_row(row) for row in rows]
+
+    def count_all(self) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM attachments"
+            " WHERE status != 'archived'"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def page_by_engagement(
+        self,
+        engagement_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[AttachmentRow]:
+        limit, offset = _attachment_pagination(limit, offset)
+        rows = self._conn.execute(
+            f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments"
+            " WHERE engagement_id = ? AND status != 'archived'"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
+            " ORDER BY uploaded_at DESC, id DESC LIMIT ? OFFSET ?",
+            (engagement_id, limit, offset),
+        ).fetchall()
+        return [_row(row) for row in rows]
+
+    def count_by_engagement(self, engagement_id: int) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM attachments"
+            " WHERE engagement_id = ? AND status != 'archived'"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}",
+            (engagement_id,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def page_by_request(
+        self,
+        request_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[AttachmentRow]:
+        limit, offset = _attachment_pagination(limit, offset)
+        rows = self._conn.execute(
+            f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments"
+            " WHERE request_id = ? AND status != 'archived'"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
+            " ORDER BY uploaded_at DESC, id DESC LIMIT ? OFFSET ?",
+            (request_id, limit, offset),
+        ).fetchall()
+        return [_row(row) for row in rows]
+
+    def count_by_request(self, request_id: int) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM attachments"
+            " WHERE request_id = ? AND status != 'archived'"
+            f" AND {_ACTIVE_ATTACHMENT_OWNER_SQL}",
+            (request_id,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def request_history_belongs_to_active_engagement(
+        self, engagement_id: int, request_id: int
+    ) -> bool:
+        row = self._conn.execute(
+            "SELECT 1 FROM document_requests dr"
+            " JOIN engagements e ON e.id = dr.engagement_id"
+            "  AND e.deleted_at IS NULL"
+            " JOIN clients c ON c.id = e.client_id AND c.deleted_at IS NULL"
+            " WHERE dr.id = ? AND dr.engagement_id = ?",
+            (request_id, engagement_id),
+        ).fetchone()
+        return row is not None
+
+    def page_request_history(
+        self,
+        engagement_id: int,
+        request_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[AttachmentRow]:
+        limit, offset = _attachment_pagination(limit, offset)
+        rows = self._conn.execute(
+            f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments"
+            " WHERE engagement_id = ? AND request_id = ?"
+            f" AND {_ACTIVE_ENGAGEMENT_HISTORY_OWNER_SQL}"
+            " ORDER BY uploaded_at DESC, id DESC LIMIT ? OFFSET ?",
+            (engagement_id, request_id, limit, offset),
+        ).fetchall()
+        return [_row(row) for row in rows]
+
+    def count_request_history(
+        self, engagement_id: int, request_id: int
+    ) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM attachments"
+            " WHERE engagement_id = ? AND request_id = ?"
+            f" AND {_ACTIVE_ENGAGEMENT_HISTORY_OWNER_SQL}",
+            (engagement_id, request_id),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def get_request_history_attachment(
+        self, engagement_id: int, request_id: int, attachment_id: int
+    ) -> AttachmentRow | None:
+        row = self._conn.execute(
+            f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments"
+            " WHERE id = ? AND engagement_id = ? AND request_id = ?"
+            f" AND {_ACTIVE_ENGAGEMENT_HISTORY_OWNER_SQL}",
+            (attachment_id, engagement_id, request_id),
+        ).fetchone()
+        return _row(row) if row else None
 
     def update_status(
         self,
@@ -229,10 +395,10 @@ class AttachmentsRepository:
         accepted_at: str | None = None,
     ) -> AttachmentRow | None:
         self._conn.execute(
-            """
+            f"""
             UPDATE attachments
                SET status = ?, accepted_by = ?, accepted_at = ?
-             WHERE id = ?
+             WHERE id = ? AND {_ACTIVE_ATTACHMENT_OWNER_SQL}
             """,
             (status, accepted_by, accepted_at, attachment_id),
         )
@@ -246,3 +412,87 @@ class AttachmentsRepository:
             (engagement_id,),
         ).fetchone()
         return r is not None
+
+    def lease_belongs_to_active_client(self, client_id: int, lease_id: int) -> bool:
+        row = self._conn.execute(
+            "SELECT 1 FROM client_leases l"
+            " JOIN clients c ON c.id = l.client_id AND c.deleted_at IS NULL"
+            " WHERE l.id = ? AND l.client_id = ? AND l.deleted_at IS NULL",
+            (lease_id, client_id),
+        ).fetchone()
+        return row is not None
+
+    def lease_history_belongs_to_active_client(
+        self, client_id: int, lease_id: int
+    ) -> bool:
+        """Guard historical reads while allowing an archived lease row."""
+        row = self._conn.execute(
+            "SELECT 1 FROM client_leases l"
+            " JOIN clients c ON c.id = l.client_id AND c.deleted_at IS NULL"
+            " WHERE l.id = ? AND l.client_id = ?",
+            (lease_id, client_id),
+        ).fetchone()
+        return row is not None
+
+    def insert_for_lease(
+        self,
+        *,
+        client_id: int,
+        lease_id: int,
+        original_filename: str,
+        stored_filename: str,
+        file_hash_sha256: str,
+        file_size: int,
+        mime_type: str,
+        extension: str,
+        uploaded_by: str = "local_user",
+        source: str = "manual",
+        notes: str | None = None,
+    ) -> AttachmentRow:
+        now = now_iso()
+        cur = self._conn.execute(
+            """
+            INSERT INTO attachments(
+                engagement_id, request_id, client_id, lease_id,
+                original_filename, stored_filename, file_hash_sha256,
+                file_size, mime_type, extension, uploaded_by, uploaded_at,
+                source, status, notes
+            ) VALUES (NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'uploaded', ?)
+            """,
+            (
+                client_id,
+                lease_id,
+                original_filename,
+                stored_filename,
+                file_hash_sha256,
+                file_size,
+                mime_type,
+                extension,
+                uploaded_by,
+                now,
+                source,
+                notes,
+            ),
+        )
+        attachment_id = int(cur.lastrowid or 0)
+        self._conn.execute(
+            "INSERT INTO attachment_versions (attachment_id, supersedes_id, created_at)"
+            " VALUES (?, NULL, ?)",
+            (attachment_id, now),
+        )
+        row = self.get(attachment_id)
+        if row is None:
+            raise RuntimeError("attachments.insert_for_lease: row missing after insert")
+        return row
+
+    def list_by_lease(
+        self, lease_id: int, *, include_archived: bool = False
+    ) -> list[AttachmentRow]:
+        archived_sql = "" if include_archived else " AND status != 'archived'"
+        rows = self._conn.execute(
+            f"SELECT {_ATTACHMENT_COLUMNS} FROM attachments"
+            f" WHERE lease_id = ?{archived_sql} AND {_ACTIVE_ATTACHMENT_OWNER_SQL}"
+            " ORDER BY uploaded_at DESC, id DESC",
+            (lease_id,),
+        ).fetchall()
+        return [_row(row) for row in rows]

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TaxOps 年度工作台視覺稿</title>
+  <style>
+    :root {
+      --ink:#19202a; --muted:#667085; --line:#dfe3e8; --soft:#f5f7f9;
+      --paper:#ffffff; --nav:#17202b; --accent:#296e61; --accent-soft:#e8f2ef;
+      --warn:#a65f00; --warn-soft:#fff3dc; --danger:#a43f47; --danger-soft:#fdebed;
+      --blue:#365f91; --blue-soft:#eaf0f7;
+    }
+    * { box-sizing:border-box; }
+    html, body { margin:0; min-width:1180px; min-height:720px; color:var(--ink); background:#eef1f4; font:14px/1.5 "Microsoft JhengHei UI", "Noto Sans TC", sans-serif; }
+    button, input, select { font:inherit; }
+    button { cursor:pointer; }
+    .app { height:100vh; min-height:720px; display:grid; grid-template-columns:210px minmax(970px,1fr); overflow:hidden; }
+    .nav { background:var(--nav); color:#d9e0e7; padding:22px 14px; overflow-y:auto; }
+    .brand { font-size:17px; font-weight:750; color:white; padding:0 10px 22px; letter-spacing:.2px; }
+    .brand small { display:block; color:#91a0b0; font-size:12px; font-weight:500; margin-top:3px; }
+    .nav-label { color:#7f8c9b; font-size:12px; padding:11px 10px 6px; }
+    .nav button { width:100%; border:0; color:inherit; background:transparent; text-align:left; padding:10px 12px; border-radius:7px; margin:2px 0; }
+    .nav button.active { color:white; background:#2b3846; box-shadow:inset 3px 0 0 #61a695; }
+    .main { background:var(--soft); overflow:auto; }
+    .page { display:none; min-height:100%; padding:22px 24px 36px; }
+    .page.active { display:block; }
+    .top { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; margin-bottom:18px; }
+    h1 { font-size:22px; line-height:1.25; margin:0 0 5px; }
+    .subtitle { margin:0; color:var(--muted); max-width:780px; overflow-wrap:anywhere; }
+    .actions { display:flex; gap:8px; flex:0 0 auto; }
+    .btn { border:1px solid #c8ced5; background:white; color:var(--ink); border-radius:7px; padding:8px 13px; min-height:38px; }
+    .btn.primary { background:var(--accent); color:white; border-color:var(--accent); }
+    .toolbar { display:flex; align-items:flex-end; gap:10px; padding:14px; background:white; border:1px solid var(--line); border-radius:8px; margin-bottom:14px; overflow-x:auto; }
+    .field { min-width:130px; }
+    .field.grow { min-width:260px; flex:1; }
+    .field label { display:block; color:var(--muted); font-size:12px; margin-bottom:4px; }
+    input, select { width:100%; min-height:36px; padding:7px 9px; border:1px solid #c7ced6; background:#fff; border-radius:6px; color:var(--ink); }
+    .metrics { display:grid; grid-template-columns:repeat(5,minmax(145px,1fr)); gap:10px; margin-bottom:14px; }
+    .metric { background:white; border:1px solid var(--line); border-radius:8px; padding:13px 14px; min-height:86px; }
+    .metric strong { font-size:23px; display:block; margin-top:4px; }
+    .metric span { color:var(--muted); }
+    .metric.danger { border-left:4px solid var(--danger); }
+    .metric.warn { border-left:4px solid #d48a18; }
+    .metric.good { border-left:4px solid var(--accent); }
+    .panel { background:white; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+    .panel-head { min-height:48px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; border-bottom:1px solid var(--line); }
+    .panel-head strong { font-size:15px; }
+    .chips { display:flex; gap:7px; flex-wrap:wrap; }
+    .chip { border:1px solid #cbd2d9; background:#fff; border-radius:16px; padding:5px 10px; color:#4a5562; }
+    .chip.active { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+    .table-wrap { overflow:auto; max-height:390px; }
+    table { border-collapse:collapse; width:100%; min-width:1180px; }
+    th { position:sticky; top:0; z-index:1; background:#f7f8fa; color:#4d5966; font-size:12px; text-align:left; padding:9px 11px; border-bottom:1px solid var(--line); white-space:nowrap; }
+    td { padding:10px 11px; border-bottom:1px solid #edf0f2; vertical-align:top; }
+    tr[data-detail] { cursor:pointer; }
+    tr[data-detail]:hover, tr.selected { background:#f1f7f5; }
+    .name { font-weight:700; }
+    .sub { color:var(--muted); font-size:12px; margin-top:2px; white-space:normal; overflow-wrap:anywhere; }
+    .badge { display:inline-block; border-radius:12px; padding:3px 8px; font-size:12px; white-space:nowrap; background:#eef1f4; color:#4a5562; }
+    .badge.danger { color:var(--danger); background:var(--danger-soft); }
+    .badge.warn { color:var(--warn); background:var(--warn-soft); }
+    .badge.good { color:var(--accent); background:var(--accent-soft); }
+    .badge.blue { color:var(--blue); background:var(--blue-soft); }
+    .detail { margin-top:14px; display:grid; grid-template-columns:minmax(0,1.1fr) minmax(390px,.9fr); gap:14px; }
+    .detail-grid { padding:14px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 24px; }
+    .kv label { display:block; color:var(--muted); font-size:12px; margin-bottom:3px; }
+    .kv div { overflow-wrap:anywhere; }
+    .notice { margin:0 14px 14px; padding:10px 12px; border-radius:7px; background:var(--warn-soft); color:#76501b; overflow-wrap:anywhere; }
+    .money { padding:4px 14px 14px; }
+    .money-row { display:grid; grid-template-columns:1fr auto; gap:16px; padding:7px 0; border-bottom:1px dashed var(--line); }
+    .money-row.total { font-weight:750; border-bottom:0; padding-top:11px; }
+    .section { padding:14px; }
+    .section-title { font-size:15px; font-weight:750; margin-bottom:10px; }
+    .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 18px; }
+    .full { grid-column:1 / -1; }
+    .help { color:var(--muted); font-size:12px; margin-top:4px; white-space:normal; overflow-wrap:anywhere; }
+    .client-layout { display:grid; grid-template-columns:minmax(560px,1fr) minmax(390px,.7fr); gap:14px; }
+    .lease-table { min-width:880px; }
+    .registry-layout { display:grid; grid-template-columns:minmax(640px,1.25fr) minmax(400px,.75fr); gap:14px; }
+    .industry-list { margin:0; padding-left:20px; }
+    .industry-list li { margin:6px 0; overflow-wrap:anywhere; }
+    .fixed-note { margin-top:12px; color:var(--muted); font-size:12px; }
+    @media (max-height:760px) { .page { padding-top:16px; } .table-wrap { max-height:300px; } }
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside class="nav">
+    <div class="brand">TaxOps Control Desk<small>會計事務所離線工作台</small></div>
+    <div class="nav-label">主要作業</div>
+    <button class="active" data-view="workbench">年度工作台</button>
+    <button data-view="clients">客戶管理</button>
+    <button data-view="registry">工商／稅籍查詢</button>
+    <button>案件管理</button><button>索件管理</button><button>待辦管理</button>
+    <div class="nav-label">其他</div>
+    <button>固定開立</button><button>附件管理</button><button>設定</button>
+  </aside>
+  <main class="main">
+    <section class="page active" id="workbench">
+      <div class="top">
+        <div><h1>年度工作台</h1><p class="subtitle">以作業年度掌握全所期限、缺件、欠稅與申報異常；點選工作即可直接編輯共用的案件、索件與金流資料。</p></div>
+        <div class="actions"><button class="btn">申報設定檔</button><button class="btn primary">＋ 建立年度工作</button></div>
+      </div>
+      <div class="toolbar">
+        <div class="field"><label>作業年度</label><select><option>2026</option><option>2025</option></select></div>
+        <div class="field grow"><label>搜尋客戶或統一編號</label><input value="" placeholder="輸入客戶名稱、代號或統編"></div>
+        <div class="field"><label>申報類型</label><select><option>全部類型</option><option>營業稅</option><option>營所稅</option></select></div>
+        <div class="field"><label>風險</label><select><option>全部風險</option><option>逾期</option><option>缺件</option><option>欠繳</option></select></div>
+        <button class="btn">套用篩選</button>
+      </div>
+      <div class="metrics">
+        <div class="metric danger"><span>逾期未完成</span><strong>7</strong><span>其中 2 筆已申報但未繳</span></div>
+        <div class="metric warn"><span>憑證缺件</span><strong>18</strong><span>6 位客戶待催收</span></div>
+        <div class="metric warn"><span>尚欠稅款</span><strong>NT$ 284,600</strong><span>依金流明細計算</span></div>
+        <div class="metric"><span>待更正申報</span><strong>3</strong><span>異常不因完成而消失</span></div>
+        <div class="metric good"><span>本月完成</span><strong>42</strong><span>含 1 筆帶異常完成</span></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><strong>全客戶年度工作</strong><div class="chips"><button class="chip active">全部</button><button class="chip">需要處理</button><button class="chip">七日內到期</button><button class="chip">帶異常完成</button></div></div>
+        <div class="table-wrap">
+          <table><thead><tr><th>客戶</th><th>工作項目</th><th>所屬年度／期別</th><th>法定期限</th><th>憑證</th><th>申報</th><th>稅款</th><th>尚欠稅款</th><th>作業狀態</th></tr></thead>
+          <tbody>
+            <tr class="selected" data-detail="vat"><td><div class="name">晨岳設計有限公司</div><div class="sub">C-0012｜統編 53821476</div></td><td><div class="name">營業稅申報</div><div class="sub">已連結案件與索件批次 #118</div></td><td>2026｜03–04 月</td><td><span class="badge danger">2026-05-15｜逾期 2 日</span></td><td><span class="badge warn">部分收到 8/11</span></td><td><span class="badge blue">已申報</span></td><td><span class="badge warn">部分代收</span></td><td>NT$ 18,600</td><td><span class="badge danger">帶異常完成</span></td></tr>
+            <tr data-detail="income"><td><div class="name">昱禾餐飲商行</div><div class="sub">B-0041｜統編 92143708</div></td><td><div class="name">營所稅結算申報</div><div class="sub">作業年度與課稅年度分開保存</div></td><td>課稅年度 2025</td><td>2026-06-01</td><td><span class="badge good">已齊</span></td><td><span class="badge warn">需更正</span></td><td><span class="badge good">已繳</span></td><td>NT$ 0</td><td><span class="badge warn">處理中</span></td></tr>
+            <tr data-detail="withholding"><td><div class="name">安澄顧問股份有限公司</div><div class="sub">C-0003｜統編 83416725</div></td><td><div class="name">扣繳稅款繳納</div><div class="sub">每月義務，不與年度憑單混為一筆</div></td><td>2026｜05 月</td><td>2026-06-10</td><td><span class="badge">不適用</span></td><td><span class="badge">未申報</span></td><td><span class="badge warn">待代收</span></td><td>NT$ 46,000</td><td><span class="badge blue">處理中</span></td></tr>
+          </tbody></table>
+        </div>
+      </div>
+      <div class="detail">
+        <div class="panel"><div class="panel-head"><strong id="detail-title">晨岳設計有限公司｜營業稅 03–04 月</strong><div><button class="btn">開啟客戶年度</button> <button class="btn primary">編輯工作</button></div></div>
+          <div class="detail-grid">
+            <div class="kv"><label>作業年度</label><div>2026</div></div><div class="kv"><label>所屬課稅年度／期別</label><div>2026 年 03–04 月</div></div>
+            <div class="kv"><label>系統建議期限</label><div>2026-05-15</div></div><div class="kv"><label>實際採用期限</label><div>2026-05-15</div></div>
+            <div class="kv"><label>憑證收集</label><div>收到 8 項／預計 11 項｜最後催收 2026-05-12</div></div><div class="kv"><label>申報回執</label><div>已申報｜回執編號 VAT-260515-0182</div></div>
+          </div><div class="notice">尚有 3 項憑證未收到，且代收稅款不足 NT$ 18,600。此工作即使結束，仍會保留在「帶異常完成」篩選中。</div>
+        </div>
+        <div class="panel"><div class="panel-head"><strong>稅款與服務費</strong><button class="btn">＋ 新增明細</button></div><div class="money">
+          <div class="money-row"><span>申報應納稅額</span><strong>NT$ 62,000</strong></div><div class="money-row"><span>客戶代收稅款（2 筆）</span><strong>NT$ 43,400</strong></div><div class="money-row"><span>實際代繳稅款</span><strong>NT$ 43,400</strong></div><div class="money-row total"><span>尚欠稅款</span><strong style="color:var(--danger)">NT$ 18,600</strong></div><div class="money-row"><span>服務費未收</span><strong>NT$ 3,000</strong></div>
+        </div></div>
+      </div>
+      <div class="fixed-note">視覺驗收原則：說明與錯誤訊息完整換行；表格內容可橫向捲動；任何操作按鈕都不因視窗縮放而被裁切。</div>
+    </section>
+
+    <section class="page" id="clients">
+      <div class="top"><div><h1>客戶管理｜晨岳設計有限公司</h1><p class="subtitle">設籍地址、聯絡地址、行業清單與多份租約分開保存；既有地址遷移至設籍地址。</p></div><div class="actions"><button class="btn">查看歷史</button><button class="btn primary">儲存變更</button></div></div>
+      <div class="client-layout">
+        <div class="panel section"><div class="section-title">基本資料與地址</div><div class="form-grid">
+          <div class="field"><label>客戶代號</label><input value="C-0012"></div><div class="field"><label>統一編號</label><input value="53821476"></div>
+          <div class="field full"><label>客戶名稱</label><input value="晨岳設計有限公司"></div>
+          <div class="field full"><label>設籍／登記地址</label><input value="臺北市中山區南京東路二段 100 號 8 樓"><div class="help">工商資料套用預設只更新此欄，並保留來源與套用時間。</div></div>
+          <div class="field full"><label>聯絡／寄送地址</label><input value="新北市板橋區文化路一段 188 號 3 樓"><div class="help">可設定同設籍地址；取消後獨立維護，不會被工商資料覆蓋。</div></div>
+          <div class="field full"><label>客戶特殊要求／備註</label><input value="紙本繳款書需寄至聯絡地址；每期申報前先電話確認。"><div class="help">完整保留換行，並可在特殊要求總覽中篩選。</div></div>
+        </div></div>
+        <div class="panel section"><div class="section-title">行業資料</div><p class="subtitle">來源：財政部離線快取 2026-06｜套用時間：2026-07-13 10:42</p><ul class="industry-list"><li><strong>7409</strong> 其他專門設計業（主要）</li><li><strong>7310</strong> 廣告業</li><li><strong>6201</strong> 電腦程式設計業</li></ul><button class="btn">從工商查詢更新</button></div>
+      </div>
+      <div class="panel" style="margin-top:14px"><div class="panel-head"><strong>租約清單（可同時存在多份有效租約）</strong><button class="btn primary">＋ 新增租約</button></div><div class="table-wrap"><table class="lease-table"><thead><tr><th>租約名稱</th><th>承租處所</th><th>出租人</th><th>起日</th><th>迄日</th><th>月租金</th><th>提醒</th><th>狀態</th><th>操作</th></tr></thead><tbody>
+        <tr><td class="name">登記辦公室</td><td>臺北市中山區南京東路二段 100 號 8 樓</td><td>陳○○</td><td>2025-01-01</td><td>2027-12-31</td><td>NT$ 38,000</td><td>到期前 60 日</td><td><span class="badge good">有效</span></td><td><button class="btn">編輯</button></td></tr>
+        <tr><td class="name">板橋工作室</td><td>新北市板橋區文化路一段 188 號 3 樓</td><td>宏遠資產有限公司</td><td>2026-03-01</td><td>2027-02-28</td><td>NT$ 22,000</td><td>到期前 90 日</td><td><span class="badge good">有效</span></td><td><button class="btn">編輯</button></td></tr>
+      </tbody></table></div></div>
+    </section>
+
+    <section class="page" id="registry">
+      <div class="top"><div><h1>工商／稅籍查詢</h1><p class="subtitle">可依統編、名稱、行業代碼或行業名稱搜尋；離線資料與 GCIS 官方單筆補查會清楚標示來源差異。</p></div></div>
+      <div class="toolbar"><div class="field grow"><label>搜尋條件</label><input value="其他專門設計業"></div><button class="btn primary">搜尋離線資料</button><button class="btn">GCIS 統編查詢</button></div>
+      <div class="registry-layout">
+        <div class="panel"><div class="panel-head"><strong>搜尋結果 24 筆</strong><span class="sub">結果表格可橫向捲動，完整說明不裁切</span></div><div class="table-wrap"><table style="min-width:820px"><thead><tr><th>統一編號</th><th>名稱</th><th>主要行業</th><th>地址</th></tr></thead><tbody>
+          <tr class="selected"><td>53821476</td><td class="name">晨岳設計有限公司</td><td>7409 其他專門設計業</td><td>臺北市中山區南京東路二段 100 號 8 樓</td></tr>
+          <tr><td>83274615</td><td class="name">初光創意股份有限公司</td><td>7409 其他專門設計業</td><td>臺中市西區公益路 88 號 6 樓</td></tr>
+        </tbody></table></div></div>
+        <div class="panel section"><div class="section-title">晨岳設計有限公司</div><div class="kv"><label>統一編號</label><div>53821476</div></div><br><div class="kv"><label>設籍地址</label><div>臺北市中山區南京東路二段 100 號 8 樓</div></div><br><div class="kv"><label>全部行業</label><ul class="industry-list"><li>7409 其他專門設計業（主要）</li><li>7310 廣告業</li><li>6201 電腦程式設計業</li></ul></div><div class="notice" style="margin:14px 0">GCIS 若未提供行業資料，畫面會明示來源未提供，不會顯示成「查無行業」。</div><button class="btn primary">選擇欄位套用至客戶主檔</button></div>
+      </div>
+    </section>
+  </main>
+</div>
+<script>
+  document.querySelectorAll('[data-view]').forEach(btn => btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-view]').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
+    btn.classList.add('active'); document.getElementById(btn.dataset.view).classList.add('active');
+  }));
+  const titles = {vat:'晨岳設計有限公司｜營業稅 03–04 月', income:'昱禾餐飲商行｜2025 年度營所稅結算', withholding:'安澄顧問股份有限公司｜2026 年 05 月扣繳'};
+  document.querySelectorAll('tr[data-detail]').forEach(row => row.addEventListener('click', () => {
+    document.querySelectorAll('tr[data-detail]').forEach(x => x.classList.remove('selected'));
+    row.classList.add('selected'); document.getElementById('detail-title').textContent = titles[row.dataset.detail];
+  }));
+</script>
+</body>
+</html>

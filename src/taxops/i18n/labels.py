@@ -10,6 +10,7 @@ NAV_LABELS: dict[str, str] = dict(
     MappingProxyType(
         {
             "clients": "客戶管理",
+            "annual_workbench": "年度工作檯",
             "engagements": "案件管理",
             "doc_requests": "索件管理",
             "tasks": "待辦事項",
@@ -35,6 +36,16 @@ BUTTON_LABELS: dict[str, str] = dict(
             "clients.refresh": "重新整理",
             "client_dialog.save": "儲存",
             "client_dialog.cancel": "取消",
+            "annual.request_management": "協作管理",
+            "annual.request.create_first": "建立第一筆索件",
+            "annual.request.link_existing": "連結既有案件",
+            "annual.request.refresh": "重新整理索件",
+            "annual.request.retry": "重新讀取索件",
+            "annual.request.close": "關閉協作管理",
+            "annual.request.create": "建立索件",
+            "annual.request.create_cancel": "取消建立索件",
+            "annual.request.link": "連結案件",
+            "annual.request.link_cancel": "取消連結案件",
             "settings.open_data_folder": "開啟資料庫資料夾",
             "settings.open_attachments_folder": "開啟附件資料夾",
             "settings.copy_db_path": "複製資料庫路徑",
@@ -61,10 +72,23 @@ TABLE_HEADERS: dict[str, dict[str, str]] = {
         "contact_name": "聯絡人",
         "contact_phone": "聯絡電話",
         "contact_email": "聯絡信箱",
-        "address": "地址",
+        "registered_address": "登記地址",
+        "contact_address": "聯絡地址",
         "note": "備註",
-        "lease_start": "租約起日",
-        "lease_end": "租約迄日",
         "updated_at": "更新時間",
     }
 }
+
+
+ANNUAL_TRANSACTION_CATEGORY_LABELS: dict[str, str] = dict(
+    MappingProxyType(
+        {
+            "tax_liability": "應納稅額",
+            "client_tax_collection": "客戶稅款代收",
+            "tax_payment": "已繳稅款",
+            "tax_credit_or_refund": "退抵稅額",
+            "fee_receivable": "應收服務費",
+            "fee_receipt": "已收服務費",
+        }
+    )
+)

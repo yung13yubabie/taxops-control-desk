@@ -145,7 +145,6 @@ def test_new_client_search_exception_does_not_crash() -> None:
 
 def test_stale_results_cleared_after_search_failure() -> None:
     """Search A succeeds → search B fails → combo must be empty and fill disabled."""
-    import sqlite3
     from unittest.mock import patch
 
     _make_app()

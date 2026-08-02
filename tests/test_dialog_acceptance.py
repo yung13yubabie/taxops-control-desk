@@ -9,7 +9,6 @@ import json
 import os
 import sys
 
-import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 

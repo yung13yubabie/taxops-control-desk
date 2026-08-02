@@ -126,6 +126,9 @@ def test_build_variables_returns_all_keys(conn, gen_svc):
         "tax_type_name", "engagement_name", "missing_items", "invalid_items",
         "incomplete_items", "due_date", "notes", "payment_records",
         "outstanding_amount", "overdue_amount", "payment_due_date",
+        "annual_work_title", "annual_operation_year", "annual_due_date",
+        "annual_work_status", "annual_document_status", "annual_tax_status",
+        "annual_fee_status", "annual_exception_reason",
     }
     assert set(variables.keys()) == expected_keys
 
@@ -235,7 +238,7 @@ def test_generate_persists_to_db(conn, gen_svc):
 def test_generate_records_audit(conn, gen_svc):
     _, req_id = _seed_request(conn)
     payload = GenerateMessageInput(request_id=req_id, template_id=1)
-    msg = gen_svc.generate(payload)
+    gen_svc.generate(payload)
     row = conn.execute(
         "SELECT action FROM audit_logs WHERE action = 'gen_message.create' ORDER BY id DESC LIMIT 1"
     ).fetchone()

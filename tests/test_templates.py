@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from jinja2.sandbox import SandboxedEnvironment
 
 from taxops.db.connection import open_connection
 from taxops.db.migrate import apply_migrations
@@ -20,6 +21,7 @@ from taxops.services.templates import (
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture()
 def conn(tmp_path):
@@ -43,6 +45,7 @@ def svc(conn, audit_repo):
 
 # ── schema ────────────────────────────────────────────────────────────────────
 
+
 def test_message_templates_table_exists(conn):
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='message_templates'"
@@ -51,8 +54,19 @@ def test_message_templates_table_exists(conn):
 
 
 def test_message_templates_columns_present(conn):
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(message_templates)").fetchall()}
-    required = {"id", "name", "template_type", "body", "is_builtin", "created_at", "updated_at", "deleted_at"}
+    cols = {
+        r[1] for r in conn.execute("PRAGMA table_info(message_templates)").fetchall()
+    }
+    required = {
+        "id",
+        "name",
+        "template_type",
+        "body",
+        "is_builtin",
+        "created_at",
+        "updated_at",
+        "deleted_at",
+    }
     assert required.issubset(cols)
 
 
@@ -69,9 +83,12 @@ def test_builtin_templates_seeded(conn):
 
 # ── create ────────────────────────────────────────────────────────────────────
 
+
 def test_create_template_ok(svc):
     tmpl = svc.create_template(
-        CreateTemplateInput(name="催件模板", template_type="follow_up", body="您好 {{ client_name }}")
+        CreateTemplateInput(
+            name="催件模板", template_type="follow_up", body="您好 {{ client_name }}"
+        )
     )
     assert tmpl.id > 0
     assert tmpl.name == "催件模板"
@@ -111,7 +128,9 @@ def test_create_template_unknown_variable(svc):
 
 def test_create_template_invalid_type(svc):
     with pytest.raises(TemplateValidationError) as exc:
-        svc.create_template(CreateTemplateInput(name="Bad", template_type="invalid", body="hello"))
+        svc.create_template(
+            CreateTemplateInput(name="Bad", template_type="invalid", body="hello")
+        )
     assert exc.value.code == "template.type.invalid"
 
 
@@ -122,6 +141,7 @@ def test_create_template_all_allowed_variables(svc):
 
 
 # ── get + list ────────────────────────────────────────────────────────────────
+
 
 def test_get_template_returns_row(svc):
     created = svc.create_template(CreateTemplateInput(name="T1", body="body"))
@@ -149,11 +169,14 @@ def test_list_all_includes_custom(svc):
 
 # ── update ────────────────────────────────────────────────────────────────────
 
+
 def test_update_template_ok(svc):
     created = svc.create_template(CreateTemplateInput(name="Old", body="old body"))
     updated = svc.update_template(
         created.id,
-        UpdateTemplateInput(name="New", template_type="follow_up", body="new {{ client_name }}"),
+        UpdateTemplateInput(
+            name="New", template_type="follow_up", body="new {{ client_name }}"
+        ),
     )
     assert updated.name == "New"
     assert updated.body == "new {{ client_name }}"
@@ -161,7 +184,9 @@ def test_update_template_ok(svc):
 
 def test_update_template_not_found(svc):
     with pytest.raises(TemplateValidationError) as exc:
-        svc.update_template(99999, UpdateTemplateInput(name="X", template_type="custom", body="x"))
+        svc.update_template(
+            99999, UpdateTemplateInput(name="X", template_type="custom", body="x")
+        )
     assert exc.value.code == "template.not_found"
 
 
@@ -177,11 +202,14 @@ def test_update_builtin_rejected(svc):
 def test_update_template_name_required(svc):
     created = svc.create_template(CreateTemplateInput(name="T", body="body"))
     with pytest.raises(TemplateValidationError) as exc:
-        svc.update_template(created.id, UpdateTemplateInput(name="", template_type="custom", body="x"))
+        svc.update_template(
+            created.id, UpdateTemplateInput(name="", template_type="custom", body="x")
+        )
     assert exc.value.code == "template.name.required"
 
 
 # ── delete ────────────────────────────────────────────────────────────────────
+
 
 def test_delete_template_ok(svc):
     created = svc.create_template(CreateTemplateInput(name="Delete Me", body="bye"))
@@ -210,12 +238,16 @@ def test_deleted_template_not_in_list(svc):
 
 # ── render ────────────────────────────────────────────────────────────────────
 
+
 def test_render_template_substitutes_variables(svc):
     created = svc.create_template(
-        CreateTemplateInput(name="Render Test", body="Dear {{ client_name }}, period {{ period_name }}")
+        CreateTemplateInput(
+            name="Render Test", body="Dear {{ client_name }}, period {{ period_name }}"
+        )
     )
     result = svc.render_template(
-        created.id, {"client_name": "ABC Corp", "period_name": "2024Q1", "ignored_key": "x"}
+        created.id,
+        {"client_name": "ABC Corp", "period_name": "2024Q1", "ignored_key": "x"},
     )
     assert "ABC Corp" in result
     assert "2024Q1" in result
@@ -254,7 +286,9 @@ def test_render_template_unknown_variables_filtered(svc):
     created = svc.create_template(
         CreateTemplateInput(name="Safe", body="Hi {{ client_name }}")
     )
-    result = svc.render_template(created.id, {"client_name": "X", "evil": "drop tables"})
+    result = svc.render_template(
+        created.id, {"client_name": "X", "evil": "drop tables"}
+    )
     assert "drop tables" not in result
     assert "X" in result
 
@@ -311,6 +345,17 @@ def test_render_template_missing_variable_fails(svc):
     assert exc.value.code == "template.variable.missing"
 
 
+def test_plain_text_rendering_uses_sandbox_without_html_escaping(svc):
+    created = svc.create_template(
+        CreateTemplateInput(name="Plain text", body="客戶：{{ client_name }}")
+    )
+
+    assert isinstance(svc._env, SandboxedEnvironment)
+    assert svc.render_template(created.id, {"client_name": "林氏 <A&B>"}) == (
+        "客戶：林氏 <A&B>"
+    )
+
+
 def test_create_template_extended_allowed_variables(svc):
     body = (
         "{{ tax_id }} {{ contact_person }} {{ engagement_name }} {{ notes }} "
@@ -336,37 +381,53 @@ def test_render_legacy_payment_placeholder_remains_compatible(svc):
 def test_create_template_future_fields_rejected(svc):
     for field in ("office_owner", "reviewer", "last_followed_up_at"):
         with pytest.raises(TemplateValidationError) as exc:
-            svc.create_template(CreateTemplateInput(name=f"Bad-{field}", body=f"{{{{ {field} }}}}"))
-        assert exc.value.code == "template.unknown_variable", f"expected rejection for {field}"
+            svc.create_template(
+                CreateTemplateInput(name=f"Bad-{field}", body=f"{{{{ {field} }}}}")
+            )
+        assert exc.value.code == "template.unknown_variable", (
+            f"expected rejection for {field}"
+        )
 
 
 def test_create_template_getattr_rejected(svc):
     with pytest.raises(TemplateValidationError) as exc:
-        svc.create_template(CreateTemplateInput(name="Evil", body="{{ client_name.__class__ }}"))
-    assert exc.value.code in ("template.body.syntax_error", "template.body.unsafe_expression")
+        svc.create_template(
+            CreateTemplateInput(name="Evil", body="{{ client_name.__class__ }}")
+        )
+    assert exc.value.code in (
+        "template.body.syntax_error",
+        "template.body.unsafe_expression",
+    )
 
 
 def test_create_template_binary_expr_rejected(svc):
     with pytest.raises(TemplateValidationError) as exc:
-        svc.create_template(CreateTemplateInput(name="Evil", body="{{ client_name ~ 'x' }}"))
+        svc.create_template(
+            CreateTemplateInput(name="Evil", body="{{ client_name ~ 'x' }}")
+        )
     assert exc.value.code == "template.body.unsafe_expression"
 
 
 def test_create_template_for_loop_rejected(svc):
     with pytest.raises(TemplateValidationError) as exc:
         svc.create_template(
-            CreateTemplateInput(name="Evil", body="{% for x in missing_items %}{{ x }}{% endfor %}")
+            CreateTemplateInput(
+                name="Evil", body="{% for x in missing_items %}{{ x }}{% endfor %}"
+            )
         )
     assert exc.value.code == "template.body.unsafe_expression"
 
 
 def test_create_template_filter_rejected(svc):
     with pytest.raises(TemplateValidationError) as exc:
-        svc.create_template(CreateTemplateInput(name="Evil", body="{{ client_name | upper }}"))
+        svc.create_template(
+            CreateTemplateInput(name="Evil", body="{{ client_name | upper }}")
+        )
     assert exc.value.code == "template.body.unsafe_expression"
 
 
 # ── audit ─────────────────────────────────────────────────────────────────────
+
 
 def test_create_template_records_audit(conn, svc):
     svc.create_template(CreateTemplateInput(name="AuditCheck", body="hi"))
@@ -378,7 +439,9 @@ def test_create_template_records_audit(conn, svc):
 
 def test_update_template_records_audit(conn, svc):
     created = svc.create_template(CreateTemplateInput(name="AU", body="x"))
-    svc.update_template(created.id, UpdateTemplateInput(name="AU2", template_type="custom", body="y"))
+    svc.update_template(
+        created.id, UpdateTemplateInput(name="AU2", template_type="custom", body="y")
+    )
     rows = conn.execute(
         "SELECT action FROM audit_logs WHERE action = 'template.update' ORDER BY id DESC LIMIT 1"
     ).fetchall()
@@ -407,4 +470,7 @@ def test_render_template_rejects_unsafe_db_body(conn, svc):
 
     with pytest.raises(TemplateValidationError) as exc:
         svc.render_template(evil_id, {"client_name": "TestCo"})
-    assert exc.value.code in ("template.body.syntax_error", "template.body.unsafe_expression")
+    assert exc.value.code in (
+        "template.body.syntax_error",
+        "template.body.unsafe_expression",
+    )

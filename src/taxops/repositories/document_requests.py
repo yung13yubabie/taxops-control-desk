@@ -24,6 +24,19 @@ _ACTIVE_ITEM_OWNER_SQL = (
 )
 
 
+def _request_pagination(limit: object, offset: object) -> tuple[int, int]:
+    if (
+        not isinstance(limit, int)
+        or isinstance(limit, bool)
+        or not 1 <= limit <= 500
+        or not isinstance(offset, int)
+        or isinstance(offset, bool)
+        or not 0 <= offset <= 1_000_000
+    ):
+        raise ValueError("doc_request.pagination.invalid")
+    return limit, offset
+
+
 @dataclass(frozen=True)
 class DocumentRequestRow:
     id: int
@@ -50,6 +63,22 @@ class DocumentRequestItemRow:
     notes: str | None
     created_at: str
     updated_at: str
+
+
+@dataclass(frozen=True)
+class DocumentRequestSummaryRow:
+    """Bounded aggregate for all active requests owned by one engagement."""
+
+    request_count: int = 0
+    total: int = 0
+    missing: int = 0
+    received: int = 0
+    incomplete: int = 0
+    invalid: int = 0
+    accepted: int = 0
+    pending_confirm: int = 0
+    not_applicable: int = 0
+    client_said_none: int = 0
 
 
 def _row_to_request(row: sqlite3.Row) -> DocumentRequestRow:
@@ -135,23 +164,139 @@ class DocumentRequestsRepository:
         ).fetchone()
         return _row_to_request(row) if row else None
 
-    def list_all(self) -> list[DocumentRequestRow]:
+    def list_all(
+        self, *, limit: int = 200, offset: int = 0
+    ) -> list[DocumentRequestRow]:
+        limit, offset = _request_pagination(limit, offset)
         rows = self._conn.execute(
             "SELECT * FROM document_requests WHERE deleted_at IS NULL"
             f" AND {_ACTIVE_REQUEST_OWNER_SQL}"
-            " ORDER BY created_at ASC"
+            " ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?",
+            (limit, offset),
         ).fetchall()
         return [_row_to_request(r) for r in rows]
 
-    def list_by_engagement(self, engagement_id: int) -> list[DocumentRequestRow]:
+    def count_all(self) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM document_requests"
+            " WHERE deleted_at IS NULL"
+            f" AND {_ACTIVE_REQUEST_OWNER_SQL}"
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def request_position(
+        self, request_id: int, *, engagement_id: int | None
+    ) -> int | None:
+        params: tuple[object, ...]
+        filter_sql = ""
+        if engagement_id is None:
+            params = (request_id,)
+        else:
+            filter_sql = " AND engagement_id = ?"
+            params = (engagement_id, request_id)
+        row = self._conn.execute(
+            "SELECT position FROM ("
+            " SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC, id ASC) - 1"
+            " AS position FROM document_requests"
+            " WHERE deleted_at IS NULL"
+            f" AND {_ACTIVE_REQUEST_OWNER_SQL}{filter_sql}"
+            ") WHERE id = ?",
+            params,
+        ).fetchone()
+        return int(row["position"]) if row else None
+
+    def list_by_engagement(
+        self,
+        engagement_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[DocumentRequestRow]:
+        limit, offset = _request_pagination(limit, offset)
         rows = self._conn.execute(
             "SELECT * FROM document_requests"
             " WHERE engagement_id = ? AND deleted_at IS NULL"
             f" AND {_ACTIVE_REQUEST_OWNER_SQL}"
-            " ORDER BY created_at ASC",
-            (engagement_id,),
+            " ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?",
+            (engagement_id, limit, offset),
         ).fetchall()
         return [_row_to_request(r) for r in rows]
+
+    def latest_for_engagement(
+        self, engagement_id: int
+    ) -> DocumentRequestRow | None:
+        row = self._conn.execute(
+            "SELECT * FROM document_requests WHERE engagement_id = ? "
+            "AND deleted_at IS NULL"
+            f" AND {_ACTIVE_REQUEST_OWNER_SQL} "
+            "ORDER BY created_at DESC, id DESC LIMIT 1",
+            (engagement_id,),
+        ).fetchone()
+        return _row_to_request(row) if row else None
+
+    def count_by_engagement(self, engagement_id: int) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM document_requests"
+            " WHERE engagement_id = ? AND deleted_at IS NULL"
+            f" AND {_ACTIVE_REQUEST_OWNER_SQL}",
+            (engagement_id,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def summary_by_engagement(
+        self, engagement_id: int
+    ) -> DocumentRequestSummaryRow:
+        """Return request and item status counts in one parameterized query."""
+        row = self._conn.execute(
+            "WITH active_requests AS ("
+            " SELECT dr.id FROM document_requests dr"
+            " JOIN engagements e ON e.id = dr.engagement_id"
+            "  AND e.deleted_at IS NULL"
+            " JOIN clients c ON c.id = e.client_id"
+            "  AND c.deleted_at IS NULL"
+            " WHERE dr.engagement_id = ? AND dr.deleted_at IS NULL"
+            "), item_counts AS ("
+            " SELECT COUNT(*) AS total,"
+            " SUM(CASE WHEN dri.item_status = 'missing'"
+            "     THEN 1 ELSE 0 END) AS missing,"
+            " SUM(CASE WHEN dri.item_status = 'received'"
+            "     THEN 1 ELSE 0 END) AS received,"
+            " SUM(CASE WHEN dri.item_status = 'incomplete'"
+            "     THEN 1 ELSE 0 END) AS incomplete,"
+            " SUM(CASE WHEN dri.item_status = 'invalid'"
+            "     THEN 1 ELSE 0 END) AS invalid,"
+            " SUM(CASE WHEN dri.item_status = 'accepted'"
+            "     THEN 1 ELSE 0 END) AS accepted,"
+            " SUM(CASE WHEN dri.item_status = 'pending_confirm'"
+            "     THEN 1 ELSE 0 END) AS pending_confirm,"
+            " SUM(CASE WHEN dri.item_status = 'not_applicable'"
+            "     THEN 1 ELSE 0 END) AS not_applicable,"
+            " SUM(CASE WHEN dri.item_status = 'client_said_none'"
+            "     THEN 1 ELSE 0 END) AS client_said_none"
+            " FROM document_request_items dri"
+            " JOIN active_requests ar ON ar.id = dri.request_id"
+            ") SELECT"
+            " (SELECT COUNT(*) FROM active_requests) AS request_count,"
+            " COALESCE(ic.total, 0) AS total,"
+            " COALESCE(ic.missing, 0) AS missing,"
+            " COALESCE(ic.received, 0) AS received,"
+            " COALESCE(ic.incomplete, 0) AS incomplete,"
+            " COALESCE(ic.invalid, 0) AS invalid,"
+            " COALESCE(ic.accepted, 0) AS accepted,"
+            " COALESCE(ic.pending_confirm, 0) AS pending_confirm,"
+            " COALESCE(ic.not_applicable, 0) AS not_applicable,"
+            " COALESCE(ic.client_said_none, 0) AS client_said_none"
+            " FROM item_counts ic",
+            (engagement_id,),
+        ).fetchone()
+        if row is None:
+            return DocumentRequestSummaryRow()
+        return DocumentRequestSummaryRow(
+            **{
+                field: int(row[field] or 0)
+                for field in DocumentRequestSummaryRow.__dataclass_fields__
+            }
+        )
 
     def update_request_metadata(
         self,
@@ -253,6 +398,44 @@ class DocumentRequestsRepository:
         ).fetchall()
         return [_row_to_item(r) for r in rows]
 
+    def list_items_page(
+        self,
+        request_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[DocumentRequestItemRow]:
+        limit, offset = _request_pagination(limit, offset)
+        rows = self._conn.execute(
+            "SELECT * FROM document_request_items WHERE request_id = ?"
+            f" AND {_ACTIVE_ITEM_OWNER_SQL}"
+            " ORDER BY id ASC LIMIT ? OFFSET ?",
+            (request_id, limit, offset),
+        ).fetchall()
+        return [_row_to_item(r) for r in rows]
+
+    def item_totals(self, request_id: int) -> tuple[int, int]:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c, COALESCE(SUM(LENGTH(item_name)), 0) AS chars"
+            " FROM document_request_items WHERE request_id = ?"
+            f" AND {_ACTIVE_ITEM_OWNER_SQL}",
+            (request_id,),
+        ).fetchone()
+        if row is None:
+            return 0, 0
+        return int(row["c"]), int(row["chars"])
+
+    def item_position(self, request_id: int, item_id: int) -> int | None:
+        row = self._conn.execute(
+            "SELECT position FROM ("
+            " SELECT id, ROW_NUMBER() OVER (ORDER BY id ASC) - 1 AS position"
+            " FROM document_request_items WHERE request_id = ?"
+            f" AND {_ACTIVE_ITEM_OWNER_SQL}"
+            ") WHERE id = ?",
+            (request_id, item_id),
+        ).fetchone()
+        return int(row["position"]) if row else None
+
     def update_item_name(
         self,
         item_id: int,
@@ -308,43 +491,69 @@ class DocumentRequestsRepository:
 
         On any failure the entire batch is rolled back.
         """
-        ts = now_iso()
         try:
-            cur = self._conn.execute(
-                "INSERT INTO document_requests("
-                "engagement_id, request_name, tax_type, period_name, status,"
-                " due_date, requested_at, follow_up_count, notes, created_at, updated_at"
-                ") VALUES (?, ?, ?, ?, ?, ?, NULL, 0, ?, ?, ?)",
-                (
-                    engagement_id,
-                    request_name,
-                    tax_type,
-                    period_name,
-                    status,
-                    due_date,
-                    notes,
-                    ts,
-                    ts,
-                ),
+            return self.insert_request_with_items_uncommitted(
+                engagement_id=engagement_id,
+                request_name=request_name,
+                tax_type=tax_type,
+                period_name=period_name,
+                status=status,
+                due_date=due_date,
+                notes=notes,
+                item_names=item_names,
             )
-            request_id = cur.lastrowid
-            item_ids: list[int] = []
-            for name in item_names:
-                ic = self._conn.execute(
-                    "INSERT INTO document_request_items("
-                    "request_id, item_name, item_status, notes, created_at, updated_at"
-                    ") VALUES (?, ?, 'missing', NULL, ?, ?)",
-                    (request_id, name, ts, ts),
-                )
-                if ic.lastrowid is None:
-                    raise RuntimeError("insert_request_with_items: item lastrowid missing")
-                item_ids.append(ic.lastrowid)
         except Exception:
             self._conn.rollback()
             raise
+
+    def insert_request_with_items_uncommitted(
+        self,
+        *,
+        engagement_id: int,
+        request_name: str,
+        tax_type: str,
+        period_name: str,
+        status: str = "not_requested",
+        due_date: str | None = None,
+        notes: str | None = None,
+        item_names: tuple[str, ...] = (),
+    ) -> tuple[DocumentRequestRow, list[DocumentRequestItemRow]]:
+        """Insert a complete request without commit/rollback side effects."""
+        ts = now_iso()
+        cur = self._conn.execute(
+            "INSERT INTO document_requests("
+            "engagement_id, request_name, tax_type, period_name, status,"
+            " due_date, requested_at, follow_up_count, notes, created_at, updated_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, NULL, 0, ?, ?, ?)",
+            (
+                engagement_id,
+                request_name,
+                tax_type,
+                period_name,
+                status,
+                due_date,
+                notes,
+                ts,
+                ts,
+            ),
+        )
+        request_id = cur.lastrowid
+        if request_id is None:
+            raise RuntimeError("insert_request_with_items: request lastrowid missing")
+        item_ids: list[int] = []
+        for name in item_names:
+            ic = self._conn.execute(
+                "INSERT INTO document_request_items("
+                "request_id, item_name, item_status, notes, created_at, updated_at"
+                ") VALUES (?, ?, 'missing', NULL, ?, ?)",
+                (request_id, name, ts, ts),
+            )
+            if ic.lastrowid is None:
+                raise RuntimeError("insert_request_with_items: item lastrowid missing")
+            item_ids.append(ic.lastrowid)
         request = self.get_request(request_id)
         if request is None:
-            raise RuntimeError("insert_request_with_items: request missing after commit")
+            raise RuntimeError("insert_request_with_items: request missing after insert")
         items = [self.get_item(iid) for iid in item_ids]
         return request, [i for i in items if i is not None]
 

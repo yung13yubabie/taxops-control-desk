@@ -6,6 +6,7 @@ Raw exception text never reaches the UI; it is captured here instead.
 
 from __future__ import annotations
 
+import sqlite3
 import traceback
 from typing import Any
 
@@ -16,11 +17,21 @@ class SystemLogService:
     def __init__(self, repo: SystemLogRepository) -> None:
         self._repo = repo
 
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self._repo.connection
+
     def info(self, message: str, *, detail: dict[str, Any] | None = None) -> None:
         self._repo.append(level="INFO", message=message, detail=detail)
 
-    def warn(self, message: str, *, detail: dict[str, Any] | None = None) -> None:
-        self._repo.append(level="WARN", message=message, detail=detail)
+    def warn(
+        self,
+        message: str,
+        *,
+        detail: dict[str, Any] | None = None,
+        commit: bool = True,
+    ) -> None:
+        self._repo.append(level="WARN", message=message, detail=detail, commit=commit)
 
     def error(
         self,

@@ -12,7 +12,6 @@ Covers:
 """
 from __future__ import annotations
 
-import io
 import os
 import pathlib
 import sqlite3
@@ -500,7 +499,6 @@ def test_download_success_pipeline_audit_and_cleanup(tmp_path) -> None:
         import shutil
         shutil.copy2(valid_zip, d)
 
-    from taxops.services.registry_download import download_registry_zip
 
     with patch("taxops.services.registry_download.urllib.request.urlopen"):
         # Directly replicate the _do closure logic

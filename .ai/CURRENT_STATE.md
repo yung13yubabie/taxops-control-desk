@@ -1,5 +1,134 @@
 # CURRENT_STATE
 
+## 2026-08-01 v0.30 manual-acceptance refresh
+
+- The current worktree adds the requested office workflows: consistent client
+  address widths, lease-count markers with collapsible details, an annual
+  compliance-profile editor reachable from the annual workbench, atomic
+  multi-client engagement creation, default task-column sorting, grouped work
+  record/template/image panels with double-click zoom, and message-template
+  previews sourced from a real selected client plus annual-workbench fields.
+- A clean, sequential, branch-aware run passes all 2,682 collected tests across
+  112 test files. It includes both real 65,963,079-byte BGMOPEN1 imports and
+  measures 90.11569881344029% combined coverage (22,011 statements and 5,042
+  branches). Evidence is `.ai/coverage-v031-clean-20260801.json`, SHA-256
+  `6BCA83814AD714DCF33BABE410E6E037C33417E90A105D54DA23CA22FC5A8431`.
+- Release dependency audit found `PYSEC-2026-3447` in setuptools 80.9.0. The
+  exact release pin is now 83.0.0; `pip-audit` reports no known vulnerabilities.
+  Plain-text Jinja templates also use `SandboxedEnvironment` in addition to the
+  existing AST/variable allowlists. Bandit reports no Medium/High findings when
+  B608 is excluded after manual confirmation that dynamic SQL identifiers are
+  fixed fragments or allowlisted and all values remain parameterized.
+- The final EXE is rebuilt in an isolated Python 3.11.9 environment with
+  PyInstaller 6.11.1, PySide6 6.10.2, and setuptools 83.0.0. Build-tree and
+  ZIP-extracted smoke both stay alive for eight seconds, create isolated
+  SQLite, and apply migration `0028_annual_compliance`. FileVersion and
+  ProductVersion remain `0.30.0.0`.
+- Manual-acceptance artifact:
+  `dist/TaxOpsControlDesk-v0.30.0-win64.zip` (50,116,927 bytes), SHA-256
+  `39D09F530AE7FD42DA64103F814883D1AC4B0699454B4428CFA5C52D04204C7D`.
+  All 191 files read back, exactly match the build tree, and contain no root
+  source/test/private paths or user database files.
+- `codex-security` was upgraded globally from 0.1.4 to 0.1.5, but three deep
+  scan attempts failed before analysis because the inner scan agent did not
+  create `scan-manifest.json`, `findings.json`, or `coverage.json`. Latest scan
+  ID: `11e96785-ec4a-4065-83e0-a8c566cb4c8e`; status is `failed`, not passed.
+- Visible mouse/keyboard behavior, SmartScreen, long-running production data,
+  and 100/150/200% host-DPI rendering remain owner manual-acceptance items.
+
+## 2026-07-31 v0.30 manual-acceptance candidate
+
+- The annual workbench, client-year generation, editable annual detail,
+  transaction ledger, formal engagement/request linkage, and annual
+  collaboration tabs are implemented on `feature/v030-annual-workbench`.
+- Annual collaboration uses the same SQLite IDs as the existing request,
+  attachment, and task modules. Request options, attachments, and tasks are
+  bounded and paginated; request #201 is selectable for attachment scope.
+- Embedded request create/delete immediately refreshes the attachment selector
+  and annual summary. Readback failures clear stale rows, lock mutations, and
+  expose read-only retry without resubmitting the committed operation.
+- The real shown collaboration dialog remains 900x540 and wraps each tab in a
+  scroll area. Attachment archive and annual-task delete require confirmation.
+- Ruff 0.15.15 is pinned. Compileall, `ruff check src tests build_tools`, and
+  `git diff --check` pass.
+- A clean branch-aware measurement passes at 90.18%: 2663 tests pass across
+  111 test files, including the two real 1.7-million-row registry imports.
+  Qt-heavy registry files run in fresh sequential processes so native object
+  state cannot cross file boundaries; no test is omitted.
+- Normal-entry and high-risk user-path smoke passes 92 tests. It exposed and
+  fixed an app-stylesheet-only 13px annual-action regression that the earlier
+  alphabetical full suite did not expose.
+- A requirement-focused replay passes 368 data/service tests and 184 real Qt
+  UI tests. It directly covers the split registered/contact addresses,
+  atomic multiple leases, offline industry search/application, annual draft
+  generation and custom rows, exact six-category tax/fee ledger balances,
+  navigation, error feedback, and fixed-desktop geometry.
+- Native Windows Qt rendering at the host's actual 125% DPI produces a
+  1366x768 logical annual workbench (1708x960 physical pixels) with 34 real
+  generated rows. Create/filter/refresh/detail/paging controls remain visible
+  and inside the page. A 760x720 client edit dialog keeps registered and
+  contact addresses reachable, scrolls to two leases, and retains fixed save
+  actions. This is widget-render evidence, not owner mouse/SmartScreen
+  acceptance or proof of 100/150/200% host settings.
+- The v0.30.0 onedir EXE is built with isolated Python 3.11.9,
+  PyInstaller 6.11.1, and PySide6 6.10.2. Both the build-tree EXE and the EXE
+  extracted from the delivery ZIP stay alive for eight seconds, create an
+  isolated SQLite database, and contain migration `0028_annual_compliance`.
+  Windows reports FileVersion/ProductVersion `0.30.0.0`, ProductName
+  `TaxOps Control Desk`, and OriginalFilename `TaxOpsControlDesk.exe`.
+- Manual-acceptance artifact:
+  `dist/TaxOpsControlDesk-v0.30.0-win64.zip` (50,095,302 bytes), SHA-256
+  `C42ADDC2761C6748252D91B9B35F73F7952229A94F9CF082CA4DA559AE0F4E9A`.
+  All 192 entries (191 files) read back; the archive exactly matches the build
+  tree, and forbidden source/test/private paths are absent.
+- Visible DPI, clipping, SmartScreen, long-running office workflow, and real
+  user-data acceptance remain manual and must not be reported as complete.
+
+## 2026-07-16 v0.30 implementation worktree
+
+- Active work is isolated in `.worktrees/v030-annual-workbench` on
+  `feature/v030-annual-workbench`; it targets a real offline Windows EXE.
+- The accepted design uses one annual parent per client and operation year,
+  with independent work, filing, document, tax, and service-fee states.
+- The clean pre-feature baseline passes 1454 tests in 939.71 seconds.
+- Migration 0027 is implemented and independently approved. It backfills
+  registered/contact addresses, adds multiple leases and client industries,
+  preserves attachment/version data and AUTOINCREMENT high-water marks, and
+  enforces lease/client ownership with a composite foreign key.
+- Repository/service work for leases, industries, and guarded lease
+  attachments is implemented and independently approved. Archived leases keep
+  their existing attachment evidence readable, while archived leases cannot
+  receive new files and deleted clients remain isolated. Registered/contact
+  address behavior is separated across CRUD, bulk import, and registry
+  matching. The shared client profile and multiple-lease UI is implemented
+  with atomic profile saves and focused widget regression coverage; independent
+  review is still pending. Lease-expiry reminders now query active,
+  non-archived client leases in one deduplicated query rather than reading
+  legacy client scalar dates. Archived leases remain visible as read-only
+  history with owner-guarded attachment evidence. Registry search uses the
+  tax-ID index before any broad LIKE work, covers all four official industry
+  slots, and presents only a source-declared primary
+  industry. Registry application updates registered address without replacing
+  exact contact-address text, and applies client fields, industries, FTS, and
+  audit rows atomically. Non-tax-id searches in both registry entry points use
+  a shared bounded read-only SQLite worker; focused regression passes, while
+  independent review is still pending. Migration 0028 adds the annual
+  compliance profile, client-year workspace, work-item, transaction-ledger,
+  and optional workflow-task link schema. It enforces active uniqueness,
+  bounded integer years/months/amounts, forward-compatible status storage,
+  and evidence-preserving foreign keys while retaining existing task rows and
+  sequence high-water marks. Client purge preflight includes both compliance
+  profiles and annual workspaces, so retained annual data produces the stable
+  validation error rather than a raw SQLite FK exception. Compliance profile
+  repositories, pure period rules, and atomic partial-upsert service are now
+  implemented with focused regression coverage; independent review remains
+  pending. Disabled and omitted profile rows are retained, unchanged saves do
+  not write or audit, and verified special fiscal-year filing windows are
+  derived from the operation year without holiday-extension inference.
+  Remaining annual repositories/services/UI,
+  full coverage measurement, DPI acceptance, and EXE packaging are not yet
+  verified and must not be reported as complete.
+
 ## 2026-07-12 fixed-billing manual-acceptance EXE (uncommitted)
 
 - Fixed billing now exposes plan edit/add/delete actions before expansion,

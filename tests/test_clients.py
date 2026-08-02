@@ -90,6 +90,25 @@ def test_duplicate_client_code_rejected(container: ServiceContainer) -> None:
     assert exc.value.code == "client.client_code.duplicate"
 
 
+def test_duplicate_client_code_precedes_legacy_lease_date_validation(
+    container: ServiceContainer,
+) -> None:
+    container.clients.create_client(
+        CreateClientInput(client_code="DUP-PRECEDENCE", client_name="既有客戶")
+    )
+
+    with pytest.raises(ClientValidationError) as exc:
+        container.clients.create_client(
+            CreateClientInput(
+                client_code="DUP-PRECEDENCE",
+                client_name="重複客戶",
+                lease_start="not-a-date",
+            )
+        )
+
+    assert exc.value.code == "client.client_code.duplicate"
+
+
 def test_invalid_tax_id_rejected(container: ServiceContainer) -> None:
     with pytest.raises(ClientValidationError) as exc:
         container.clients.create_client(
@@ -105,6 +124,103 @@ def test_blank_tax_id_is_allowed(container: ServiceContainer) -> None:
         CreateClientInput(client_code="C300", client_name="無統編客戶", tax_id="")
     )
     assert client.tax_id is None
+
+
+def test_create_client_persists_separate_registered_and_contact_addresses(
+    container: ServiceContainer,
+) -> None:
+    separate = container.clients.create_client(
+        CreateClientInput(
+            client_code="ADDR1",
+            client_name="地址分離客戶",
+            registered_address="臺北市\n信義路 1 號",
+            contact_address="新北市板橋路 2 號",
+            contact_address_same=False,
+        )
+    )
+    same = container.clients.create_client(
+        CreateClientInput(
+            client_code="ADDR2",
+            client_name="地址相同客戶",
+            registered_address="高雄市前鎮區 3 號",
+            contact_address="不應保存的聯絡地址",
+            contact_address_same=True,
+        )
+    )
+
+    assert separate.registered_address == "臺北市\n信義路 1 號"
+    assert separate.address == separate.registered_address
+    assert separate.contact_address == "新北市板橋路 2 號"
+    assert separate.contact_address_same is False
+    assert same.contact_address == same.registered_address
+    assert same.address == same.registered_address
+    assert same.contact_address_same is True
+
+
+def test_create_explicit_contact_without_same_flag_infers_independent(
+    container: ServiceContainer,
+) -> None:
+    row = container.clients.create_client(
+        CreateClientInput(
+            client_code="ADDR-INFER",
+            client_name="推論獨立聯絡地址",
+            registered_address="A",
+            contact_address="B",
+        )
+    )
+
+    assert row.registered_address == "A"
+    assert row.contact_address == "B"
+    assert row.contact_address_same is False
+
+
+def test_create_client_legacy_address_is_registered_address(
+    container: ServiceContainer,
+) -> None:
+    row = container.clients.create_client(
+        CreateClientInput(
+            client_code="ADDR3",
+            client_name="舊版地址客戶",
+            address="臺中市西區公益路",
+        )
+    )
+
+    assert row.registered_address == "臺中市西區公益路"
+    assert row.address == "臺中市西區公益路"
+    assert row.contact_address == "臺中市西區公益路"
+    assert row.contact_address_same is True
+
+
+def test_create_client_rejects_conflicting_legacy_and_registered_addresses(
+    container: ServiceContainer,
+) -> None:
+    with pytest.raises(ClientValidationError) as exc:
+        container.clients.create_client(
+            CreateClientInput(
+                client_code="ADDR4",
+                client_name="衝突地址客戶",
+                address="舊欄地址",
+                registered_address="新欄地址",
+            )
+        )
+
+    assert exc.value.code == "client.address.conflict"
+
+
+def test_create_client_rejects_overlong_address_without_truncating(
+    container: ServiceContainer,
+) -> None:
+    with pytest.raises(ClientValidationError) as exc:
+        container.clients.create_client(
+            CreateClientInput(
+                client_code="ADDR5",
+                client_name="地址過長客戶",
+                registered_address="址" * 501,
+            )
+        )
+
+    assert exc.value.code == "client.address.too_long"
+    assert container.clients.find_by_code("ADDR5") is None
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +276,175 @@ def test_update_same_code_allowed(container: ServiceContainer) -> None:
         UpdateClientInput(client_code="SAME1", client_name="更新名稱"),
     )
     assert updated.client_name == "更新名稱"
+
+
+def test_update_registered_address_preserves_independent_contact_and_syncs_same(
+    container: ServiceContainer,
+) -> None:
+    separate = container.clients.create_client(
+        CreateClientInput(
+            client_code="UADDR1",
+            client_name="獨立聯絡地址",
+            registered_address="舊登記",
+            contact_address="固定聯絡",
+            contact_address_same=False,
+        )
+    )
+    same = container.clients.create_client(
+        CreateClientInput(
+            client_code="UADDR2",
+            client_name="同步聯絡地址",
+            registered_address="舊同步地址",
+            contact_address_same=True,
+        )
+    )
+
+    separate_updated = container.clients.update_registered_address(
+        separate.id, "新登記\n完整二行"
+    )
+    same_updated = container.clients.update_registered_address(same.id, None)
+
+    assert separate_updated.registered_address == "新登記\n完整二行"
+    assert separate_updated.address == "新登記\n完整二行"
+    assert separate_updated.contact_address == "固定聯絡"
+    assert separate_updated.contact_address_same is False
+    assert same_updated.registered_address is None
+    assert same_updated.address is None
+    assert same_updated.contact_address is None
+    assert same_updated.contact_address_same is True
+
+
+def test_update_client_address_fields_roll_back_when_audit_fails(
+    container: ServiceContainer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = container.clients.create_client(
+        CreateClientInput(
+            client_code="UADDR3",
+            client_name="交易回滾",
+            registered_address="原登記",
+            contact_address="原聯絡",
+            contact_address_same=False,
+        )
+    )
+    monkeypatch.setattr(
+        container.clients._audit,
+        "record",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("audit unavailable")),
+    )
+
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        container.clients.update_client(
+            original.id,
+            UpdateClientInput(
+                client_code=original.client_code,
+                client_name=original.client_name,
+                registered_address="新登記",
+                contact_address="新聯絡",
+                contact_address_same=True,
+            ),
+        )
+
+    raw = container.conn.execute(
+        "SELECT registered_address, contact_address, contact_address_same, address "
+        "FROM clients WHERE id = ?",
+        (original.id,),
+    ).fetchone()
+    assert tuple(raw) == ("原登記", "原聯絡", 0, "原登記")
+
+
+def test_update_registered_address_rolls_back_on_audit_failure_and_guards_deleted(
+    container: ServiceContainer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = container.clients.create_client(
+        CreateClientInput(
+            client_code="UADDR4",
+            client_name="專用更新交易",
+            registered_address="原登記",
+            contact_address_same=True,
+        )
+    )
+    monkeypatch.setattr(
+        container.clients._audit,
+        "record",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("audit unavailable")),
+    )
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        container.clients.update_registered_address(client.id, "不可提交")
+
+    raw = container.conn.execute(
+        "SELECT registered_address, contact_address, contact_address_same, address "
+        "FROM clients WHERE id = ?",
+        (client.id,),
+    ).fetchone()
+    assert tuple(raw) == ("原登記", "原登記", 1, "原登記")
+
+    monkeypatch.undo()
+    container.clients.delete_client(client.id)
+    with pytest.raises(ClientValidationError) as exc:
+        container.clients.update_registered_address(client.id, "刪除後不可更新")
+    assert exc.value.code == "client.not_found"
+
+
+def test_update_explicit_contact_without_same_flag_infers_independent_and_unset_preserves(
+    container: ServiceContainer,
+) -> None:
+    initially_same = container.clients.create_client(
+        CreateClientInput(
+            client_code="UADDR-INFER1",
+            client_name="原本同步",
+            registered_address="登記一",
+            contact_address_same=True,
+        )
+    )
+    initially_separate = container.clients.create_client(
+        CreateClientInput(
+            client_code="UADDR-INFER2",
+            client_name="原本獨立",
+            registered_address="登記二",
+            contact_address="聯絡二",
+            contact_address_same=False,
+        )
+    )
+
+    changed_same = container.clients.update_client(
+        initially_same.id,
+        UpdateClientInput(
+            client_code=initially_same.client_code,
+            client_name=initially_same.client_name,
+            contact_address="新聯絡一",
+        ),
+    )
+    changed_separate = container.clients.update_client(
+        initially_separate.id,
+        UpdateClientInput(
+            client_code=initially_separate.client_code,
+            client_name=initially_separate.client_name,
+            contact_address="新聯絡二",
+        ),
+    )
+
+    assert (changed_same.contact_address, changed_same.contact_address_same) == (
+        "新聯絡一",
+        False,
+    )
+    assert (changed_separate.contact_address, changed_separate.contact_address_same) == (
+        "新聯絡二",
+        False,
+    )
+
+    unchanged = container.clients.update_client(
+        initially_separate.id,
+        UpdateClientInput(
+            client_code=initially_separate.client_code,
+            client_name="只更新名稱",
+        ),
+    )
+    assert (unchanged.contact_address, unchanged.contact_address_same) == (
+        "新聯絡二",
+        False,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +626,68 @@ def test_purge_deleted_client_with_client_only_task_is_blocked(
     ).fetchone()[0] == 0
 
 
+@pytest.mark.parametrize(
+    "annual_reference",
+    ["profile", "workspace", "profile_and_workspace"],
+)
+def test_purge_deleted_client_with_annual_reference_is_stably_blocked(
+    container: ServiceContainer,
+    annual_reference: str,
+) -> None:
+    client = container.clients.create_client(
+        CreateClientInput(
+            client_code=f"ANNUAL-{annual_reference}",
+            client_name="年度資料不可永久刪除",
+        )
+    )
+    if annual_reference in {"profile", "profile_and_workspace"}:
+        container.conn.execute(
+            "INSERT INTO compliance_profiles("
+            "client_id, created_at, updated_at"
+            ") VALUES (?, '2026-01-01', '2026-01-01')",
+            (client.id,),
+        )
+    if annual_reference in {"workspace", "profile_and_workspace"}:
+        container.conn.execute(
+            "INSERT INTO annual_workspaces("
+            "client_id, operation_year, fiscal_year_start_month_snapshot, "
+            "created_at, updated_at"
+            ") VALUES (?, 2026, 1, '2026-01-01', '2026-01-01')",
+            (client.id,),
+        )
+    container.clients.delete_client(client.id)
+
+    with pytest.raises(ClientValidationError) as exc:
+        container.clients.purge_client(client.id)
+
+    assert exc.value.code == "client.purge.has_references"
+    preserved_client = container.conn.execute(
+        "SELECT deleted_at FROM clients WHERE id = ?",
+        (client.id,),
+    ).fetchone()
+    assert preserved_client is not None
+    assert preserved_client["deleted_at"] is not None
+    expected_profile_count = int(
+        annual_reference in {"profile", "profile_and_workspace"}
+    )
+    expected_workspace_count = int(
+        annual_reference in {"workspace", "profile_and_workspace"}
+    )
+    assert container.conn.execute(
+        "SELECT COUNT(*) FROM compliance_profiles WHERE client_id = ?",
+        (client.id,),
+    ).fetchone()[0] == expected_profile_count
+    assert container.conn.execute(
+        "SELECT COUNT(*) FROM annual_workspaces WHERE client_id = ?",
+        (client.id,),
+    ).fetchone()[0] == expected_workspace_count
+    assert container.conn.execute(
+        "SELECT COUNT(*) FROM audit_logs "
+        "WHERE action = 'client.purge' AND target_id = ?",
+        (str(client.id),),
+    ).fetchone()[0] == 0
+
+
 # ---------------------------------------------------------------------------
 # Bulk service
 # ---------------------------------------------------------------------------
@@ -420,6 +767,120 @@ def test_import_validated_overwrites_on_policy(container: ServiceContainer) -> N
     result = import_validated(vrows, container.clients, on_duplicate_code="overwrite")
     assert result.overwritten == 1
     assert container.clients.find_by_code("OW01").client_name == "新名"
+
+
+def test_bulk_import_new_address_headers_and_boolean(container: ServiceContainer) -> None:
+    text = (
+        "client_code\tclient_name\t登記地址\t聯絡地址\t聯絡地址同登記\n"
+        "BADDR1\t新欄匯入\t臺南市一號\t嘉義市二號\t否\n"
+    )
+    headers, raw = parse_clipboard_text(text)
+    rows = validate_rows(raw, auto_detect_mapping(headers), container.clients_repo)
+
+    result = import_validated(rows, container.clients)
+
+    assert result.imported == 1
+    stored = container.clients.find_by_code("BADDR1")
+    assert stored is not None
+    assert stored.registered_address == "臺南市一號"
+    assert stored.contact_address == "嘉義市二號"
+    assert stored.contact_address_same is False
+    assert stored.address == "臺南市一號"
+
+
+def test_bulk_contact_address_without_same_flag_infers_independent(
+    container: ServiceContainer,
+) -> None:
+    text = (
+        "client_code\tclient_name\t登記地址\t聯絡地址\n"
+        "BADDR-INFER\t省略同址旗標\tA\tB\n"
+    )
+    headers, raw = parse_clipboard_text(text)
+    rows = validate_rows(raw, auto_detect_mapping(headers), container.clients_repo)
+
+    result = import_validated(rows, container.clients)
+
+    assert result.imported == 1
+    stored = container.clients.find_by_code("BADDR-INFER")
+    assert stored is not None
+    assert stored.registered_address == "A"
+    assert stored.contact_address == "B"
+    assert stored.contact_address_same is False
+
+
+def test_bulk_import_invalid_contact_address_same_is_row_error(
+    container: ServiceContainer,
+) -> None:
+    text = (
+        "client_code\tclient_name\t設籍地址\t聯絡地址同設籍\n"
+        "BADDR2\t錯誤布林\t桃園市一號\t也許\n"
+    )
+    headers, raw = parse_clipboard_text(text)
+    rows = validate_rows(raw, auto_detect_mapping(headers), container.clients_repo)
+
+    assert rows[0].is_valid is False
+    assert "client.contact_address_same.invalid" in rows[0].errors
+    result = import_validated(rows, container.clients)
+    assert result.imported == 0
+
+
+def test_bulk_import_rejects_conflicting_legacy_and_registered_headers(
+    container: ServiceContainer,
+) -> None:
+    text = (
+        "client_code\tclient_name\t地址\t登記地址\n"
+        "BADDR-CONFLICT\t衝突地址\t舊欄地址\t新欄地址\n"
+    )
+    headers, raw = parse_clipboard_text(text)
+    rows = validate_rows(raw, auto_detect_mapping(headers), container.clients_repo)
+
+    assert rows[0].is_valid is False
+    assert "client.address.conflict" in rows[0].errors
+
+
+def test_bulk_overwrite_legacy_address_preserves_independent_contact(
+    container: ServiceContainer,
+) -> None:
+    existing = container.clients.create_client(
+        CreateClientInput(
+            client_code="BADDR3",
+            client_name="覆寫前",
+            registered_address="原登記",
+            contact_address="不可清除的聯絡地址",
+            contact_address_same=False,
+        )
+    )
+    text = "client_code\tclient_name\t地址\nBADDR3\t覆寫後\t新登記\n"
+    headers, raw = parse_clipboard_text(text)
+    rows = validate_rows(raw, auto_detect_mapping(headers), container.clients_repo)
+
+    result = import_validated(rows, container.clients, on_duplicate_code="overwrite")
+
+    assert result.overwritten == 1
+    stored = container.clients.get_client(existing.id)
+    assert stored is not None
+    assert stored.registered_address == "新登記"
+    assert stored.address == "新登記"
+    assert stored.contact_address == "不可清除的聯絡地址"
+    assert stored.contact_address_same is False
+
+    sync_text = (
+        "client_code\tclient_name\t登記地址\t聯絡地址同登記\n"
+        "BADDR3\t覆寫同步\t同步後登記\t是\n"
+    )
+    sync_headers, sync_raw = parse_clipboard_text(sync_text)
+    sync_rows = validate_rows(
+        sync_raw, auto_detect_mapping(sync_headers), container.clients_repo
+    )
+    sync_result = import_validated(
+        sync_rows, container.clients, on_duplicate_code="overwrite"
+    )
+    synced = container.clients.get_client(existing.id)
+    assert sync_result.overwritten == 1
+    assert synced is not None
+    assert synced.registered_address == "同步後登記"
+    assert synced.contact_address == "同步後登記"
+    assert synced.contact_address_same is True
 
 
 # ── lease date validation ──────────────────────────────────────────────────────

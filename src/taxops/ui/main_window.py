@@ -21,6 +21,7 @@ from ..i18n import NAV_LABELS
 from ..services.container import ServiceContainer
 from .action_registry import (
     NAV_ORDER,
+    PAGE_ANNUAL_WORKBENCH,
     PAGE_ATTACHMENTS,
     PAGE_CLIENTS,
     PAGE_ENGAGEMENTS,
@@ -33,6 +34,7 @@ from .action_registry import (
     PAGE_TEMPLATES,
     PAGE_WORK_RECORDS,
 )
+from .pages.annual_workbench_page import AnnualWorkbenchPage
 from .pages.attachments_page import AttachmentsPage
 from .pages.clients_page import ClientsPage
 from .pages.engagements_page import EngagementsPage
@@ -137,6 +139,8 @@ class MainWindow(QMainWindow):
             page: QWidget
             if page_id == PAGE_CLIENTS:
                 page = ClientsPage(self._container)
+            elif page_id == PAGE_ANNUAL_WORKBENCH:
+                page = AnnualWorkbenchPage(self._container)
             elif page_id == PAGE_ENGAGEMENTS:
                 eng_page = EngagementsPage(self._container)
                 self._eng_page = eng_page

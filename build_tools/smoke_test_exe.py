@@ -7,6 +7,7 @@ Automatable checks (exits non-zero on any failure):
   1. EXE file exists at expected path
   2. EXE starts without immediately crashing (process alive after 8s)
   3. SQLite database file is created in the temp data dir
+  4. SQLite includes the latest annual-workbench migration
 
 Manual checklist items are printed at the end for human verification.
 
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -29,6 +31,7 @@ _EXE = _PROJECT_ROOT / "dist" / "TaxOpsControlDesk" / "TaxOpsControlDesk.exe"
 
 _STARTUP_WAIT = 8      # seconds to wait before checking liveness
 _DB_WAIT = 15          # seconds total to wait for SQLite creation
+_LATEST_MIGRATION = "0028_annual_compliance"
 
 _MANUAL_CHECKLIST = """\
 Manual verification checklist
@@ -36,7 +39,7 @@ Manual verification checklist
 After automated checks pass, open the EXE (TAXOPS_DEV=1) and confirm:
 
   [ ] Main window title: "TaxOps Control Desk"
-  [ ] All 11 sidebar nav labels display in Traditional Chinese
+  [ ] All 12 sidebar nav labels display in Traditional Chinese
   [ ] Sidebar collapse/expand toggle works
   [ ] Settings page opens; data paths shown with copy + open buttons
   [ ] Can create a new client via dialog; client persists after restart
@@ -61,6 +64,20 @@ def _check_exe_exists() -> None:
     print(f"OK   EXE found: {_EXE}")
 
 
+def _check_schema_current(db_path: Path) -> None:
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            row = conn.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = ?",
+                (_LATEST_MIGRATION,),
+            ).fetchone()
+    except sqlite3.Error as exc:
+        _fail(f"SQLite schema check failed: {type(exc).__name__}")
+    if row is None:
+        _fail(f"SQLite is missing latest migration: {_LATEST_MIGRATION}")
+    print(f"OK   Latest migration applied: {_LATEST_MIGRATION}")
+
+
 def _run_smoke(tmp_localappdata: Path) -> None:
     env = os.environ.copy()
     env["LOCALAPPDATA"] = str(tmp_localappdata)
@@ -83,6 +100,7 @@ def _run_smoke(tmp_localappdata: Path) -> None:
                 _fail(f"SQLite not created within {_DB_WAIT}s: {expected_db}")
             time.sleep(0.5)
         print(f"OK   SQLite created: {expected_db}")
+        _check_schema_current(expected_db)
 
     finally:
         proc.terminate()

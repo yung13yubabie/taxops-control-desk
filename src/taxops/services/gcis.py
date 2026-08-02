@@ -29,7 +29,10 @@ _TYPE_ENDPOINT = "673F0FC0-B3A7-429F-9041-E9866836B66D"
 _DETAIL_ENDPOINTS: dict[str, tuple[str, str]] = {
     "公司": ("5F64D864-61CB-4D0D-8AD9-492047CC1EA6", "Business_Accounting_NO"),
     "商業": ("426D5542-5F05-43EB-83F9-F1300F14E1F1", "President_No"),
-    "分公司": ("DC9AC6C1-38CC-479A-A492-088BD8C3328E", "Branch_Office_Business_Accounting_NO"),
+    "分公司": (
+        "DC9AC6C1-38CC-479A-A492-088BD8C3328E",
+        "Branch_Office_Business_Accounting_NO",
+    ),
 }
 _MAX_RESPONSE_BYTES = 1_000_000
 
@@ -55,7 +58,9 @@ def _fetch(endpoint: str, filter_value: str, *, timeout: int) -> list[dict[str, 
         headers={"User-Agent": "TaxOps-ControlDesk/0.29 GCIS-official-lookup"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        # The requested and redirected URLs are both restricted to HTTPS hosts
+        # in the official-domain allowlist.
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
             final_url = getattr(response, "geturl", lambda: url)()
             if not isinstance(final_url, str) or not is_allowed_official_url(final_url):
                 raise GCISQueryError("gcis.response.invalid")

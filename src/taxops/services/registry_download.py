@@ -66,10 +66,16 @@ def download_registry_zip(
     try:
         if not is_allowed_official_url(url):
             raise DownloadError("registry.download.url_not_allowed")
-        req = urllib.request.Request(url, headers={"User-Agent": "TaxOps-ControlDesk/1.0"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "TaxOps-ControlDesk/1.0"}
+        )
+        # The requested and redirected URLs are both restricted to HTTPS hosts
+        # in the official-domain allowlist.
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
             response_url = getattr(resp, "geturl", lambda: url)()
-            if isinstance(response_url, str) and not is_allowed_official_url(response_url):
+            if isinstance(response_url, str) and not is_allowed_official_url(
+                response_url
+            ):
                 raise DownloadError("registry.download.url_not_allowed")
             announced_size = _content_length(resp)
             if announced_size is not None and announced_size > max_bytes:

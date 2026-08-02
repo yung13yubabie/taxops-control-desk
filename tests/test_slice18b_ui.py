@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from taxops.ui.action_registry import (
-    ACTION_REGISTRY,
     NAV_ORDER,
     PAGE_RECURRING_BILLING,
     actions_for_page,
@@ -443,7 +442,6 @@ def test_service_rejects_custom_months_with_empty_list(container, seed_client_id
 
 def test_recurring_billing_handler_strings_resolve():
     """Every enabled recurring_billing action handler must be a callable on the module."""
-    import importlib
     import taxops.ui.pages.recurring_billing_page as rb_page
 
     for action in actions_for_page(PAGE_RECURRING_BILLING):

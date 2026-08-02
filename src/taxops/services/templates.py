@@ -5,36 +5,55 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import jinja2.nodes as _jinja_nodes
-from jinja2 import Environment, StrictUndefined, Template, TemplateSyntaxError, UndefinedError, meta as _jinja_meta
+from jinja2 import (
+    StrictUndefined,
+    Template,
+    TemplateSyntaxError,
+    UndefinedError,
+    meta as _jinja_meta,
+)
+from jinja2.sandbox import SandboxedEnvironment
 
 from ..core.text import sanitize_user_text
 from ..repositories.templates import TemplateRow, TemplatesRepository
 from .audit import AuditService
 
-VALID_TEMPLATE_TYPES = frozenset({
-    "initial_request",
-    "follow_up",
-    "payment_follow_up",
-    "custom",
-})
+VALID_TEMPLATE_TYPES = frozenset(
+    {
+        "initial_request",
+        "follow_up",
+        "payment_follow_up",
+        "custom",
+    }
+)
 
-ALLOWED_VARIABLES = frozenset({
-    "client_name",
-    "period_name",
-    "tax_type_name",
-    "missing_items",
-    "invalid_items",
-    "incomplete_items",
-    "due_date",
-    "tax_id",
-    "contact_person",
-    "engagement_name",
-    "notes",
-    "payment_records",
-    "outstanding_amount",
-    "overdue_amount",
-    "payment_due_date",
-})
+ALLOWED_VARIABLES = frozenset(
+    {
+        "client_name",
+        "period_name",
+        "tax_type_name",
+        "missing_items",
+        "invalid_items",
+        "incomplete_items",
+        "due_date",
+        "tax_id",
+        "contact_person",
+        "engagement_name",
+        "notes",
+        "payment_records",
+        "outstanding_amount",
+        "overdue_amount",
+        "payment_due_date",
+        "annual_work_title",
+        "annual_operation_year",
+        "annual_due_date",
+        "annual_work_status",
+        "annual_document_status",
+        "annual_tax_status",
+        "annual_fee_status",
+        "annual_exception_reason",
+    }
+)
 
 VARIABLE_LABELS: dict[str, str] = {
     "client_name": "客戶名稱",
@@ -52,6 +71,14 @@ VARIABLE_LABELS: dict[str, str] = {
     "outstanding_amount": "全部待開立總額",
     "overdue_amount": "逾期待開立總額",
     "payment_due_date": "最早預計開立日",
+    "annual_work_title": "年度工作標題",
+    "annual_operation_year": "年度工作作業年度",
+    "annual_due_date": "年度工作期限",
+    "annual_work_status": "年度工作狀態",
+    "annual_document_status": "年度工作憑證狀態",
+    "annual_tax_status": "年度工作稅款狀態",
+    "annual_fee_status": "年度工作服務費狀態",
+    "annual_exception_reason": "年度工作異常說明",
 }
 
 
@@ -125,6 +152,30 @@ VARIABLE_INFO: dict[str, TemplateVariableInfo] = {
         "固定開立",
         "取自最早一筆逾期待開立排程的預計開立日；不代表付款期限",
     ),
+    "annual_work_title": TemplateVariableInfo(
+        "年度工作臺", "取自客戶最新一筆年度工作的標題"
+    ),
+    "annual_operation_year": TemplateVariableInfo(
+        "年度工作臺", "取自客戶最新一筆年度工作的作業年度"
+    ),
+    "annual_due_date": TemplateVariableInfo(
+        "年度工作臺", "取自客戶最新一筆年度工作的期限"
+    ),
+    "annual_work_status": TemplateVariableInfo(
+        "年度工作臺", "取自客戶最新一筆年度工作的處理狀態"
+    ),
+    "annual_document_status": TemplateVariableInfo(
+        "年度工作臺", "取自客戶最新一筆年度工作的憑證狀態"
+    ),
+    "annual_tax_status": TemplateVariableInfo(
+        "年度工作臺", "取自客戶最新一筆年度工作的稅款狀態"
+    ),
+    "annual_fee_status": TemplateVariableInfo(
+        "年度工作臺", "取自客戶最新一筆年度工作的服務費狀態"
+    ),
+    "annual_exception_reason": TemplateVariableInfo(
+        "年度工作臺", "取自客戶最新一筆年度工作的異常原因"
+    ),
 }
 
 _LEGACY_LABEL_TO_VARIABLE: dict[str, str] = {
@@ -141,12 +192,14 @@ _LABEL_TO_VARIABLE = {
 
 # AST node types permitted in templates: pure text + simple variable references only.
 # Anything else (attribute access, expressions, control flow, filters, calls) is rejected.
-_SAFE_NODE_TYPES = frozenset({
-    _jinja_nodes.Template,
-    _jinja_nodes.Output,
-    _jinja_nodes.TemplateData,
-    _jinja_nodes.Name,
-})
+_SAFE_NODE_TYPES = frozenset(
+    {
+        _jinja_nodes.Template,
+        _jinja_nodes.Output,
+        _jinja_nodes.TemplateData,
+        _jinja_nodes.Name,
+    }
+)
 
 
 class TemplateValidationError(Exception):
@@ -174,7 +227,10 @@ class TemplatesService:
         self._repo = repo
         self._audit = audit
         self._conn = repo._conn
-        self._env = Environment(undefined=StrictUndefined)
+        # Messages are plain text, so HTML autoescaping would corrupt legitimate
+        # client content.  The sandbox and the AST whitelist below jointly limit
+        # templates to literal text and allowlisted variable names.
+        self._env = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
 
     @staticmethod
     def body_for_edit(body: str) -> str:
@@ -218,7 +274,9 @@ class TemplatesService:
         self._validate_body(body)
 
         with self._conn:
-            row = self._repo.insert(name=name, template_type=payload.template_type, body=body)
+            row = self._repo.insert(
+                name=name, template_type=payload.template_type, body=body
+            )
             self._audit.record(
                 action="template.create",
                 target_type="template",
@@ -227,7 +285,9 @@ class TemplatesService:
             )
         return row
 
-    def update_template(self, template_id: int, payload: UpdateTemplateInput) -> TemplateRow:
+    def update_template(
+        self, template_id: int, payload: UpdateTemplateInput
+    ) -> TemplateRow:
         existing = self._repo.get(template_id)
         if existing is None:
             raise TemplateValidationError("template.not_found")
@@ -243,7 +303,9 @@ class TemplatesService:
         self._validate_body(body)
 
         with self._conn:
-            row = self._repo.update(template_id, name=name, template_type=payload.template_type, body=body)
+            row = self._repo.update(
+                template_id, name=name, template_type=payload.template_type, body=body
+            )
             if row is None:
                 raise TemplateValidationError("template.not_found")
             self._audit.record(
@@ -287,6 +349,17 @@ class TemplatesService:
         if row is None:
             raise TemplateValidationError("template.not_found")
         tmpl = self._validate_body(row.body)
+        safe_vars = {k: v for k, v in variables.items() if k in ALLOWED_VARIABLES}
+        try:
+            return tmpl.render(**safe_vars)
+        except UndefinedError as err:
+            raise TemplateValidationError("template.variable.missing") from err
+        except Exception as err:
+            raise TemplateValidationError("template.render.failed") from err
+
+    def render_body_preview(self, body: str, variables: dict[str, str]) -> str:
+        """Render an unsaved body through the same validator as persisted templates."""
+        tmpl = self._validate_body(body)
         safe_vars = {k: v for k, v in variables.items() if k in ALLOWED_VARIABLES}
         try:
             return tmpl.render(**safe_vars)

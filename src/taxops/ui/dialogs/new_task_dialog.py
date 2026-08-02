@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt
-
-_log = logging.getLogger(__name__)
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -26,6 +24,8 @@ from ...services.clients import ClientsService
 from ...services.engagements import EngagementsService
 from ...services.tasks import CreateTaskInput, TaskValidationError, TasksService
 from ..widgets.date_field import DateField
+
+_log = logging.getLogger(__name__)
 
 _NO_CLIENT = -1
 _NO_ENGAGEMENT = -1

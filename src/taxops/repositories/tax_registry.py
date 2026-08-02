@@ -16,6 +16,12 @@ from ..services.registry.parser import TaxRegistryEntry
 
 _log = logging.getLogger(__name__)
 
+
+def _like_pattern(text: str) -> str:
+    """Treat user input literally inside a parameterized LIKE expression."""
+    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
 INSERT_SQL = (
     "INSERT INTO {table}("
     "tax_id, business_name, business_address, parent_tax_id, "
@@ -80,28 +86,63 @@ class TaxRegistryRepository:
         ).fetchone()
 
     def search(self, query: str, *, limit: int = 20) -> list[sqlite3.Row]:
-        """Search by exact tax_id (if 8 digits) or partial business_name LIKE."""
+        """Search registration identity and all four industry slots.
+
+        An exact eight-digit tax ID uses its dedicated index before any LIKE
+        work. If it misses, an exact company name still wins over partial
+        company/industry matches.
+        """
         q = query.strip()
         if not q:
             return []
+        bounded_limit = max(1, min(int(limit), 200))
         if len(q) == 8 and q.isdigit():
-            rows = self._conn.execute(
+            exact_rows = self._conn.execute(
                 f"SELECT * FROM {self.FORMAL_TABLE} WHERE tax_id = ? LIMIT ?",
-                (q, limit),
+                (q, bounded_limit),
             ).fetchall()
-            if rows:
-                return rows
-        exact = self._conn.execute(
-            f"SELECT * FROM {self.FORMAL_TABLE}"
-            " WHERE business_name = ? ORDER BY tax_id LIMIT ?",
-            (q, limit),
-        ).fetchall()
-        if exact:
-            return exact
+            if exact_rows:
+                return exact_rows
+        pattern = _like_pattern(q)
         return self._conn.execute(
-            f"SELECT * FROM {self.FORMAL_TABLE}"
-            " WHERE business_name LIKE ? ORDER BY business_name, tax_id LIMIT ?",
-            (f"%{q}%", limit),
+            f"""
+            WITH matched AS (
+                SELECT *,
+                    CASE
+                        WHEN business_name = ? THEN 1
+                        ELSE 2
+                    END AS match_rank
+                FROM {self.FORMAL_TABLE}
+                WHERE business_name = ?
+                   OR business_name LIKE ? ESCAPE '\\'
+                   OR industry_code_primary LIKE ? ESCAPE '\\'
+                   OR industry_name_primary LIKE ? ESCAPE '\\'
+                   OR industry_code_1 LIKE ? ESCAPE '\\'
+                   OR industry_name_1 LIKE ? ESCAPE '\\'
+                   OR industry_code_2 LIKE ? ESCAPE '\\'
+                   OR industry_name_2 LIKE ? ESCAPE '\\'
+                   OR industry_code_3 LIKE ? ESCAPE '\\'
+                   OR industry_name_3 LIKE ? ESCAPE '\\'
+            )
+            SELECT * FROM matched
+            WHERE match_rank = (SELECT MIN(match_rank) FROM matched)
+            ORDER BY business_name, tax_id
+            LIMIT ?
+            """,
+            (
+                q,
+                q,
+                pattern,
+                pattern,
+                pattern,
+                pattern,
+                pattern,
+                pattern,
+                pattern,
+                pattern,
+                pattern,
+                bounded_limit,
+            ),
         ).fetchall()
 
     def iter_all(self) -> Iterator[sqlite3.Row]:

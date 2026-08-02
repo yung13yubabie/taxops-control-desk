@@ -947,7 +947,13 @@ class RecurringBillingPage(QWidget):
                 )
                 total_pending += pending_count
                 plan_data.append(
-                    (plan, {l.id: l for l in lines}, window_occs, pending_count, next_date)
+                    (
+                        plan,
+                        {line.id: line for line in lines},
+                        window_occs,
+                        pending_count,
+                        next_date,
+                    )
                 )
 
             group = _ClientGroup(

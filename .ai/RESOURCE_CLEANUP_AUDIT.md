@@ -1,5 +1,71 @@
 # RESOURCE CLEANUP AUDIT
 
+## 2026-07-31 - v0.30 Qt cleanup and packaged-process closeout
+
+- Two QObject test doubles emitted `finished` into production
+  `worker.deleteLater()` connections but did not consume `DeferredDelete`
+  before their owner widgets were torn down. A later global flush exposed the
+  stale wrappers as a native PySide6 abort.
+- Both tests now flush the exact worker while its owner is alive and assert the
+  Shiboken wrapper is invalid. Minimal polluted-order, full related-file, and
+  clean process-isolated coverage runs pass.
+- The complete 2663-test coverage run uses sequential fresh processes for the
+  47 Qt/registry files after the stable 64-file first segment. All 111 files
+  run; this is isolation, not deselection.
+- Build-tree and ZIP-extracted EXE smoke processes are terminated and waited.
+  Post-smoke process inspection reports no TaxOps, pytest, or PyInstaller
+  residual process.
+- The original-goal replay runs the 368-test data/service segment and the
+  184-test Qt UI segment sequentially so they do not race on QApplication,
+  temporary SQLite, or generated assets. The first combined command exceeded
+  its 300-second command budget and was correctly reported as timeout rather
+  than pass; both bounded segments then completed successfully.
+- Native 125% Qt render checks use isolated temporary SQLite roots, close their
+  ServiceContainer connections and windows, and remove those data roots. The
+  follow-up hygiene report lists only its own diagnostic Python processes, not
+  TaxOps, pytest, or PyInstaller remnants.
+
+## 2026-07-23 - Annual workspace client search worker
+
+- Annual-workspace client search now uses a fresh read-only SQLite QThread
+  with `query_only`, a ten-second busy timeout, a progress deadline, bounded
+  `LIMIT 101` results, and detached row DTOs.
+- Immutable request tokens discard stale results, including when the user edits
+  the query without launching a replacement search. Each dialog keeps at most
+  one native worker active and one latest pending request.
+- One QApplication-owned coordinator owns all search workers, connects the
+  shutdown hook once, cancels every worker before waiting, and applies one
+  aggregate shutdown deadline. Finished workers are removed and scheduled for
+  deletion without dialog ownership races.
+- Real-widget regressions cover delayed old queries, event-loop responsiveness,
+  rapid repeated searches, cancel/close races, aggregate shutdown, stale-result
+  rejection, and direct dialog deletion while the worker finishes.
+- Focused verification passed 123 tests. Compileall and `git diff --check`
+  passed. The post-test hygiene command listed only its own Python process
+  under suspicious TaxOps/PyTest/PyInstaller processes.
+
+## 2026-07-18 - Shared local registry search worker
+
+- Company-name and industry searches no longer execute the multi-column SQLite
+  query on the GUI thread. Both registry entry points use one shared QThread
+  implementation with a fresh `mode=ro` connection, ten-second connect/busy
+  limits, a ten-second SQLite progress deadline, and explicit connection close.
+- New-client search keeps its worker reference until native finish, restores
+  disabled controls in the finish path, then uses `deleteLater`. Stale results
+  are ignored. Dialog reject, accept, and close are visibly refused while the
+  worker is running, preventing parent destruction from destroying a live
+  QThread.
+- Native lifecycle regression holds the worker open, attempts a real dialog
+  close, releases it, processes deferred cleanup, and observes no
+  `QThread: Destroyed while thread is still running` message. Worker success,
+  timeout mapping, owned-connection close, stale-result, error recovery, and
+  exact-tax synchronous behavior are covered by six focused tests.
+- Post-review worker/lifecycle regression passes 9 tests in its isolated Qt
+  run; the non-lifecycle registry/profile regression passes 126 tests. The
+  post-test hygiene command lists only its own Python process under suspicious
+  TaxOps/PyTest/PyInstaller processes. It reports TCP states and pre-existing
+  listeners without attributing or terminating unknown processes.
+
 ## 2026-07-12 - GCIS worker and official network lifecycle
 
 - GCIS lookup uses a bounded 1 MB response, a finite timeout, HTTPS official

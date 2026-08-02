@@ -110,6 +110,34 @@ def test_matcher_writes_difference_summary_only(container: ServiceContainer) -> 
     assert refetched.address == "客戶填的舊地址"
 
 
+def test_matcher_compares_registered_address_not_legacy_mirror(
+    container: ServiceContainer,
+) -> None:
+    _seed_cache_directly(container)
+    client = container.clients.create_client(
+        CreateClientInput(
+            client_code="C-ADDRESS-DOMAIN",
+            client_name="已登記公司A",
+            tax_id="11111111",
+            registered_address="登記地址才是真值",
+            contact_address="聯絡地址不參與比對",
+            contact_address_same=False,
+        )
+    )
+    container.conn.execute(
+        "UPDATE clients SET address = ? WHERE id = ?",
+        ("刻意不同的 legacy mirror", client.id),
+    )
+    container.conn.commit()
+
+    _build_matcher(container).regenerate_mof()
+
+    match = RegistryMatchRepository(container.conn).list_for_client(client.id)[0]
+    differences = json.loads(match.differences_json or "{}")
+    assert differences["address"]["client"] == "登記地址才是真值"
+    assert differences["address"]["registry"] == "台北市信義區一號"
+
+
 def test_matcher_regenerate_replaces_previous_results(
     container: ServiceContainer,
 ) -> None:

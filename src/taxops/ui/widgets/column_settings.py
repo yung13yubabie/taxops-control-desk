@@ -18,7 +18,7 @@ import logging
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QMenu, QTableWidget
+from PySide6.QtWidgets import QApplication, QMenu, QTableWidget
 
 _log = logging.getLogger(__name__)
 
@@ -150,6 +150,11 @@ class ColumnSettings:
             )
 
     def _on_section_resized(self, _idx: int, _old: int, _new: int) -> None:
+        # Qt also emits sectionResized for layout/stretch work performed while
+        # a page is being constructed or shown. Persist only an actual mouse
+        # drag; explicit auto-resize/reset actions call _save_widths directly.
+        if QApplication.mouseButtons() == Qt.MouseButton.NoButton:
+            return
         self._save_widths()
 
     def _show_menu(self, pos) -> None:

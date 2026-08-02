@@ -19,9 +19,9 @@ from __future__ import annotations
 import datetime
 import logging
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -43,6 +43,7 @@ from ...services.engagements import EngagementValidationError
 from ..action_registry import FilterKey
 from ..dialogs.edit_engagement_dialog import EditEngagementDialog
 from ..dialogs.new_engagement_dialog import NewEngagementDialog
+from ..dialogs.bulk_new_engagement_dialog import BulkNewEngagementDialog
 from ..style import PRIMARY_COLOR, PRIMARY_HOVER, TEXT_MUTED, toolbar_icon
 from ..widgets.column_settings import ColumnSettings
 from ..widgets.empty_state import EmptyState
@@ -183,6 +184,9 @@ class EngagementsPage(QWidget):
         self._new_btn.setIcon(toolbar_icon("new"))
         self._new_btn.setEnabled(False)
         filter_row.addWidget(self._new_btn)
+        self._bulk_new_btn = QPushButton("多客戶新增")
+        self._bulk_new_btn.setIcon(toolbar_icon("bulk"))
+        filter_row.addWidget(self._bulk_new_btn)
         filter_row.addStretch(1)
         layout.addLayout(filter_row)
 
@@ -244,6 +248,7 @@ class EngagementsPage(QWidget):
 
         self._client_combo.currentIndexChanged.connect(self._on_client_changed)
         self._new_btn.clicked.connect(self._on_new_engagement)
+        self._bulk_new_btn.clicked.connect(self._on_bulk_new_engagement)
         if self._empty_state.action_button is not None:
             self._empty_state.action_button.clicked.connect(self._on_new_engagement)
         self._edit_btn.clicked.connect(self._on_edit_engagement)
@@ -495,7 +500,7 @@ class EngagementsPage(QWidget):
     # ------------------------------------------------------------------
 
     def _on_new_engagement(self) -> None:
-        if self._current_client_id is None:
+        if self._current_client_id in {None, _ALL_CLIENTS}:
             return
         dialog = NewEngagementDialog(
             self._container.engagements,
@@ -503,6 +508,23 @@ class EngagementsPage(QWidget):
             parent=self,
         )
         if dialog.exec() == NewEngagementDialog.DialogCode.Accepted:
+            self._refresh_engagements()
+
+    def _on_bulk_new_engagement(self) -> None:
+        try:
+            clients = self._container.clients.search_clients("", limit=500)
+        except Exception as err:
+            self._container.system_log.error(
+                "engagements.bulk.clients_load_failed", exc=err
+            )
+            QMessageBox.warning(self, "載入失敗", "無法載入客戶清單，請稍後再試。")
+            return
+        dialog = BulkNewEngagementDialog(
+            self._container.engagements,
+            clients,
+            parent=self,
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             self._refresh_engagements()
 
     def _on_edit_engagement(self) -> None:

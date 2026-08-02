@@ -1,5 +1,114 @@
 # DECISIONS
 
+## 2026-07-31 - Qt coverage evidence uses explicit process isolation
+
+### Decision
+
+QObject test doubles connected to production `deleteLater()` must consume
+their own `DeferredDelete` event while the owning widget is still alive. The
+full Windows branch-coverage run may split Qt-heavy test files across fresh,
+sequential Python processes and append one coverage database, but it may not
+omit tests or accept a native crash as a pass.
+
+### Rationale
+
+Two controlled worker doubles left deferred deletes behind. A later registry
+test's legitimate global cleanup then triggered a PySide6 native abort. One
+long process therefore mixed product coverage with stale native test state.
+
+### Impact
+
+Release evidence records file count and passed-test totals for every segment,
+then applies one branch-aware fail-under gate to the merged data. Test doubles
+that emit `finished` require explicit lifetime assertions.
+
+## 2026-07-31 - Acceptance ZIP must prove the extracted EXE path
+
+### Decision
+
+Windows acceptance requires both build-tree EXE smoke and a second smoke from
+a freshly extracted delivery ZIP. Both use isolated `LOCALAPPDATA`, remain
+alive through the startup interval, and verify the latest schema migration.
+
+### Rationale
+
+Checking only that a database file exists, or only running the pre-ZIP EXE,
+can report success for an old schema or a broken archive.
+
+### Impact
+
+Packaging handoff includes ZIP entry readback, forbidden-path scan, checksum,
+extracted-EXE startup, latest-migration evidence, and an explicit manual UI
+boundary.
+
+## 2026-07-28 - Annual collaboration reuses formal workflow data
+
+### Decision
+
+The annual workbench does not create parallel request, attachment, or task
+records. It links one annual item to a formal engagement and uses the existing
+request, attachment, and workflow-task services with their original SQLite
+IDs. Every unbounded-looking UI list is exposed through count plus bounded
+pagination.
+
+### Rationale
+
+Parallel tables or UI-only success state would diverge from the application's
+normal pages and could produce false success, duplicate work, or missing audit
+evidence.
+
+### Impact
+
+Changes made from either the annual workbench or the normal workflow pages are
+visible after readback. A committed operation whose readback fails must lock
+mutation controls and offer retry without resubmitting.
+
+## 2026-07-28 - Fixed desktop size uses reachable scroll containers
+
+### Decision
+
+The annual collaboration dialog has a real 900x540 minimum and hosts the
+request, attachment, and task pages in widget-resizable scroll areas.
+Destructive attachment archive and annual-task delete actions require explicit
+confirmation.
+
+### Rationale
+
+Qt child size hints previously expanded the shown dialog beyond the advertised
+height, hiding the fixed-desktop failure from coordinate-only tests.
+
+### Impact
+
+Geometry tests must assert the actual shown window size. Content may scroll,
+but actions must remain reachable without silently expanding or clipping the
+window.
+
+## 2026-07-18 - Compliance deadlines remain explicit suggestions
+
+### Decision
+
+Annual compliance generation stores only deterministic suggested dates for
+the ordinary rules represented in the code. It does not infer holiday
+extensions, network-fetched changes, or client exceptions. Verified
+special-fiscal-year corporate-income-tax and undistributed-earnings windows
+use the month ending the fifth month after fiscal year-end; provisional-tax
+windows use the month ending the ninth fiscal month. The fiscal start year is
+derived backward from the operation year so every suggested date occurs in
+that workbench year.
+
+### Rationale
+
+The Ministry of Finance guidance defines these non-calendar filing windows,
+while the exact holiday extension can vary. Encoding the verified base window
+but not an inferred extension keeps offline generation useful, reproducible,
+and independent of current network state.
+
+### Impact
+
+Generated dates are planning aids rather than legal guarantees. A future rule
+change requires explicit source review and regression-test updates; holiday or
+client-specific extensions must not be introduced as implicit date arithmetic.
+
 ## 2026-07-12 - Fixed-billing plan delete preserves issued history
 
 ### Decision

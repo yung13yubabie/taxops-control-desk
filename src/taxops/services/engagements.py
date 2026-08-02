@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
 
 from ..core.dates import parse_optional_iso_date
@@ -79,6 +80,17 @@ class CreateEngagementInput:
 
 
 @dataclass(frozen=True)
+class BulkCreateEngagementInput:
+    client_ids: tuple[int, ...]
+    engagement_name: str
+    tax_type: str
+    period_name: str
+    owner: str | None = None
+    due_date: str | None = None
+    notes: str | None = None
+
+
+@dataclass(frozen=True)
 class UpdateEngagementInput:
     engagement_name: str
     tax_type: str
@@ -96,10 +108,18 @@ class EngagementsService:
         audit: AuditService,
         search_repo: SearchRepository | None = None,
     ) -> None:
+        if audit.connection is not repo._conn or (
+            search_repo is not None and search_repo.connection is not repo._conn
+        ):
+            raise ValueError("engagement.connection.mismatch")
         self._repo = repo
         self._audit = audit
         self._search_repo = search_repo
         self._conn = repo._conn
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self._conn
 
     def _fts_add(self, row: EngagementRow) -> None:
         if self._search_repo is None:
@@ -121,6 +141,56 @@ class EngagementsService:
         self._search_repo.delete_engagement(engagement_id)
 
     def create_engagement(self, payload: CreateEngagementInput) -> EngagementRow:
+        with self._conn:
+            return self._create_engagement_uncommitted(payload)
+
+    def create_for_clients(
+        self, payload: BulkCreateEngagementInput
+    ) -> tuple[EngagementRow, ...]:
+        client_ids = payload.client_ids
+        if (
+            not isinstance(client_ids, tuple)
+            or not 1 <= len(client_ids) <= 500
+            or any(
+                not isinstance(client_id, int)
+                or isinstance(client_id, bool)
+                or client_id <= 0
+                for client_id in client_ids
+            )
+            or len(set(client_ids)) != len(client_ids)
+        ):
+            raise EngagementValidationError("engagement.client_ids.invalid")
+        # Validate every owner before the first insert. This prevents a missing
+        # client late in the selection from creating a deceptive partial batch.
+        if any(not self._repo.client_exists(client_id) for client_id in client_ids):
+            raise EngagementValidationError("engagement.client_not_found")
+        with self._conn:
+            rows = tuple(
+                self._create_engagement_uncommitted(
+                    CreateEngagementInput(
+                        client_id=client_id,
+                        engagement_name=payload.engagement_name,
+                        tax_type=payload.tax_type,
+                        period_name=payload.period_name,
+                        owner=payload.owner,
+                        due_date=payload.due_date,
+                        notes=payload.notes,
+                    )
+                )
+                for client_id in client_ids
+            )
+            self._audit.record(
+                action="engagement.bulk_create",
+                target_type="engagement_batch",
+                target_id=",".join(str(row.id) for row in rows),
+                detail={"client_ids": list(client_ids), "created_count": len(rows)},
+            )
+        return rows
+
+    def _create_engagement_uncommitted(
+        self, payload: CreateEngagementInput
+    ) -> EngagementRow:
+        """Validate and create without owning the caller's transaction."""
         if not self._repo.client_exists(payload.client_id):
             raise EngagementValidationError("engagement.client_not_found")
 
@@ -144,30 +214,29 @@ class EngagementsService:
             raise EngagementValidationError("engagement.due_date.invalid")
         notes = sanitize_user_text(payload.notes, max_length=2000) or None
 
-        with self._conn:
-            row = self._repo.insert(
-                client_id=payload.client_id,
-                engagement_name=name,
-                tax_type=payload.tax_type,
-                period_name=period,
-                status=status,
-                owner=owner,
-                due_date=due_date,
-                notes=notes,
-            )
-            self._audit.record(
-                action="engagement.create",
-                target_type="engagement",
-                target_id=str(row.id),
-                detail={
-                    "client_id": payload.client_id,
-                    "engagement_name": row.engagement_name,
-                    "tax_type": row.tax_type,
-                    "period_name": row.period_name,
-                    "status": row.status,
-                },
-            )
-            self._fts_add(row)
+        row = self._repo.insert(
+            client_id=payload.client_id,
+            engagement_name=name,
+            tax_type=payload.tax_type,
+            period_name=period,
+            status=status,
+            owner=owner,
+            due_date=due_date,
+            notes=notes,
+        )
+        self._audit.record(
+            action="engagement.create",
+            target_type="engagement",
+            target_id=str(row.id),
+            detail={
+                "client_id": payload.client_id,
+                "engagement_name": row.engagement_name,
+                "tax_type": row.tax_type,
+                "period_name": row.period_name,
+                "status": row.status,
+            },
+        )
+        self._fts_add(row)
         return row
 
     def update_engagement(
@@ -290,6 +359,39 @@ class EngagementsService:
 
     def count_by_client(self, client_id: int) -> int:
         return self._repo.count_by_client(client_id)
+
+    def search_by_client(
+        self,
+        client_id: int,
+        query: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[EngagementRow]:
+        if (
+            not isinstance(query, str)
+            or len(query) > 100
+            or any(ord(char) < 32 for char in query)
+            or not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 1 <= limit <= 200
+            or not isinstance(offset, int)
+            or isinstance(offset, bool)
+            or offset < 0
+        ):
+            raise EngagementValidationError("engagement.search.invalid")
+        return self._repo.search_by_client(
+            client_id, query.strip(), limit=limit, offset=offset
+        )
+
+    def count_search_by_client(self, client_id: int, query: str) -> int:
+        if (
+            not isinstance(query, str)
+            or len(query) > 100
+            or any(ord(char) < 32 for char in query)
+        ):
+            raise EngagementValidationError("engagement.search.invalid")
+        return self._repo.count_search_by_client(client_id, query.strip())
 
     def list_all(
         self,

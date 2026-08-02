@@ -88,6 +88,30 @@ def test_create_request_accepts_custom_request_name(svc, engagement_id):
     assert req.request_name == "A公司第一批補件"
 
 
+def test_create_request_rejects_excessive_item_count_before_write(
+    svc, engagement_id, conn
+):
+    audit_before = conn.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+    ).fetchone()[0]
+
+    with pytest.raises(DocumentRequestValidationError) as caught:
+        svc.create_request(
+            _req_input(
+                engagement_id,
+                request_name="過大索件",
+                item_names=tuple(f"中文項目 {index}" for index in range(1001)),
+            )
+        )
+
+    assert caught.value.code == "doc_request.items.too_many"
+    assert svc.list_by_engagement(engagement_id) == []
+    assert (
+        conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+        == audit_before
+    )
+
+
 def test_create_request_blank_request_name_uses_default(svc, engagement_id):
     req, _ = svc.create_request(_req_input(engagement_id, request_name="   "))
     assert req.request_name == "2024Q1 vat request"
@@ -254,6 +278,57 @@ def test_list_by_engagement(svc, engagement_id):
     svc.create_request(_req_input(engagement_id, period_name="2024Q2"))
     rows = svc.list_by_engagement(engagement_id)
     assert len(rows) == 2
+
+
+def test_list_by_engagement_is_bounded_by_default_and_paginates(
+    svc, engagement_id
+):
+    for index in range(205):
+        svc._repo.insert_request(
+            engagement_id=engagement_id,
+            request_name=f"補件 {index:03d}",
+            tax_type="vat",
+            period_name="2024Q1",
+        )
+
+    first_page = svc.list_by_engagement(engagement_id)
+    last_page = svc.list_by_engagement(engagement_id, limit=5, offset=200)
+
+    assert len(first_page) == 200
+    assert [row.request_name for row in last_page] == [
+        f"補件 {index:03d}" for index in range(200, 205)
+    ]
+    assert svc.list_by_engagement(
+        engagement_id, limit=500, offset=1_000_000
+    ) == []
+
+
+@pytest.mark.parametrize(
+    ("limit", "offset"),
+    [
+        (True, 0),
+        ("1", 0),
+        (0, 0),
+        (501, 0),
+        ("1 LIMIT 999999", 0),
+        (1, True),
+        (1, "0"),
+        (1, -1),
+        (1, 1_000_001),
+        (1, "0; SELECT 1"),
+    ],
+)
+def test_list_by_engagement_rejects_invalid_or_injectable_pagination(
+    svc, engagement_id, limit, offset
+):
+    with pytest.raises(DocumentRequestValidationError) as caught:
+        svc.list_by_engagement(engagement_id, limit=limit, offset=offset)
+    assert caught.value.code == "doc_request.pagination.invalid"
+    with pytest.raises(ValueError) as repository_caught:
+        svc._repo.list_by_engagement(
+            engagement_id, limit=limit, offset=offset
+        )
+    assert str(repository_caught.value) == "doc_request.pagination.invalid"
 
 
 def test_list_by_engagement_excludes_deleted(svc, engagement_id):
@@ -424,6 +499,45 @@ def test_add_items_bulk_empty_text_raises(svc, engagement_id):
     assert exc_info.value.code == "doc_request_item.bulk.empty"
 
 
+def test_add_items_bulk_late_invalid_name_is_all_or_nothing(
+    svc, engagement_id, conn
+):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    audit_before = conn.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+    ).fetchone()[0]
+
+    with pytest.raises(DocumentRequestValidationError) as caught:
+        svc.add_items_bulk(req.id, f"先驗證的有效中文項目\n{'錯' * 201}")
+
+    assert caught.value.code == "doc_request_item.name.invalid"
+    assert svc.list_items(req.id) == []
+    assert (
+        conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+        == audit_before
+    )
+
+
+def test_add_items_bulk_rejects_huge_chinese_before_any_write(
+    svc, engagement_id, conn
+):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    raw = "中" * 100_001
+    audit_before = conn.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+    ).fetchone()[0]
+
+    with pytest.raises(DocumentRequestValidationError) as caught:
+        svc.add_items_bulk(req.id, raw)
+
+    assert caught.value.code == "doc_request_item.bulk.too_large"
+    assert svc.list_items(req.id) == []
+    assert (
+        conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+        == audit_before
+    )
+
+
 def test_add_items_bulk_records_audit_per_item(svc, engagement_id, conn):
     req, _ = svc.create_request(_req_input(engagement_id))
     svc.add_items_bulk(req.id, "A\nB")
@@ -431,6 +545,26 @@ def test_add_items_bulk_records_audit_per_item(svc, engagement_id, conn):
         "SELECT action FROM audit_logs WHERE action = 'doc_request_item.create'"
     ).fetchall()
     assert len(rows) == 2
+
+
+def test_add_items_bulk_audit_failure_rolls_back_every_item_and_parent_status(
+    svc, engagement_id, monkeypatch
+):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    monkeypatch.setattr(
+        svc._audit,
+        "record",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("audit unavailable")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        svc.add_items_bulk(req.id, "中文文件甲\n中文文件乙")
+
+    snapshot = svc.read_request_snapshot(req.id)
+    assert snapshot.request == req
+    assert snapshot.items == ()
 
 
 def test_update_item_changes_name(svc, engagement_id):
@@ -448,6 +582,92 @@ def test_update_item_empty_name_raises(svc, engagement_id):
     assert exc_info.value.code == "doc_request_item.name.required"
 
 
+@pytest.mark.parametrize("raw_name", ["中" * 201, "正常名稱\u0000隱藏"])
+def test_update_item_rejects_invalid_raw_name_without_write_or_audit(
+    svc, engagement_id, conn, raw_name
+):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    item = svc.add_item(req.id, "原始名稱")
+    audit_before = conn.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+    ).fetchone()[0]
+
+    with pytest.raises(DocumentRequestValidationError) as caught:
+        svc.update_item(item.id, raw_name)
+
+    assert caught.value.code == "doc_request_item.name.invalid"
+    assert svc.get_item(item.id) == item
+    assert (
+        conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+        == audit_before
+    )
+
+
+def test_update_item_rejects_notes_that_would_be_truncated(
+    svc, engagement_id, conn
+):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    item = svc.add_item(req.id, "原始名稱")
+    audit_before = conn.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+    ).fetchone()[0]
+
+    with pytest.raises(DocumentRequestValidationError) as caught:
+        svc.update_item(item.id, "新名稱", notes="說" * 501)
+
+    assert caught.value.code == "doc_request_item.notes.invalid"
+    assert svc.get_item(item.id) == item
+    assert (
+        conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+        == audit_before
+    )
+
+
+def test_update_item_replacing_delta_cannot_exceed_parent_total(
+    svc, engagement_id, conn
+):
+    names = ["甲" * 200 for _ in range(499)]
+    names.extend(["乙" * 198, "舊"])
+    req, items = svc.create_request(
+        _req_input(engagement_id, item_names=tuple(names))
+    )
+    target = items[-1]
+    assert sum(len(item.item_name) for item in items) == 99_999
+    audit_before = conn.execute(
+        "SELECT COUNT(*) FROM audit_logs"
+    ).fetchone()[0]
+
+    with pytest.raises(DocumentRequestValidationError) as caught:
+        svc.update_item(target.id, "超過限額")
+
+    assert caught.value.code == "doc_request_item.bulk.too_large"
+    assert svc.get_item(target.id) == target
+    assert (
+        conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+        == audit_before
+    )
+
+
+def test_update_item_audit_failure_rolls_back_item_and_parent(
+    svc, engagement_id, monkeypatch
+):
+    req, _ = svc.create_request(_req_input(engagement_id))
+    item = svc.add_item(req.id, "原始名稱")
+    before = svc.read_request_snapshot(req.id)
+    monkeypatch.setattr(
+        svc._audit,
+        "record",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("audit unavailable")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        svc.update_item(item.id, "不應留下的名稱")
+
+    assert svc.read_request_snapshot(req.id) == before
+
+
 def test_update_item_not_found_raises(svc, engagement_id):
     with pytest.raises(DocumentRequestValidationError) as exc_info:
         svc.update_item(99999, "名稱")
@@ -462,6 +682,74 @@ def test_update_item_records_audit(svc, engagement_id, conn):
         "SELECT action FROM audit_logs WHERE action = 'doc_request_item.update'"
     ).fetchall()
     assert len(rows) == 1
+
+
+def test_summary_by_engagement_is_one_bounded_query_with_owner_guard(
+    svc, engagement_id, conn
+):
+    first, first_items = svc.create_request(
+        _req_input(
+            engagement_id,
+            request_name="第一批",
+            item_names=("缺件", "已收", "待確認"),
+        )
+    )
+    svc.set_item_status(first_items[1].id, item_status="received")
+    svc.set_item_status(
+        first_items[2].id, item_status="pending_confirm"
+    )
+    _second, second_items = svc.create_request(
+        _req_input(
+            engagement_id,
+            request_name="第二批",
+            item_names=("不適用",),
+        )
+    )
+    svc.set_item_status(
+        second_items[0].id, item_status="not_applicable"
+    )
+    statements: list[str] = []
+    conn.set_trace_callback(statements.append)
+    try:
+        summary = svc.summary_by_engagement(engagement_id)
+    finally:
+        conn.set_trace_callback(None)
+
+    assert summary.request_count == 2
+    assert summary.total == 4
+    assert summary.missing == 1
+    assert summary.received == 1
+    assert summary.pending_confirm == 1
+    assert summary.not_applicable == 1
+    assert sum(
+        (
+            summary.missing,
+            summary.received,
+            summary.incomplete,
+            summary.invalid,
+            summary.accepted,
+            summary.pending_confirm,
+            summary.not_applicable,
+            summary.client_said_none,
+        )
+    ) == summary.total
+    assert len(
+        [
+            sql
+            for sql in statements
+            if sql.lstrip().upper().startswith(("SELECT", "WITH"))
+        ]
+    ) == 1
+
+    conn.execute(
+        "UPDATE clients SET deleted_at = datetime('now')"
+        " WHERE id = (SELECT client_id FROM engagements WHERE id = ?)",
+        (engagement_id,),
+    )
+    conn.commit()
+    hidden = svc.summary_by_engagement(engagement_id)
+    assert hidden.request_count == 0
+    assert hidden.total == 0
 
 
 def test_delete_item_removes_from_list(svc, engagement_id):

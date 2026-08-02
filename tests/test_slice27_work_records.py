@@ -989,7 +989,7 @@ def test_workflow_page_rejects_corrupt_and_unsafe_saved_image_references(
     page._set_workflow_image_path(image_path)
     shown: list[str] = []
     monkeypatch.setattr(QDialog, "exec", lambda dlg: shown.append(dlg.windowTitle()) or 0)
-    page._workflow_image.mousePressEvent(None)
+    page._workflow_image.double_clicked.emit()
     assert shown == ["圖片預覽"]
 
 

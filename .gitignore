@@ -14,6 +14,7 @@ __pycache__/
 .venv/
 venv/
 env/
+.worktrees/
 
 # Runtime data (never commit user data)
 *.sqlite

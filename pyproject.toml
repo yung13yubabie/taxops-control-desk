@@ -1,6 +1,6 @@
 [project]
 name = "taxops-control-desk"
-version = "0.29.0"
+version = "0.30.0"
 description = "Offline-first desktop operations workbench for Taiwan accounting and tax offices."
 requires-python = ">=3.11"
 dependencies = [
@@ -12,8 +12,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0,<9.0",
+  "pytest-qt>=4.5,<5.0",
   "pytest-cov>=7.0,<8.0",
   "pyinstaller>=6.3,<7.0",
+  "ruff==0.15.15",
 ]
 
 [build-system]

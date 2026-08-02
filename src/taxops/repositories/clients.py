@@ -22,6 +22,7 @@ class ClientRow:
     contact_name: str | None
     contact_phone: str | None
     contact_email: str | None
+    # v0.30 compatibility mirror. New domain logic must use registered_address.
     address: str | None
     note: str | None
     created_at: str
@@ -29,6 +30,9 @@ class ClientRow:
     deleted_at: str | None = None
     lease_start: str | None = None
     lease_end: str | None = None
+    registered_address: str | None = None
+    contact_address: str | None = None
+    contact_address_same: bool = True
 
 
 def _row_to_client(row: sqlite3.Row) -> ClientRow:
@@ -42,6 +46,9 @@ def _row_to_client(row: sqlite3.Row) -> ClientRow:
         contact_name=row["contact_name"],
         contact_phone=row["contact_phone"],
         contact_email=row["contact_email"],
+        registered_address=row["registered_address"],
+        contact_address=row["contact_address"],
+        contact_address_same=bool(row["contact_address_same"]),
         address=row["address"],
         note=row["note"],
         created_at=row["created_at"],
@@ -56,6 +63,10 @@ class ClientsRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self._conn
+
     def insert(
         self,
         *,
@@ -66,7 +77,9 @@ class ClientsRepository:
         contact_name: str | None = None,
         contact_phone: str | None = None,
         contact_email: str | None = None,
-        address: str | None = None,
+        registered_address: str | None = None,
+        contact_address: str | None = None,
+        contact_address_same: bool = True,
         note: str | None = None,
         lease_start: str | None = None,
         lease_end: str | None = None,
@@ -75,9 +88,10 @@ class ClientsRepository:
         cur = self._conn.execute(
             "INSERT INTO clients("
             "client_code, tax_id, client_name, short_name, contact_name, "
-            "contact_phone, contact_email, address, note, lease_start, lease_end, "
+            "contact_phone, contact_email, registered_address, contact_address, "
+            "contact_address_same, address, note, lease_start, lease_end, "
             "created_at, updated_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 client_code,
                 tax_id,
@@ -86,7 +100,10 @@ class ClientsRepository:
                 contact_name,
                 contact_phone,
                 contact_email,
-                address,
+                registered_address,
+                contact_address,
+                int(contact_address_same),
+                registered_address,
                 note,
                 lease_start,
                 lease_end,
@@ -157,7 +174,9 @@ class ClientsRepository:
         contact_name: str | None = None,
         contact_phone: str | None = None,
         contact_email: str | None = None,
-        address: str | None = None,
+        registered_address: str | None = None,
+        contact_address: str | None = None,
+        contact_address_same: bool = True,
         note: str | None = None,
         lease_start: str | None = None,
         lease_end: str | None = None,
@@ -166,9 +185,10 @@ class ClientsRepository:
         self._conn.execute(
             "UPDATE clients SET client_code = ?, tax_id = ?, client_name = ?, "
             "short_name = ?, contact_name = ?, contact_phone = ?, "
-            "contact_email = ?, address = ?, note = ?, lease_start = ?, "
+            "contact_email = ?, registered_address = ?, contact_address = ?, "
+            "contact_address_same = ?, address = ?, note = ?, lease_start = ?, "
             "lease_end = ?, updated_at = ? "
-            "WHERE id = ?",
+            "WHERE id = ? AND deleted_at IS NULL",
             (
                 client_code,
                 tax_id,
@@ -177,10 +197,36 @@ class ClientsRepository:
                 contact_name,
                 contact_phone,
                 contact_email,
-                address,
+                registered_address,
+                contact_address,
+                int(contact_address_same),
+                registered_address,
                 note,
                 lease_start,
                 lease_end,
+                ts,
+                client_id,
+            ),
+        )
+        return self.get(client_id)
+
+    def update_registered_address(
+        self,
+        client_id: int,
+        *,
+        registered_address: str | None,
+        contact_address: str | None,
+    ) -> ClientRow | None:
+        """Update the canonical registered address and its compatibility mirror."""
+        ts = now_iso()
+        self._conn.execute(
+            "UPDATE clients SET registered_address = ?, contact_address = ?, "
+            "address = ?, updated_at = ? "
+            "WHERE id = ? AND deleted_at IS NULL",
+            (
+                registered_address,
+                contact_address,
+                registered_address,
                 ts,
                 client_id,
             ),
@@ -228,8 +274,10 @@ class ClientsRepository:
             " (SELECT COUNT(*) FROM workflow_templates_v2 WHERE client_id = ?) +"
             " (SELECT COUNT(*) FROM workflow_runs WHERE client_id = ?) +"
             " (SELECT COUNT(*) FROM error_reviews WHERE client_id = ?) +"
-            " (SELECT COUNT(*) FROM canvas_notes WHERE client_id = ?) AS c",
-            (client_id,) * 6,
+            " (SELECT COUNT(*) FROM canvas_notes WHERE client_id = ?) +"
+            " (SELECT COUNT(*) FROM compliance_profiles WHERE client_id = ?) +"
+            " (SELECT COUNT(*) FROM annual_workspaces WHERE client_id = ?) AS c",
+            (client_id,) * 8,
         ).fetchone()
         return int(row["c"]) if row else 0
 
@@ -243,7 +291,8 @@ class ClientsRepository:
 
     _SORT_COLUMNS = frozenset({
         "id", "client_code", "tax_id", "client_name", "short_name",
-        "contact_name", "contact_phone", "contact_email", "updated_at",
+        "contact_name", "contact_phone", "contact_email", "registered_address",
+        "contact_address", "updated_at",
     })
 
     @staticmethod
@@ -327,13 +376,23 @@ class ClientsRepository:
         return int(row["c"]) if row else 0
 
     def list_lease_expiring_soon(self, today: str, until: str) -> list["ClientRow"]:
+        """List each active client once when an active lease ends in the window.
+
+        client_leases is authoritative after migration 0027. The scalar
+        clients.lease_end remains migration compatibility data only.
+        """
         rows = self._conn.execute(
-            "SELECT * FROM clients"
-            " WHERE deleted_at IS NULL"
-            "   AND lease_end IS NOT NULL"
-            "   AND lease_end >= ?"
-            "   AND lease_end <= ?"
-            " ORDER BY lease_end ASC",
+            "SELECT c.* FROM clients AS c"
+            " JOIN client_leases AS l"
+            "   ON l.client_id = c.id"
+            "  AND l.deleted_at IS NULL"
+            "  AND l.status = 'active'"
+            " WHERE c.deleted_at IS NULL"
+            "   AND l.end_date IS NOT NULL"
+            "   AND l.end_date >= ?"
+            "   AND l.end_date <= ?"
+            " GROUP BY c.id"
+            " ORDER BY MIN(l.end_date) ASC, c.id ASC",
             (today, until),
         ).fetchall()
         return [_row_to_client(r) for r in rows]

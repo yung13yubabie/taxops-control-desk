@@ -9,10 +9,28 @@ import pytest
 import taxops.services.clients_bulk as clients_bulk
 from taxops.services.clients_bulk import (
     BulkParseError,
+    auto_detect_mapping,
     parse_clipboard_text,
     parse_csv,
     parse_excel,
 )
+
+
+@pytest.mark.parametrize(
+    ("header", "canonical"),
+    [
+        ("登記地址", "registered_address"),
+        ("設籍地址", "registered_address"),
+        ("地址", "registered_address"),
+        ("聯絡地址", "contact_address"),
+        ("聯絡地址同登記", "contact_address_same"),
+        ("聯絡地址同設籍", "contact_address_same"),
+    ],
+)
+def test_auto_detect_mapping_supports_address_domain_headers(
+    header: str, canonical: str
+) -> None:
+    assert auto_detect_mapping([header]) == {header: canonical}
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

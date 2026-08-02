@@ -1,5 +1,122 @@
 # TASKS
 
+## 2026-08-01 requested office workflow hardening
+
+### TODO
+
+- [ ] Complete owner manual acceptance of the refreshed EXE at 100/125/150/200%
+  Windows scaling, including the six changed workflows and persistence after
+  restart.
+
+### DOING
+
+- None.
+
+### BLOCKED
+
+- [ ] Obtain a completed Codex Security report. CLI 0.1.4 and 0.1.5 both fail
+  because the scan agent does not create the three required draft artifacts;
+  latest failed scan is `11e96785-ec4a-4065-83e0-a8c566cb4c8e`.
+
+### DONE
+
+- [x] Implement address-width consistency and bulk lease-count/collapsible
+  lease visibility without an N+1 query.
+- [x] Add an annual-workbench compliance-profile entry and visible load/save
+  validation and failure recovery.
+- [x] Add atomic, prevalidated multi-client engagement creation and its real UI
+  entry; a partial batch cannot be reported as successful.
+- [x] Enable task table sorting and group work-record context with prominent
+  inline images that open only on double-click.
+- [x] Replace fake message-template sample values with a selected real client
+  preview and add annual-workbench variables.
+- [x] Pass all 2,682 tests, including both real BGMOPEN1 imports, at
+  90.11569881344029% combined branch coverage.
+- [x] Resolve the release dependency vulnerability, pass `pip-audit`, the
+  triaged Bandit Medium/High gate, Ruff, compileall, and diff checks.
+- [x] Rebuild and smoke the build-tree and ZIP-extracted EXEs; verify 191-file
+  hash parity, forbidden-path absence, version metadata, ZIP size, and SHA-256.
+
+## 2026-07-16 v0.30 annual workbench and client master
+
+### TODO
+
+- [x] Build the annual accounting/tax workbench with one client-year parent,
+  independent work/filing/document/tax/fee states, ledger-derived balances,
+  and bidirectional links to existing engagements and document requests.
+- [ ] Complete owner acceptance at 1366x768 and 100/125/150/200% scaling.
+- [x] Run the full branch-coverage gate at 90% or higher without exclusions or
+  pragma inflation, then build and smoke-test the offline Windows EXE.
+
+### DOING
+
+- [ ] Owner manual acceptance of the packaged EXE using
+  `docs/packaging_checklist.md`.
+
+### BLOCKED
+
+- None.
+
+### DONE
+
+- [x] Confirm the annual-workbench domain decisions and formal design.
+- [x] Create the isolated `feature/v030-annual-workbench` worktree and three
+  task-by-task implementation plans.
+- [x] Fix the date-dependent task-filter regression; independent review passed.
+- [x] Verify the clean baseline: 1454 passed in 939.71 seconds.
+- [x] Add migration 0027 for address/lease/industry schema and safe attachment
+  ownership rebuild; spec review and five-axis quality review both passed.
+- [x] Add and independently review lease/industry repositories and services,
+  guarded lease attachments, historical attachment visibility, and explicit
+  overlength validation without silent truncation.
+- [x] Separate registered/contact addresses across client CRUD, bulk import,
+  and registry matching while preserving the legacy address mirror.
+- [x] Add the fixed-order, scroll-safe shared client profile form, atomic staged
+  multiple-lease create/update/archive UI, persisted-lease attachment actions,
+  exact multiline table tooltips, and explicit registered/contact columns.
+- [x] Implement industry search across primary/secondary slots, source-faithful
+  primary display and persistence, atomic registry application, exact contact
+  preservation, and bounded shared local-search worker lifecycle handling.
+- [x] Add migration 0028 for annual compliance profiles, client-year
+  workspaces, independent-status work items, transaction rows, and optional
+  workflow-task links with upgrade, rollback, FK, and sequence regression.
+- [x] Implement deterministic suggested-period rules and one atomic compliance
+  profile per active client. Preserve omitted/disabled rows and multiline
+  notes, reject overlong or mistyped values, derive verified special-year
+  filing windows without holiday guesses, and suppress writes/audits for an
+  exactly unchanged payload.
+- [x] Implement annual workspace preview/confirmation, annual item editing and
+  lifecycle actions, ledger-derived balances, and bidirectional engagement and
+  document-request links.
+- [x] Add formal annual attachment/task collaboration with bounded pagination,
+  exact post-commit evidence, stale-state locking, read-only retry, destructive
+  confirmation, and request #201 selector coverage.
+- [x] Make the actual shown annual collaboration window remain 900x540 by
+  placing each work tab in a scrollable container.
+- [x] Establish a no-ignore Ruff baseline; `ruff check src tests build_tools`
+  and compileall pass.
+- [x] Fix two test-double `DeferredDelete` leaks that caused order-dependent
+  PySide6 native aborts; keep the global cleanup assertion intact.
+- [x] Add 101 high-value annual service, workflow-dialog, and client-search
+  edge tests; verify 2663 tests and 90.18% branch coverage from clean data.
+- [x] Run 92 normal-entry/high-risk user-path smoke tests and fix the annual
+  request-management typography regression under the real app stylesheet.
+- [x] Build v0.30.0 in the exact-pinned isolated Python 3.11.9 environment;
+  smoke the build-tree and ZIP-extracted EXEs through migration 0028.
+- [x] Embed and verify Windows FileVersion/ProductVersion `0.30.0.0`, product
+  name, original filename, and file description in the packaged EXE.
+- [x] Read all 192 ZIP entries (191 files), reject source/test/private paths,
+  prove exact build-tree file/hash parity, and record the 50,095,302-byte
+  artifact SHA-256.
+- [x] Complete final independent code-quality and artifact-readiness reviews;
+  resolve the version-resource blocker and documentation overclaim they found.
+- [x] Replay the original feature objective through 368 data/service and 184
+  real Qt UI tests: split addresses, multiple leases, industry lookup,
+  annual/custom work, six-category money ledger, navigation, and fixed layout.
+- [x] Render the real Windows Qt UI at the host's 125% DPI and verify a
+  1366x768 logical annual page plus a scrollable 760x720 client/multiple-lease
+  dialog with every required action inside the visible boundary.
+
 ## 2026-07-12 Branch coverage and happy-path hardening
 
 ### DOING

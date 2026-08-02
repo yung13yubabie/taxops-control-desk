@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QStyle as _QStyle
+
 _PRIMARY = "#2563EB"
 _PRIMARY_HOVER = "#1D4ED8"
 _PRIMARY_PRESSED = "#1E40AF"
@@ -251,8 +254,6 @@ QLabel#SectionTitle {{
 """
 
 
-from PySide6.QtWidgets import QStyle as _QStyle
-
 _TOOLBAR_ICON_MAP: dict[str, _QStyle.StandardPixmap] = {
     "new": _QStyle.StandardPixmap.SP_FileDialogNewFolder,
     "edit": _QStyle.StandardPixmap.SP_FileDialogDetailedView,
@@ -267,7 +268,7 @@ _TOOLBAR_ICON_MAP: dict[str, _QStyle.StandardPixmap] = {
 }
 
 
-def toolbar_icon(role: str) -> "QIcon":
+def toolbar_icon(role: str) -> QIcon:
     from PySide6.QtWidgets import QApplication
     sp = _TOOLBAR_ICON_MAP.get(role, _QStyle.StandardPixmap.SP_MessageBoxInformation)
     return QApplication.style().standardIcon(sp)

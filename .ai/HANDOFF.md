@@ -1,5 +1,237 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-08-01 - requested workflow refresh)
+
+- Implemented the six requested office workflows: client address sizing and
+  lease visibility; annual compliance setup entry; atomic multi-client case
+  creation; task sorting; consolidated work-record/image UI with double-click
+  zoom; and real-client message-template previews with annual variables.
+- Clean verification passes all 2,682 tests across 112 independently executed
+  files at 90.11569881344029% combined coverage. The two real 65MB BGMOPEN1
+  imports pass rather than being deselected. Evidence SHA-256 is
+  `6BCA83814AD714DCF33BABE410E6E037C33417E90A105D54DA23CA22FC5A8431`.
+- Security hardening updates setuptools from 80.9.0 to 83.0.0 and adds a Jinja
+  sandbox while preserving plain-text output. `pip-audit` reports no known
+  vulnerabilities; Bandit has no Medium/High result after the manually audited
+  B608 dynamic-identifier rule is excluded.
+- Codex Security itself remains blocked: three deep scans failed to write the
+  required draft artifacts. The CLI is now current at 0.1.5; latest failed scan
+  ID is `11e96785-ec4a-4065-83e0-a8c566cb4c8e`. It produced no valid report, so
+  zero findings must not be claimed.
+- Final manual-acceptance ZIP is
+  `dist/TaxOpsControlDesk-v0.30.0-win64.zip`, 50,116,927 bytes, SHA-256
+  `39D09F530AE7FD42DA64103F814883D1AC4B0699454B4428CFA5C52D04204C7D`.
+  The build-tree and fresh-extraction EXEs both pass startup/SQLite/migration
+  smoke; all 191 extracted files match the build tree and forbidden paths are
+  absent. Windows version metadata is `0.30.0.0`.
+- Owner acceptance is still required for real mouse/keyboard use, restart
+  persistence, SmartScreen, and 100/125/150/200% DPI. Start with the refreshed
+  ZIP and `docs/packaging_checklist.md`.
+- Next reader order: `.ai/spec-kit.md`, `.ai/CURRENT_STATE.md`, `.ai/TASKS.md`,
+  `.ai/DECISIONS.md`, then this file and `docs/packaging_checklist.md`.
+
+## Latest Handoff Update (2026-07-31 - v0.30 acceptance package)
+
+- The annual workbench/client-master implementation is committed through
+  `7320e9e`. No production data or release artifact is committed.
+- Clean verification passes 2663 tests with 90.18% branch coverage. Evidence
+  is the ignored local file `.ai/coverage-v030-final-20260731.json` (SHA-256
+  `5DD239D7B3C0089C6666D3DB259A17FC8540414D635E3F14DB8D640EDDBB6485`).
+- Two stale Qt `DeferredDelete` test-double leaks were fixed without removing
+  the global cleanup that exposed them. Three edge-test commits add 101 annual
+  service, real-widget failure, and worker lifecycle cases.
+- A separate normal-entry/user-path smoke now passes 92 tests. It exposed the actual app
+  stylesheet reducing the annual collaboration entry action to 13px. The
+  button now explicitly remains 14px, and standalone/order-polluted/full-file
+  regressions pass.
+- Isolated release environment: Python 3.11.9, PyInstaller 6.11.1, PySide6
+  6.10.2; `pip check` reports no broken requirements.
+- `dist/TaxOpsControlDesk-v0.30.0-win64.zip` is 50,095,302 bytes with SHA-256
+  `C42ADDC2761C6748252D91B9B35F73F7952229A94F9CF082CA4DA559AE0F4E9A`.
+  All 192 entries (191 files) read back, exactly match the build tree, and have
+  no forbidden paths. The extracted EXE stays alive for eight seconds with
+  migration `0028_annual_compliance`.
+- Windows reads FileVersion/ProductVersion `0.30.0.0`, ProductName
+  `TaxOps Control Desk`, and OriginalFilename `TaxOpsControlDesk.exe` from the
+  EXE. The artifact is intentionally reported as unsigned, not a signed release.
+- Original-goal replay on 2026-07-31 passes 368 data/service tests plus 184
+  real Qt UI tests. Native Windows rendering at the host's 125% DPI verifies a
+  1366x768 logical annual workbench with 34 generated rows and every primary
+  control inside the page. A 760x720 client dialog shows separate addresses,
+  scrolls to two leases, and keeps its fixed save actions reachable.
+- Windows Computer Use remains unavailable because its native control pipe is
+  absent. The rendered-widget evidence must not be relabeled as human mouse,
+  SmartScreen, or 100/150/200% host-DPI acceptance.
+- Remaining: the owner must perform the visible checklist in
+  `docs/packaging_checklist.md`, especially DPI/clipping, fixed billing,
+  annual workbench, notes, template placeholders, same-name registry choices,
+  SmartScreen, and persistence after restart. Do not call this a signed or
+  visually accepted release yet.
+- Next reader order: `.ai/spec-kit.md`, `.ai/CURRENT_STATE.md`,
+  `.ai/TASKS.md`, `.ai/DECISIONS.md`, then
+  `docs/packaging_checklist.md`.
+
+## Latest Handoff Update (2026-07-28 - v0.30 release candidate)
+
+- Annual workbench implementation and formal request/attachment/task
+  collaboration are committed through `2034123`; the Ruff baseline cleanup is
+  `01f9135`.
+- The attachment selector independently paginates requests in batches of 50,
+  reaches request #201, and refreshes immediately after embedded request
+  creation or deletion.
+- Parent and per-panel read failures clear stale data and lock every mutation
+  until a read-only retry succeeds. Attachment archive and annual-task delete
+  have explicit confirmation and exact audit target assertions.
+- A real Qt show-path test proves the collaboration window stays 900x540 with
+  scrollable tabs. A real header-drag test and caller-owned transaction
+  sentinel cover the settings persistence corrections.
+- Focused evidence: 197 backend/data-boundary tests pass, 73 slow settings/task
+  UI tests pass, and the annual collaboration/request/settings/action group
+  passes after correcting one stale method call. Ruff, compileall, and diff
+  checks pass.
+- Remaining work: receive final independent re-review, run the full ordered
+  coverage gate at 90% or higher, perform normal-entry UI smoke, build the
+  v0.30.0 EXE in the exact-pinned release environment, run EXE smoke, create
+  and read back the ZIP, compute SHA-256, and prepare the manual acceptance
+  checklist. Do not claim release completion before these steps pass.
+- Next reader order: `.ai/spec-kit.md`, `.ai/CURRENT_STATE.md`,
+  `.ai/TASKS.md`, `.ai/DECISIONS.md`, then
+  `docs/superpowers/plans/2026-07-16-annual-workbench-ui-release.md`.
+
+## Latest Handoff Update (2026-07-18 - compliance profiles and period rules)
+
+- `compliance_rules` now builds immutable, stable-key drafts for monthly
+  bookkeeping, monthly/bimonthly VAT, monthly withholding payments, annual
+  withholding statements, corporate income tax, undistributed earnings,
+  provisional tax, optional payroll/insurance, and optional company annual
+  work. Mapping order cannot affect item order or keys.
+- Ordinary calendar-year suggestions are explicit fixed-date rules only:
+  VAT next-period day 15, monthly withholding next-month day 10, annual
+  withholding January 31, corporate tax May 31, and provisional tax September
+  30. No clock, network, holiday, or extension inference occurs. Verified
+  special fiscal-year rules reverse from the operation year: corporate and
+  undistributed-earnings work uses the month ending the fifth month after
+  fiscal year-end, while provisional work uses the month ending the ninth
+  fiscal month. The stored cross-year period and tax year identify the actual
+  source fiscal year rather than the workbench year.
+- One profile per active client is exposed through a same-connection repository
+  and atomic `BEGIN IMMEDIATE` service. Saves are partial upserts: omitted and
+  disabled rows remain stored. Notes preserve newlines and reject overlength;
+  exact repeated payloads do not touch timestamps or create fake audit events.
+- `compliance_profile.update` audit detail contains only the client id, fiscal
+  start month, item count, and work-type/frequency/enabled metadata. Profile
+  notes are excluded. Audit failure restores the exact previous profile/item
+  rows, and writer contention returns a stable busy error.
+- TDD evidence: initial collection RED was two missing-module errors; the
+  first special-year RED exposed the incorrect blank deadline, then the
+  source-guided exhaustive correction produced 25 failures across all 2..12
+  fiscal starts before turning green. Strict runtime-type RED exposed three
+  unstable/raw errors. Final focused rules and profile regression is 84
+  passed. Existing annual migration, DB migration, client, and atomic
+  client-profile regression is 113 passed. This is not
+  full-suite, coverage, UI, or EXE evidence.
+- Next: independently review this slice, then implement Annual Core Task 3
+  workspace preview/idempotent generation. Read the annual core plan and the
+  compliance rules/profile tests before changing the contract.
+
+## Latest Handoff Update (2026-07-18 - annual compliance schema)
+
+- Migration `0028_annual_compliance` creates compliance profiles and defaults,
+  one active workspace per client/operation year, active-unique work items,
+  the six-category integer transaction ledger, and a nullable indexed
+  `workflow_tasks.annual_work_item_id` foreign key.
+- Profile items cascade only with their profile. Client, workspace, work-item,
+  transaction, engagement, and linked-task relationships use evidence-
+  preserving NO ACTION semantics; normal removal remains soft deletion.
+- Schema checks require SQLite integer storage for operation/tax years, fiscal
+  start months, enabled flags, and amounts; they also bound years/months,
+  transaction categories, and amounts from zero through TWD 9 trillion. Status
+  columns retain their known defaults but intentionally accept future raw
+  values; Task 4 service allowlists mutations and reports unknown stored values
+  instead of making the migration reject forward-compatible data. Partial
+  unique indexes allow a soft-deleted workspace or item key to be recreated
+  without accepting duplicate active rows.
+- Upgrade regression starts from the exact schema after 0027 and proves
+  existing workflow-task values and AUTOINCREMENT high-water marks are
+  unchanged. An injected final-statement failure proves all 0028 tables, the
+  task column, and the migration ledger row roll back together.
+- The redundant profile-item index is omitted because the
+  `UNIQUE(profile_id, work_type)` autoindex serves profile-prefix lookups; an
+  EXPLAIN QUERY PLAN regression proves SQLite uses it. Client permanent-delete
+  preflight counts both compliance profiles and annual workspaces, returning
+  `client.purge.has_references` without a raw FK exception or purge audit.
+- Verification: initial RED was 22 failures/4 passes from missing 0028 schema;
+  the forward-compatibility/storage-class correction was RED at 7 failures/17
+  passes then GREEN at 24 passes; focused migration/client/task dependency
+  regression is 123 passed. The integer-affinity/purge quality correction was
+  RED at 7 failures/75 passes then GREEN at 82 passes; expanded migration,
+  client-purge, and task dependency regression is 182 passed;
+  compileall and `git diff --check` pass. This is not full-suite, coverage, UI,
+  or EXE evidence.
+- Next: independently review migration 0028, then implement annual compliance
+  profile/default services (Annual Core Task 2).
+
+## Latest Handoff Update (2026-07-18 - registry industries and bounded lookup)
+
+- Local registry search uses a separate parameterized tax-ID index lookup
+  before any LIKE query, then covers business identity plus all four official
+  industry code/name slots while preserving exact-name precedence and treating
+  LIKE wildcard characters literally. SQL trace and query-plan regression
+  require one exact-hit SELECT using `idx_tax_registry_cache_tax_id`, without
+  CTE, LIKE, table scan, or temporary B-tree work.
+- Registry and new-client UI show a primary industry only when the source's
+  complete primary slot exists. Complete secondary rows remain visible and can
+  be persisted without being promoted to a fabricated primary industry.
+- Applying registry data changes registered address only. Existing contact
+  address text, including line breaks, remains exact; a formerly same-address
+  profile becomes separately managed when the registered address changes.
+- Existing-client application updates client, FTS, industry rows, and all audit
+  rows in one immediate transaction. A failure at the final
+  `client.registry.apply` audit restores byte-for-byte row snapshots. New
+  client, staged lease, industries, FTS, and audits also roll back together.
+- Non-eight-digit company/industry searches in `RegistryPage` and
+  `NewClientDialog` share a fresh read-only SQLite QThread worker with finite
+  busy timeout and a ten-second progress deadline. The new-client dialog shows
+  busy/error/stale states, prevents close/accept while the worker runs, restores
+  controls on finish, and schedules the worker for deferred deletion.
+- Eight-digit UI searches synchronously call only the indexed
+  `find_by_tax_id`. A direct hit is displayed immediately; a miss starts the
+  same background worker for name/industry fallback, so no broad LIKE work can
+  run on the GUI thread.
+- Verification so far: async/lifecycle RED 4 failed then GREEN 6 passed;
+  primary/contact/rollback RED 3 failed then GREEN 6 passed; expanded focused
+  post-review registry/profile regression 126 passed; worker/lifecycle
+  regression 9 passed separately; compileall and
+  `git diff --check` pass. Independent re-review remains required; this is not
+  full-suite, coverage, DPI, or EXE evidence.
+- Next: independent Task 5 spec/quality re-review, then proceed to annual core.
+
+## Latest Handoff Update (2026-07-17 - client profile and multiple-lease UI)
+
+- New and edit client dialogs share a fixed-order scrollable profile form with
+  separate multiline registered/contact addresses and multiline special notes.
+- Full production entry points receive `ServiceContainer` and save the client,
+  FTS/audit rows, and staged lease create/update/archive changes through the
+  atomic client-profile service. Legacy direct-service constructors remain
+  compatible but visibly disable multiple-lease editing.
+- Persisted leases expose real attachment upload/list actions. Unsaved leases
+  visibly explain why attachment actions are disabled.
+- Client management shows registered and contact addresses with exact tooltips,
+  preserves full note newlines in the detail panel, and exposes a clear
+  `租約管理` action without issuing per-row lease queries.
+- Lease-expiry filtering uses one active-client/active-lease query, returns a
+  client once even when multiple leases match, and ignores archived leases,
+  non-active lease statuses, soft-deleted clients, and legacy scalar dates.
+- Reopening a client includes archived leases as read-only history. The history
+  dialog exposes complete lease data and all attachment filenames through an
+  active-client and client/lease ownership guard; it has no edit, archive, or
+  upload action.
+- Verification: new real-widget paths 15 passed; expanded client/profile/lease/
+  attachment/dialog regression 278 passed; compileall and `git diff --check`
+  pass. This is focused evidence only, not full-suite, coverage, DPI, or EXE
+  acceptance.
+- Next: independent Task 4B spec/quality review, then registry-industry Task 5.
+
 ## Latest Handoff Update (2026-07-12 - fixed-billing acceptance corrections)
 
 - Implemented guarded physical plan delete, schedule reconciliation, atomic

@@ -124,10 +124,52 @@ class EngagementsRepository:
         rows = self._conn.execute(
             f"SELECT * FROM engagements WHERE client_id = ? AND deleted_at IS NULL"
             f" AND {_ACTIVE_CLIENT_SQL}"
-            f" ORDER BY {col} {direction} LIMIT ? OFFSET ?",
+            f" ORDER BY {col} {direction}, id {direction} LIMIT ? OFFSET ?",
             (client_id, limit, offset),
         ).fetchall()
         return [_row_to_engagement(r) for r in rows]
+
+    def search_by_client(
+        self,
+        client_id: int,
+        query: str,
+        *,
+        limit: int,
+        offset: int,
+    ) -> list[EngagementRow]:
+        escaped = (
+            query.replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
+        pattern = f"%{escaped}%"
+        rows = self._conn.execute(
+            "SELECT * FROM engagements"
+            " WHERE client_id = ? AND deleted_at IS NULL"
+            f" AND {_ACTIVE_CLIENT_SQL}"
+            " AND (engagement_name LIKE ? ESCAPE '\\'"
+            " OR period_name LIKE ? ESCAPE '\\')"
+            " ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
+            (client_id, pattern, pattern, limit, offset),
+        ).fetchall()
+        return [_row_to_engagement(row) for row in rows]
+
+    def count_search_by_client(self, client_id: int, query: str) -> int:
+        escaped = (
+            query.replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
+        pattern = f"%{escaped}%"
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM engagements"
+            " WHERE client_id = ? AND deleted_at IS NULL"
+            f" AND {_ACTIVE_CLIENT_SQL}"
+            " AND (engagement_name LIKE ? ESCAPE '\\'"
+            " OR period_name LIKE ? ESCAPE '\\')",
+            (client_id, pattern, pattern),
+        ).fetchone()
+        return int(row["c"]) if row else 0
 
     def count_by_client(self, client_id: int) -> int:
         row = self._conn.execute(

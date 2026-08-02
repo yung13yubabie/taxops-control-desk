@@ -10,8 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtGui import QColor, QImage
-from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsTextItem
-from PySide6.QtWidgets import QApplication, QInputDialog
+from PySide6.QtWidgets import QApplication
 
 from taxops.services.canvas_notes import (
     A4_HEIGHT,

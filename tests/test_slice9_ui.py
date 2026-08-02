@@ -405,7 +405,6 @@ def test_pdf_attachment_uses_embedded_preview(qapp, tmp_path):
 
 
 def test_location_button_opens_attachment_folder(qapp, monkeypatch, tmp_path):
-    from PySide6.QtCore import QUrl
 
     conn, attachments_dir = _make_conn(tmp_path)
     eng_id = _seed(conn)

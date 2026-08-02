@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+import os
 import shutil
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-
-_log = logging.getLogger(__name__)
 
 from ..core.clock import now_iso
 from ..repositories.attachments import AttachmentRow, AttachmentsRepository
@@ -22,6 +21,8 @@ from ..security.file_guard import (
     sha256_file,
 )
 from .audit import AuditService
+
+_log = logging.getLogger(__name__)
 
 
 class AttachmentValidationError(Exception):
@@ -39,6 +40,21 @@ class UploadAttachmentInput:
     uploaded_by: str = "local_user"
 
 
+def validate_attachment_file(source_path: Path) -> tuple[Path, str, int, str, str]:
+    """Validate and fingerprint one source using the shared attachment guards."""
+    source = Path(source_path)
+    extension = source.suffix.lower()
+    try:
+        check_extension(source.name)
+        file_size = source.stat().st_size
+        check_file_size(file_size)
+    except FileGuardError as exc:
+        raise AttachmentValidationError(exc.code) from exc
+    file_hash = sha256_file(source)
+    mime_type, _ = mimetypes.guess_type(source.name)
+    return source, extension, file_size, file_hash, mime_type or "application/octet-stream"
+
+
 class AttachmentsService:
     def __init__(
         self,
@@ -52,19 +68,9 @@ class AttachmentsService:
         self._conn = repo._conn
 
     def upload_attachment(self, inp: UploadAttachmentInput) -> AttachmentRow:
-        source = Path(inp.source_path)
-        ext = source.suffix.lower()
-
-        try:
-            check_extension(source.name)
-        except FileGuardError as e:
-            raise AttachmentValidationError(e.code) from e
-
-        file_size = source.stat().st_size
-        try:
-            check_file_size(file_size)
-        except FileGuardError as e:
-            raise AttachmentValidationError(e.code) from e
+        source, ext, file_size, file_hash, mime_type = validate_attachment_file(
+            inp.source_path
+        )
 
         if not self._repo.engagement_exists(inp.engagement_id):
             raise AttachmentValidationError("attachment.engagement_not_found")
@@ -74,22 +80,7 @@ class AttachmentsService:
         ):
             raise AttachmentValidationError("attachment.request_not_found")
 
-        file_hash = sha256_file(source)
-
-        now = datetime.now(timezone.utc)
-        rel_path = Path(f"{now.year:04d}") / f"{now.month:02d}" / f"{uuid.uuid4().hex}{ext}"
-
-        try:
-            dest = resolve_safe_path(self._attachments_dir, str(rel_path))
-        except FileGuardError as e:
-            raise AttachmentValidationError(e.code) from e
-
-        mime_type, _ = mimetypes.guess_type(source.name)
-        if mime_type is None:
-            mime_type = "application/octet-stream"
-
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(str(source), str(dest))
+        rel_path, dest = self._copy_to_guarded_storage(source, ext)
 
         try:
             with self._conn:
@@ -125,6 +116,81 @@ class AttachmentsService:
             raise
 
         return row
+
+    def upload_lease_attachment(
+        self,
+        client_id: int,
+        lease_id: int,
+        source_path: Path,
+        notes: str | None = None,
+    ) -> AttachmentRow:
+        source, ext, file_size, file_hash, mime_type = validate_attachment_file(
+            source_path
+        )
+        if not self._repo.lease_belongs_to_active_client(client_id, lease_id):
+            raise AttachmentValidationError("attachment.lease_not_found")
+        rel_path, dest = self._copy_to_guarded_storage(source, ext)
+        try:
+            with self._conn:
+                row = self._repo.insert_for_lease(
+                    client_id=client_id,
+                    lease_id=lease_id,
+                    original_filename=source.name,
+                    stored_filename=str(rel_path),
+                    file_hash_sha256=file_hash,
+                    file_size=file_size,
+                    mime_type=mime_type,
+                    extension=ext,
+                    notes=notes,
+                )
+                self._audit.record(
+                    action="attachment.upload",
+                    target_type="attachment",
+                    target_id=str(row.id),
+                    detail={
+                        "original_filename": source.name,
+                        "stored_filename": str(rel_path),
+                        "file_size": file_size,
+                        "client_id": client_id,
+                        "lease_id": lease_id,
+                    },
+                )
+        except Exception:
+            self._unlink_uploaded_file(dest, operation="upload_lease_attachment")
+            raise
+        return row
+
+    def _copy_to_guarded_storage(self, source: Path, extension: str) -> tuple[Path, Path]:
+        now = datetime.now(timezone.utc)
+        for _attempt in range(10):
+            rel_path = (
+                Path(f"{now.year:04d}")
+                / f"{now.month:02d}"
+                / f"{uuid.uuid4().hex}{extension}"
+            )
+            try:
+                dest = resolve_safe_path(self._attachments_dir, str(rel_path))
+            except FileGuardError as exc:
+                raise AttachmentValidationError(exc.code) from exc
+            if dest.exists():
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            temporary = dest.with_name(f".{dest.name}.{uuid.uuid4().hex}.part")
+            try:
+                shutil.copy2(str(source), str(temporary))
+                os.rename(temporary, dest)
+            except Exception:
+                self._unlink_uploaded_file(temporary, operation="attachment_copy")
+                raise
+            return rel_path, dest
+        raise AttachmentValidationError("attachment.filename_collision")
+
+    @staticmethod
+    def _unlink_uploaded_file(path: Path, *, operation: str) -> None:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            _log.warning("%s: failed to clean up orphaned file %s", operation, path)
 
     def accept_attachment(
         self, attachment_id: int, accepted_by: str = "local_user"
@@ -174,22 +240,137 @@ class AttachmentsService:
         row = self._repo.get(attachment_id)
         if row is None:
             raise AttachmentValidationError("attachment.not_found")
-        try:
-            path = resolve_safe_path(self._attachments_dir, row.stored_filename)
-        except FileGuardError as e:
-            raise AttachmentValidationError(e.code) from e
-        if not path.is_file():
-            raise AttachmentValidationError("attachment.not_found")
-        return path
+        return self._resolve_stored_file(row)
 
     def list_all(self) -> list[AttachmentRow]:
         return self._repo.list_all()
 
+    def page_all(
+        self, *, limit: int = 200, offset: int = 0
+    ) -> list[AttachmentRow]:
+        self._validate_pagination(limit, offset)
+        return self._repo.page_all(limit=limit, offset=offset)
+
+    def count_all(self) -> int:
+        return self._repo.count_all()
+
     def list_by_engagement(self, engagement_id: int) -> list[AttachmentRow]:
         return self._repo.list_by_engagement(engagement_id)
 
+    def page_by_engagement(
+        self,
+        engagement_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[AttachmentRow]:
+        self._validate_pagination(limit, offset)
+        return self._repo.page_by_engagement(
+            engagement_id, limit=limit, offset=offset
+        )
+
+    def count_by_engagement(self, engagement_id: int) -> int:
+        return self._repo.count_by_engagement(engagement_id)
+
     def list_by_request(self, request_id: int) -> list[AttachmentRow]:
         return self._repo.list_by_request(request_id)
+
+    def page_by_request(
+        self,
+        request_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[AttachmentRow]:
+        self._validate_pagination(limit, offset)
+        return self._repo.page_by_request(
+            request_id, limit=limit, offset=offset
+        )
+
+    def count_by_request(self, request_id: int) -> int:
+        return self._repo.count_by_request(request_id)
+
+    def page_request_history_attachments(
+        self,
+        engagement_id: int,
+        request_id: int,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[AttachmentRow]:
+        """Read preserved evidence for an active owner's deleted request."""
+        self._validate_pagination(limit, offset)
+        self._require_request_history_owner(engagement_id, request_id)
+        return self._repo.page_request_history(
+            engagement_id,
+            request_id,
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_request_history_attachments(
+        self, engagement_id: int, request_id: int
+    ) -> int:
+        self._require_request_history_owner(engagement_id, request_id)
+        return self._repo.count_request_history(engagement_id, request_id)
+
+    def resolve_request_history_file_path(
+        self, engagement_id: int, request_id: int, attachment_id: int
+    ) -> Path:
+        """Resolve one historical request file through an exact owner guard."""
+        self._require_request_history_owner(engagement_id, request_id)
+        row = self._repo.get_request_history_attachment(
+            engagement_id, request_id, attachment_id
+        )
+        if row is None:
+            raise AttachmentValidationError("attachment.not_found")
+        return self._resolve_stored_file(row)
+
+    def list_by_lease(
+        self, lease_id: int, *, include_archived: bool = False
+    ) -> list[AttachmentRow]:
+        return self._repo.list_by_lease(
+            lease_id, include_archived=include_archived
+        )
+
+    def list_lease_history_attachments(
+        self, client_id: int, lease_id: int
+    ) -> list[AttachmentRow]:
+        """Return all attachment history for an owned active-client lease."""
+        if not self._repo.lease_history_belongs_to_active_client(
+            client_id, lease_id
+        ):
+            raise AttachmentValidationError("attachment.lease_not_found")
+        return self._repo.list_by_lease(lease_id, include_archived=True)
+
+    @staticmethod
+    def _validate_pagination(limit: object, offset: object) -> None:
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 1 <= limit <= 200
+            or not isinstance(offset, int)
+            or isinstance(offset, bool)
+            or not 0 <= offset <= 1_000_000
+        ):
+            raise AttachmentValidationError("attachment.pagination.invalid")
+
+    def _require_request_history_owner(
+        self, engagement_id: int, request_id: int
+    ) -> None:
+        if not self._repo.request_history_belongs_to_active_engagement(
+            engagement_id, request_id
+        ):
+            raise AttachmentValidationError("attachment.request_not_found")
+
+    def _resolve_stored_file(self, row: AttachmentRow) -> Path:
+        try:
+            path = resolve_safe_path(self._attachments_dir, row.stored_filename)
+        except FileGuardError as exc:
+            raise AttachmentValidationError(exc.code) from exc
+        if not path.is_file():
+            raise AttachmentValidationError("attachment.not_found")
+        return path
 
     def _update_status_or_raise(
         self, attachment_id: int, **kwargs

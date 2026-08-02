@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import os
-import sqlite3
-from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -18,7 +16,7 @@ from taxops.repositories.audit_logs import AuditLogRepository
 from taxops.repositories.document_requests import DocumentRequestsRepository
 from taxops.security.csv_guard import safe_spreadsheet_cell
 from taxops.services.audit import AuditService
-from taxops.services.export import ExportService, ExportValidationError
+from taxops.services.export import ExportService
 from taxops.ui.action_registry import PAGE_DOC_REQUESTS, actions_for_page
 
 

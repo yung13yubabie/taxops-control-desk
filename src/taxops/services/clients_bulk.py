@@ -9,6 +9,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from ..core.text import sanitize_user_text
+from ..repositories.clients import ClientsRepository
+from .clients import ClientValidationError, ClientsService, CreateClientInput
+
 _log = logging.getLogger(__name__)
 
 MAX_BULK_ROWS = 10_000
@@ -16,10 +20,6 @@ MAX_BULK_COLUMNS = 100
 MAX_BULK_CELL_CHARS = 10_000
 MAX_BULK_FILE_BYTES = 50 * 1024 * 1024
 MAX_BULK_CLIPBOARD_CHARS = 5_000_000
-
-from ..core.text import sanitize_user_text
-from ..repositories.clients import ClientsRepository
-from .clients import ClientValidationError, ClientsService, CreateClientInput
 
 BULK_FIELDS = [
     "client_code",
@@ -29,7 +29,9 @@ BULK_FIELDS = [
     "contact_name",
     "contact_phone",
     "contact_email",
-    "address",
+    "registered_address",
+    "contact_address",
+    "contact_address_same",
     "note",
 ]
 
@@ -41,7 +43,9 @@ BULK_FIELD_LABELS: dict[str, str] = {
     "contact_name": "聯絡人",
     "contact_phone": "聯絡電話",
     "contact_email": "聯絡信箱",
-    "address": "地址",
+    "registered_address": "登記地址",
+    "contact_address": "聯絡地址",
+    "contact_address_same": "聯絡地址同登記",
     "note": "備註",
 }
 
@@ -61,7 +65,12 @@ _COLUMN_ALIASES: dict[str, str] = {
     "信箱": "contact_email",
     "email": "contact_email",
     "Email": "contact_email",
-    "地址": "address",
+    "登記地址": "registered_address",
+    "設籍地址": "registered_address",
+    "地址": "registered_address",
+    "聯絡地址": "contact_address",
+    "聯絡地址同登記": "contact_address_same",
+    "聯絡地址同設籍": "contact_address_same",
     "備註": "note",
     # English aliases
     "client_code": "client_code",
@@ -71,7 +80,10 @@ _COLUMN_ALIASES: dict[str, str] = {
     "contact_name": "contact_name",
     "contact_phone": "contact_phone",
     "contact_email": "contact_email",
-    "address": "address",
+    "registered_address": "registered_address",
+    "contact_address": "contact_address",
+    "contact_address_same": "contact_address_same",
+    "address": "registered_address",
     "note": "note",
     "code": "client_code",
     "name": "client_name",
@@ -245,6 +257,22 @@ def auto_detect_mapping(headers: list[str]) -> dict[str, str]:
     return mapping
 
 
+_TRUE_VALUES = frozenset({"1", "是", "true"})
+_FALSE_VALUES = frozenset({"0", "否", "false"})
+_LEGACY_ADDRESS_HEADERS = frozenset({"地址", "address"})
+
+
+def _parse_contact_address_same(value: str) -> bool | None:
+    cleaned = value.strip().casefold()
+    if not cleaned:
+        return None
+    if cleaned in _TRUE_VALUES:
+        return True
+    if cleaned in _FALSE_VALUES:
+        return False
+    raise ValueError("invalid contact_address_same")
+
+
 def validate_rows(
     raw_rows: list[RawRow],
     mapping: dict[str, str],
@@ -254,14 +282,33 @@ def validate_rows(
 
     ``mapping`` maps original header → canonical field name.
     """
-    reverse: dict[str, str] = {v: k for k, v in mapping.items()}
     results: list[BulkValidationRow] = []
 
     for raw in raw_rows:
         mapped: dict[str, str] = {}
+        address_conflict = False
+        registered_source_is_legacy: bool | None = None
         for orig_header, value in raw.data.items():
             canonical = mapping.get(orig_header)
             if canonical:
+                if canonical == "registered_address":
+                    incoming_is_legacy = orig_header.strip() in _LEGACY_ADDRESS_HEADERS
+                    if "registered_address" in mapped:
+                        previous = sanitize_user_text(
+                            mapped["registered_address"],
+                            max_length=MAX_BULK_CELL_CHARS,
+                        )
+                        incoming = sanitize_user_text(
+                            value,
+                            max_length=MAX_BULK_CELL_CHARS,
+                        )
+                        if previous and incoming and previous != incoming:
+                            address_conflict = True
+                        # A canonical header has precedence over a legacy one,
+                        # independent of source-column order.
+                        if incoming_is_legacy and registered_source_is_legacy is False:
+                            continue
+                    registered_source_is_legacy = incoming_is_legacy
                 mapped[canonical] = value
 
         vrow = BulkValidationRow(
@@ -269,6 +316,8 @@ def validate_rows(
             raw=raw.data,
             mapped=mapped,
         )
+        if address_conflict:
+            vrow.errors.append("client.address.conflict")
 
         client_code = sanitize_user_text(mapped.get("client_code", ""), max_length=50)
         if not client_code:
@@ -294,6 +343,12 @@ def validate_rows(
                 if existing_by_tax:
                     vrow.is_duplicate_tax_id = True
                     vrow.warnings.append(f"統一編號「{tax_id_raw}」已有其他客戶使用")
+
+        if "contact_address_same" in mapped:
+            try:
+                _parse_contact_address_same(mapped["contact_address_same"])
+            except ValueError:
+                vrow.errors.append("client.contact_address_same.invalid")
 
         results.append(vrow)
 
@@ -330,6 +385,15 @@ def import_validated(
             continue
 
         m = vrow.mapped
+        address_kwargs: dict[str, object] = {}
+        if "registered_address" in m:
+            address_kwargs["registered_address"] = m["registered_address"] or None
+        if "contact_address" in m:
+            address_kwargs["contact_address"] = m["contact_address"] or None
+        if "contact_address_same" in m:
+            parsed_same = _parse_contact_address_same(m["contact_address_same"])
+            if parsed_same is not None:
+                address_kwargs["contact_address_same"] = parsed_same
         try:
             if vrow.is_duplicate_code and on_duplicate_code == "overwrite":
                 existing = clients_service.find_by_code(
@@ -346,8 +410,8 @@ def import_validated(
                         contact_name=m.get("contact_name") or None,
                         contact_phone=m.get("contact_phone") or None,
                         contact_email=m.get("contact_email") or None,
-                        address=m.get("address") or None,
                         note=m.get("note") or None,
+                        **address_kwargs,
                     )
                     clients_service.update_client(existing.id, payload)
                     overwritten += 1
@@ -365,8 +429,8 @@ def import_validated(
                 contact_name=m.get("contact_name") or None,
                 contact_phone=m.get("contact_phone") or None,
                 contact_email=m.get("contact_email") or None,
-                address=m.get("address") or None,
                 note=m.get("note") or None,
+                **address_kwargs,
             )
             clients_service.create_client(payload_create)
             imported += 1
