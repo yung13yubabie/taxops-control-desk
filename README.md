@@ -1,6 +1,6 @@
 # TaxOps Control Desk
 
-TaxOps Control Desk 是面向臺灣記帳士／會計師事務所的 Windows 離線桌面工作台。資料預設保存在本機 SQLite，不需登入雲端服務；GCIS 線上補查是可選功能，不影響離線核心流程。
+TaxOps Control Desk  。資料預設保存在本機 SQLite，不需登入雲端服務；GCIS 線上補查是可選功能，不影響離線核心流程。
 
 目前版本：`v0.30.0`。本專案已是可執行應用，不是規格骨架。
 
