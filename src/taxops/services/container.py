@@ -203,6 +203,7 @@ def build_container(paths: AppPaths, conn: sqlite3.Connection) -> ServiceContain
         templates_svc=templates_service,
         audit=audit_service,
         recurring_billing_repo=recurring_billing_repo,
+        annual_work_repo=annual_work_repo,
     )
 
     folder_bookmarks_repo = FolderBookmarksRepository(conn)

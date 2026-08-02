@@ -676,6 +676,41 @@ class AnnualWorkRepository:
         ).fetchall()
         return [_workspace_row(row) for row in rows]
 
+    def latest_item_context(
+        self,
+        client_id: int,
+        *,
+        engagement_id: int | None = None,
+    ) -> AnnualWorkItemContext | None:
+        client_id = _positive_id(client_id, "annual_work.client_id.invalid")
+        params: list[object] = [client_id]
+        engagement_sql = ""
+        if engagement_id is not None:
+            params.append(
+                _positive_id(engagement_id, "annual_work.engagement_id.invalid")
+            )
+            engagement_sql = " AND awi.engagement_id = ?"
+        row = self._conn.execute(
+            "SELECT awi.*, aw.client_id AS context_client_id, "
+            "aw.operation_year AS context_operation_year "
+            "FROM annual_work_items awi "
+            "JOIN annual_workspaces aw ON aw.id = awi.workspace_id "
+            "JOIN clients c ON c.id = aw.client_id "
+            "WHERE aw.client_id = ? AND aw.deleted_at IS NULL "
+            "AND awi.deleted_at IS NULL AND c.deleted_at IS NULL"
+            f"{engagement_sql} "
+            "ORDER BY aw.operation_year DESC, awi.updated_at DESC, awi.id DESC "
+            "LIMIT 1",
+            params,
+        ).fetchone()
+        if row is None:
+            return None
+        return AnnualWorkItemContext(
+            item=_item_row(row),
+            client_id=int(row["context_client_id"]),
+            operation_year=int(row["context_operation_year"]),
+        )
+
     def insert_workspace(
         self,
         client_id: int,

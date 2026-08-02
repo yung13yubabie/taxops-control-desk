@@ -438,6 +438,7 @@ def test_create_annual_work_is_enabled_and_opens_real_dialog(
     }
     assert enabled_text == {
         "建立年度工作",
+        "年度法遵設定",
         "開啟明細",
         "套用",
         "清除",

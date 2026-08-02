@@ -1,5 +1,41 @@
 # CURRENT_STATE
 
+## 2026-08-01 v0.30 manual-acceptance refresh
+
+- The current worktree adds the requested office workflows: consistent client
+  address widths, lease-count markers with collapsible details, an annual
+  compliance-profile editor reachable from the annual workbench, atomic
+  multi-client engagement creation, default task-column sorting, grouped work
+  record/template/image panels with double-click zoom, and message-template
+  previews sourced from a real selected client plus annual-workbench fields.
+- A clean, sequential, branch-aware run passes all 2,682 collected tests across
+  112 test files. It includes both real 65,963,079-byte BGMOPEN1 imports and
+  measures 90.11569881344029% combined coverage (22,011 statements and 5,042
+  branches). Evidence is `.ai/coverage-v031-clean-20260801.json`, SHA-256
+  `6BCA83814AD714DCF33BABE410E6E037C33417E90A105D54DA23CA22FC5A8431`.
+- Release dependency audit found `PYSEC-2026-3447` in setuptools 80.9.0. The
+  exact release pin is now 83.0.0; `pip-audit` reports no known vulnerabilities.
+  Plain-text Jinja templates also use `SandboxedEnvironment` in addition to the
+  existing AST/variable allowlists. Bandit reports no Medium/High findings when
+  B608 is excluded after manual confirmation that dynamic SQL identifiers are
+  fixed fragments or allowlisted and all values remain parameterized.
+- The final EXE is rebuilt in an isolated Python 3.11.9 environment with
+  PyInstaller 6.11.1, PySide6 6.10.2, and setuptools 83.0.0. Build-tree and
+  ZIP-extracted smoke both stay alive for eight seconds, create isolated
+  SQLite, and apply migration `0028_annual_compliance`. FileVersion and
+  ProductVersion remain `0.30.0.0`.
+- Manual-acceptance artifact:
+  `dist/TaxOpsControlDesk-v0.30.0-win64.zip` (50,116,927 bytes), SHA-256
+  `39D09F530AE7FD42DA64103F814883D1AC4B0699454B4428CFA5C52D04204C7D`.
+  All 191 files read back, exactly match the build tree, and contain no root
+  source/test/private paths or user database files.
+- `codex-security` was upgraded globally from 0.1.4 to 0.1.5, but three deep
+  scan attempts failed before analysis because the inner scan agent did not
+  create `scan-manifest.json`, `findings.json`, or `coverage.json`. Latest scan
+  ID: `11e96785-ec4a-4065-83e0-a8c566cb4c8e`; status is `failed`, not passed.
+- Visible mouse/keyboard behavior, SmartScreen, long-running production data,
+  and 100/150/200% host-DPI rendering remain owner manual-acceptance items.
+
 ## 2026-07-31 v0.30 manual-acceptance candidate
 
 - The annual workbench, client-year generation, editable annual detail,

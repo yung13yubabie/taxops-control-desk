@@ -148,6 +148,9 @@ class TasksPage(QWidget):
             fixed_cols={"status": _STATUS_COL_WIDTH},
             selection_mode=QTableWidget.SelectionMode.ExtendedSelection,
         )
+        self._table.setSortingEnabled(True)
+        self._table.horizontalHeader().setSortIndicatorShown(True)
+        self._table.horizontalHeader().setSectionsClickable(True)
         outer.addWidget(self._table, stretch=1)
 
         self._empty_state = EmptyState(

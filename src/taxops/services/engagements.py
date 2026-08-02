@@ -80,6 +80,17 @@ class CreateEngagementInput:
 
 
 @dataclass(frozen=True)
+class BulkCreateEngagementInput:
+    client_ids: tuple[int, ...]
+    engagement_name: str
+    tax_type: str
+    period_name: str
+    owner: str | None = None
+    due_date: str | None = None
+    notes: str | None = None
+
+
+@dataclass(frozen=True)
 class UpdateEngagementInput:
     engagement_name: str
     tax_type: str
@@ -132,6 +143,49 @@ class EngagementsService:
     def create_engagement(self, payload: CreateEngagementInput) -> EngagementRow:
         with self._conn:
             return self._create_engagement_uncommitted(payload)
+
+    def create_for_clients(
+        self, payload: BulkCreateEngagementInput
+    ) -> tuple[EngagementRow, ...]:
+        client_ids = payload.client_ids
+        if (
+            not isinstance(client_ids, tuple)
+            or not 1 <= len(client_ids) <= 500
+            or any(
+                not isinstance(client_id, int)
+                or isinstance(client_id, bool)
+                or client_id <= 0
+                for client_id in client_ids
+            )
+            or len(set(client_ids)) != len(client_ids)
+        ):
+            raise EngagementValidationError("engagement.client_ids.invalid")
+        # Validate every owner before the first insert. This prevents a missing
+        # client late in the selection from creating a deceptive partial batch.
+        if any(not self._repo.client_exists(client_id) for client_id in client_ids):
+            raise EngagementValidationError("engagement.client_not_found")
+        with self._conn:
+            rows = tuple(
+                self._create_engagement_uncommitted(
+                    CreateEngagementInput(
+                        client_id=client_id,
+                        engagement_name=payload.engagement_name,
+                        tax_type=payload.tax_type,
+                        period_name=payload.period_name,
+                        owner=payload.owner,
+                        due_date=payload.due_date,
+                        notes=payload.notes,
+                    )
+                )
+                for client_id in client_ids
+            )
+            self._audit.record(
+                action="engagement.bulk_create",
+                target_type="engagement_batch",
+                target_id=",".join(str(row.id) for row in rows),
+                detail={"client_ids": list(client_ids), "created_count": len(rows)},
+            )
+        return rows
 
     def _create_engagement_uncommitted(
         self, payload: CreateEngagementInput

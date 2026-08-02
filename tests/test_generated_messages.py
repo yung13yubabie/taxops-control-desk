@@ -126,6 +126,9 @@ def test_build_variables_returns_all_keys(conn, gen_svc):
         "tax_type_name", "engagement_name", "missing_items", "invalid_items",
         "incomplete_items", "due_date", "notes", "payment_records",
         "outstanding_amount", "overdue_amount", "payment_due_date",
+        "annual_work_title", "annual_operation_year", "annual_due_date",
+        "annual_work_status", "annual_document_status", "annual_tax_status",
+        "annual_fee_status", "annual_exception_reason",
     }
     assert set(variables.keys()) == expected_keys
 

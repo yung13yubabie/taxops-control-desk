@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..core.clock import now_iso
@@ -92,6 +93,20 @@ class ClientLeasesRepository:
             (client_id,),
         ).fetchall()
         return [_row(row) for row in rows]
+
+    def counts_for_clients(self, client_ids: Sequence[int]) -> dict[int, int]:
+        """Return active lease counts in one query for a bounded client page."""
+        unique_ids = tuple(dict.fromkeys(client_ids))
+        if not unique_ids:
+            return {}
+        placeholders = ",".join("?" for _ in unique_ids)
+        rows = self._conn.execute(
+            "SELECT client_id, COUNT(*) AS lease_count FROM client_leases "
+            f"WHERE deleted_at IS NULL AND client_id IN ({placeholders}) "
+            "GROUP BY client_id",
+            unique_ids,
+        ).fetchall()
+        return {int(row["client_id"]): int(row["lease_count"]) for row in rows}
 
     def update(self, lease_id: int, **values: object) -> ClientLeaseRow | None:
         cur = self._conn.execute(

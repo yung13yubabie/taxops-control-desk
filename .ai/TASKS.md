@@ -1,5 +1,42 @@
 # TASKS
 
+## 2026-08-01 requested office workflow hardening
+
+### TODO
+
+- [ ] Complete owner manual acceptance of the refreshed EXE at 100/125/150/200%
+  Windows scaling, including the six changed workflows and persistence after
+  restart.
+
+### DOING
+
+- None.
+
+### BLOCKED
+
+- [ ] Obtain a completed Codex Security report. CLI 0.1.4 and 0.1.5 both fail
+  because the scan agent does not create the three required draft artifacts;
+  latest failed scan is `11e96785-ec4a-4065-83e0-a8c566cb4c8e`.
+
+### DONE
+
+- [x] Implement address-width consistency and bulk lease-count/collapsible
+  lease visibility without an N+1 query.
+- [x] Add an annual-workbench compliance-profile entry and visible load/save
+  validation and failure recovery.
+- [x] Add atomic, prevalidated multi-client engagement creation and its real UI
+  entry; a partial batch cannot be reported as successful.
+- [x] Enable task table sorting and group work-record context with prominent
+  inline images that open only on double-click.
+- [x] Replace fake message-template sample values with a selected real client
+  preview and add annual-workbench variables.
+- [x] Pass all 2,682 tests, including both real BGMOPEN1 imports, at
+  90.11569881344029% combined branch coverage.
+- [x] Resolve the release dependency vulnerability, pass `pip-audit`, the
+  triaged Bandit Medium/High gate, Ruff, compileall, and diff checks.
+- [x] Rebuild and smoke the build-tree and ZIP-extracted EXEs; verify 191-file
+  hash parity, forbidden-path absence, version metadata, ZIP size, and SHA-256.
+
 ## 2026-07-16 v0.30 annual workbench and client master
 
 ### TODO

@@ -16,6 +16,7 @@ from taxops.repositories.audit_logs import AuditLogRepository
 from taxops.repositories.templates import TemplatesRepository
 from taxops.services.audit import AuditService
 from taxops.services.templates import (
+    ALLOWED_VARIABLES,
     CreateTemplateInput,
     TemplatesService,
     UpdateTemplateInput,
@@ -44,6 +45,19 @@ class _FakeContainer:
         self.audit_repo = audit_repo
         repo = TemplatesRepository(conn)
         self.templates = TemplatesService(repo, self._audit)
+        client = SimpleNamespace(
+            id=1,
+            client_code="UI001",
+            client_name="王小明會計師事務所",
+        )
+        self.clients = SimpleNamespace(search_clients=lambda *_args, **_kwargs: [client])
+        self.gen_messages = SimpleNamespace(
+            build_client_example_variables=lambda _client_id: {
+                key: "" for key in ALLOWED_VARIABLES
+            }
+            | {"client_name": client.client_name}
+        )
+        self.system_log = SimpleNamespace(warn=lambda *_args, **_kwargs: None)
 
 
 @pytest.fixture()

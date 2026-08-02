@@ -1,5 +1,35 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-08-01 - requested workflow refresh)
+
+- Implemented the six requested office workflows: client address sizing and
+  lease visibility; annual compliance setup entry; atomic multi-client case
+  creation; task sorting; consolidated work-record/image UI with double-click
+  zoom; and real-client message-template previews with annual variables.
+- Clean verification passes all 2,682 tests across 112 independently executed
+  files at 90.11569881344029% combined coverage. The two real 65MB BGMOPEN1
+  imports pass rather than being deselected. Evidence SHA-256 is
+  `6BCA83814AD714DCF33BABE410E6E037C33417E90A105D54DA23CA22FC5A8431`.
+- Security hardening updates setuptools from 80.9.0 to 83.0.0 and adds a Jinja
+  sandbox while preserving plain-text output. `pip-audit` reports no known
+  vulnerabilities; Bandit has no Medium/High result after the manually audited
+  B608 dynamic-identifier rule is excluded.
+- Codex Security itself remains blocked: three deep scans failed to write the
+  required draft artifacts. The CLI is now current at 0.1.5; latest failed scan
+  ID is `11e96785-ec4a-4065-83e0-a8c566cb4c8e`. It produced no valid report, so
+  zero findings must not be claimed.
+- Final manual-acceptance ZIP is
+  `dist/TaxOpsControlDesk-v0.30.0-win64.zip`, 50,116,927 bytes, SHA-256
+  `39D09F530AE7FD42DA64103F814883D1AC4B0699454B4428CFA5C52D04204C7D`.
+  The build-tree and fresh-extraction EXEs both pass startup/SQLite/migration
+  smoke; all 191 extracted files match the build tree and forbidden paths are
+  absent. Windows version metadata is `0.30.0.0`.
+- Owner acceptance is still required for real mouse/keyboard use, restart
+  persistence, SmartScreen, and 100/125/150/200% DPI. Start with the refreshed
+  ZIP and `docs/packaging_checklist.md`.
+- Next reader order: `.ai/spec-kit.md`, `.ai/CURRENT_STATE.md`, `.ai/TASKS.md`,
+  `.ai/DECISIONS.md`, then this file and `docs/packaging_checklist.md`.
+
 ## Latest Handoff Update (2026-07-31 - v0.30 acceptance package)
 
 - The annual workbench/client-master implementation is committed through

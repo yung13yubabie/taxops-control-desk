@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..core.dates import date_range_is_valid, parse_optional_iso_date
@@ -172,3 +173,17 @@ class ClientLeasesService:
         self, client_id: int, *, include_deleted: bool = False
     ) -> list[ClientLeaseRow]:
         return self._repo.list_for_client(client_id, include_deleted=include_deleted)
+
+    def counts_for_clients(self, client_ids: Sequence[int]) -> dict[int, int]:
+        if (
+            isinstance(client_ids, (str, bytes))
+            or len(client_ids) > 500
+            or any(
+                not isinstance(client_id, int)
+                or isinstance(client_id, bool)
+                or client_id <= 0
+                for client_id in client_ids
+            )
+        ):
+            raise ClientLeaseValidationError("client_lease.client_ids.invalid")
+        return self._repo.counts_for_clients(client_ids)

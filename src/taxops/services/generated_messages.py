@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from ..core.clock import today_iso
 from ..i18n.status_labels import status_to_label
 from ..repositories.clients import ClientsRepository
+from ..repositories.annual_work import AnnualWorkRepository
 from ..repositories.document_requests import DocumentRequestsRepository
 from ..repositories.engagements import EngagementsRepository
 from ..repositories.generated_messages import (
@@ -40,6 +41,7 @@ class GeneratedMessagesService:
         templates_svc: TemplatesService,
         audit: AuditService,
         recurring_billing_repo: RecurringBillingRepository | None = None,
+        annual_work_repo: AnnualWorkRepository | None = None,
     ) -> None:
         self._repo = repo
         self._doc_requests_repo = doc_requests_repo
@@ -48,6 +50,7 @@ class GeneratedMessagesService:
         self._templates_svc = templates_svc
         self._audit = audit
         self._recurring_billing_repo = recurring_billing_repo
+        self._annual_work_repo = annual_work_repo
         self._conn = repo._conn
 
     def build_variables(self, request_id: int) -> dict[str, str]:
@@ -74,6 +77,9 @@ class GeneratedMessagesService:
 
         payment_vars = self._build_payment_variables(client.id)
 
+        annual_vars = self._build_annual_variables(
+            client.id, engagement_id=engagement.id
+        )
         return {
             "client_name": client.client_name,
             "tax_id": client.tax_id or "",
@@ -87,6 +93,74 @@ class GeneratedMessagesService:
             "due_date": request.due_date or "",
             "notes": request.notes or "",
             **payment_vars,
+            **annual_vars,
+        }
+
+    def build_client_example_variables(self, client_id: int) -> dict[str, str]:
+        """Build a truthful live preview from one real client, without fake values."""
+        client = self._clients_repo.get(client_id)
+        if client is None:
+            raise GeneratedMessageValidationError("gen_message.client_not_found")
+        engagement = next(
+            iter(self._engagements_repo.list_by_client(client.id, limit=1)), None
+        )
+        if engagement is not None:
+            request = self._doc_requests_repo.latest_for_engagement(engagement.id)
+            if request is not None:
+                return self.build_variables(request.id)
+        return {
+            "client_name": client.client_name,
+            "tax_id": client.tax_id or "",
+            "contact_person": client.contact_name or "",
+            "period_name": "",
+            "tax_type_name": "",
+            "engagement_name": engagement.engagement_name if engagement else "",
+            "missing_items": "",
+            "invalid_items": "",
+            "incomplete_items": "",
+            "due_date": "",
+            "notes": "",
+            **self._build_payment_variables(client.id),
+            **self._build_annual_variables(
+                client.id,
+                engagement_id=engagement.id if engagement else None,
+            ),
+        }
+
+    def _build_annual_variables(
+        self, client_id: int, *, engagement_id: int | None = None
+    ) -> dict[str, str]:
+        empty = {
+            "annual_work_title": "",
+            "annual_operation_year": "",
+            "annual_due_date": "",
+            "annual_work_status": "",
+            "annual_document_status": "",
+            "annual_tax_status": "",
+            "annual_fee_status": "",
+            "annual_exception_reason": "",
+        }
+        if self._annual_work_repo is None:
+            return empty
+        context = None
+        if engagement_id is not None:
+            context = self._annual_work_repo.latest_item_context(
+                client_id, engagement_id=engagement_id
+            )
+        if context is None:
+            context = self._annual_work_repo.latest_item_context(client_id)
+        if context is None:
+            return empty
+        item = context.item
+        return {
+            "annual_work_title": item.title,
+            "annual_operation_year": str(context.operation_year),
+            "annual_due_date": item.due_date or "",
+            "annual_work_status": status_to_label(item.work_status),
+            "annual_document_status": status_to_label(item.document_status),
+            "annual_tax_status": status_to_label(item.tax_status),
+            "annual_fee_status": status_to_label(item.fee_status),
+            "annual_exception_reason": item.exception_reason or "",
         }
 
     def _build_payment_variables(self, client_id: int) -> dict[str, str]:

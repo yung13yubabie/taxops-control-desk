@@ -28,6 +28,7 @@ from ...repositories.annual_work import AnnualOverviewMetrics, AnnualWorkOvervie
 from ...services.annual_work import AnnualWorkStatusPresentation
 from ...services.container import ServiceContainer
 from ..dialogs.annual_workspace_dialog import AnnualWorkspaceDialog
+from ..dialogs.compliance_profile_dialog import ComplianceProfileDialog
 from ..dialogs.annual_item_dialog import AnnualItemDialog
 from ..style import TEXT_MUTED
 from ..widgets.annual_overview_table import AnnualOverviewTable, format_twd
@@ -96,6 +97,9 @@ class AnnualWorkbenchPage(QWidget):
         self.create_button = QPushButton("建立年度工作")
         self.create_button.setObjectName("AnnualFutureAction")
         self.future_action_button = self.create_button
+        self.profile_button = QPushButton("年度法遵設定")
+        self.profile_button.setObjectName("AnnualComplianceProfile")
+        heading.addWidget(self.profile_button)
         heading.addWidget(self.create_button)
         outer.addLayout(heading)
 
@@ -236,6 +240,7 @@ class AnnualWorkbenchPage(QWidget):
         outer.addLayout(page_row)
 
         self.create_button.clicked.connect(self._open_create_dialog)
+        self.profile_button.clicked.connect(self._open_profile_dialog)
         self.apply_button.clicked.connect(self._apply_filters)
         self.clear_button.clicked.connect(self._clear_filters)
         self.refresh_button.clicked.connect(self._refresh)
@@ -260,6 +265,11 @@ class AnnualWorkbenchPage(QWidget):
         dialog = AnnualWorkspaceDialog(self._container, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._refresh()
+
+    def _open_profile_dialog(self) -> None:
+        dialog = ComplianceProfileDialog(self._container, parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.feedback_label.setText("年度法遵設定已儲存，可開始建立年度工作。")
 
     def _open_selected_detail(self) -> None:
         if self._detail_open:

@@ -78,6 +78,7 @@ class ClientsPage(QWidget):
         self._sort_dir = _DEFAULT_SORT_DIR
         self._hidden_cols: set[str] = set(_DEFAULT_HIDDEN)
         self._filter_key: str = ""
+        self._lease_counts: dict[int, int] = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 24, 24, 24)
@@ -184,6 +185,25 @@ class ClientsPage(QWidget):
         )
         outer.addWidget(self._table, stretch=1)
 
+        self._lease_group = QGroupBox("租約明細（先選取客戶，再勾選展開）")
+        self._lease_group.setCheckable(True)
+        self._lease_group.setChecked(False)
+        lease_layout = QVBoxLayout(self._lease_group)
+        lease_layout.setContentsMargins(10, 10, 10, 10)
+        self._lease_table = QTableWidget(0, 5)
+        self._lease_table.setHorizontalHeaderLabels(
+            ["租約名稱", "租賃地址", "起始日", "到期日", "狀態"]
+        )
+        self._lease_table.verticalHeader().setVisible(False)
+        self._lease_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._lease_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
+        self._lease_table.setMaximumHeight(170)
+        self._lease_table.hide()
+        lease_layout.addWidget(self._lease_table)
+        outer.addWidget(self._lease_group)
+
         note_group = QGroupBox("客戶特殊要求／備註全文")
         note_layout = QVBoxLayout(note_group)
         note_layout.setContentsMargins(10, 10, 10, 10)
@@ -228,6 +248,7 @@ class ClientsPage(QWidget):
         self._clear_btn.clicked.connect(self._on_clear_search)
         self._search_input.returnPressed.connect(self._on_search)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
+        self._lease_group.toggled.connect(self._on_lease_group_toggled)
         self._table.doubleClicked.connect(lambda _: self.on_edit_client())
         self._prev_btn.clicked.connect(self._on_prev_page)
         self._next_btn.clicked.connect(self._on_next_page)
@@ -356,6 +377,8 @@ class ClientsPage(QWidget):
             self._restore_btn.setEnabled(False)
             self._purge_btn.setEnabled(False)
             self._note_detail.clear()
+            self._lease_group.setTitle("租約明細（先選取客戶，再勾選展開）")
+            self._lease_table.setRowCount(0)
             return
         rows = self._table.selectedItems()
         row_idx = self._table.row(rows[0])
@@ -368,6 +391,42 @@ class ClientsPage(QWidget):
         self._purge_btn.setEnabled(is_deleted)
         note_item = self._table.item(row_idx, _COLUMN_ORDER.index("note"))
         self._note_detail.setPlainText(note_item.toolTip() if note_item else "")
+        lease_count = self._lease_counts.get(client_id, 0)
+        self._lease_group.setTitle(f"租約明細（{lease_count} 筆，勾選展開）")
+        if self._lease_group.isChecked():
+            self._load_selected_leases()
+
+    def _on_lease_group_toggled(self, checked: bool) -> None:
+        self._lease_table.setVisible(checked)
+        if checked:
+            self._load_selected_leases()
+
+    def _load_selected_leases(self) -> None:
+        client_id = self._selected_client_id()
+        self._lease_table.setRowCount(0)
+        if client_id is None:
+            return
+        try:
+            rows = self._container.client_leases.list_for_client(client_id)
+        except Exception as err:
+            self._container.system_log.warn(
+                "clients_page: failed to load selected client leases",
+                detail={"exc": type(err).__name__, "msg": str(err)},
+            )
+            return
+        self._lease_table.setRowCount(len(rows))
+        for row_idx, lease in enumerate(rows):
+            values = (
+                lease.lease_name,
+                lease.premises_address or "",
+                lease.start_date or "",
+                lease.end_date or "",
+                "有效" if lease.status == "active" else "已到期",
+            )
+            for col_idx, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                item.setToolTip(value)
+                self._lease_table.setItem(row_idx, col_idx, item)
 
     def _selected_client_id(self) -> int | None:
         """Always return client.id from the id column — never row index."""
@@ -550,6 +609,16 @@ class ClientsPage(QWidget):
             return
 
         q = self._search_input.text().strip()
+        try:
+            self._lease_counts = self._container.client_leases.counts_for_clients(
+                [client.id for client in rows]
+            )
+        except Exception as err:
+            self._container.system_log.warn(
+                "clients_page: failed to load lease counts",
+                detail={"exc": type(err).__name__, "msg": str(err)},
+            )
+            self._lease_counts = {}
         self._count_label.setText(f"符合 {self._total} 筆" if q else f"共 {self._total} 筆")
         self._table.blockSignals(True)
         self._table.setRowCount(len(rows))
@@ -559,7 +628,11 @@ class ClientsPage(QWidget):
                 "id": str(client.id),
                 "client_code": client.client_code,
                 "tax_id": client.tax_id or "",
-                "client_name": client.client_name,
+                "client_name": (
+                    f"▸ 租約 {self._lease_counts[client.id]}｜{client.client_name}"
+                    if self._lease_counts.get(client.id, 0)
+                    else client.client_name
+                ),
                 "short_name": client.short_name or "",
                 "contact_name": client.contact_name or "",
                 "contact_phone": client.contact_phone or "",

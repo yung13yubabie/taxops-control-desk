@@ -17,9 +17,13 @@ from PySide6.QtWidgets import (
 )
 
 
+_PROFILE_FIELD_MAX_WIDTH = 560
+
+
 def _multiline(placeholder: str = "") -> QPlainTextEdit:
     editor = QPlainTextEdit()
     editor.setMinimumHeight(72)
+    editor.setMaximumWidth(_PROFILE_FIELD_MAX_WIDTH)
     editor.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
     editor.setPlaceholderText(placeholder)
     return editor
@@ -61,6 +65,17 @@ class ClientProfileForm(QWidget):
         self.contact_address.setPlainText(getattr(client, "contact_address", None) or "")
         self.note = _multiline("特殊要求、溝通偏好與內部提醒；換行會完整保留")
         self.note.setPlainText(getattr(client, "note", None) or "")
+
+        for editor in (
+            self.client_code,
+            self.client_name,
+            self.tax_id,
+            self.short_name,
+            self.contact_name,
+            self.contact_phone,
+            self.contact_email,
+        ):
+            editor.setMaximumWidth(_PROFILE_FIELD_MAX_WIDTH)
 
         rows = (
             ("客戶代號", self.client_code),

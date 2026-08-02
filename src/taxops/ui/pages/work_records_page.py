@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QDialog,
+    QGroupBox,
     QHeaderView,
     QInputDialog,
     QLabel,
@@ -43,6 +44,15 @@ _TREE_DONE_ROLE = Qt.ItemDataRole.UserRole + 3
 _TREE_RUN_ID_ROLE = Qt.ItemDataRole.UserRole + 4
 _TREE_ROW_KIND_ROLE = Qt.ItemDataRole.UserRole + 5
 _TREE_ROW_ID_ROLE = Qt.ItemDataRole.UserRole + 6
+
+
+class _WorkflowImageLabel(QLabel):
+    double_clicked = Signal()
+
+    def mouseDoubleClickEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        self.double_clicked.emit()
+        super().mouseDoubleClickEvent(event)
+
 
 class WorkRecordsPage(QWidget):
     def __init__(self, container: ServiceContainer, parent: QWidget | None = None) -> None:
@@ -109,6 +119,9 @@ class WorkRecordsPage(QWidget):
         left.setMinimumWidth(330)
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 8, 0)
+        self._template_group = QGroupBox("流程範本與說明")
+        template_layout = QVBoxLayout(self._template_group)
+        template_layout.setContentsMargins(8, 8, 8, 8)
         self._templates_table = QTableWidget(0, 4)
         self._templates_table.setHorizontalHeaderLabels(["編號", "範本名稱", "版本", "進度"])
         self._templates_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -120,16 +133,19 @@ class WorkRecordsPage(QWidget):
         self._templates_table.setColumnWidth(0, 56)
         self._templates_table.setColumnWidth(2, 72)
         self._templates_table.setColumnWidth(3, 96)
-        left_layout.addWidget(QLabel("流程範本"))
-        left_layout.addWidget(self._templates_table)
+        template_layout.addWidget(self._templates_table)
         self._workflow_empty_state = EmptyState(
             "尚無流程範本",
             detail="新增範本後，可建立執行清單並逐步勾選完成狀態。",
             action_text="新增範本",
         )
         self._workflow_empty_state.hide()
-        left_layout.addWidget(self._workflow_empty_state)
+        template_layout.addWidget(self._workflow_empty_state)
+        left_layout.addWidget(self._template_group)
 
+        self._run_group = QGroupBox("執行中流程")
+        run_layout = QVBoxLayout(self._run_group)
+        run_layout.setContentsMargins(8, 8, 8, 8)
         self._runs_table = QTableWidget(0, 4)
         self._runs_table.setHorizontalHeaderLabels(["編號", "執行名稱", "來源範本", "進度"])
         self._runs_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -141,23 +157,28 @@ class WorkRecordsPage(QWidget):
         self._runs_table.setColumnWidth(0, 56)
         self._runs_table.setColumnWidth(2, 96)
         self._runs_table.setColumnWidth(3, 96)
-        left_layout.addWidget(QLabel("執行中流程"))
-        left_layout.addWidget(self._runs_table)
+        run_layout.addWidget(self._runs_table)
+        left_layout.addWidget(self._run_group)
         splitter.addWidget(left)
 
-        right = QWidget()
+        right = QGroupBox("流程說明與圖片（雙擊圖片放大）")
+        self._detail_group = right
         right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(8, 0, 0, 0)
+        right_layout.setContentsMargins(8, 8, 8, 8)
         self._workflow_detail = QTreeWidget()
         self._workflow_detail.setHeaderLabels(["流程步驟", "狀態"])
-        self._workflow_image = QLabel("尚未選擇流程圖片")
+        self._workflow_image = _WorkflowImageLabel("尚未選擇流程圖片")
+        self._workflow_image.setObjectName("WorkflowImagePreview")
+        self._workflow_image.setToolTip("圖片會直接顯示在此；雙擊可放大查看")
         self._workflow_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._workflow_image.setMinimumHeight(260)
         self._workflow_image.setStyleSheet(
             f"border: 1px solid {BORDER_COLOR}; color: {TEXT_MUTED};"
         )
-        self._workflow_image.mousePressEvent = lambda _event: self._on_preview_workflow_image()
-        right_layout.addWidget(QLabel("流程說明"))
+        self._workflow_image.double_clicked.connect(
+            lambda: self._on_preview_workflow_image()
+        )
+        right_layout.addWidget(QLabel("流程步驟與說明"))
         right_layout.addWidget(self._workflow_detail, stretch=4)
         right_layout.addWidget(QLabel("搭配圖片"))
         right_layout.addWidget(self._workflow_image, stretch=2)
@@ -318,6 +339,7 @@ class WorkRecordsPage(QWidget):
         else:
             row = next((t for t in self._container.work_records.list_templates() if t.id == row_id), None)
         if row is None:
+            self._detail_group.setTitle("流程說明與圖片（雙擊圖片放大）")
             return None
         for stage in self._container.work_records.stages_for_row(row):
             if str(stage.get("id") or "") != stage_id:
@@ -400,6 +422,11 @@ class WorkRecordsPage(QWidget):
             self._toggle_first_btn.setEnabled(False)
             return
         done, total, percent = self._container.work_records.progress_for_stages_json(row.stages_json)
+        self._detail_group.setTitle(
+            "執行中流程與圖片（雙擊圖片放大）"
+            if selected_run is not None
+            else "流程範本與說明（圖片雙擊放大）"
+        )
         stages = self._container.work_records.stages_for_row(row)
         summary = QTreeWidgetItem([f"{row_kind}：{row.name}", f"{done}/{total} ({percent}%)"])
         summary.setData(0, _TREE_KIND_ROLE, "summary")

@@ -222,6 +222,18 @@ class DocumentRequestsRepository:
         ).fetchall()
         return [_row_to_request(r) for r in rows]
 
+    def latest_for_engagement(
+        self, engagement_id: int
+    ) -> DocumentRequestRow | None:
+        row = self._conn.execute(
+            "SELECT * FROM document_requests WHERE engagement_id = ? "
+            "AND deleted_at IS NULL"
+            f" AND {_ACTIVE_REQUEST_OWNER_SQL} "
+            "ORDER BY created_at DESC, id DESC LIMIT 1",
+            (engagement_id,),
+        ).fetchone()
+        return _row_to_request(row) if row else None
+
     def count_by_engagement(self, engagement_id: int) -> int:
         row = self._conn.execute(
             "SELECT COUNT(*) AS c FROM document_requests"

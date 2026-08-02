@@ -30,6 +30,7 @@ from ...services.annual_work import (
 from ...services.compliance_rules import WorkDraft
 from ...services.container import ServiceContainer
 from ..style import TEXT_MUTED
+from .compliance_profile_dialog import ComplianceProfileDialog
 from ..widgets.annual_preview_table import AnnualPreviewTable
 from ..workers.annual_client_search import (
     AnnualClientSearchResult,
@@ -162,12 +163,15 @@ class AnnualWorkspaceDialog(QDialog):
         self.load_button = QPushButton("載入預覽")
         self.load_button.setObjectName("AnnualWorkspaceLoad")
         selector_row.addWidget(self.load_button)
+        self.profile_button = QPushButton("設定法遵檔案")
+        self.profile_button.setObjectName("AnnualWorkspaceProfile")
         outer.addLayout(selector_row)
 
         self.preview_table = AnnualPreviewTable()
         outer.addWidget(self.preview_table, 1)
 
         table_actions = QHBoxLayout()
+        table_actions.addWidget(self.profile_button)
         self.add_custom_button = QPushButton("新增自訂列")
         self.add_custom_button.setObjectName("AnnualWorkspaceAddCustom")
         self.add_custom_button.setEnabled(False)
@@ -195,6 +199,7 @@ class AnnualWorkspaceDialog(QDialog):
             self._on_search_query_changed
         )
         self.load_button.clicked.connect(self._load_preview)
+        self.profile_button.clicked.connect(self._open_profile)
         self.add_custom_button.clicked.connect(self._add_custom)
         self.confirm_button.clicked.connect(self._confirm)
         self.cancel_button.clicked.connect(self.reject)
@@ -231,6 +236,21 @@ class AnnualWorkspaceDialog(QDialog):
     def _selected_client_id(self) -> int | None:
         value = self.client_combo.currentData()
         return value if type(value) is int and value > 0 else None
+
+    def _open_profile(self) -> None:
+        client_id = self._selected_client_id()
+        if client_id is None:
+            self.feedback_label.setText("請先選擇客戶，再設定年度法遵檔案。")
+            self.client_combo.setFocus()
+            return
+        dialog = ComplianceProfileDialog(
+            self._container,
+            preselected_client_id=client_id,
+            parent=self,
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.feedback_label.setText("年度法遵設定已儲存，正在重新載入預覽。")
+            self._load_preview()
 
     def _search_clients(
         self,

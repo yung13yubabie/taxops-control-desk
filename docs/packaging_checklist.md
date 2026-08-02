@@ -77,6 +77,18 @@ These items are printed by the smoke runner but still require human UI verificat
 
 ## Verified State
 
+- 2026-08-01: requested workflow refresh passes all 2,682 tests across 112
+  sequential fresh processes at 90.11569881344029% combined coverage,
+  including both real 65MB BGMOPEN1 imports.
+- 2026-08-01: release pins pass `pip-audit` after moving setuptools to 83.0.0;
+  the EXE was rebuilt in isolated Python 3.11.9 with PyInstaller 6.11.1 and
+  PySide6 6.10.2.
+- 2026-08-01: build-tree and fresh-ZIP-extraction smoke pass through migration
+  `0028_annual_compliance`; 191 extracted files exactly match the build tree
+  and the forbidden-path scan is empty.
+- 2026-08-01: `TaxOpsControlDesk-v0.30.0-win64.zip` is 50,116,927 bytes with
+  SHA-256 `39D09F530AE7FD42DA64103F814883D1AC4B0699454B4428CFA5C52D04204C7D`.
+
 - 2026-07-31: clean branch coverage passes at 90.18%, 2663 tests.
 - 2026-07-31: isolated v0.30.0 build and build-tree EXE smoke pass through migration 0028.
 - 2026-07-31: Windows version metadata reports FileVersion/ProductVersion `0.30.0.0`, ProductName `TaxOps Control Desk`, and OriginalFilename `TaxOpsControlDesk.exe`.

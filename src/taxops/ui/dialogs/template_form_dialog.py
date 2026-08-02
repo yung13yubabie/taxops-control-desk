@@ -31,6 +31,7 @@ from ...services.templates import (
     VARIABLE_INFO,
     VARIABLE_LABELS,
 )
+from ...services.container import ServiceContainer
 
 _TYPE_CHOICES = [
     ("initial_request", TEMPLATE_TYPE_LABELS["initial_request"]),
@@ -52,6 +53,14 @@ _VARIABLES_BY_TYPE: dict[str, tuple[str, ...]] = {
         "incomplete_items",
         "due_date",
         "notes",
+        "annual_work_title",
+        "annual_operation_year",
+        "annual_due_date",
+        "annual_work_status",
+        "annual_document_status",
+        "annual_tax_status",
+        "annual_fee_status",
+        "annual_exception_reason",
     ),
     "follow_up": (
         "client_name",
@@ -64,6 +73,14 @@ _VARIABLES_BY_TYPE: dict[str, tuple[str, ...]] = {
         "incomplete_items",
         "due_date",
         "notes",
+        "annual_work_title",
+        "annual_operation_year",
+        "annual_due_date",
+        "annual_work_status",
+        "annual_document_status",
+        "annual_tax_status",
+        "annual_fee_status",
+        "annual_exception_reason",
     ),
     "payment_follow_up": (
         "client_name",
@@ -74,6 +91,14 @@ _VARIABLES_BY_TYPE: dict[str, tuple[str, ...]] = {
         "overdue_amount",
         "payment_due_date",
         "notes",
+        "annual_work_title",
+        "annual_operation_year",
+        "annual_due_date",
+        "annual_work_status",
+        "annual_document_status",
+        "annual_tax_status",
+        "annual_fee_status",
+        "annual_exception_reason",
     ),
 }
 
@@ -90,10 +115,13 @@ class TemplateFormDialog(QDialog):
         svc: TemplatesService,
         existing: TemplateRow | None = None,
         parent: QWidget | None = None,
+        *,
+        container: ServiceContainer | None = None,
     ) -> None:
         super().__init__(parent)
         self._svc = svc
         self._existing = existing
+        self._container = container
 
         is_edit = existing is not None
         self.setWindowTitle("編輯模板" if is_edit else "新增模板")
@@ -133,11 +161,31 @@ class TemplateFormDialog(QDialog):
             "不是收款或欠款帳本。\n"
             "期限欄位：案件管理 > 索件管理 > 索件期限。\n"
             "備註欄位：案件管理 > 索件管理 > 索件備註。\n"
+            "年度欄位：年度工作臺 > 年度法遵設定／年度工作明細。\n"
             "產生訊息時，系統會依所選客戶／案件／索件自動帶入。"
         )
         self._variable_help.setWordWrap(True)
         self._variable_help.setObjectName("HelpText")
         outer.addWidget(self._variable_help)
+
+        example_row = QHBoxLayout()
+        example_row.addWidget(QLabel("真實客戶範例"))
+        self._example_client = QComboBox()
+        self._example_client.setObjectName("TemplateExampleClient")
+        self._example_client.setMinimumWidth(280)
+        example_row.addWidget(self._example_client, 1)
+        example_row.addWidget(QLabel("下方預覽只讀，不會修改客戶資料"))
+        outer.addLayout(example_row)
+
+        self._example_preview = QTextEdit()
+        self._example_preview.setObjectName("TemplateExamplePreview")
+        self._example_preview.setReadOnly(True)
+        self._example_preview.setMinimumHeight(90)
+        self._example_preview.setMaximumHeight(140)
+        self._example_preview.setPlaceholderText(
+            "選擇客戶並輸入模板內容後，這裡會顯示真實資料套版結果。"
+        )
+        outer.addWidget(self._example_preview)
 
         body_area = QHBoxLayout()
         body_area.setSpacing(8)
@@ -188,6 +236,10 @@ class TemplateFormDialog(QDialog):
         self._var_list.itemDoubleClicked.connect(self._on_insert_variable)
         self._var_list.currentItemChanged.connect(self._on_variable_selected)
         self._type.currentIndexChanged.connect(self._refresh_variable_list)
+        self._example_client.currentIndexChanged.connect(
+            self._refresh_example_preview
+        )
+        self._body.textChanged.connect(self._refresh_example_preview)
 
         if is_edit:
             self._name.setText(existing.name)
@@ -205,7 +257,44 @@ class TemplateFormDialog(QDialog):
             idx = self._type.findData("custom")
             if idx >= 0:
                 self._type.setCurrentIndex(idx)
+        self._load_example_clients()
         self._refresh_variable_list()
+        self._refresh_example_preview()
+
+    def _load_example_clients(self) -> None:
+        self._example_client.clear()
+        if self._container is None:
+            self._example_client.addItem("此入口未提供客戶預覽", None)
+            self._example_client.setEnabled(False)
+            return
+        try:
+            clients = self._container.clients.search_clients("", limit=500)
+        except Exception:
+            clients = []
+        self._example_client.addItem("請選擇範例客戶", None)
+        for client in clients:
+            self._example_client.addItem(
+                f"{client.client_code}  {client.client_name}", client.id
+            )
+
+    def _refresh_example_preview(self, _value: object = None) -> None:
+        client_id = self._example_client.currentData()
+        body = self._body.toPlainText()
+        if self._container is None or not isinstance(client_id, int) or not body.strip():
+            self._example_preview.clear()
+            return
+        try:
+            variables = self._container.gen_messages.build_client_example_variables(
+                client_id
+            )
+            rendered = self._svc.render_body_preview(body, variables)
+        except TemplateValidationError:
+            self._example_preview.setPlainText("模板內容尚未完成，修正欄位或語法後會立即預覽。")
+            return
+        except Exception:
+            self._example_preview.setPlainText("真實客戶範例載入失敗，請重新選擇客戶。")
+            return
+        self._example_preview.setPlainText(rendered)
 
     def _on_insert_variable(self, item: QListWidgetItem) -> None:
         self._body.insertPlainText(f"【{item.text()}】")

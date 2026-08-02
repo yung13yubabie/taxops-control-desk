@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -28,20 +29,6 @@ from ..widgets.empty_state import EmptyState
 from ..widgets.table_builder import build_standard_table
 
 _COLUMN_ORDER = ("id", "name", "template_type", "is_builtin", "updated_at")
-
-_SAMPLE_VARS: dict[str, str] = {
-    "client_name": "範例客戶股份有限公司",
-    "tax_id": "12345678",
-    "contact_person": "王小明",
-    "period_name": "2024Q4",
-    "tax_type_name": "營業稅",
-    "engagement_name": "2024年度營業稅申報",
-    "missing_items": "- 進項憑證\n- 銷項憑證",
-    "invalid_items": "- 不明費用單據",
-    "incomplete_items": "- 薪資明細（缺損）",
-    "due_date": "2025-01-31",
-    "notes": "請盡速提供，謝謝",
-}
 
 _TABLE_HEADERS = {
     "id": "編號",
@@ -77,7 +64,7 @@ class TemplatesPage(QWidget):
         self._delete_btn.setEnabled(False)
         self._trial_btn = QPushButton("試用模板")
         self._trial_btn.setEnabled(False)
-        self._trial_btn.setToolTip("以範例資料預覽此模板的渲染結果")
+        self._trial_btn.setToolTip("選擇真實客戶預覽此模板的渲染結果")
         self._refresh_btn = QPushButton("重新整理")
         self._new_btn.setIcon(toolbar_icon("new"))
         self._edit_btn.setIcon(toolbar_icon("edit"))
@@ -226,7 +213,11 @@ class TemplatesPage(QWidget):
     # Action handlers
 
     def _on_new_template(self) -> None:
-        dlg = TemplateFormDialog(self._container.templates, parent=self)
+        dlg = TemplateFormDialog(
+            self._container.templates,
+            parent=self,
+            container=self._container,
+        )
         if dlg.exec() == TemplateFormDialog.DialogCode.Accepted:
             self._refresh()
 
@@ -242,7 +233,12 @@ class TemplatesPage(QWidget):
             QMessageBox.warning(self, "找不到模板", error_message("template.not_found"))
             self._refresh()
             return
-        dlg = TemplateFormDialog(self._container.templates, existing=tmpl, parent=self)
+        dlg = TemplateFormDialog(
+            self._container.templates,
+            existing=tmpl,
+            parent=self,
+            container=self._container,
+        )
         if dlg.exec() == TemplateFormDialog.DialogCode.Accepted:
             self._refresh()
 
@@ -274,7 +270,38 @@ class TemplatesPage(QWidget):
         if tmpl_id is None:
             return
         try:
-            rendered = self._container.templates.render_template(tmpl_id, _SAMPLE_VARS)
+            clients = self._container.clients.search_clients("", limit=500)
+        except Exception:
+            clients = []
+        if not clients:
+            QMessageBox.warning(
+                self,
+                "沒有範例客戶",
+                "請先在客戶管理建立客戶，才能用真實資料試用模板。",
+            )
+            return
+        if len(clients) == 1:
+            client = clients[0]
+        else:
+            labels = [
+                f"{client.client_code}  {client.client_name}" for client in clients
+            ]
+            selected, accepted = QInputDialog.getItem(
+                self,
+                "選擇真實客戶",
+                "模板預覽將使用此客戶的真實資料：",
+                labels,
+                0,
+                False,
+            )
+            if not accepted:
+                return
+            client = clients[labels.index(selected)]
+        try:
+            variables = self._container.gen_messages.build_client_example_variables(
+                client.id
+            )
+            rendered = self._container.templates.render_template(tmpl_id, variables)
         except TemplateValidationError as err:
             QMessageBox.warning(self, "試用失敗", error_message(err.code))
             return
@@ -286,12 +313,12 @@ class TemplatesPage(QWidget):
             QMessageBox.warning(self, "試用失敗", error_message("template.render.failed"))
             return
         dlg = QDialog(self)
-        dlg.setWindowTitle("試用模板（範例資料）")
+        dlg.setWindowTitle(f"試用模板（{client.client_name}）")
         dlg.setMinimumWidth(500)
         dlg.setMinimumHeight(350)
         dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         layout = QVBoxLayout(dlg)
-        layout.addWidget(QLabel("以下為範例資料渲染結果（未儲存）："))
+        layout.addWidget(QLabel("以下為真實客戶資料渲染結果（未儲存）："))
         preview = QTextEdit()
         preview.setReadOnly(True)
         preview.setPlainText(rendered)
