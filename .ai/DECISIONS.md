@@ -1,5 +1,52 @@
 # DECISIONS
 
+## 2026-08-06 - 工作型物件的職責邊界與單一事實來源
+
+### 決策
+
+系統中帶有「狀態、期限、下一步」語意的物件，職責固定如下，不得互相取代：
+
+| 物件 | 資料表 | 職責 |
+| --- | --- | --- |
+| 年度工作 | `annual_work_items` | 法遵與年度例行工作的主控項目，是該年度該客戶合規狀態的唯一事實來源 |
+| 案件 | `engagements` | 對客戶交付的具體業務案件，是各工作型物件唯一的共同交會點 |
+| 待辦 | `workflow_tasks` | 跨案件的個人短期行動，不保存完整業務流程 |
+| 流程範本 | `workflow_templates_v2` | 案件或年度工作可套用的步驟模板，不自成另一套案件 |
+| 流程執行 | `workflow_runs` | 範本的一次套用紀錄 |
+| 固定開立 | 固定開立方案與待開立紀錄 | 獨立的週期性開立排程 |
+
+期限的權威來源依物件而定：年度工作以 `annual_work_items.due_date` 為準（`suggested_due_date`
+僅為系統建議，見 2026-07-18 決策）；待辦的 `due_date` 只約束該筆個人行動，不代表法遵期限。
+
+### 理由
+
+實測目前的關聯狀態（2026-08-06，`feature/v030-annual-workbench`）：
+
+- `annual_work_items.engagement_id` 可為 NULL，單向指向案件。
+- `workflow_tasks.annual_work_item_id`（`_m0028`）建立了年度工作與待辦的雙向連結，
+  `AnnualWorkService.create_linked_task` 會驗證兩者的客戶與案件一致，不一致則拒絕。
+- `workflow_runs` 只連到 `client_id` 與 `engagement_id`，與年度工作之間沒有任何欄位或
+  服務層程式碼；其步驟狀態存在 `stages_json` 內，該表本身沒有 status 欄位。
+- 固定開立與上述任何物件都沒有關聯。
+- `AnnualWorkService.complete_item` 只更新 `annual_work_items.work_status`，
+  不變更任何連結待辦的狀態。
+
+因此「同一件營所稅結算申報同時出現在多處」是可能的，且完成其中一處不會同步其他處。
+在職責邊界未寫明前，任何介面改動都只是把同一份模糊語意排得更整齊。
+
+### 影響
+
+- 年度工作是法遵狀態的唯一事實來源。介面呈現法遵狀態時必須讀年度工作，不得改讀待辦或流程執行。
+- 待辦不得再擴充為第二套業務流程系統；`next_step` 是自由文字備註，不是流程步驟的資料結構。
+- 流程執行在下列問題有答案前，不得新增功能：
+
+  - `[NEEDS CLARIFICATION]` 年度工作完成時，連結待辦是否應一併完成？目前不會，兩者狀態可長期矛盾。
+  - `[NEEDS CLARIFICATION]` 流程執行狀態是否應回寫年度工作或案件？目前完全不回寫。
+  - `[NEEDS CLARIFICATION]` 流程執行的步驟與待辦子項是否為同一概念？目前是兩套獨立資料結構。
+  - `[NEEDS CLARIFICATION]` 流程圖片屬正式作業指引或單純附件？決定它是否需要版本與稽核。
+
+- 上述問題屬產品意圖，不得由實作端自行假設。
+
 ## 2026-07-31 - Qt coverage evidence uses explicit process isolation
 
 ### Decision

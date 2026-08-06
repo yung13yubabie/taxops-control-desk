@@ -29,6 +29,7 @@ from ..dialogs.task_bulk_dialogs import (
     ParentTaskDialog,
 )
 from ..style import DANGER_COLOR, toolbar_icon
+from ..widgets.buttons import set_button_role
 from ..widgets.column_settings import ColumnSettings
 from ..widgets.empty_state import EmptyState
 from ..widgets.flow_layout import FlowLayout
@@ -98,6 +99,8 @@ class TasksPage(QWidget):
         outer.addLayout(filter_row)
 
         self._new_btn = QPushButton("新增待辦")
+        # 新增下一步 acts on a selected task and stays secondary.
+        set_button_role(self._new_btn, "primary")
         self._complete_btn = QPushButton("完成待辦")
         self._complete_btn.setEnabled(False)
         self._status_btn = QPushButton("切換狀態")

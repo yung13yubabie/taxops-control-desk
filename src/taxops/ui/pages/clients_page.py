@@ -1,4 +1,11 @@
-"""Clients page: list view + search/filter/sort/pagination + CRUD actions."""
+"""Clients page: master-detail list with search, filters, sorting, and pagination.
+
+This page is the design template for the rest of the application. The table carries
+only identity and contact columns; addresses, notes, and lease detail live in the
+right-hand inspector, which also owns every action that needs a selected row. That is
+what replaced the row of nine peer buttons and the two permanently visible detail
+boxes below the table.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +22,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -28,12 +36,15 @@ from ...core.clock import today_iso
 from ...i18n import BUTTON_LABELS, NAV_LABELS, TABLE_HEADERS, error_message
 from ...services.clients import ClientValidationError
 from ...services.container import ServiceContainer
+from .. import tokens
 from ..dialogs.bulk_import_wizard import BulkImportWizard
 from ..dialogs.edit_client_dialog import EditClientDialog
 from ..dialogs.new_client_dialog import NewClientDialog
-from ..style import TEXT_MUTED, toolbar_icon
+from ..style import toolbar_icon
+from ..widgets.buttons import make_icon_button, set_button_role
 from ..widgets.empty_state import EmptyState
-from ..widgets.flow_layout import FlowLayout
+from ..widgets.inspector import Inspector
+from ..widgets.page_shell import ActionBar, PageHeader
 
 _log = logging.getLogger(__name__)
 
@@ -54,8 +65,20 @@ _COLUMN_ORDER: tuple[str, ...] = (
     "updated_at",
 )
 
-# Columns hidden by default; user can toggle them via the "欄位顯示" menu.
-_DEFAULT_HIDDEN: frozenset[str] = frozenset({"id"})
+# Columns hidden by default; the user opts into them through 欄位顯示.
+# Six visible columns keep the core list free of horizontal scrolling at 1366x768.
+# Addresses and the email are available in the inspector, so putting them in the
+# table only pushed the client name out of view.
+_DEFAULT_HIDDEN: frozenset[str] = frozenset(
+    {
+        "id",
+        "short_name",
+        "contact_email",
+        "registered_address",
+        "contact_address",
+        "updated_at",
+    }
+)
 _CORE_COLS: frozenset[str] = frozenset({"client_code", "client_name"})
 
 _DEFAULT_SORT_COL = "client_code"
@@ -81,86 +104,122 @@ class ClientsPage(QWidget):
         self._lease_counts: dict[int, int] = {}
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(24, 24, 24, 24)
-        outer.setSpacing(12)
+        outer.setContentsMargins(
+            tokens.PAGE_MARGIN, tokens.PAGE_MARGIN, tokens.PAGE_MARGIN, tokens.PAGE_MARGIN
+        )
+        outer.setSpacing(tokens.SPACING_LG)
 
-        title = QLabel(NAV_LABELS["clients"])
-        title.setStyleSheet("font-size: 20px; font-weight: 600;")
-        outer.addWidget(title)
+        # ── Header: title and the page's only primary action ────────
+        self._header = PageHeader(NAV_LABELS["clients"])
+        self._new_btn = QPushButton(BUTTON_LABELS["clients.new"])
+        self._new_btn.setIcon(toolbar_icon("add"))
+        self._header.add_action(self._new_btn, role=tokens.ROLE_PRIMARY)
+        outer.addWidget(self._header)
 
-        # Search row
-        search_row = QHBoxLayout()
-        search_row.setSpacing(8)
+        # ── Action bar: search and filters left, tools right ────────
+        self._action_bar = ActionBar()
+
+        search_box = QWidget()
+        search_row = QHBoxLayout(search_box)
+        search_row.setContentsMargins(0, 0, 0, 0)
+        search_row.setSpacing(tokens.SPACING_XS)
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("搜尋客戶代號、名稱或統一編號")
         self._search_input.setMaxLength(100)
-        self._search_btn = QPushButton("搜尋")
-        self._clear_btn = QPushButton("清除")
-        self._count_label = QLabel("共 0 筆")
-        self._count_label.setStyleSheet(f"color: {TEXT_MUTED};")
-        self._count_label.setMaximumHeight(40)
-        self._notes_only_check = QCheckBox("只看有特殊要求／備註")
-        self._show_deleted_check = QCheckBox("顯示已刪除客戶")
+        self._search_input.setMinimumWidth(260)
+        # Search and clear sit with the field they act on, as quiet icons. They were
+        # two large blue buttons competing with 新增客戶.
+        self._search_btn = make_icon_button(
+            "search", tooltip="搜尋客戶", accessible_name="搜尋客戶"
+        )
+        self._clear_btn = make_icon_button(
+            "clear", tooltip="清除搜尋條件", accessible_name="清除搜尋條件"
+        )
         search_row.addWidget(self._search_input, 1)
         search_row.addWidget(self._search_btn)
         search_row.addWidget(self._clear_btn)
-        search_row.addWidget(self._show_deleted_check)
-        search_row.addWidget(self._notes_only_check)
-        search_row.addStretch(0)
-        search_row.addWidget(self._count_label)
-        outer.addLayout(search_row)
+        self._action_bar.add_leading_widget(search_box, stretch=1)
 
-        # Action toolbar
-        self._new_btn = QPushButton(BUTTON_LABELS["clients.new"])
-        self._edit_btn = QPushButton("編輯客戶")
-        self._leases_btn = QPushButton("租約管理")
-        self._delete_btn = QPushButton("刪除客戶")
-        self._restore_btn = QPushButton("復原客戶")
-        self._purge_btn = QPushButton("永久刪除")
+        # Both list filters moved into one menu; they were loose checkboxes wedged
+        # between the search field and the row count.
+        self._notes_only_check = QCheckBox("只看有特殊要求／備註")
+        self._show_deleted_check = QCheckBox("顯示已刪除客戶")
+        self._filter_btn = QPushButton("篩選")
+        self._filter_btn.setIcon(toolbar_icon("filter"))
+        self._filter_menu = QMenu(self)
+        self._notes_only_action = self._filter_menu.addAction("只看有特殊要求／備註")
+        self._notes_only_action.setCheckable(True)
+        self._show_deleted_action = self._filter_menu.addAction("顯示已刪除客戶")
+        self._show_deleted_action.setCheckable(True)
+        self._filter_btn.setMenu(self._filter_menu)
+        self._action_bar.add_work_action(self._filter_btn)
+
         self._bulk_btn = QPushButton("批量匯入")
-        self._cols_btn = QPushButton("欄位顯示 ▾")
-        self._refresh_btn = QPushButton(BUTTON_LABELS["clients.refresh"])
+        self._bulk_btn.setIcon(toolbar_icon("upload"))
+        self._action_bar.add_tool_action(self._bulk_btn, role=tokens.ROLE_SECONDARY)
 
-        self._new_btn.setIcon(toolbar_icon("new"))
-        self._edit_btn.setIcon(toolbar_icon("edit"))
-        self._leases_btn.setIcon(toolbar_icon("edit"))
-        self._delete_btn.setIcon(toolbar_icon("delete"))
-        self._restore_btn.setIcon(toolbar_icon("refresh"))
-        self._purge_btn.setIcon(toolbar_icon("delete"))
-        self._bulk_btn.setIcon(toolbar_icon("bulk"))
-        self._refresh_btn.setIcon(toolbar_icon("refresh"))
+        self._cols_btn = QPushButton("欄位顯示")
+        self._cols_btn.setIcon(toolbar_icon("columns"))
+        self._action_bar.add_tool_action(self._cols_btn)
 
-        self._edit_btn.setEnabled(False)
-        self._leases_btn.setEnabled(False)
-        self._delete_btn.setEnabled(False)
-        self._restore_btn.setEnabled(False)
-        self._purge_btn.setEnabled(False)
+        self._refresh_btn = self._action_bar.add_tool_icon(
+            "refresh",
+            tooltip=BUTTON_LABELS["clients.refresh"],
+            accessible_name=BUTTON_LABELS["clients.refresh"],
+        )
+        outer.addWidget(self._action_bar)
 
-        toolbar_widget = QWidget()
-        toolbar = FlowLayout(toolbar_widget, h_spacing=6, v_spacing=6)
-        for btn in (
-            self._new_btn,
-            self._edit_btn,
-            self._leases_btn,
-            self._delete_btn,
-            self._restore_btn,
-            self._purge_btn,
-            self._bulk_btn,
-            self._cols_btn,
-            self._refresh_btn,
-        ):
-            toolbar.addWidget(btn)
-        outer.addWidget(toolbar_widget)
+        self._count_label = QLabel("共 0 筆")
+        self._count_label.setObjectName("HintText")
+        self._count_label.setMaximumHeight(40)
 
         self._empty_state = EmptyState(
             "尚無客戶資料",
             detail="建立第一筆客戶後，案件、待辦與訊息模板才有可選來源。",
-            action_text="新增客戶",
+            action_text="新增第一筆客戶",
         )
         self._empty_label = self._empty_state.title_label
         outer.addWidget(self._empty_state, stretch=1)
 
-        # Table with sortable headers
+        # ── Master-detail body ──────────────────────────────────────
+        self._split = QSplitter(Qt.Orientation.Horizontal)
+        self._split.setChildrenCollapsible(False)
+
+        # Contextual actions live in the inspector, so they exist only when a row is
+        # selected instead of sitting disabled on the page.
+        self._inspector = Inspector(
+            placeholder="選取左側客戶後，可在此查看聯絡資訊、地址、租約與備註。",
+            min_width=320,
+        )
+        self._edit_btn = QPushButton("編輯客戶")
+        self._edit_btn.setIcon(toolbar_icon("edit"))
+        set_button_role(self._edit_btn, tokens.ROLE_SECONDARY)
+        self._inspector.add_action(self._edit_btn)
+
+        self._leases_btn = QPushButton("租約管理")
+        self._leases_btn.setIcon(toolbar_icon("edit"))
+        set_button_role(self._leases_btn, tokens.ROLE_QUIET)
+        self._inspector.add_action(self._leases_btn)
+
+        # Low-frequency and destructive actions go behind 更多 rather than lining up
+        # beside 編輯客戶.
+        self._more_btn = make_icon_button(
+            "overflow", tooltip="更多客戶操作", accessible_name="更多客戶操作"
+        )
+        self._more_menu = QMenu(self)
+        self._delete_btn = QPushButton("刪除客戶")
+        self._restore_btn = QPushButton("復原客戶")
+        self._purge_btn = QPushButton("永久刪除")
+        set_button_role(self._delete_btn, tokens.ROLE_DANGER)
+        set_button_role(self._purge_btn, tokens.ROLE_DANGER)
+        set_button_role(self._restore_btn, tokens.ROLE_SECONDARY)
+        self._delete_action = self._more_menu.addAction("刪除客戶")
+        self._restore_action = self._more_menu.addAction("復原客戶")
+        self._more_menu.addSeparator()
+        self._purge_action = self._more_menu.addAction("永久刪除")
+        self._more_btn.setMenu(self._more_menu)
+        self._inspector.add_action(self._more_btn)
+
         self._table = QTableWidget(0, len(_COLUMN_ORDER))
         headers = TABLE_HEADERS["clients"]
         self._table.setHorizontalHeaderLabels(
@@ -183,13 +242,68 @@ class ClientsPage(QWidget):
         header_view.setSortIndicator(
             _COLUMN_ORDER.index(_DEFAULT_SORT_COL), Qt.SortOrder.AscendingOrder
         )
-        outer.addWidget(self._table, stretch=1)
+        self._table.verticalHeader().setDefaultSectionSize(tokens.ROW_HEIGHT_TEXT)
+        self._table.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self._table.setWordWrap(False)
 
-        self._lease_group = QGroupBox("租約明細（先選取客戶，再勾選展開）")
+        # ── Left column: the list and its pagination ────────────────
+        list_column = QWidget()
+        list_layout = QVBoxLayout(list_column)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.setSpacing(tokens.SPACING_SM)
+        list_layout.addWidget(self._table, stretch=1)
+
+        page_row = QHBoxLayout()
+        page_row.setSpacing(tokens.SPACING_XS)
+        # Chevron icons instead of the ◀ ▶ glyphs that were mixed into the labels.
+        self._prev_btn = make_icon_button(
+            "chevron-left", tooltip="上一頁", accessible_name="上一頁"
+        )
+        self._next_btn = make_icon_button(
+            "chevron-right", tooltip="下一頁", accessible_name="下一頁"
+        )
+        self._page_label = QLabel("")
+        self._page_label.setObjectName("HintText")
+        self._page_label.setMaximumHeight(40)
+        self._prev_btn.setEnabled(False)
+        self._next_btn.setEnabled(False)
+        page_row.addWidget(self._prev_btn)
+        page_row.addWidget(self._next_btn)
+        page_row.addWidget(self._page_label)  # shows "第 X–Y 筆 / 共 Z 筆"
+        page_row.addStretch(1)
+        page_row.addWidget(self._count_label)
+        list_layout.addLayout(page_row)
+        self._split.addWidget(list_column)
+
+        # ── Right column: inspector, notes, leases ──────────────────
+        detail_column = QWidget()
+        detail_layout = QVBoxLayout(detail_column)
+        detail_layout.setContentsMargins(0, 0, 0, 0)
+        detail_layout.setSpacing(tokens.SPACING_MD)
+        detail_layout.addWidget(self._inspector, stretch=1)
+
+        # Notes and leases are hidden entirely until a client is selected, so the page
+        # no longer reserves two empty framed boxes for them.
+        self._detail_extra = QWidget()
+        extra_layout = QVBoxLayout(self._detail_extra)
+        extra_layout.setContentsMargins(0, 0, 0, 0)
+        extra_layout.setSpacing(tokens.SPACING_SM)
+
+        note_group = QGroupBox("特殊要求／備註")
+        note_layout = QVBoxLayout(note_group)
+        note_layout.setContentsMargins(0, tokens.SPACING_SM, 0, 0)
+        self._note_detail = QPlainTextEdit()
+        self._note_detail.setReadOnly(True)
+        self._note_detail.setPlaceholderText("此客戶沒有特殊要求或備註。")
+        self._note_detail.setMaximumHeight(120)
+        note_layout.addWidget(self._note_detail)
+        extra_layout.addWidget(note_group)
+
+        self._lease_group = QGroupBox("租約明細（勾選展開）")
         self._lease_group.setCheckable(True)
         self._lease_group.setChecked(False)
         lease_layout = QVBoxLayout(self._lease_group)
-        lease_layout.setContentsMargins(10, 10, 10, 10)
+        lease_layout.setContentsMargins(0, tokens.SPACING_SM, 0, 0)
         self._lease_table = QTableWidget(0, 5)
         self._lease_table.setHorizontalHeaderLabels(
             ["租約名稱", "租賃地址", "起始日", "到期日", "狀態"]
@@ -199,38 +313,27 @@ class ClientsPage(QWidget):
         self._lease_table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch
         )
+        self._lease_table.verticalHeader().setDefaultSectionSize(tokens.ROW_HEIGHT_TEXT)
+        self._lease_table.setTextElideMode(Qt.TextElideMode.ElideRight)
         self._lease_table.setMaximumHeight(170)
         self._lease_table.hide()
         lease_layout.addWidget(self._lease_table)
-        outer.addWidget(self._lease_group)
+        extra_layout.addWidget(self._lease_group)
 
-        note_group = QGroupBox("客戶特殊要求／備註全文")
-        note_layout = QVBoxLayout(note_group)
-        note_layout.setContentsMargins(10, 10, 10, 10)
-        self._note_detail = QPlainTextEdit()
-        self._note_detail.setReadOnly(True)
-        self._note_detail.setPlaceholderText("選取客戶後，在這裡查看完整換行備註")
-        self._note_detail.setMaximumHeight(150)
-        note_layout.addWidget(self._note_detail)
-        outer.addWidget(note_group)
+        self._detail_extra.setVisible(False)
+        detail_layout.addWidget(self._detail_extra)
+        self._split.addWidget(detail_column)
 
-        # Pagination row
-        page_row = QHBoxLayout()
-        page_row.setSpacing(8)
-        self._prev_btn = QPushButton("◀ 上一頁")
-        self._next_btn = QPushButton("下一頁 ▶")
-        self._page_label = QLabel("")
-        self._page_label.setStyleSheet(f"color: {TEXT_MUTED};")
-        self._page_label.setMaximumHeight(40)
-        self._prev_btn.setEnabled(False)
-        self._next_btn.setEnabled(False)
-        page_row.addWidget(self._prev_btn)
-        page_row.addWidget(self._next_btn)
-        page_row.addStretch(1)
-        page_row.addWidget(self._page_label)  # shows "第 X–Y 筆 / 共 Z 筆"
-        outer.addLayout(page_row)
+        # The list gets the room; the inspector stays readable without starving it.
+        self._split.setStretchFactor(0, 3)
+        self._split.setStretchFactor(1, 2)
+        outer.addWidget(self._split, stretch=1)
 
-        # Connect signals
+        # Connect signals.
+        #
+        # The three destructive actions are reached through 更多. Their buttons remain
+        # the single place the behaviour is wired: the menu entry clicks the button, so
+        # menu use and programmatic use follow one path with one enabled state.
         self._new_btn.clicked.connect(self.on_new_client)
         if self._empty_state.action_button is not None:
             self._empty_state.action_button.clicked.connect(self.on_new_client)
@@ -239,9 +342,15 @@ class ClientsPage(QWidget):
         self._delete_btn.clicked.connect(self.on_delete_client)
         self._restore_btn.clicked.connect(self.on_restore_client)
         self._purge_btn.clicked.connect(self.on_purge_client)
+        self._delete_action.triggered.connect(lambda _=False: self._delete_btn.click())
+        self._restore_action.triggered.connect(lambda _=False: self._restore_btn.click())
+        self._purge_action.triggered.connect(lambda _=False: self._purge_btn.click())
         self._bulk_btn.clicked.connect(self.on_bulk_import)
         self._cols_btn.clicked.connect(self._on_cols_menu)
         self._refresh_btn.clicked.connect(self.on_refresh)
+        # The filter menu drives the checkboxes, which stay the state the query reads.
+        self._notes_only_action.toggled.connect(self._notes_only_check.setChecked)
+        self._show_deleted_action.toggled.connect(self._show_deleted_check.setChecked)
         self._show_deleted_check.toggled.connect(self._on_show_deleted_toggled)
         self._notes_only_check.toggled.connect(self._on_notes_only_toggled)
         self._search_btn.clicked.connect(self._on_search)
@@ -368,6 +477,15 @@ class ClientsPage(QWidget):
         """Reload client rows when the page becomes active."""
         self.on_refresh()
 
+    def _cell_value(self, row_idx: int, col: str) -> str:
+        """The stored value for a cell.
+
+        Read from the tooltip because the displayed text is abbreviated for some
+        columns — notes collapse their newlines to fit one row.
+        """
+        item = self._table.item(row_idx, _COLUMN_ORDER.index(col))
+        return item.toolTip() if item is not None else ""
+
     def _on_selection_changed(self) -> None:
         client_id = self._selected_client_id()
         if client_id is None:
@@ -376,9 +494,14 @@ class ClientsPage(QWidget):
             self._delete_btn.setEnabled(False)
             self._restore_btn.setEnabled(False)
             self._purge_btn.setEnabled(False)
+            self._sync_more_menu()
             self._note_detail.clear()
-            self._lease_group.setTitle("租約明細（先選取客戶，再勾選展開）")
+            self._lease_group.setTitle("租約明細（勾選展開）")
             self._lease_table.setRowCount(0)
+            # Clearing the selection empties the panel rather than leaving the last
+            # client's detail on screen.
+            self._inspector.clear()
+            self._detail_extra.setVisible(False)
             return
         rows = self._table.selectedItems()
         row_idx = self._table.row(rows[0])
@@ -389,12 +512,64 @@ class ClientsPage(QWidget):
         self._delete_btn.setEnabled(not is_deleted)
         self._restore_btn.setEnabled(is_deleted)
         self._purge_btn.setEnabled(is_deleted)
+        self._sync_more_menu()
         note_item = self._table.item(row_idx, _COLUMN_ORDER.index("note"))
         self._note_detail.setPlainText(note_item.toolTip() if note_item else "")
         lease_count = self._lease_counts.get(client_id, 0)
         self._lease_group.setTitle(f"租約明細（{lease_count} 筆，勾選展開）")
+        self._populate_inspector(row_idx, lease_count=lease_count, is_deleted=is_deleted)
+        self._detail_extra.setVisible(True)
         if self._lease_group.isChecked():
             self._load_selected_leases()
+
+    def _sync_more_menu(self) -> None:
+        """Keep the 更多 entries in step with the buttons that own the behaviour."""
+        self._delete_action.setEnabled(self._delete_btn.isEnabled())
+        self._restore_action.setEnabled(self._restore_btn.isEnabled())
+        self._purge_action.setEnabled(self._purge_btn.isEnabled())
+
+    def _populate_inspector(
+        self, row_idx: int, *, lease_count: int, is_deleted: bool
+    ) -> None:
+        """Fill the detail panel for the selected row."""
+        name = self._cell_value(row_idx, "client_name")
+        code = self._cell_value(row_idx, "client_code")
+        tax_id = self._cell_value(row_idx, "tax_id")
+
+        self._inspector.begin_update()
+        subtitle = f"{code}　統一編號 {tax_id}" if tax_id else code
+        self._inspector.set_title(name, subtitle=subtitle)
+        if is_deleted:
+            # Stated in words, not by grey text alone.
+            self._inspector.add_note("此客戶已停用，僅可復原或永久刪除。")
+
+        self._inspector.add_section("基本資料")
+        self._inspector.add_field("客戶代號", code)
+        self._inspector.add_field("統一編號", tax_id)
+        self._inspector.add_field("簡稱", self._cell_value(row_idx, "short_name"))
+
+        self._inspector.add_section("聯絡資訊")
+        self._inspector.add_field("聯絡人", self._cell_value(row_idx, "contact_name"))
+        self._inspector.add_field("聯絡電話", self._cell_value(row_idx, "contact_phone"))
+        self._inspector.add_field("聯絡信箱", self._cell_value(row_idx, "contact_email"))
+
+        self._inspector.add_section("地址")
+        self._inspector.add_field(
+            "登記地址", self._cell_value(row_idx, "registered_address"), multiline=True
+        )
+        self._inspector.add_field(
+            "聯絡地址", self._cell_value(row_idx, "contact_address"), multiline=True
+        )
+
+        self._inspector.add_section("租約")
+        self._inspector.add_field(
+            "租約筆數", f"{lease_count} 筆" if lease_count else "無租約"
+        )
+
+        updated = self._cell_value(row_idx, "updated_at")
+        if updated:
+            self._inspector.add_section("更新")
+            self._inspector.add_field("最後更新", updated)
 
     def _on_lease_group_toggled(self, checked: bool) -> None:
         self._lease_table.setVisible(checked)
@@ -628,8 +803,12 @@ class ClientsPage(QWidget):
                 "id": str(client.id),
                 "client_code": client.client_code,
                 "tax_id": client.tax_id or "",
+                # The lease marker stays in the list so a client with leases is
+                # visible without selecting the row, but the ▸ glyph is gone — the
+                # icon set replaced ad-hoc Unicode arrows. Lease detail itself lives
+                # in the inspector and the expandable lease table.
                 "client_name": (
-                    f"▸ 租約 {self._lease_counts[client.id]}｜{client.client_name}"
+                    f"租約 {self._lease_counts[client.id]}｜{client.client_name}"
                     if self._lease_counts.get(client.id, 0)
                     else client.client_name
                 ),
@@ -657,8 +836,10 @@ class ClientsPage(QWidget):
                 self._table.setItem(row_idx, col_idx, item)
         self._table.blockSignals(False)
 
+        # The empty state replaces the whole master-detail body rather than sitting
+        # above an empty framed table.
         self._empty_state.setVisible(self._total == 0)
-        self._table.setVisible(self._total > 0)
+        self._split.setVisible(self._total > 0)
         self._table.clearSelection()
         if selected_client_id is not None:
             for row_idx in range(self._table.rowCount()):

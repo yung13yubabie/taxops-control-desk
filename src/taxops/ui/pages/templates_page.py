@@ -25,6 +25,7 @@ from ...services.container import ServiceContainer
 from ...services.templates import TemplateValidationError, TemplatesService
 from ..dialogs.template_form_dialog import TemplateFormDialog
 from ..style import DANGER_COLOR, toolbar_icon
+from ..widgets.buttons import set_button_role
 from ..widgets.empty_state import EmptyState
 from ..widgets.table_builder import build_standard_table
 
@@ -58,6 +59,7 @@ class TemplatesPage(QWidget):
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
         self._new_btn = QPushButton("新增模板")
+        set_button_role(self._new_btn, "primary")
         self._edit_btn = QPushButton("編輯模板")
         self._edit_btn.setEnabled(False)
         self._delete_btn = QPushButton("刪除模板")

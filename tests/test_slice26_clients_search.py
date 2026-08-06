@@ -257,23 +257,71 @@ def test_sidebar_collapse_setting_persists() -> None:
 
 
 def test_sidebar_collapsed_restored_on_window_init() -> None:
-    """MainWindow must explicitly hide nav when ui.sidebar_collapsed='1'."""
+    """Collapsing narrows the rail but must preserve module identity.
+
+    Replaces the earlier contract, which hid the navigation list outright and left a
+    blank strip. The rail now stays populated: every module keeps its icon and gains
+    a tooltip standing in for the hidden label.
+    """
     _make_app()
     conn = _fresh_conn()
     container = _build_container(conn)
     container.settings.set_setting("ui.sidebar_collapsed", "1")
 
     from taxops.ui.main_window import MainWindow
+    from taxops.ui import tokens
 
     window = MainWindow(container)
-    # isHidden() is True when setVisible(False) was called, regardless of show()
-    assert window._nav.isHidden(), "nav must be explicitly hidden when sidebar_collapsed=1"
-    assert window._collapse_btn.text() == "▶"
+
+    assert not window._nav.isHidden(), "collapsed rail must stay visible"
+    assert window._collapsed is True
+    assert window._sidebar.maximumWidth() == tokens.SIDEBAR_COLLAPSED_WIDTH
+    assert tokens.SIDEBAR_COLLAPSED_WIDTH >= 52, "rail must fit an icon, not be a bare strip"
+
+    for row in range(window._nav.count()):
+        item = window._nav.item(row)
+        assert item.text() == "", "labels are hidden when collapsed"
+        assert item.toolTip(), "a hidden label must be reachable as a tooltip"
+        assert not item.icon().isNull(), "module icon must survive collapsing"
+
+    # The toggle is an icon button with an accessible name, not a text arrow.
+    assert window._collapse_btn.text() == ""
+    assert not window._collapse_btn.icon().isNull()
+    assert window._collapse_btn.toolTip() == "展開側邊欄"
+    assert window._collapse_btn.accessibleName() == "展開側邊欄"
+    assert window._collapse_btn.width() == tokens.ICON_BUTTON_SIZE
+    assert window._collapse_btn.height() == tokens.ICON_BUTTON_SIZE
     container.close()
 
 
 def test_sidebar_expanded_on_window_init_by_default() -> None:
-    """Default state must NOT explicitly hide nav (expanded)."""
+    """Default state shows labels and icons together."""
+    _make_app()
+    conn = _fresh_conn()
+    container = _build_container(conn)
+
+    from taxops.ui.main_window import MainWindow
+    from taxops.ui import tokens
+
+    window = MainWindow(container)
+
+    assert not window._nav.isHidden()
+    assert window._collapsed is False
+    assert window._sidebar.minimumWidth() == tokens.SIDEBAR_EXPANDED_WIDTH
+
+    for row in range(window._nav.count()):
+        item = window._nav.item(row)
+        assert item.text(), "labels are shown when expanded"
+        assert not item.icon().isNull(), "every module carries an icon"
+
+    assert window._collapse_btn.text() == ""
+    assert not window._collapse_btn.icon().isNull()
+    assert window._collapse_btn.toolTip() == "收合側邊欄"
+    container.close()
+
+
+def test_sidebar_toggle_round_trip_restores_labels() -> None:
+    """Collapsing then expanding must bring every label back."""
     _make_app()
     conn = _fresh_conn()
     container = _build_container(conn)
@@ -281,9 +329,17 @@ def test_sidebar_expanded_on_window_init_by_default() -> None:
     from taxops.ui.main_window import MainWindow
 
     window = MainWindow(container)
-    # isHidden() is False when nav was not explicitly hidden
-    assert not window._nav.isHidden(), "nav must not be hidden when sidebar_collapsed=0"
-    assert window._collapse_btn.text() == "◀"
+    original = [window._nav.item(r).text() for r in range(window._nav.count())]
+
+    window._on_toggle_sidebar()
+    assert window._collapsed is True
+    assert all(window._nav.item(r).text() == "" for r in range(window._nav.count()))
+
+    window._on_toggle_sidebar()
+    assert window._collapsed is False
+    restored = [window._nav.item(r).text() for r in range(window._nav.count())]
+    assert restored == original
+    assert all(window._nav.item(r).toolTip() == "" for r in range(window._nav.count()))
     container.close()
 
 

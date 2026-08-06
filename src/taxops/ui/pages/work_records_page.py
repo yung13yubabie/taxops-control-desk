@@ -34,6 +34,7 @@ from ..dialogs.work_records_dialogs import (
     format_stages_for_editor,
 )
 from ..style import BORDER_COLOR, TEXT_MUTED, toolbar_icon
+from ..widgets.buttons import set_button_role
 from ..widgets.empty_state import EmptyState
 from ..widgets.flow_layout import FlowLayout
 
@@ -85,6 +86,7 @@ class WorkRecordsPage(QWidget):
         toolbar_widget = QWidget()
         toolbar = FlowLayout(toolbar_widget, h_spacing=6, v_spacing=6)
         self._create_template_btn = QPushButton("新增流程")
+        set_button_role(self._create_template_btn, "primary")
         self._edit_template_btn = QPushButton("編輯流程")
         self._delete_template_btn = QPushButton("刪除流程")
         self._edit_run_btn = QPushButton("編輯執行")

@@ -32,6 +32,7 @@ from ...services.registry.industries import (
 from ...services.container import ServiceContainer
 from ..dialogs.registry_apply_dialog import RegistryApplyDialog
 from ..style import TEXT_MUTED, toolbar_icon
+from ..widgets.buttons import set_button_role
 from ..workers.local_registry_search import LocalRegistrySearchWorker
 
 _log = logging.getLogger(__name__)
@@ -178,6 +179,9 @@ class RegistryPage(QWidget):
         client_select_row.addWidget(self._client_combo, stretch=1)
 
         self._apply_btn = QPushButton("套用至客戶主檔")
+        # Applying the lookup is the only action here that changes stored data;
+        # the two query buttons are searches and must not be primary.
+        set_button_role(self._apply_btn, "primary")
         self._apply_btn.setIcon(toolbar_icon("save"))
         self._apply_btn.setEnabled(False)
         self._apply_btn.clicked.connect(self._on_apply_to_client)

@@ -34,6 +34,7 @@ from ...services.folder_bookmarks import (
     UpdateBookmarkInput,
 )
 from ..style import toolbar_icon
+from ..widgets.buttons import set_button_role
 from ..widgets.empty_state import EmptyState
 from ..widgets.flow_layout import FlowLayout
 
@@ -171,6 +172,7 @@ class FolderBookmarksPage(QWidget):
         toolbar_widget = QWidget()
         toolbar = FlowLayout(toolbar_widget, h_spacing=6, v_spacing=6)
         self._new_btn = QPushButton("新增資料夾")
+        set_button_role(self._new_btn, "primary")
         self._edit_btn = QPushButton("編輯資料夾")
         self._delete_btn = QPushButton("刪除資料夾")
         self._open_btn = QPushButton("開啟資料夾")

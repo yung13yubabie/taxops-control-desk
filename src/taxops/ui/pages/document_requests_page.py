@@ -270,6 +270,10 @@ class DocumentRequestsPage(QWidget):
         # truncated buttons.
         toolbar_widget = QWidget()
         toolbar = FlowLayout(toolbar_widget, h_spacing=6, v_spacing=6)
+        # No primary here. This page is always embedded — EngagementsPage builds two
+        # instances of it, in requests_only and items_only view modes — and the host
+        # page already owns the single primary (新增案件). Marking this primary put
+        # three competing primaries on one page.
         self._new_req_btn = QPushButton("新增索件批次")
         self._edit_req_btn = QPushButton("編輯批次")
         self._mark_requested_btn = QPushButton("標記已發出")

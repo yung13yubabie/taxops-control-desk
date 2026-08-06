@@ -1,5 +1,70 @@
 # CURRENT_STATE
 
+## 2026-08-06 UI redesign stage one: design system (uncommitted)
+
+- Worktree: `.worktrees/v030-annual-workbench` on `feature/v030-annual-workbench`,
+  synced to `origin`, HEAD `e0c7db7`. All changes are uncommitted and no commit,
+  push, tag, or release has been made. `git diff --check` is clean.
+- The rebuild targets this branch, not `main`. `main` (v0.29.0) has no annual
+  workbench, no compliance-profile dialog, and no lease editor, and the packaged EXE
+  under `dist/` is v0.29.0. The screenshots correspond to this worktree's source.
+- A verifiable design system now exists. `src/taxops/ui/tokens.py` holds colour,
+  type, sizing, spacing, and radius tokens; `src/taxops/ui/style.py` composes the
+  stylesheet from them and re-exports the legacy names pages already import.
+- Buttons carry one of seven roles through a `role` dynamic property, applied by
+  `src/taxops/ui/widgets/buttons.py`, which repolishes the widget so a role assigned
+  after construction actually paints. The bare `QPushButton` rule is secondary, so
+  nothing is brand blue by default.
+- Each of the eleven navigation pages that owns a create-or-run action declares
+  exactly one primary. Settings and recurring billing are deliberately exempt until
+  their own stages. `DocumentRequestsPage` declares none because `EngagementsPage`
+  embeds two instances of it.
+- Checkbox and radio indicators are painted by the platform style again, so checked
+  state shows a real tick. Measured: any box-model property on `QCheckBox`,
+  `background-color: transparent` included, moves indicator painting into the
+  stylesheet and drops the unchecked border from 64 painted pixels to zero.
+- `src/taxops/ui/icons.py` provides a 39-role inline SVG set. Unknown roles raise
+  `UnknownIconRole`. No Qt standard pixmap remains anywhere in `src/taxops/ui`.
+- Type floor restored to the rule already in `.ai/DESIGN.md`: 14px body, 13px table
+  headers. The sheet had shipped 13px body and 12px headers.
+- Control heights land on their tokens now that box-model overhead is subtracted; a
+  32px token previously rendered a 46px button.
+- Sidebar is 220px expanded and 56px collapsed, keeps every module icon when
+  collapsed, moves labels to tooltips, uses a 32x32 quiet toggle, and marks the
+  active row with a left indicator instead of a saturated block.
+- Inventory measured over `src/taxops/ui`: 35 `QDialog` subclasses, 306
+  `QPushButton` references, 163 `QTableWidget`, 109 `QDialogButtonBox`, 47
+  `QGroupBox`, 26 `QScrollArea` across 11 files, 24 `FlowLayout` across 9 pages, and
+  101 inline `setStyleSheet` calls.
+- Stage 2 added the shared page structure: `widgets/page_shell.py` (`PageHeader`,
+  `ActionBar` with a five-action ceiling and overflow menu, `build_page_layout`),
+  `widgets/inspector.py`, and a reworked `widgets/empty_state.py`. Ceilings raise at
+  construction rather than relying on review.
+- Stage 3 rebuilt the clients page as the master-detail template: header primary,
+  action bar with search plus a 篩選 menu, six visible table columns, a `QSplitter`
+  with an inspector, contextual actions in the panel, destructive actions behind 更多,
+  notes and leases hidden until a row is selected, and chevron pagination.
+- Tests: 50 design-system contracts, 22 page-shell and inspector contracts, 76
+  clients-suite tests, and 127 UI-suite tests all pass.
+  `python -m compileall -q src tests` passes and `git diff --check` is clean.
+- **Full sequential suite: 2,733 passed, 0 failed, 1,769s (29:29).** That run began
+  with only stage 1 in place and stages 2–3 landed during it, so it does not serve as
+  the final regression; stage 16 must re-run it.
+- Coverage has **not** been re-measured this round. The last recorded gate is
+  90.1157% combined branch coverage over 2,682 tests across 112 independently
+  executed files (2026-08-01).
+- Unresolved risks: 101 inline `setStyleSheet` calls still override the role system
+  per page, so those surfaces keep their old colours until stage two migrates them;
+  the custom date picker is only partly addressed (icons and fill fixed, ±year
+  buttons and the confirm step remain); double-scroll and modal-depth defects are
+  untouched.
+- No visual, DPI, or workflow acceptance is claimed. Automated geometry assertions
+  are not a substitute for the running application at 100/125/150% scaling.
+- Next work item: stage two — shared `PageHeader`, `ActionBar` with a five-action
+  ceiling and overflow menu, `EmptyState`, and `Inspector`, replacing `FlowLayout`
+  as a toolbar across nine pages. Full plan and screen register:
+  `.ai/UI_REDESIGN_AUDIT.md`. Object ownership: `docs/product_object_model.md`.
+
 ## 2026-08-01 v0.30 manual-acceptance refresh
 
 - The current worktree adds the requested office workflows: consistent client

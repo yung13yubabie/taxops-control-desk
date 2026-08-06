@@ -31,6 +31,7 @@ from ..dialogs.annual_workspace_dialog import AnnualWorkspaceDialog
 from ..dialogs.compliance_profile_dialog import ComplianceProfileDialog
 from ..dialogs.annual_item_dialog import AnnualItemDialog
 from ..style import TEXT_MUTED
+from ..widgets.buttons import set_button_role
 from ..widgets.annual_overview_table import AnnualOverviewTable, format_twd
 from ..widgets.empty_state import EmptyState
 
@@ -95,6 +96,7 @@ class AnnualWorkbenchPage(QWidget):
         heading.addWidget(self.title_label)
         heading.addStretch(1)
         self.create_button = QPushButton("建立年度工作")
+        set_button_role(self.create_button, "primary")
         self.create_button.setObjectName("AnnualFutureAction")
         self.future_action_button = self.create_button
         self.profile_button = QPushButton("年度法遵設定")

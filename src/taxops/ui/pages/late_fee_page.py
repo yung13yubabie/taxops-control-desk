@@ -30,6 +30,7 @@ from ...i18n import error_message
 from ...i18n.status_labels import status_to_label
 from ...services.container import ServiceContainer
 from ..style import STATUS_PENDING_BG, STATUS_PENDING_FG, toolbar_icon
+from ..widgets.buttons import set_button_role
 from ..widgets.date_field import DateField
 from ...services.late_fee import (
     PERIOD_CODES,
@@ -160,6 +161,8 @@ class LateFeePage(QWidget):
         self._form_layout.addWidget(self._base_spin, 4, 1)
 
         self._calc_btn = QPushButton("開始試算")
+        # Running the calculation is what the user came here to do.
+        set_button_role(self._calc_btn, "primary")
         self._calc_btn.setIcon(toolbar_icon("trial"))
         self._calc_btn.clicked.connect(self._on_calculate)
         self._form_layout.addWidget(self._calc_btn, 4, 3)

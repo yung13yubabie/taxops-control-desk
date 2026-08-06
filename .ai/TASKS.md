@@ -1,12 +1,74 @@
 # TASKS
 
+## 2026-08-06 UI redesign
+
+Screen register and acceptance table: `.ai/UI_REDESIGN_AUDIT.md`.
+
+### DOING
+
+- [ ] Stage 2 — shared `PageHeader`, `ActionBar` (five visible actions, overflow
+  menu), `EmptyState`, `Inspector`; retire `FlowLayout` as a toolbar in nine pages.
+
+### TODO
+
+- [ ] Stage 3 — clients page as the master-detail template.
+- [ ] Stage 4 — edit-client dialog: tabbed sections, sticky footer, one scroll region.
+- [ ] Stage 5 — rebuild `DateField`: click-to-select, 300–340px popup, no confirm
+  step, no ±year buttons, in-field quiet clear. Blocks tasks, late fee, leases, and
+  fixed billing.
+- [ ] Stage 6 — annual workbench: actionable KPIs only, five core columns, inspector.
+- [ ] Stage 7 — annual compliance settings as a disclosure list.
+- [ ] Stage 8 — create annual work as three steps instead of embedded table editors.
+- [ ] Stage 9 — annual work detail as tabs; complete primary, cancel danger.
+- [ ] Stage 10 — engagements and collaboration: progressive disclosure, modal depth 1.
+- [ ] Stage 11 — tasks: list plus inspector, bulk actions behind multi-select.
+- [ ] Stage 12 — message templates and editor.
+- [ ] Stage 13 — late-fee trial: input, result, collapsed rate segments.
+- [ ] Stage 14 — fixed billing and its plan dialog.
+- [ ] Stage 15 — remaining pages, dialogs, message boxes, context menus.
+- [ ] Stage 16 — full regression and re-measured branch coverage at or above 90%.
+- [ ] Stage 17 — Windows packaging and EXE smoke.
+- [ ] Stage 18 — manual acceptance documentation.
+- [ ] Migrate 101 inline `setStyleSheet` calls to roles and tokens; 33 are in
+  `recurring_billing_page.py`.
+
+### BLOCKED
+
+- [ ] Work records (stage 15 scope) is blocked on four product questions recorded in
+  `.ai/DECISIONS.md` (2026-08-06): whether completing annual work should complete
+  linked tasks, whether workflow-run progress writes back, whether run steps and task
+  children are the same concept, and whether workflow images are formal instructions.
+  No new work-record features until answered.
+
+### DONE
+
+- [x] Stage 1 — design system: tokens, seven button roles with repolish, platform
+  checkbox indicators, 39-role inline SVG icon set that raises on unknown roles,
+  type floor at 14/13px, box-model-correct control heights, table row-height and
+  elide contract, 220/56px sidebar with retained icons.
+- [x] Confirm version ownership: the rebuild belongs on
+  `feature/v030-annual-workbench`, not `main`, and not the v0.29.0 EXE in `dist/`.
+- [x] Inventory every UI element class and inline style; record counts in
+  `.ai/UI_REDESIGN_AUDIT.md`.
+- [x] Define object responsibilities and single sources of truth in
+  `docs/product_object_model.md` and `.ai/DECISIONS.md`, from measured migrations and
+  services rather than from naming.
+- [x] Add `tests/test_ui_design_system.py`: 50 contract tests covering roles, icons,
+  checkbox rendering, type, sizing, tables, and per-page primary ceilings.
+
+### No longer applicable
+
+- The 2026-08-01 manual-acceptance task below is superseded. Its EXE predates the UI
+  rebuild, so acceptance must be redone against the stage-17 build rather than the
+  v0.30.0 ZIP recorded there.
+
 ## 2026-08-01 requested office workflow hardening
 
 ### TODO
 
-- [ ] Complete owner manual acceptance of the refreshed EXE at 100/125/150/200%
-  Windows scaling, including the six changed workflows and persistence after
-  restart.
+- [ ] ~~Complete owner manual acceptance of the refreshed EXE at 100/125/150/200%
+  Windows scaling~~ — superseded by the 2026-08-06 UI redesign; re-acceptance is
+  tracked as stage 18 above.
 
 ### DOING
 

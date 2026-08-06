@@ -1,6 +1,194 @@
 # HANDOFF
 
-## Latest Handoff Update (2026-08-01 - requested workflow refresh)
+## Latest Handoff Update (2026-08-06 - UI redesign stages 1-3)
+
+Stages 1 (design system), 2 (shared page structure), and 3 (clients page) are
+complete and verified. Stages 4-18 are open. The screen register, per-defect
+acceptance table, and stage list live in `.ai/UI_REDESIGN_AUDIT.md`; object
+ownership is in `docs/product_object_model.md`.
+
+### Stage 2 — shared page structure
+
+- `src/taxops/ui/widgets/page_shell.py`: `PageHeader` (title, optional subtitle, at
+  most one primary — a second raises `ActionBarOverflowError`), `ActionBar` (work
+  actions left, view tools right, five visible actions maximum, overflow menu that
+  does not consume a slot, `add_leading_widget` for a search field), and
+  `build_page_layout` for one consistent page margin.
+- `src/taxops/ui/widgets/inspector.py`: titled detail panel with sections, fields
+  (`multiline=True` preserves exact newlines), `add_widget` for caller-owned content,
+  contextual actions that stay hidden until `set_title`, and `clear()` back to a
+  placeholder.
+- `src/taxops/ui/widgets/empty_state.py`: title now carries the weight, styling moved
+  from inline stylesheets to `#EmptyStateTitle` / `#EmptyStateBody`. Its action stays
+  secondary because a page's header usually owns the same action as its primary.
+- Icon aliases added for the brief's unprefixed names, plus a `today` glyph: 39 roles
+  reachable under 51 names. Spacing tokens extended to 20/32 with a single
+  `PAGE_MARGIN`; font stack leads with Microsoft JhengHei UI.
+
+### Stage 3 — clients page, the master-detail template
+
+- Header owns 新增客戶 as the only primary. The action bar holds the search field with
+  quiet search and clear icons, a 篩選 menu containing both list filters, 批量匯入,
+  欄位顯示, and a quiet refresh icon: four actions against the ceiling of five.
+- Six visible table columns. `short_name`, `contact_email`, both addresses, and
+  `updated_at` became opt-in through 欄位顯示, so the core list needs no horizontal
+  scrolling.
+- A `QSplitter` places an `Inspector` beside the list. 編輯客戶 and 租約管理 are
+  contextual; 刪除客戶, 復原客戶, and 永久刪除 sit behind 更多. The menu entries click
+  the buttons, so menu use and programmatic use share one path and one enabled state —
+  which is also why every button name existing tests rely on still exists.
+- Notes and the lease table moved into the right column and are hidden until a row is
+  selected, replacing two permanently visible framed boxes. Pagination uses chevron
+  icons.
+- Deliberate compromise: the lease marker stays in the client-name cell. Its own
+  column would mean changing `TABLE_HEADERS` and `test_user_requests_v031.py`, whose
+  actual requirement is only that the list shows which clients have leases without an
+  N+1 query. The ▸ glyph is gone.
+
+### Stage 1 — design system
+
+### What changed
+
+- Established a real design system so action rank, type scale, and control height
+  are expressible instead of asserted. Plan and acceptance table:
+  `.ai/UI_REBUILD_PLAN.md`.
+- The global `QPushButton` rule is no longer brand blue. Seven roles — primary,
+  secondary, quiet, danger, dangerQuiet, icon, link — are selected by a `role`
+  dynamic property; an unset role reads as secondary.
+- Checkbox indicators returned to the platform style, so checked state draws a real
+  tick. Measured during this work: any box-model property on `QCheckBox`, including
+  `background-color: transparent`, hands indicator painting to the stylesheet and
+  drops the unchecked border from 64 painted pixels to 0. A test now guards this.
+- Replaced `QStyle.StandardPixmap` icons with a 28-role inline SVG set
+  (`ui/icons.py`). Unknown roles raise `UnknownIconRole` instead of silently
+  returning an information glyph. `PySide6.QtSvg` was already in the PyInstaller
+  spec, so packaging is unaffected.
+- Corrected three wrong icon mappings that the old table hid: `trial` resolved to
+  an information glyph, `export` to a plain arrow, `new` to a folder.
+- Type floor raised to the product rule already in `.ai/DESIGN.md` — 14px body,
+  13px table headers. The sheet had shipped 13px body, 12px headers, 12px compact
+  buttons.
+- Control heights now land on their token. Qt applies `min-height` to the content
+  rect, so padding and border are subtracted; previously a 32px token rendered a
+  46px button and icon buttons came out 34px against a 32px `setFixedSize`.
+- Sidebar: 220px expanded, 56px collapsed. Collapsing keeps every module's icon and
+  moves its label to a tooltip rather than hiding the list and leaving a 32px strip.
+  The toggle is a 32x32 quiet icon button; the active row is a left indicator plus a
+  muted fill instead of a saturated blue block.
+- Each navigation page declares exactly one primary. `registry` uses 套用至客戶主檔,
+  not either query button, because searches must never be primary. Client deletion
+  and permanent deletion carry the danger role.
+- `DocumentRequestsPage` deliberately declares no primary: `EngagementsPage` builds
+  two instances of it, and marking it primary produced three competing primaries on
+  one page. A test caught this.
+
+### Files added (stages 1-3)
+
+- `src/taxops/ui/tokens.py`, `src/taxops/ui/icons.py`,
+  `src/taxops/ui/widgets/buttons.py`, `src/taxops/ui/widgets/page_shell.py`,
+  `src/taxops/ui/widgets/inspector.py`, `tests/test_ui_design_system.py`,
+  `tests/test_ui_page_shell.py`, `.ai/UI_REDESIGN_AUDIT.md`,
+  `docs/product_object_model.md`.
+
+### Files modified (stages 1-3)
+
+- `src/taxops/ui/style.py` (rebuilt, legacy names re-exported),
+  `src/taxops/ui/main_window.py`, `src/taxops/ui/widgets/table_builder.py`,
+  `src/taxops/ui/widgets/date_field.py`, `src/taxops/ui/widgets/empty_state.py`,
+  `src/taxops/ui/pages/clients_page.py` (master-detail rebuild), ten further files
+  under `src/taxops/ui/pages/` (primary role only),
+  `tests/test_slice26_clients_search.py`, `.ai/DECISIONS.md`,
+  `.ai/CURRENT_STATE.md`, `.ai/TASKS.md`.
+
+### Verification
+
+- `python -m compileall -q src tests` passes; `git diff --check` clean.
+- **Full sequential suite: 2,733 passed, 0 failed, 1,769s (29:29)** with
+  `QT_QPA_PLATFORM=offscreen`.
+  Scope limit: the run began with only stage 1 in place and stages 2-3 landed during
+  it, so per `.ai/COMMAND_EXECUTION_RULES.md` rule 10 it is not the final regression.
+  Stage 16 must re-run it.
+- Targeted: 50 design-system contracts, 22 page-shell/inspector contracts, 76
+  clients-suite tests, 127 UI-suite tests — all passing.
+- Coverage has **not** been re-measured this round. Last recorded gate: 90.1157%
+  combined branch coverage across 112 independently executed files (2026-08-01).
+- No visual, DPI, or workflow acceptance is claimed. Those need the running app at
+  100/125/150% scaling and are not substitutable by tests.
+
+### Test command reference
+
+```powershell
+python -m compileall -q src tests
+$env:QT_QPA_PLATFORM = 'offscreen'
+python -u -m pytest -q                      # full, ~30 min, 2,733 tests
+python -m pytest tests/test_ui_design_system.py tests/test_ui_page_shell.py -q
+```
+
+Do not pipe a long pytest run through `tail`: it buffers everything until the process
+exits, so the output file stays empty and the run looks stalled. Use `python -u` and
+read the file directly.
+
+### Two test assertions were rewritten, not weakened
+
+`test_sidebar_collapsed_restored_on_window_init` and its expanded counterpart
+asserted `_nav.isHidden()` and a `"▶"` button label — the exact behaviour the
+rebuild removes. They now assert the stronger contract: the rail stays visible,
+every item keeps its icon, hidden labels remain reachable as tooltips, and the
+toggle is a sized icon button with an accessible name. A round-trip test was added.
+
+### What remains unfinished
+
+- Stages 4-18 in `.ai/UI_REDESIGN_AUDIT.md` are open. Nothing in them has been
+  started, so the worktree is in a coherent state at stage 3.
+- About 98 inline `setStyleSheet` calls under `src/taxops/ui` still override the role
+  system per page — 33 in `recurring_billing_page.py`, 8 each in
+  `document_requests_page.py` and `annual_workflow_dialog.py`. Those surfaces keep
+  their old colours until their own stage migrates them.
+- `FlowLayout` is still the toolbar in eight pages. Only the clients page has moved to
+  `PageHeader` + `ActionBar`.
+- The custom date picker is only partly addressed: its two Qt standard pixmaps became
+  SVG icons and the global role change removed the blue fill, but the ±1/5/10-year
+  buttons, the oversized popup, and the redundant confirm step remain.
+- Work records is blocked on four product questions in `.ai/DECISIONS.md`
+  (2026-08-06). No new work-record features until they are answered.
+- Nothing has been committed, pushed, tagged, or released.
+
+### Next recommended step
+
+Stage 5 — rebuild `src/taxops/ui/widgets/date_field.py`, before stage 4.
+
+It is sequenced ahead of the edit-client dialog because six or more screens depend on
+it (tasks, late-fee trial, client leases, fixed billing, annual work, engagements), so
+every screen stage after it would otherwise have to be revisited. For the same reason
+it must be done in one pass: a half-migrated shared date widget breaks several pages
+and their tests at once. Requirements are in `.ai/UI_REDESIGN_AUDIT.md` defect G14 and
+the brief's section 5.
+
+Verify it with `tests/test_date_field.py` plus every suite that touches a date input,
+then re-run the full suite.
+
+### Contracts a future change must not break
+
+- Every button name existing tests rely on still exists, including those now reached
+  only through a menu (`_delete_btn`, `_restore_btn`, `_purge_btn`) or held as filter
+  state (`_notes_only_check`, `_show_deleted_check`). Removing them breaks tests that
+  assert real user paths.
+- `_note_detail` must keep exact newlines; `test_user_requests_v031` asserts
+  `"紙本兩份\n先打電話"`.
+- Core identity columns `client_code` and `client_name` can never be hidden.
+- `toolbar_icon` must keep raising on an unknown role. A silent fallback is the defect
+  it replaced.
+- Adding a box-model property to `QCheckBox` in the stylesheet silently destroys the
+  native tick and the unchecked border. Measured, and guarded by
+  `test_stylesheet_declares_no_box_model_on_checkboxes`.
+
+### Reader order
+
+`.ai/spec-kit.md`, `.ai/CURRENT_STATE.md`, `.ai/UI_REBUILD_PLAN.md`,
+`.ai/DECISIONS.md`, `.ai/DESIGN.md`, then `src/taxops/ui/tokens.py` and
+`src/taxops/ui/style.py`.
+
+## Handoff (2026-08-01 - requested workflow refresh)
 
 - Implemented the six requested office workflows: client address sizing and
   lease visibility; annual compliance setup entry; atomic multi-client case

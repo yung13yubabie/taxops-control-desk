@@ -32,6 +32,7 @@ from ...security.image_guard import ImageGuardError, validate_image_file
 from ...services.attachments import AttachmentValidationError, UploadAttachmentInput
 from ...services.container import ServiceContainer
 from ..style import toolbar_icon
+from ..widgets.buttons import set_button_role
 from ..widgets.flow_layout import FlowLayout
 
 try:  # PySide6 ships QtPdf on the supported Windows build.
@@ -145,6 +146,7 @@ class AttachmentsPage(QWidget):
         )
 
         self._upload_btn = QPushButton("新增附件")
+        set_button_role(self._upload_btn, "primary")
         self._upload_btn.setIcon(toolbar_icon("new"))
         self._upload_btn.clicked.connect(self._on_upload)
         self._toolbar_layout.addWidget(self._upload_btn)

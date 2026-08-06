@@ -15,12 +15,12 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSizePolicy,
-    QStyle,
     QVBoxLayout,
     QWidget,
 )
 
 from ..style import DANGER_COLOR
+from .buttons import make_icon_button
 
 _log = logging.getLogger(__name__)
 
@@ -187,27 +187,25 @@ class DateField(QWidget):
         self._edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         row.addWidget(self._edit)
 
-        self._cal_btn = QPushButton()
-        self._cal_btn.setIcon(
-            QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView)
+        # Quiet icon buttons from the shared icon set. These were Qt standard
+        # pixmaps rendered as solid blue squares by the old global button style.
+        self._cal_btn = make_icon_button(
+            "nav-calendar",
+            tooltip="開啟日曆",
+            accessible_name="開啟日期選擇器",
         )
-        self._cal_btn.setFixedSize(28, 28)
         self._cal_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self._cal_btn.setAccessibleName("開啟日期選擇器")
         self._cal_btn.setShortcut(QKeySequence("Alt+Down"))
-        self._cal_btn.setToolTip("開啟日曆")
         self._cal_btn.clicked.connect(self._open_calendar)
         row.addWidget(self._cal_btn)
 
-        self._clear_btn = QPushButton()
-        self._clear_btn.setIcon(
-            QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton)
+        self._clear_btn = make_icon_button(
+            "clear",
+            tooltip="清除日期",
+            accessible_name="清除日期",
         )
-        self._clear_btn.setFixedSize(28, 28)
         self._clear_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self._clear_btn.setAccessibleName("清除日期")
         self._clear_btn.setShortcut(QKeySequence("Alt+Backspace"))
-        self._clear_btn.setToolTip("清除日期")
         self._clear_btn.clicked.connect(self.clear)
         self._clear_btn.setVisible(not required)
         row.addWidget(self._clear_btn)

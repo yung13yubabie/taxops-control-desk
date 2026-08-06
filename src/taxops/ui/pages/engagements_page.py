@@ -45,6 +45,7 @@ from ..dialogs.edit_engagement_dialog import EditEngagementDialog
 from ..dialogs.new_engagement_dialog import NewEngagementDialog
 from ..dialogs.bulk_new_engagement_dialog import BulkNewEngagementDialog
 from ..style import PRIMARY_COLOR, PRIMARY_HOVER, TEXT_MUTED, toolbar_icon
+from ..widgets.buttons import set_button_role
 from ..widgets.column_settings import ColumnSettings
 from ..widgets.empty_state import EmptyState
 from ..widgets.flow_layout import FlowLayout
@@ -181,6 +182,7 @@ class EngagementsPage(QWidget):
         self._client_combo.setMinimumWidth(260)
         filter_row.addWidget(self._client_combo)
         self._new_btn = QPushButton("新增案件")
+        set_button_role(self._new_btn, "primary")
         self._new_btn.setIcon(toolbar_icon("new"))
         self._new_btn.setEnabled(False)
         filter_row.addWidget(self._new_btn)
