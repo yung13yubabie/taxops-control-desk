@@ -1,11 +1,44 @@
 # HANDOFF
 
-## Latest Handoff Update (2026-08-06 - UI redesign stages 1-3)
+## Latest Handoff Update (2026-08-07 - v0.31.0 released, UI redesign stages 1-3)
 
 Stages 1 (design system), 2 (shared page structure), and 3 (clients page) are
-complete and verified. Stages 4-18 are open. The screen register, per-defect
-acceptance table, and stage list live in `.ai/UI_REDESIGN_AUDIT.md`; object
-ownership is in `docs/product_object_model.md`.
+complete, verified, and released as v0.31.0. Stages 4-18 are open. The screen
+register, per-defect acceptance table, and stage list live in
+`.ai/UI_REDESIGN_AUDIT.md`; object ownership is in `docs/product_object_model.md`.
+
+### Release state
+
+- Commit `aac6dce` on `feature/v030-annual-workbench`, pushed to `origin`.
+- Tag `v0.31.0` (annotated) points at `aac6dce`.
+- Release: https://github.com/yung13yubabie/taxops-control-desk/releases/tag/v0.31.0
+- Asset `TaxOpsControlDesk-v0.31.0-win64.zip`, 52,336,279 bytes, state `uploaded`,
+  SHA-256 `13D5C60C3A637947993FEADFEFCD724C189ED44722E1A09DDF33FDF0F4DCA105`.
+- Version bumped in `pyproject.toml`, `src/taxops/__init__.py`, and
+  `build_tools/windows_version_info.txt` (`filevers`/`prodvers` `(0, 31, 0, 0)`,
+  `FileVersion`/`ProductVersion` `0.31.0.0`).
+- Built in an isolated venv from `requirements-release.txt` — Python 3.11.9,
+  PySide6 6.10.2, PyInstaller 6.11.1 — where `pip check` reports no broken
+  requirements. The shared environment has seven unrelated conflicts from global dev
+  tools (pip-audit, semgrep, transformers), which is why an isolated venv is used.
+  That venv lives under the session scratchpad and will not persist; recreate it with
+  `python -m venv` plus `pip install -r requirements-release.txt`.
+- `main` was **not** updated. v0.31.0 sits on the feature branch only. `main` is still
+  v0.29.0 and lacks the entire annual workbench. Merging it is a separate decision.
+
+### Open item in README
+
+Commit `d83ee99` (GitHub web edit, 2026-08-02) removed the product description from
+the first paragraph, leaving `TaxOps Control Desk  。資料預設保存在本機 SQLite…` — two
+spaces then a full stop. The rebase preserved that line rather than overwriting it, so
+it shipped in the v0.31.0 README as-is. It reads as an accidental deletion but was left
+alone because it is an owner commit. To restore the original sentence:
+
+```powershell
+# in .worktrees/v030-annual-workbench
+# replace line 3 with:
+# TaxOps Control Desk 是面向臺灣記帳士／會計師事務所的 Windows 離線桌面工作台。資料預設保存在本機 SQLite，不需登入雲端服務；GCIS 線上補查是可選功能，不影響離線核心流程。
+```
 
 ### Stage 2 — shared page structure
 

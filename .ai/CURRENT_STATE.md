@@ -1,10 +1,18 @@
 # CURRENT_STATE
 
-## 2026-08-06 UI redesign stage one: design system (uncommitted)
+## 2026-08-07 v0.31.0 released — UI redesign stages 1-3
 
 - Worktree: `.worktrees/v030-annual-workbench` on `feature/v030-annual-workbench`,
-  synced to `origin`, HEAD `e0c7db7`. All changes are uncommitted and no commit,
-  push, tag, or release has been made. `git diff --check` is clean.
+  HEAD `aac6dce`, pushed to `origin`. Tag `v0.31.0` and its GitHub release are
+  published with `TaxOpsControlDesk-v0.31.0-win64.zip` attached (52,336,279 bytes,
+  SHA-256 `13D5C60C3A637947993FEADFEFCD724C189ED44722E1A09DDF33FDF0F4DCA105`).
+  `git diff --check` is clean.
+- `main` remains v0.29.0 and does not contain the annual workbench or this UI work.
+  v0.31.0 exists only on the feature branch; merging to `main` is an open decision.
+- Version is 0.31.0 in `pyproject.toml`, `src/taxops/__init__.py`, and the Windows
+  version resource.
+- EXE built in an isolated venv pinned by `requirements-release.txt`; that venv is in
+  session scratch and must be recreated for the next build.
 - The rebuild targets this branch, not `main`. `main` (v0.29.0) has no annual
   workbench, no compliance-profile dialog, and no lease editor, and the packaged EXE
   under `dist/` is v0.29.0. The screenshots correspond to this worktree's source.
