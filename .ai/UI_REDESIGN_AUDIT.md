@@ -283,6 +283,14 @@ Defects found by these tests during stage 2, both real and both fixed:
   ancestors are unshown. The assertion passed for the wrong reason until it was
   changed to track state explicitly.
 
+| 2026-08-08 | per-file isolated suite after stages 5, 6, 12, 13 | **118 files, 2,897 passed, 0 failed, 1,951s** |
+
+Run the suite one file per process on this machine. Three single-process attempts were
+killed at 62%, 47%, and 38% with zero failures and no error text: 7.88 GB total memory,
+under 1 GB free, and Qt widgets accumulate across a long run. Process isolation is
+already this project's documented answer — `.ai/DECISIONS.md` (2026-07-31). The python
+processes present are MCP servers, not test residue; do not kill them as cleanup.
+
 Manual acceptance not performed and not claimed: real mouse and keyboard use,
 restart persistence, and 100/125/150% Windows scaling all require the running
 application. Automated geometry assertions are not a substitute.

@@ -27,22 +27,37 @@ When dispatching worktree-isolated agents, state the baseline commit in the prom
 have the agent verify it before working. A cheap check: `date_field.py` was 323 lines
 at `1b846a7` and 325 at the pre-redesign revision.
 
-### Verification state — read this before packaging
+### Verification state
 
-- Targeted suites per stage all passed: 174, 233, 213, 120, and 150 for the width fix.
-- **Full suite, before the width fix: 1 failed, 2894 passed in 38:26.** The single
-  failure was `test_field_is_wide_enough_for_the_date_and_both_icons`, which passed
-  when its file ran alone. That run establishes the other 2894 carry no regression.
-- **Full suite, after the width fix: not completed.** Two attempts were stopped at 62%
-  and 47%, both with zero failures recorded up to that point, no error text, and no
-  identified cause. Residual python processes from the stopped runs were observed and
-  deliberately not killed, per `.ai/COMMAND_EXECUTION_RULES.md` rule 9.
-- The width fix's correctness does not rest on the full suite. `_apply_width_floor`
-  sets the minimum to `text_room + icons_room + 12` measured from the field's own
-  `fontMetrics()`, and the test asserts `minimumWidth() >= icons + text`. The
-  inequality holds for any font, so the order-dependence is removed rather than
-  masked. A test enlarging the application font 1.6x guards it.
-- **A full green suite is still required before packaging a release.** Re-run it.
+- **Full suite green: 118 files, 2,897 passed, 0 failed, 1,951s (32:31)**, run one file
+  per process. Stage files: 5 → 47 passed, 6 → 23, 12 → 38, 13 → 34.
+- Targeted suites per stage also passed: 174, 233, 213, 120, and 150 for the width fix.
+- Before the width fix, a single-process run gave 1 failed, 2894 passed —
+  `test_field_is_wide_enough_for_the_date_and_both_icons`, which passed when its file
+  ran alone. Root cause and fix are below.
+
+### Run the suite one file per process on this machine
+
+Three single-process attempts were killed at 62%, 47%, and 38% progress, each with zero
+failures recorded and no error text. Cause: **memory**. The machine has 7.88 GB total
+and under 1 GB free — three MCP servers hold the rest, and four agent worktrees were
+adding filesystem-cache pressure. Qt widgets accumulate across a long single-process
+run, so the kernel kills it, earlier each time as pressure rises. The first
+single-process run succeeded only because it predated the agent worktrees.
+
+`.ai/DECISIONS.md` (2026-07-31) already established process isolation as this project's
+answer for exactly this, for coverage evidence. Use it for plain test runs too:
+
+```powershell
+# one process per file; progress is written per line and survives an interruption
+foreach ($f in Get-ChildItem tests/test_*.py) {
+  $env:QT_QPA_PLATFORM = 'offscreen'
+  python -m pytest "tests/$($f.Name)" -q --tb=line -p no:cacheprovider
+}
+```
+
+Do not kill python processes as cleanup here — the ones running are MCP servers, not
+test residue.
 
 ### The failure was a real defect, not a flaky test
 
