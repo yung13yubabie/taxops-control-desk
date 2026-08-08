@@ -81,13 +81,29 @@ TypeScript 的模式在本專案的對應形式：
   `templates_page.py:295`、`tasks_page.py:387`、`attachments_page.py:341`
   （皆為 `int()` 解析失敗回傳 None）。
 
-## 審查優先順序
+## 審查進度
 
-由資料來源往外，因為越靠近資料來源，錯誤被轉成空值後越難分辨：
+由資料來源往外，因為越靠近資料來源，錯誤被轉成空值後越難分辨。批次劃分見
+`.ai/UX_REBUILD_SPEC.md`。
 
-1. `src/taxops/repositories/` — 資料庫存取
-2. `src/taxops/services/` — 業務邏輯，特別是 `annual_work.py`、`work_records.py`、
-   `annual_transactions.py`、`backup.py`
+### B1 · `repositories/` — 完成，零違規（2026-08-08）
+
+三處捕捉全部正確，不需修改：
+
+| 位置 | 形式 | 判定 |
+| --- | --- | --- |
+| `document_requests.py:505` | `except Exception: rollback(); raise` | 正確。交易回滾後原錯誤繼續傳播 |
+| `tax_registry.py:215` | `except BaseException: rollback(); cleanup; raise` | 正確。捕捉 `BaseException` 是刻意的——`KeyboardInterrupt` 也必須回滾 staging table |
+| `tax_registry.py:220` | 巢狀於清理中，`except Exception: _log.warning(...)`，外層仍 `raise` | 正確。清理失敗不掩蓋原始錯誤 |
+
+結論：最靠近資料庫的一層本來就守住了。違規集中在 services 與 UI 層，這也說明為何
+「錯誤偽裝成空集合」是**跨層傳遞時**產生的問題，而不是存取層的問題。
+
+### B2–B7 · 未開始
+
+1. ~~`src/taxops/repositories/`~~ — 完成
+2. `src/taxops/services/` — 業務邏輯，特別是 `annual_work.py`（21）、`work_records.py`（8，
+   已修 1）、`annual_transactions.py`（5）、`backup.py`（6）
 3. `src/taxops/ui/workers/` — 背景查詢，錯誤 signal 是否被接
 4. `src/taxops/ui/` — 顯示層；此層多數 `except Exception: pass` 是 Qt 生命週期防護
 
