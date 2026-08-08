@@ -1,5 +1,73 @@
 # HANDOFF
 
+## Latest Handoff Update (2026-08-08 - stages 5, 6, 12, 13 integrated, not released)
+
+Four stages were implemented in parallel by subagents in isolated worktrees, then
+integrated onto `feature/v030-annual-workbench`. Seven commits, `1b846a7..0e62d5e`.
+Not pushed and not packaged at the time of writing.
+
+| Stage | Commit | Result |
+| --- | --- | --- |
+| 5 DateField | `902cc48` + fix `0e62d5e` | 323 → 632 lines |
+| 12 Message templates | `94c6eb9` | 334 → 517, 369 → 572 |
+| 6 Annual workbench | `3acf6ed` | 503 → 665 |
+| 13 Late-fee trial | `31486e5` | 456 → 887 |
+
+140 new interface contract tests: 45 + 23 + 38 + 34.
+
+### Orchestration error worth not repeating
+
+All four agent worktrees were created from `d4f00e7`, a commit on `main` at v0.29.0,
+not from the redesign baseline. That base has no `tokens.py`, `icons.py`,
+`buttons.py`, `page_shell.py`, `inspector.py`, and no spec. Three agents diagnosed it
+themselves — two by comparing the line counts in their brief against the files they
+found — and merged or reset to the baseline. One did not and was told.
+
+When dispatching worktree-isolated agents, state the baseline commit in the prompt and
+have the agent verify it before working. A cheap check: `date_field.py` was 323 lines
+at `1b846a7` and 325 at the pre-redesign revision.
+
+### Verification state — read this before packaging
+
+- Targeted suites per stage all passed: 174, 233, 213, 120, and 150 for the width fix.
+- **Full suite, before the width fix: 1 failed, 2894 passed in 38:26.** The single
+  failure was `test_field_is_wide_enough_for_the_date_and_both_icons`, which passed
+  when its file ran alone. That run establishes the other 2894 carry no regression.
+- **Full suite, after the width fix: not completed.** Two attempts were stopped at 62%
+  and 47%, both with zero failures recorded up to that point, no error text, and no
+  identified cause. Residual python processes from the stopped runs were observed and
+  deliberately not killed, per `.ai/COMMAND_EXECUTION_RULES.md` rule 9.
+- The width fix's correctness does not rest on the full suite. `_apply_width_floor`
+  sets the minimum to `text_room + icons_room + 12` measured from the field's own
+  `fontMetrics()`, and the test asserts `minimumWidth() >= icons + text`. The
+  inequality holds for any font, so the order-dependence is removed rather than
+  masked. A test enlarging the application font 1.6x guards it.
+- **A full green suite is still required before packaging a release.** Re-run it.
+
+### The failure was a real defect, not a flaky test
+
+`date_field.py` hard-coded `setMinimumWidth(200)`. The same `2026-05-21` measures 136px
+at one font size and 140px at a slightly larger one, and the two in-field icons reserve
+64px. 200 was a boundary value that held at the size it was measured at. At 125% or
+150% Windows scaling the field would have clipped — the class of defect this redesign
+exists to remove. Raising the test's threshold would have shipped it.
+
+Stage 5's test measured the live font instead of asserting a fixed number, which is the
+only reason it surfaced at all.
+
+### Nine open product questions
+
+None block pushing. The annual-KPI three block further work on the annual workbench.
+All are in `.ai/DECISIONS.md`: four on work records (2026-08-06), three on annual KPI
+definitions, one on `set_date_range` semantics, one on the late-fee payable total
+(2026-08-08).
+
+### Agent worktrees
+
+`.claude/worktrees/agent-*` still exist and hold no content that is not on the feature
+branch. Verified by comparing every stage's main file and the four new test files.
+They can be removed.
+
 ## Latest Handoff Update (2026-08-07 - v0.31.0 released, UI redesign stages 1-3)
 
 Stages 1 (design system), 2 (shared page structure), and 3 (clients page) are
