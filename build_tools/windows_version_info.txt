@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(0, 31, 0, 0),
-    prodvers=(0, 31, 0, 0),
+    filevers=(0, 32, 0, 0),
+    prodvers=(0, 32, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -20,14 +20,14 @@ VSVersionInfo(
               u'FileDescription',
               u'Offline accounting and tax operations workbench'
             ),
-            StringStruct(u'FileVersion', u'0.31.0.0'),
+            StringStruct(u'FileVersion', u'0.32.0.0'),
             StringStruct(u'InternalName', u'TaxOpsControlDesk'),
             StringStruct(u'LegalCopyright', u'Copyright (c) 2026'),
             StringStruct(
               u'OriginalFilename', u'TaxOpsControlDesk.exe'
             ),
             StringStruct(u'ProductName', u'TaxOps Control Desk'),
-            StringStruct(u'ProductVersion', u'0.31.0.0')
+            StringStruct(u'ProductVersion', u'0.32.0.0')
           ]
         )
       ]
