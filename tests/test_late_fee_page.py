@@ -29,18 +29,29 @@ def test_default_year_uses_project_clock(qapp, container, monkeypatch) -> None:
 
 
 def test_parameters_use_two_column_grid(qapp, container) -> None:
-    page = LateFeePage(container)
+    """年份/期別 pair on one row; the three sequential fields stack below it.
 
-    assert isinstance(page._form_layout, QGridLayout)
-    assert page._form_layout.getItemPosition(
-        page._form_layout.indexOf(page._year_spin)
-    )[1:] == (1, 1, 1)
-    assert page._form_layout.getItemPosition(
-        page._form_layout.indexOf(page._period_combo)
-    )[1:] == (3, 1, 1)
-    assert page._form_layout.getItemPosition(
-        page._form_layout.indexOf(page._actual_payment_date)
-    )[1:] == (3, 1, 1)
+    Stage 13 moved 實際繳款日 out of column 3 and onto its own row, so the form
+    reads 法定期限 → 實際繳款日 → 申報稅額 downwards. This asserts the whole
+    order, not only the two paired cells it used to check.
+    """
+    page = LateFeePage(container)
+    layout = page._form_layout
+    assert isinstance(layout, QGridLayout)
+
+    def cell(widget):
+        return layout.getItemPosition(layout.indexOf(widget))
+
+    assert cell(page._year_spin)[1:] == (1, 1, 1)
+    assert cell(page._period_combo)[1:] == (3, 1, 1)
+    assert cell(page._last_payment_date)[1:] == (1, 1, 1)
+    assert cell(page._actual_payment_date)[1:] == (1, 1, 1)
+
+    year_row = cell(page._year_spin)[0]
+    deadline_row = cell(page._last_payment_date)[0]
+    actual_row = cell(page._actual_payment_date)[0]
+    assert year_row == cell(page._period_combo)[0]
+    assert year_row < deadline_row < actual_row
 
 
 def test_period_autofills_last_payment_date(qapp, container) -> None:
@@ -88,12 +99,27 @@ def test_schedule_display_highlights_hit_band(qapp, container) -> None:
     page._actual_payment_date.set_value("2026-03-20")  # 5 days late -> 1%
     page._refresh_schedule_display()
     assert page._schedule_table.rowCount() == 11
+
+    # Stage 13 widened the breakdown to start / end / days / rate / amount, so
+    # the rate is column 3. The whole hit row is marked, not just one cell.
+    rate_col = late_fee_page_module.RATE_COLUMN
+    assert page._schedule_table.horizontalHeaderItem(rate_col).text() == "適用滯納金率"
     highlighted = [
-        page._schedule_table.item(r, 0).text()
+        page._schedule_table.item(r, rate_col).text()
         for r in range(page._schedule_table.rowCount())
-        if page._schedule_table.item(r, 0).background().color().name() == "#fef3c7"
+        if page._schedule_table.item(r, rate_col).background().color().name()
+        == "#fef3c7"
     ]
     assert highlighted == ["1%"]
+    hit_row = next(
+        r
+        for r in range(page._schedule_table.rowCount())
+        if page._schedule_table.item(r, rate_col).text() == "1%"
+    )
+    assert all(
+        page._schedule_table.item(hit_row, c).background().color().name() == "#fef3c7"
+        for c in range(page._schedule_table.columnCount())
+    )
 
 
 def test_schedule_display_over_30_days_warns(qapp, container) -> None:
@@ -216,17 +242,25 @@ def test_calculate_failure_restores_button(
 
 
 def test_mode_toggle_clears_result_and_switches_filter_visibility(qapp, container) -> None:
+    """`_manual_check` is now the 手動輸入 radio, so returning to case mode is a
+    click on 從案件帶入 rather than unchecking a box. The stale result card is
+    cleared as well as the stale sentence, and the whole history section hides."""
     page = LateFeePage(container)
     page._result_label.setText("stale result")
+    page._result_penalty_value.setText("NT$ 999")
     page._table.setRowCount(1)
 
     page._manual_check.setChecked(True)
     assert page._filter_widget.isHidden()
+    assert page._history_block.isHidden()
     assert page._result_label.text() == ""
+    assert page._result_penalty_value.text() == "—"
     assert page._table.rowCount() == 0
 
-    page._manual_check.setChecked(False)
+    page._source_case_radio.setChecked(True)
+    assert not page._manual_check.isChecked()
     assert not page._filter_widget.isHidden()
+    assert not page._history_block.isHidden()
 
 
 def test_load_failures_are_visible_and_clear_stale_history(
@@ -278,16 +312,31 @@ def test_calculate_missing_inputs_and_request_show_exact_guidance(
         lambda _parent, _title, body: warnings.append(body),
     )
 
+    # Both messages now name the field and the control as the page labels them:
+    # 法定期限 rather than 最後繳款日, and 手動輸入 rather than 手動試算模式.
     page._calc_btn.click()
-    assert warnings[-1] == "請輸入最後繳款日與實際繳款日"
+    assert warnings[-1] == "請輸入法定期限與實際繳款日"
+    deadline_row = page._form_layout.getItemPosition(
+        page._form_layout.indexOf(page._last_payment_date)
+    )[0]
+    assert (
+        page._form_layout.itemAtPosition(deadline_row, 0).widget().text() == "法定期限"
+    )
+    assert page._unlock_check.text() == "自行輸入法定期限"
+    assert page._result_penalty_value.text() == "—"  # nothing was calculated
 
     page._last_payment_date.set_value("2026-03-15")
     page._actual_payment_date.set_value("2026-03-20")
     page._calc_btn.click()
-    assert warnings[-1] == "請先選擇索件批次，或切換為手動試算模式"
+    assert warnings[-1] == "請先選擇索件批次，或切換為手動輸入"
+    assert page._source_manual_radio.text() == "手動輸入"
+    assert page._result_penalty_value.text() == "—"
 
 
 def test_manual_calculation_real_button_renders_exact_result(qapp, container) -> None:
+    """The result is four labelled values plus the not-stored note, replacing the
+    single run-on sentence. Every number the sentence carried is still asserted,
+    and 應繳總額 — which the sentence never showed — is asserted too."""
     page = LateFeePage(container)
     page._manual_check.setChecked(True)
     page._last_payment_date.set_value("2026-03-15")
@@ -296,10 +345,11 @@ def test_manual_calculation_real_button_renders_exact_result(qapp, container) ->
 
     page._calc_btn.click()
 
-    assert page._result_label.text() == (
-        "試算結果（未儲存）：滯納金率 1.0%，滯納金 100.00 元"
-        "（稅額 10,000.00 元，逾期 5 天）"
-    )
+    assert page._result_days_value.text() == "5 天"
+    assert page._result_rate_value.text() == "1%"
+    assert page._result_penalty_value.text() == "NT$ 100"
+    assert page._result_total_value.text() == "NT$ 10,100"
+    assert page._result_label.text() == "手動試算結果未儲存。"
 
 
 def test_manual_calculation_domain_failure_is_visible(

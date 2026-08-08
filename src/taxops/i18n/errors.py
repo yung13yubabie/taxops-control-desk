@@ -180,8 +180,10 @@ ERROR_MESSAGES: dict[str, str] = dict(
             "folder_bookmark.category.too_long": "分類名稱過長（最多 50 字）",
             "folder_bookmark.not_found": "找不到指定資料夾書籤，可能已被刪除",
             "folder_bookmark.open.failed": "開啟資料夾失敗，請確認路徑是否仍存在",
-            "late_fee.date.required_pair": "最後繳款日與實際繳款日必須同時提供，或同時不填",
-            "late_fee.date.range_invalid": "實際繳款日不可早於最後繳款日，請確認日期輸入",
+            # 法定期限, matching the field label on the late-fee page. A validation
+            # message must name a field the user can see on screen.
+            "late_fee.date.required_pair": "法定期限與實際繳款日必須同時提供，或同時不填",
+            "late_fee.date.range_invalid": "實際繳款日不可早於法定期限，請確認日期輸入",
             "late_fee.negative_overdue_days": "逾期天數不可為負數",
             "late_fee.negative_base_amount": "稅額須為正數",
             "late_fee.date.invalid": "日期格式不正確，請使用有效日期",

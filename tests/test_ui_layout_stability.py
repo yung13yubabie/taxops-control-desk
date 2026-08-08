@@ -142,17 +142,44 @@ def test_attachments_toolbar_wraps_at_compact_width(container):
 
 @pytest.mark.usefixtures("qapp")
 @pytest.mark.parametrize("height", [614, 720])
-def test_late_fee_content_remains_reachable_without_collapsing_tables(
-    container, height
-):
+def test_late_fee_result_is_reachable_and_tables_earn_their_space(container, height):
+    """Stage 13 replaced the "never collapse the tables" guard.
+
+    The old assertions only proved two tables were tall, which they were even
+    while empty — that was the defect. What matters is that the result the user
+    came for is on the first screen, that neither table occupies space before it
+    has rows, and that expanding the breakdown still gives it real height inside
+    a single scroll region.
+    """
     page = LateFeePage(container)
     page.resize(853, height)
     page.show()
     QApplication.processEvents()
 
-    assert page._scroll.verticalScrollBar().maximum() > 0
+    # Nothing to show yet, so neither grid is on screen.
+    assert page._schedule_body.isHidden()
+    assert page._table.isHidden()
+    assert not page._history_empty.isHidden()
+
+    # The inputs, the primary action and the result all fit without scrolling.
+    for widget in (page._calc_btn, page._result_total_value, page._base_spin):
+        assert not _visible_child_overflows_page(widget, page), widget
+    assert (
+        page._scroll.horizontalScrollBarPolicy()
+        == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    )
+    assert page._scroll_body.width() <= page._scroll.viewport().width()
+
+    # Expanding the breakdown gives it real height, and the page still scrolls.
+    page._year_spin.setValue(2026)
+    page._period_combo.setCurrentIndex(page._period_combo.findData("1-2"))
+    page._schedule_toggle.setChecked(True)
+    QApplication.processEvents()
+
+    assert not page._schedule_body.isHidden()
     assert page._schedule_table.height() >= 140
-    assert page._table.height() >= 140
+    assert page._schedule_table.verticalScrollBar().maximum() == 0
+    assert page._scroll.verticalScrollBar().maximum() > 0
 
 
 @pytest.mark.usefixtures("qapp")
