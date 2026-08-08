@@ -1,6 +1,94 @@
 # HANDOFF
 
-## Latest Handoff Update (2026-08-08 - stages 5, 6, 12, 13 integrated, not released)
+## Latest Handoff Update (2026-08-08 late - v0.32.0 test build, UX rebuild spec, batch B1)
+
+接手起點：`feature/v030-annual-workbench`，HEAD `cdfe2e4`，已推送。工作樹乾淨。
+
+先讀這三份，順序如列：
+
+1. `.ai/UX_REBUILD_SPEC.md` — 本輪的規格：三個頁面母版、QueryState 狀態模型、密度 token、
+   四個畫面範圍、No Silent Failure 的 B1–B7 分批表。
+2. `docs/no_silent_failure.md` — 錯誤與空狀態的判準，含實測數據與 B1 結果。
+3. `.ai/DECISIONS.md` — 九個待確認的產品問題，其中三個會阻擋年度工作台。
+
+### 這一輪完成的
+
+- **v0.32.0 測試建置已交付**，未 tag、未 release。ZIP 在
+  `dist/TaxOpsControlDesk-v0.32.0-win64.zip`，52,364,319 bytes，SHA-256
+  `58D3A5040B9D4B9280A8A0E5EB24E1B75F450AF0C37AD984590453D65814091F`。
+  檢查清單 `docs/v0.32.0_test_checklist.md`。EXE smoke 通過；視覺與 DPI 未驗收。
+  **owner 尚未回報測試結果。**
+- **`docs/no_silent_failure.md`** — invariant 是「Empty is a valid business state,
+  Error is a system state」。記錄實測：246 處 `except Exception`、59 檔案、資料層約 60。
+  原始需求用 TypeScript 語法寫（`.catch(() => [])`、`?? []`），本專案是 Python，那些字串
+  搜尋為零——規範裡列出 Python 對應形式，避免下一個人搜完得出「乾淨」的結論。
+- **第一個確認違規已修**：`services/work_records.py` 的 `_load_context_snapshot` 用同一個
+  `{}` 表示三種情況。詳見 commit `1a0d0a0`，後果與測試都在那裡。
+- **`.ai/UX_REBUILD_SPEC.md`** — 三個母版而非四個（Record Detail 只有一個使用者，抽出來
+  會是 shallow module）；QueryState 讓六種狀態成為一個值，同時是測試 seam。
+- **批次 B1（`repositories/`）完成，零違規。** 三處都是 rollback-then-reraise 或不掩蓋原
+  錯誤的清理。結論寫在規範裡：最靠近資料庫的一層本來就守住了，違規是跨層翻譯的問題。
+
+### 下一步：B2
+
+`services/annual_work.py`，21 處 `except Exception`，是最大的單檔批次。
+
+流程（`docs/no_silent_failure.md` 的三題判準）：
+
+1. 這個「空」是業務上真實可能的答案嗎？
+2. 呼叫端能區分「沒有」與「讀不到」嗎？
+3. 使用者看得到失敗嗎？
+
+三題都過 → 合法的 optional value，加一行註解說明為何合法，不改行為。
+任一題不過 → 轉 typed error，在 `i18n/errors.py` 補人類可讀訊息，並寫測試。
+
+測試斷言**後果**而非回傳值形狀。`tests/test_no_silent_failure.py` 有範例：損壞的
+snapshot 必須讓被引用的圖片留在磁碟上，而不只是「它會 raise」。
+
+B2 單獨一輪，不與畫面實作混批——否則測試失敗時分不清來源。
+
+### 四個畫面
+
+owner 已決定**跳過 HTML 原型直接實作**。範圍與自查七問在 spec 裡。建議順序：客戶管理
+（List–Detail 母版的第一個實作）→ 年度工作檯 → 年度工作明細 → 協作管理。
+
+協作管理要先評估合併為年度工作明細的「案件」tab，而非另開視窗。
+
+### 測試必須 per-file 程序隔離
+
+本機 7.88 GB、可用不到 1.5 GB，三個 MCP server 佔著。單一程序跑 2,897 個 Qt 測試會 OOM
+被中止——實測三次，停在 62%、47%、38%，零失敗、無錯誤訊息。逐檔獨立程序可跑完，實測
+118 檔案 2,897 passed、0 failed、1,951 秒。
+
+```powershell
+$env:QT_QPA_PLATFORM = 'offscreen'
+foreach ($f in Get-ChildItem tests/test_*.py) {
+  python -m pytest "tests/$($f.Name)" -q --tb=line -p no:cacheprovider
+}
+```
+
+機器上的 python 程序是 MCP server，不是測試殘留，不要當清理目標。
+
+### 不可破壞的契約
+
+- 既有測試依賴的屬性名全部保留，包含只能從選單觸達的（`_delete_btn`、`_restore_btn`、
+  `_purge_btn`）與作為篩選狀態的（`_notes_only_check`、`_show_deleted_check`）。
+- `DateField` 公開 API 凍結：`value_changed`、`value()`、`validated_value()`、
+  `raw_text()`、`set_value()`、`set_error()`、`clear()`、`set_date_range()`。
+- 共用 widget 只增不改：`page_shell.py`、`inspector.py`、`buttons.py`、`tokens.py`、
+  `icons.py`、`empty_state.py`、`table_builder.py`。
+- `toolbar_icon` 對未知 role 必須 raise。
+- `QCheckBox` 的 QSS 不得加任何 box-model 屬性，否則原生勾號與未勾選邊框會靜默消失
+  （實測：64 個像素歸零）。
+- 業務邏輯、資料庫語意、稽核流程、權限規則、法定計算不變。
+
+### README 有一行待你決定
+
+`d83ee99`（owner 的 GitHub 網頁編輯）把第一段產品描述刪成
+`TaxOps Control Desk  。資料預設...`。rebase 保留了 owner 的版本，未覆蓋。完整句子在
+先前的 handoff 條目裡，要修的話一行替換即可。
+
+## Handoff (2026-08-08 - stages 5, 6, 12, 13 integrated, not released)
 
 Four stages were implemented in parallel by subagents in isolated worktrees, then
 integrated onto `feature/v030-annual-workbench`. Seven commits, `1b846a7..0e62d5e`.
