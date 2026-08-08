@@ -94,7 +94,7 @@ imply that finishing a task or a workflow run completes it.
 | G11 | Modal canyon | `annual_workflow_dialog.py`, `client_lease_dialog.py` | Tabs or inline sub-pages; depth ≤ 1 | pending stages 6–10 | todo |
 | G12 | 101 inline `setStyleSheet` override the role system | 33 in `recurring_billing_page.py`, 8 each in `document_requests_page.py` and `annual_workflow_dialog.py` | Migrate to roles and tokens per page | pending stage 2 onward | todo |
 | G13 | Empty state shown together with an empty framed table | `widgets/empty_state.py` and pages | EmptyState replaces the table, single CTA | pending per-page stages | todo |
-| G14 | Custom date picker with ±1/5/10-year buttons and a confirm step | `ui/widgets/date_field.py` (325 lines) | Rebuild: click-to-select, 300–340px popup, in-field quiet clear | icons replaced; full rebuild pending stage 5 | partial |
+| G14 | Custom date picker with ±1/5/10-year buttons and a confirm step | `ui/widgets/date_field.py` | Rebuilt: click-to-select, 320px popup, in-field quiet icons, segment stepping on Up/Down, no confirm step | `tests/test_ui_stage_5_date_field.py` — 45 passed | done |
 
 Correction to the brief: `toolbar_icon` roles `upload` and `paste` are not called
 anywhere, so nothing was silently falling back at audit time. The real defects were
@@ -160,7 +160,23 @@ assigned from business role. Frequency is the expected office usage rate.
    which clients have leases without an N+1 query. The ▸ glyph was removed; lease
    detail lives in the inspector.
 4. Edit-client dialog — tabbed sections.
-5. DateField rebuild (blocks tasks, late fee, leases, fixed billing).
+5. **DateField rebuild — done** (commit `902cc48`). The ±year jump bar and the confirm
+   button are gone; both icons moved inside the line edit; Up/Down step the segment
+   under the cursor through `QDate.addYears/addMonths/addDays`, so 2026-01-31 +1 month
+   lands on 2026-02-28. Popup fixed at 320px, measured 320x226 against a previous
+   surface that stacked a jump bar and a button row above the calendar. Placement
+   extracted to a pure `_popup_position` that resolves the screen under the anchor,
+   flips above when there is no room below, and clamps all four edges — the old code
+   clamped two edges against the primary screen. Error text moved from a hard-coded
+   11px to `tokens.FONT_ERROR`. One parser (`_parse_iso`) now serves `value`,
+   `validated_value`, `set_value`, and stepping; previously `set_value` was lenient
+   and `value()` strict. `QCalendarWidget` internals were deliberately left unstyled,
+   citing the checkbox indicator case in the `loud` protocol.
+
+   **Latent bug found and fixed:** `_CalendarPopup.__init__` returned early whenever a
+   date was pre-filled, so `activated.connect` never ran — Enter and double-click were
+   dead on every date field that already held a value, across six screens. No test
+   covered it.
 6. Annual workbench.
 7. Annual compliance settings.
 8. Create annual work — three steps.
