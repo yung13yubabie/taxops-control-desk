@@ -226,7 +226,28 @@ assigned from business role. Frequency is the expected office usage rate.
     A checkable `QGroupBox` was rejected for the disclosures because Qt auto-disables its
     children, which would have silently undone a deliberately disabled combo — the same
     class of quiet side effect the `loud` protocol exists to catch.
-13. Late-fee trial.
+13. **Late-fee trial — done** (commit `31486e5`). The page's information order was
+    inverted: every input crammed at the top, then two always-visible tables, with the
+    calculated result given no prominence. Body order is now source, inputs, action,
+    result, collapsed rate bands, history. Data source became an explicit radio pair with
+    the not-stored caveat beside it; case and batch selectors and the history section
+    appear only in case mode; switching to manual keeps 法定期限, 實際繳款日, and 申報稅額.
+    `NT$` became a separate label rather than part of the editable string. The result is a
+    four-value card that retires itself when an input changes, so a figure never outlives
+    the inputs that produced it. Rate bands sit behind a quiet toggle and are absent when
+    empty; history shows an empty state instead of an empty grid. Both tables size to
+    content with internal scrollbars off, making the page the single scroll region — the
+    double-scroll defect recorded against this file. Both inline stylesheets removed, with
+    a test asserting the string is absent from the module. Statutory arithmetic untouched;
+    all 50 calculation tests pass unchanged.
+
+    Also fixed a user-visible inconsistency the stage surfaced but could not reach: the
+    page labels the field 法定期限 while two i18n strings still said 最後繳款日, so a
+    validation failure named a field absent from the screen. `i18n/errors.py` was outside
+    every stage's file list, so the integrator made that change.
+
+    One derived value is recorded as needing clarification — 應繳總額 is
+    `申報稅額 + 滯納金`, which no service defines. See `.ai/DECISIONS.md` (2026-08-08).
 14. Fixed billing and its plan dialog.
 15. Remaining pages, dialogs, message boxes, context menus.
 16. Full regression and coverage.

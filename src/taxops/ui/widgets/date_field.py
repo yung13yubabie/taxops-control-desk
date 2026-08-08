@@ -380,6 +380,13 @@ class DateField(QWidget):
         set_date_range(min, max)
     """
 
+    # Floor for the field width when the font is small. The real floor is derived
+    # from the font in _apply_width_floor; this is only the lower bound.
+    _MIN_WIDTH_FLOOR = 200
+    _MAX_WIDTH_FLOOR = 360
+    # Line-edit frame plus the text cursor's own room.
+    _FRAME_ALLOWANCE = 12
+
     class InvalidInput(Exception):
         """Raised by validated_value() when raw_text is non-empty but not a valid ISO date."""
 
@@ -395,9 +402,6 @@ class DateField(QWidget):
         self._required = required
         self._min_date: str | None = None
         self._max_date: str | None = None
-        # Wide enough for ten glyphs plus both in-field icons at every scaling.
-        self.setMinimumWidth(200)
-        self.setMaximumWidth(360)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         main = QVBoxLayout(self)
@@ -429,6 +433,7 @@ class DateField(QWidget):
         self._cal_btn.clicked.connect(self._open_calendar)
 
         self._edit.set_trailing_buttons(self._clear_btn, self._cal_btn)
+        self._apply_width_floor()
         if required:
             self._clear_btn.setVisible(False)
             self._edit.layout_trailing()
@@ -450,6 +455,27 @@ class DateField(QWidget):
         self._edit.step_requested.connect(self._step)
 
     # ── public API ────────────────────────────────────────────────────────
+
+    def _apply_width_floor(self) -> None:
+        """Size the field from its own metrics so text and icons never collide.
+
+        A fixed 200px floor was a boundary value, not a guarantee: the same ten
+        glyphs measure 136px at one font size and 140px at a slightly larger one,
+        and both in-field icons reserve 64px more. The field clipped at the larger
+        size while passing at the smaller. Deriving the floor from the live font
+        keeps the guarantee at 100%, 125%, and 150% scaling instead of holding only
+        for the size it happened to be measured at.
+
+        Both icons are counted even when the clear icon is hidden, so a required
+        field and an optional one keep the same footprint.
+        """
+        text_room = self._edit.fontMetrics().horizontalAdvance(_PLACEHOLDER)
+        icons_room = (
+            self._cal_btn.width() + self._clear_btn.width() + _ICON_GAP * 3
+        )
+        needed = text_room + icons_room + self._FRAME_ALLOWANCE
+        self.setMinimumWidth(max(self._MIN_WIDTH_FLOOR, needed))
+        self.setMaximumWidth(max(self._MAX_WIDTH_FLOOR, needed + 40))
 
     def value(self) -> str | None:
         """Return normalized ISO string, or None if empty OR invalid (silent)."""

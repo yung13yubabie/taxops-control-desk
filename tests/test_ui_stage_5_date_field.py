@@ -20,6 +20,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import QDate, QPoint, QRect, QSize, Qt
+from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -225,6 +226,43 @@ def test_field_is_wide_enough_for_the_date_and_both_icons(
     icons_width = field._cal_btn.width() + field._clear_btn.width()
     text_width = field._edit.fontMetrics().horizontalAdvance("2026-05-21")
     assert field.minimumWidth() >= icons_width + text_width
+
+
+def test_field_width_floor_follows_the_font(qapp: QApplication) -> None:
+    """The floor is derived from the live font, not a fixed number.
+
+    Regression guard for an order-dependent failure: a hard-coded 200px floor held
+    while the same ten glyphs measured 136px, and clipped once they measured 140px
+    under a larger font. The field passed alone and failed inside the full suite.
+    A derived floor holds at any scaling, which is what 125% and 150% need.
+
+    The global font is restored in `finally` so this test cannot become the next
+    suite's pollution source.
+    """
+    original = QFont(qapp.font())
+    try:
+        enlarged = QFont(original)
+        enlarged.setPointSizeF(original.pointSizeF() * 1.6)
+        qapp.setFont(enlarged)
+
+        field = DateField(required=False)
+        icons_width = field._cal_btn.width() + field._clear_btn.width()
+        text_width = field._edit.fontMetrics().horizontalAdvance("2026-05-21")
+        assert field.minimumWidth() >= icons_width + text_width
+        # The maximum must not sit below the minimum, or Qt silently clamps it.
+        assert field.maximumWidth() >= field.minimumWidth()
+    finally:
+        qapp.setFont(original)
+
+
+def test_required_and_optional_fields_share_a_width_floor(
+    qapp: QApplication,
+) -> None:
+    """Both icons are counted even when the clear icon is hidden, so a required
+    field does not sit narrower than the optional one beside it."""
+    assert DateField(required=True).minimumWidth() == DateField(
+        required=False
+    ).minimumWidth()
 
 
 # ---------------------------------------------------------------------------
