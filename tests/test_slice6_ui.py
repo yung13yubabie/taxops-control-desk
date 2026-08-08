@@ -344,8 +344,20 @@ def test_template_page_load_failure_clears_stale_rows_and_shows_error(
 
 
 def test_template_edit_missing_target_warns_and_refreshes(page, container, monkeypatch):
+    # Row 0 is a seeded built-in template, whose 編輯模板 is now disabled because the
+    # service refuses to update it. Select a custom row so the test drives the edit
+    # path it is about, and assert the button really was reachable before clicking.
+    created = container.templates.create_template(
+        CreateTemplateInput(name="編輯目標消失", body="hi")
+    )
+    page._refresh()
+    for row in range(page._table.rowCount()):
+        if page._table.item(row, 0).text() == str(created.id):
+            page._table.selectRow(row)
+            break
+    assert page._edit_btn.isEnabled()
+
     warnings: list[str] = []
-    page._table.selectRow(0)
     monkeypatch.setattr(
         container.templates,
         "get_template",
@@ -360,6 +372,7 @@ def test_template_edit_missing_target_warns_and_refreshes(page, container, monke
 
     assert len(warnings) == 1
     assert warnings[0].strip()
+    assert "stale id" not in warnings[0]
 
 
 @pytest.mark.parametrize("operation,unexpected", [("delete", False), ("delete", True), ("trial", False), ("trial", True)])
