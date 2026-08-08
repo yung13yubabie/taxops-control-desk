@@ -73,8 +73,13 @@ def test_apply_unpaid_tax_filter_shows_exact_chinese_row_and_money(
         Qt.MouseButton.LeftButton,
         pos=page.overview_table.visualItemRect(cell).center(),
     )
-    assert "青山精密 2026 年營所稅結算申報" in page.detail_label.text()
-    assert "未繳稅：NT$ 22,000" in page.detail_label.text()
+    # The selected row is presented as named fields in the inspector rather than as
+    # one paragraph of plain text, so each value is asserted by the name it carries.
+    assert page.inspector.title_label.text() == "青山精密 2026 年營所稅結算申報"
+    fields = page.inspector.field_values()
+    assert fields["未繳稅"] == "NT$ 22,000"
+    assert fields["客戶"] == "青山精密工業股份有限公司（TW-ALPINE-001）"
+    assert fields["稅款狀態"] == "稅款未確認"
     assert all(
         page.overview_table.item(0, column).toolTip()
         == page.overview_table.item(0, column).text()
@@ -267,7 +272,12 @@ def test_empty_state_and_processing_feedback_are_visible(
     qtbot.addWidget(page)
     page.show()
     assert page.overview_table.rowCount() == 0
-    assert page.detail_label.text() == "目前沒有符合篩選條件的年度工作。"
+    # The empty state replaces the master-detail body instead of explaining the
+    # absence in a detail box below an empty framed table.
+    assert page.empty_state.isVisibleTo(page)
+    assert not page.splitter.isVisibleTo(page)
+    assert page.empty_state.title_label.text() == "目前沒有符合篩選條件的年度工作"
+    assert page.inspector.is_showing_placeholder()
 
     real_search = getattr(container, "annual_work").search_overview
 
@@ -302,8 +312,11 @@ def test_unknown_status_uses_canonical_label_logs_safely_and_never_leaks_raw(
     assert displayed == UNKNOWN_STATUS_TEXT
     page.overview_table.selectRow(0)
     QApplication.processEvents()
-    assert UNKNOWN_STATUS_TEXT in page.detail_label.text()
-    assert raw not in page.detail_label.text()
+    # Named field, and no inspector value anywhere carries the raw code.
+    fields = page.inspector.field_values()
+    assert fields["稅款狀態"] == UNKNOWN_STATUS_TEXT
+    assert all(raw not in value for value in fields.values())
+    assert all("private-secret" not in value for value in fields.values())
     assert "future" not in displayed
     log = conn.execute(
         "SELECT message, detail_json FROM system_logs ORDER BY id DESC LIMIT 1"
@@ -431,19 +444,30 @@ def test_create_annual_work_is_enabled_and_opens_real_dialog(
     qtbot.mouseClick(page.create_button, Qt.MouseButton.LeftButton)
     assert opened == [(container, None, None, page)]
     assert refresh_spy.call_count == 0
-    enabled_text = {
+    labelled_enabled = {
         button.text()
         for button in page.findChildren(QPushButton)
-        if button.isEnabled()
+        if button.isEnabled() and button.text()
     }
-    assert enabled_text == {
+    assert labelled_enabled == {
         "建立年度工作",
         "年度法遵設定",
+        "建立第一筆年度工作",
         "開啟明細",
         "套用",
         "清除",
-        "重新整理",
     }
+    # 開啟明細 still exists and is still enabled, but it is contextual now: without a
+    # selected row it is not on screen at all, so it cannot read as a dead control.
+    assert not page.open_detail_button.isVisibleTo(page)
+    assert page.inspector.is_showing_placeholder()
+    # Icon-only controls carry an accessible name in place of a label.
+    icon_only_enabled = {
+        button.accessibleName()
+        for button in page.findChildren(QPushButton)
+        if button.isEnabled() and not button.text()
+    }
+    assert icon_only_enabled == {"重新整理"}
 
 
 def test_accepted_create_dialog_refreshes_overview_once(
@@ -579,7 +603,11 @@ def test_sqlite_blob_status_uses_unknown_label_and_bounded_safe_log(
     assert detail["dimension"] == "tax_status"
     assert isinstance(detail["raw_code"], str)
     assert len(detail["raw_code"]) <= 120
-    assert "private" not in page.detail_label.text()
+    page.overview_table.selectRow(0)
+    QApplication.processEvents()
+    fields = page.inspector.field_values()
+    assert fields["稅款狀態"] == UNKNOWN_STATUS_TEXT
+    assert all("private" not in value for value in fields.values())
 
 
 def test_non_string_and_bidi_statuses_are_unknown_and_control_free_in_log(
@@ -656,8 +684,15 @@ def test_paginated_table_and_scrollbar_are_reachable_at_900_by_540(
 
     assert page.overview_table.isVisibleTo(page)
     assert page.overview_table.viewport().isVisibleTo(page)
-    assert page.overview_table.horizontalScrollBar().isVisibleTo(page.overview_table)
-    assert page.overview_table.horizontalScrollBar().geometry().height() > 0
+    # Five core columns stretch to the viewport, so there is nothing to scroll
+    # sideways to — the defect this assertion used to accommodate is gone. Checked
+    # at the old 900x540 and at the 1366x768 target.
+    assert page.overview_table.horizontalScrollBar().maximum() == 0
+    page.resize(1366, 768)
+    QApplication.processEvents()
+    assert page.overview_table.horizontalScrollBar().maximum() == 0
+    page.resize(900, 540)
+    QApplication.processEvents()
     assert page.next_button.isVisibleTo(page) and page.next_button.isEnabled()
     assert page.previous_button.isVisibleTo(page) and not page.previous_button.isEnabled()
 
