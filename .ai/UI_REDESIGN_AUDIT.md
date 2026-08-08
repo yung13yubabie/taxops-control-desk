@@ -177,13 +177,55 @@ assigned from business role. Frequency is the expected office usage rate.
    date was pre-filled, so `activated.connect` never ran — Enter and double-click were
    dead on every date field that already held a value, across six screens. No test
    covered it.
-6. Annual workbench.
+6. **Annual workbench — done** (commit `3acf6ed`). Rebuilt on the clients-page
+   master-detail template. The eight KPI tiles became six actionable metrics that render
+   only when non-zero; all-zero shows one sentence instead of eight empty boxes. 工作數
+   and 客戶數 moved from tiles into the result line. Five core columns with 客戶 and 標題
+   stretching, so `horizontalScrollBar().maximum()` is 0 at both 1366×768 and 900×540 —
+   the other eight columns are hidden, not removed, so every cell stays populated. The
+   `detail_label` text blob is gone; an `Inspector` presents 基本資訊 / 各項狀態 /
+   帳款摘要 / 例外與備註 as named fields, and 開啟明細 is registered through
+   `inspector.add_action` so it does not exist on screen until a row is selected. Year,
+   search, work type, and risk collapsed into one filter bar, retiring the 篩選條件 group
+   box. Failures now render through the `ErrorText` role instead of the same muted grey
+   as success. Inline stylesheets 5 → 2. Non-zero uses `!= 0`, so a negative balance
+   surfaces rather than vanishing.
+
+   Six existing assertions were rewritten, each asserting more than before — most
+   notably the horizontal-scrollbar test, which asserted the scrollbar was *reachable*
+   at 900×540 and now asserts `maximum() == 0` at two sizes, i.e. that the defect is
+   gone rather than that its workaround works.
+
+   Three KPI definitions from the original sketch were **not** implemented because they
+   do not exist in the data layer and defining them is a product decision — recorded in
+   `.ai/DECISIONS.md` (2026-08-08).
 7. Annual compliance settings.
 8. Create annual work — three steps.
 9. Annual work detail — tabs.
 10. Engagements and collaboration — progressive disclosure.
 11. Tasks.
-12. Message templates and editor.
+12. **Message templates and editor — done** (commit `94c6eb9`). The list-plus-preview
+    shape was already right and was kept. 新增模板 became the header's only primary;
+    編輯模板 and 試用模板 became inspector actions that exist only while a row is selected;
+    刪除模板 moved behind an overflow menu. 重新整理 became a quiet icon plus
+    `refresh_context()` on page entry. With no selection the inspector explains what
+    selecting will show, replacing a large empty `QTextEdit`. Two visible columns; the
+    built-in flag became a sentence explaining that the template cannot be edited or
+    deleted, carried as the disabled buttons' tooltip, instead of a bare 是 in a narrow
+    column. In the editor the field-source essay and the real-data preview each moved
+    into a collapsed disclosure below the editor, the field list gained categories and
+    search, and the inserted form is shown explicitly from a single `insertion_text()`
+    definition. One vertical scroll region.
+
+    Three silent failures made loud: `_type_label()` leaked the raw database value for an
+    unmapped template type; a variable whose source had no category vanished from the
+    list; a bare `except Exception: tmpl = None` swallowed load failures. Also found two
+    object names — `ErrorState` and `SectionLabel` — matching no QSS rule anywhere, so
+    those styles had never applied.
+
+    A checkable `QGroupBox` was rejected for the disclosures because Qt auto-disables its
+    children, which would have silently undone a deliberately disabled combo — the same
+    class of quiet side effect the `loud` protocol exists to catch.
 13. Late-fee trial.
 14. Fixed billing and its plan dialog.
 15. Remaining pages, dialogs, message boxes, context menus.

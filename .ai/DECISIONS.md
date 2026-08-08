@@ -1,5 +1,45 @@
 # DECISIONS
 
+## 2026-08-08 - 年度工作台 KPI 只顯示現有可算的風險指標
+
+### 決策
+
+年度工作台的 KPI 採用 `AnnualOverviewMetrics` 中六個可行動成員（異常數、缺件風險數、
+收款短缺、未繳稅、未收服務費、超收筆數），且只在數值非零時顯示。全部為零時顯示
+「目前沒有需要處理的年度工作風險。」
+
+工作數與客戶數不再是 KPI 方塊，移到結果列。
+
+核心表格第五欄採「工作類型」，不採「風險」。
+
+### 理由
+
+原始設計草稿列出「逾期 / 七日內到期 / 待申報 / 待收款」四個 KPI，但這四個在目前的資料層
+**都不存在可用的聚合**：
+
+- `list_overdue` 只服務案件與待辦，`AnnualOverviewMetrics` 沒有任何日期衍生欄位。
+- 從已載入的頁面推算會在篩選結果超過 100 筆時靜默算錯。
+- 逐列風險旗標未出現在 `AnnualWorkOverviewRow`，權威定義在 SQL 函式
+  `annual_exact_balance_risk`。在 UI 重算等於讓「風險」有第二個定義。
+
+非零判斷使用 `!= 0` 而非 `> 0`，負數餘額仍會浮現，不因號誤而消失。
+
+### 影響
+
+以下屬狀態語意與「儲存或衍生」的問題，不由實作端補齊：
+
+- `[NEEDS CLARIFICATION]` 年度工作的「逾期」與「七日內到期」如何定義？以 `due_date`
+  （採用期限）或 `suggested_due_date`（系統建議）為基準？排除哪些 `work_status`
+  （`completed`／`cancelled`／`completed_with_exception`）？
+- `[NEEDS CLARIFICATION]` 「待收款」指 `collection_shortfall_total`（客戶稅款短缺）或
+  `outstanding_fee_total`（未收服務費）？是筆數或金額？物件模型將兩者分開，且禁止把固定
+  開立的 pending 稱為應收帳款。
+- `[NEEDS CLARIFICATION]` `AnnualWorkOverviewRow` 是否應攜帶 `annual_exact_balance_risk`
+  已計算的風險旗標，讓表格顯示而非重新推導？
+
+回答前，年度工作台不新增日期衍生 KPI，也不新增風險欄位。實作這些需要新的 repository
+聚合查詢，屬於資料層而非介面層工作。
+
 ## 2026-08-08 - DateField 的日期範圍語意待定
 
 ### 決策
