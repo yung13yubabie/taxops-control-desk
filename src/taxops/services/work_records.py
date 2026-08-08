@@ -97,13 +97,29 @@ def _require_row(row, code: str):
 
 
 def _load_context_snapshot(raw: str | None) -> dict:
+    """Load a workflow's context snapshot.
+
+    An absent snapshot is a valid state and yields an empty mapping. Corrupt JSON is
+    not, and it raises — matching `_loads_stages` above, which the same `_image_paths`
+    call parses alongside this. The two disagreed: stages raised while a snapshot
+    silently became `{}`.
+
+    That silence had two consequences. `_remove_asset_if_unreferenced` abandons a
+    delete when parsing raises, precisely so a still-referenced image is never treated
+    as an orphan; an empty mapping instead dropped `image_path` from the referenced set
+    and let that image look unreferenced. And `set_template_image` writes the snapshot
+    back, so a corrupt one was overwritten with a fresh mapping holding only the image
+    fields, discarding whatever else it held.
+    """
     if not raw:
         return {}
     try:
         loaded = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
-    return loaded if isinstance(loaded, dict) else {}
+    except json.JSONDecodeError as err:
+        raise WorkRecordValidationError("work_record.context_snapshot.invalid") from err
+    if not isinstance(loaded, dict):
+        raise WorkRecordValidationError("work_record.context_snapshot.invalid")
+    return loaded
 
 
 class WorkRecordsService:

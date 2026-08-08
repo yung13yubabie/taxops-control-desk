@@ -146,6 +146,11 @@ ERROR_MESSAGES: dict[str, str] = dict(
             "work_record.context_mismatch": "指定案件不屬於所選客戶，無法建立工作紀錄",
             "work_record.stage.required": "請至少建立一個流程階段",
             "work_record.stages.invalid": "流程資料格式不正確，請重新整理後再試",
+            # Corrupt stored JSON, not a missing value. Refreshing cannot fix it, so the
+            # message points at maintenance rather than suggesting a retry.
+            "work_record.context_snapshot.invalid": (
+                "流程的附加資料格式不正確，無法安全處理，請聯絡系統維護人員"
+            ),
             "work_record.template.not_found": "找不到指定流程範本",
             "work_record.run.not_found": "找不到指定執行清單",
             "work_record.run.name.required": "請輸入執行清單名稱",
