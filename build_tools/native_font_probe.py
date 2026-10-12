@@ -32,10 +32,11 @@ def _write(path: Path, report: dict) -> None:
 
 
 def _glyph_run_record(run, text: str) -> dict:
-    """Do not query metadata on a raw font without a physical font instance.
+    """Record a glyph run only after capture's native-platform preflight.
 
-    Qt's default QRawFont is invalid. Keep that state as failed evidence rather
-    than invoking backend-dependent metadata accessors or inventing a family.
+    An explicitly invalid QRawFont has no metadata to query. Validity alone is
+    not a safe capability check for offscreen box engines; capture rejects that
+    backend before reaching this helper.
     """
     raw = run.rawFont()
     valid = raw.isValid()
@@ -50,6 +51,25 @@ def _glyph_run_record(run, text: str) -> dict:
             "coverage": coverage}
 
 
+def _capture_support_error(qt_platform: str, families: list[str]) -> str | None:
+    if qt_platform != "windows":
+        return "non_native_qt_platform"
+    if not families:
+        return "empty_font_database"
+    return None
+
+
+def _evaluate_glyph_records(runs: list[dict], text: str) -> tuple[bool, list[str]]:
+    """Evaluate recorded evidence without querying Qt or requiring installed fonts."""
+    supported = {int(c["codepoint"][2:], 16) for run in runs
+                 for c in run["coverage"] if c["supported"]}
+    missing = [f"U+{ord(c):04X}" for c in sorted(set(text), key=ord)
+               if not c.isspace() and ord(c) not in supported]
+    passed = (bool(runs) and all(r["valid"] and r["glyph_indexes"]
+              and 0 not in r["glyph_indexes"] for r in runs) and not missing)
+    return bool(passed), missing
+
+
 def capture_probe(output_dir: Path) -> dict:
     """Inspect styled widgets using the already-selected Qt platform."""
     import PySide6
@@ -62,12 +82,23 @@ def capture_probe(output_dir: Path) -> dict:
     from taxops.ui.style import apply
 
     app = QApplication.instance() or QApplication(["TaxOps native font probe"])
-    _write(output_dir / "native-font-probe.json", {
+    families = QFontDatabase.families()
+    preflight = {
         "passed": False, "stage": "qt_initialized", "qt_platform": app.platformName(),
         "platform": platform.platform(), "python": platform.python_version(),
         "pyside": PySide6.__version__, "qt": qVersion(),
-        "font_families": QFontDatabase.families(),
-    })
+        "font_families": families, "font_family_count": len(families),
+        "qt_qpa_platform": os.environ.get("QT_QPA_PLATFORM"),
+        "samples": [], "png_saved": False,
+    }
+    reason = _capture_support_error(app.platformName(), families)
+    if reason:
+        # This tool's raw-font inspection is native-only. In particular, Qt's
+        # offscreen box engine can appear valid without a physical font family.
+        preflight.update(stage="unsupported", reason=reason)
+        _write(output_dir / "native-font-probe.json", preflight)
+        return preflight
+    _write(output_dir / "native-font-probe.json", preflight)
     apply(app)
     root = QWidget()
     root.setWindowTitle("TaxOps native font diagnostic")
@@ -110,17 +141,8 @@ def capture_probe(output_dir: Path) -> dict:
         if line.isValid():
             line.setLineWidth(2000)
         shaped.endLayout()
-        runs = []
-        supported: set[int] = set()
-        for run in shaped.glyphRuns():
-            record = _glyph_run_record(run, text)
-            runs.append(record)
-            supported.update(int(c["codepoint"][2:], 16) for c in record["coverage"]
-                             if c["supported"])
-        missing = [f"U+{ord(c):04X}" for c in sorted(set(text), key=ord)
-                   if not c.isspace() and ord(c) not in supported]
-        passed = (bool(runs) and all(r["valid"] and r["glyph_indexes"]
-                  and 0 not in r["glyph_indexes"] for r in runs) and not missing)
+        runs = [_glyph_run_record(run, text) for run in shaped.glyphRuns()]
+        passed, missing = _evaluate_glyph_records(runs, text)
         records.append({"name": name, "widget_class": type(widget).__name__, "text": text,
                         "required": required, "passed": bool(passed),
                         "requested_families": font.families(),

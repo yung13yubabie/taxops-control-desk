@@ -48,25 +48,46 @@ def test_native_worker_timeout_is_nonzero_with_json(tmp_path, monkeypatch):
     assert json.loads((tmp_path / "native-font-probe.json").read_text())["stage"] == "supervisor"
 
 
-def test_capture_records_actual_glyphs_and_backend(qapp, tmp_path):
+def test_capture_respects_actual_platform_before_rawfont(qapp, tmp_path, monkeypatch):
+    from PySide6 import QtGui
     original_stylesheet = qapp.styleSheet()
     original_icon = qapp.windowIcon()
+    if qapp.platformName() != "windows":
+        def forbidden(*args, **kwargs):
+            raise AssertionError("unsupported backend must not enter text layout or raw font")
+        monkeypatch.setattr(QtGui, "QTextLayout", forbidden)
+        monkeypatch.setattr(probe, "_glyph_run_record", forbidden)
     try:
         report = probe.capture_probe(tmp_path)
         assert report["qt_platform"] == qapp.platformName()
         assert report["font_family_count"] == len(report["font_families"])
-        assert report["png_saved"]
-        assert (tmp_path / report["png_filename"]).is_file()
-        assert {r["widget_class"] for r in report["samples"]} >= {"QLabel", "QLineEdit", "QPushButton", "QComboBox", "QTableWidget"}
-        assert all("glyph_runs" in r and "missing_codepoints" in r for r in report["samples"])
-        latin = next(r for r in report["samples"] if r["name"] == "latin")
-        assert latin["glyph_runs"]
-        assert all("coverage" in r and "glyph_indexes" in r for r in latin["glyph_runs"])
-        if qapp.platformName() != "windows":
-            assert not report["passed"]
+        if qapp.platformName() != "windows" or not report["font_families"]:
+            assert report["stage"] == "unsupported"
+            assert not report["passed"] and not report["png_saved"]
+            assert report["samples"] == []
+            assert json.loads((tmp_path / "native-font-probe.json").read_text())["passed"] is False
+            assert not (tmp_path / "native-font-probe.png").exists()
+        else:
+            assert report["png_saved"]
+            assert (tmp_path / report["png_filename"]).is_file()
+            assert {r["widget_class"] for r in report["samples"]} >= {"QLabel", "QLineEdit", "QPushButton", "QComboBox", "QTableWidget"}
+            assert all("glyph_runs" in r and "missing_codepoints" in r for r in report["samples"])
+            latin = next(r for r in report["samples"] if r["name"] == "latin")
+            assert latin["glyph_runs"]
+            assert all("coverage" in r and "glyph_indexes" in r for r in latin["glyph_runs"])
     finally:
         qapp.setStyleSheet(original_stylesheet)
         qapp.setWindowIcon(original_icon)
+
+
+@pytest.mark.parametrize("backend, families, reason", [
+    ("offscreen", [], "non_native_qt_platform"),
+    ("offscreen", ["Synthetic"], "non_native_qt_platform"),
+    ("windows", [], "empty_font_database"),
+    ("windows", ["Synthetic"], None),
+])
+def test_capture_support_contract_without_entering_qt(backend, families, reason):
+    assert probe._capture_support_error(backend, families) == reason
 
 
 def test_worker_exception_preserves_qt_checkpoint(tmp_path, monkeypatch):
@@ -144,52 +165,30 @@ def test_invalid_rawfont_never_calls_metadata_or_character_lookup():
                       "coverage": [{"codepoint": "U+7A05", "supported": False}]}
 
 
-def test_invalid_rawfont_cannot_pass_capture(qapp, tmp_path, monkeypatch):
-    original_stylesheet = qapp.styleSheet()
-    original_icon = qapp.windowIcon()
-    real_record = probe._glyph_run_record
-    def invalid_record(run, text):
-        from PySide6.QtGui import QGlyphRun, QRawFont
-        invalid = QGlyphRun()
-        invalid.setRawFont(QRawFont())
-        invalid.setGlyphIndexes([23])
-        return real_record(invalid, text)
-    monkeypatch.setattr(probe, "_glyph_run_record", invalid_record)
-    try:
-        report = probe.capture_probe(tmp_path)
-        assert not report["passed"]
-        assert all(not r["passed"] and r["missing_codepoints"] for r in report["samples"])
-        assert all(not run["valid"] for sample in report["samples"] for run in sample["glyph_runs"])
-    finally:
-        qapp.setStyleSheet(original_stylesheet)
-        qapp.setWindowIcon(original_icon)
+@pytest.mark.parametrize("valid, indexes, covered, expected, missing", [
+    (False, [23], True, False, []),
+    (False, [23], False, False, ["U+7A05"]),
+    (True, [], True, False, []),
+    (True, [0], True, False, []),
+    (True, [23], False, False, ["U+7A05"]),
+    (True, [23], True, True, []),
+])
+def test_pure_glyph_contract(valid, indexes, covered, expected, missing):
+    record = {"valid": valid, "glyph_indexes": indexes,
+              "coverage": [{"codepoint": "U+7A05", "supported": covered}]}
+    assert probe._evaluate_glyph_records([record], "稅") == (expected, missing)
 
 
-@pytest.mark.parametrize("indexes, expected", [([], False), ([0], False), ([23], True)])
-def test_valid_font_still_requires_nonempty_nonzero_glyphs(qapp, tmp_path, monkeypatch, indexes, expected):
-    from PySide6 import QtGui
+def test_no_glyph_runs_is_failed_evidence():
+    assert probe._evaluate_glyph_records([], "稅") == (False, ["U+7A05"])
 
-    # Control layout output as well as the record: an offscreen backend with no
-    # system fonts must exercise these cases too, without installing any fonts.
-    monkeypatch.setattr(QtGui, "QTextLayout", lambda text, font: SimpleNamespace(
-        beginLayout=lambda: None,
-        createLine=lambda: SimpleNamespace(isValid=lambda: False),
-        endLayout=lambda: None,
-        glyphRuns=lambda: [object()],
-    ))
-    def controlled_record(run, text):
-        return {"family": "Synthetic valid font", "style": "Regular", "valid": True,
-                "glyph_indexes": indexes,
-                "coverage": [{"codepoint": f"U+{ord(char):04X}", "supported": True}
-                             for char in sorted(set(text), key=ord)]}
-    monkeypatch.setattr(probe, "_glyph_run_record", controlled_record)
-    original_stylesheet = qapp.styleSheet()
-    original_icon = qapp.windowIcon()
-    try:
-        report = probe.capture_probe(tmp_path)
-        assert all(not r["missing_codepoints"] for r in report["samples"])
-        assert all(r["passed"] is expected for r in report["samples"])
-        assert report["passed"] is (expected and qapp.platformName() == "windows")
-    finally:
-        qapp.setStyleSheet(original_stylesheet)
-        qapp.setWindowIcon(original_icon)
+
+def test_unsupported_capture_remains_nonzero_worker_result(tmp_path, monkeypatch):
+    monkeypatch.setattr(probe, "capture_probe", lambda output: {
+        "passed": False, "stage": "unsupported", "reason": "empty_font_database",
+        "qt_platform": "windows", "font_families": [], "samples": [],
+    })
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    assert probe.main(["--worker", "--output-dir", str(tmp_path)]) == 1
+    report = json.loads((tmp_path / "native-font-probe.json").read_text())
+    assert report["stage"] == "unsupported" and not report["passed"]

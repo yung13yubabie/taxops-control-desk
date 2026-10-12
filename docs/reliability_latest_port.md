@@ -31,6 +31,8 @@
 
 [第四輪 Windows](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38224732979) 的五檔診斷 165/165 通過，原生 qwindows 合成中文 glyph/PNG 亦通過；原生字型有 Microsoft JhengHei UI，罕字另使用系統 fallback。這不代表乾淨 client 或全部姓名已驗收。完整矩陣在第 64/140 檔的新增字型診斷測試，於 offscreen 讀 raw-font metadata 時發生 access violation；前 63 檔 1772 項通過，76 檔未跑。68.3824467406557% 是中止子集，不能冒稱最終 coverage；仍未建置 EXE。後續修正必須保留 invalid 字型的失敗判定，並重新通過完整 gate。
 
+[第五輪 Windows](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38226805820) 證明最初的 invalid 字型保護不足：同一 offscreen 字型測試仍在 metadata 行崩潰。其餘六個 quick 檔 169 項與原生 qwindows 探針通過；full 仍為第 64/140 檔中止、1772 個已完成 JUnit 測試、76 檔未跑，無 EXE。診斷工具改在入口拒絕非原生 Windows 或空字型庫，明確回 unsupported/failed，不進 raw-font API；完整 source 檔仍測拒絕與純 glyph 正負契約，真正字形由 qwindows job 驗證。這不是把 offscreen 不支援偽裝成功，也不宣稱 C++ 根因已證明。
+
 ## 可重現驗證
 
 執行 [CONTRIBUTING](../CONTRIBUTING.md) 的逐檔矩陣與 [Windows 候選 gate](windows_candidate_gate.md)。每次使用固定來源、全套檔案、原始 branch coverage 至少 90%；任何失敗維持失敗。聚焦測試或 source self-test 不可替代 Windows frozen 自測。

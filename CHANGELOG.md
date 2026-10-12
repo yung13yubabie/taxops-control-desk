@@ -50,6 +50,7 @@
 - 日期欄寬同時計入中文提示與十字數字日期，避免翻譯後提示較短而壓縮輸入；選檔測試採平台路徑等價並精確保留檔名。
 - offscreen 截圖中的中文字方框另以原生 qwindows 字型庫／glyph／截圖診斷確認；不把中文常量或來源字串通過當成實際字形驗收。
 - 第四輪快速 Windows 五檔 165/165 與原生中文字形探針通過；完整矩陣在第 64/140 檔的新增字型診斷遇 access violation 而中止，76 檔未跑，EXE 仍受阻。子集 coverage 不當作完整測量，後續保留全部測試再驗。
+- 第五輪確認單靠 invalid 字型 guard 仍不能在 offscreen 安全讀 metadata；原生 probe 仍過。診斷捕捉入口因此明確限定原生 Windows 與非空字型庫，不支援時回失敗；source 仍完整驗拒絕與 glyph 正負契約，qwindows 仍須實際通過，不排除任何測試檔。
 - Windows 乾淨離線、沒有 Python 的核心操作、DPI/IME/Narrator、簽章/SmartScreen 均未驗收；安全對抗覆蓋亦未完成。候選不代表可以穩定發布。
 - 320 px 小月曆的第六週文字下緣在 offscreen 測量仍略裁切；繁中文字抽查不等於全站、全部縮放組合皆已驗收。
 
