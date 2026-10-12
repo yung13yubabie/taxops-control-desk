@@ -97,3 +97,32 @@ report; plugin metadata does not stand in for runtime version evidence. The
 existing compiled-metadata marker, red GIF decode and modified Python package
 checks remain required. Reused compiled DLL hashes remain caller-supplied; the
 generic recipe does not embed a particular local compilation's hash.
+
+## Bounded trace of an existing crash-probe EXE
+
+If the owned crash probe reaches GUI-ready but its outer process does not return
+77, do not accept another nonzero code as an equivalent controlled crash. The
+PyInstaller 6.11.1 Windows parent normally reads its child's process exit code;
+a strict extraction-cleanup failure can replace that result. See the fixed
+[child-code implementation](https://raw.githubusercontent.com/pyinstaller/pyinstaller/v6.11.1/bootloader/src/pyi_utils_win32.c)
+and [parent cleanup implementation](https://raw.githubusercontent.com/pyinstaller/pyinstaller/v6.11.1/bootloader/src/pyi_main.c).
+Record the actual result before deciding the cause.
+
+From a matching source checkout, with an existing Windows Python interpreter:
+
+```text
+python -m build_tools.trace_owned_crash --exe "<existing exact EXE>" --exe-sha256 "<independently verified SHA-256>" --output "<new diagnostic directory>"
+```
+
+This does not rebuild or modify the EXE. It verifies the input hash, copies only
+the EXE, initializes a new token-owned synthetic profile once, closes that normal
+run, then requests one crash using the same synthetic database and instance name.
+It records the retained outer Popen PID, actual return code (decimal and hex),
+raw stdout/stderr files, the ready report's self-reported inner PID, and remaining
+extraction directories. The original immediate-exit probe offers no handshake
+for retaining an inner process handle: its actual inner exit code is explicitly
+unobserved. The harness never opens a stale PID, scans other processes or treats
+an empty windowed-program stream as proof that no error occurred. Failure cleanup
+uses only the existing retained-owned-process helper; it does not erase residual
+files or count forced termination as normal cleanup. This focused trace does not
+replace the full source, loader, frozen self-test or lifecycle gate.
