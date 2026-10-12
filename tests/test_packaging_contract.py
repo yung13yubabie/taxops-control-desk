@@ -32,6 +32,7 @@ def test_quick_packaging_preflight_calls_shared_cli_and_preserves_nonzero() -> N
     assert "pinned test venv; not a release build or artifact acceptance" in step
     assert 'package-environment.json' in step and 'package-input-boundary.json' in step
     assert 'package-input-process.log' in step
+    assert '--probe-qt-translation' in step
     assert "$code = $LASTEXITCODE" in step and "if ($code -ne 0) { exit $code }" in step
     assert "continue-on-error" not in step
     assert "build_tools.package_windows" in main and "build_tools.verify_onefile" in main

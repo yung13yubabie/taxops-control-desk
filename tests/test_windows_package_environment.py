@@ -416,3 +416,192 @@ def test_receipt_anchor_is_created_only_after_successful_final_write(tmp_path, m
         environment.prepare_environment(report_path=report_path)
     assert json.loads(report_path.read_text(encoding="utf-8"))["status"] == "failed"
     assert all("TAXOPS_PACKAGE_ENV_RECEIPT_SHA256" not in kwargs["env"] for _, kwargs in calls)
+
+
+@pytest.mark.parametrize("change", ["schema", "status", "PATH", "import_overrides", "release_python"])
+def test_child_comparison_diagnostics_identify_operand_without_private_values(tmp_path, monkeypatch, change):
+    files, _ = inputs(tmp_path, monkeypatch)
+    monkeypatch.setattr(environment.os, "environ", {"Path": str(files[2].parent), "ARBITRARY_SECRET": "sentinel-private-value"})
+    path = tmp_path / "package-environment.json"
+    child, report = environment.prepare_environment(report_path=path)
+    monkeypatch.setattr(environment.os, "environ", child)
+    if change == "schema":
+        report["schema"] = 999
+    elif change == "status":
+        report["status"] = "failed"
+    elif change == "PATH":
+        child["PATH"] = "sentinel-private-path;" + child["PATH"]
+    elif change == "import_overrides":
+        child["PyThOnPaTh"] = "sentinel-private-override"
+    else:
+        report["release_python"]["sha256"] = "sentinel-private-hash"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    child["TAXOPS_PACKAGE_ENV_RECEIPT_SHA256"] = environment.sha256(path)
+    with pytest.raises(RuntimeError, match="Package child environment differs") as exc:
+        environment.package_receipt()
+    text = str(exc.value)
+    comparison = json.loads(text.split(": ", 1)[1])
+    assert comparison["matches"] == {name: name != change for name in
+                                    ("schema", "status", "PATH", "import_overrides", "release_python")}
+    assert "sentinel-private" not in text and "ARBITRARY_SECRET" not in text
+
+
+@pytest.mark.parametrize("change", [None, "query_failure", "shutdown_failure", "extra_secret", "private_path", "long_private_path", "loop_runtime_error", "nul_path", "read_failure", "wrong_package", "missing", "basename", "hash", "bytes", "target", "symlink", "path_drift", "override_drift"])
+def test_isolated_qt_input_rechecks_parent_and_exact_asset_without_imports(tmp_path, monkeypatch, change):
+    files, _ = inputs(tmp_path, monkeypatch)
+    monkeypatch.setattr(environment.os, "environ", {"Path": str(files[2].parent)})
+    child, _ = environment.prepare_environment(report_path=tmp_path / "package-environment.json")
+    monkeypatch.setattr(environment.os, "environ", child)
+    package_dir = Path(environment.release_inputs()[1]["packages"]["PySide6"]["path"]).parent
+    source = package_dir / "translations/qtbase_zh_TW.qm"
+    source.parent.mkdir()
+    source.write_bytes(b"synthetic catalogue bytes")
+    result = {**environment._file(source), "target": str(Path("PySide6/translations"))}
+    if change == "extra_secret":
+        result["secret"] = "sentinel-private-child-value"
+    elif change == "private_path":
+        result["path"] = str(package_dir / "sentinel-private-child-value/qtbase_zh_TW.qm")
+    elif change == "long_private_path":
+        result["path"] = str(package_dir / ("sentinel-private-" + "x" * 300) / "qtbase_zh_TW.qm")
+    elif change == "loop_runtime_error":
+        result["path"] = str(package_dir / "sentinel-private-loop/qtbase_zh_TW.qm")
+        class CyclicPath(type(source)):
+            def resolve(self, *args, **kwargs):
+                raise RuntimeError("Symlink loop from sentinel-private-loop")
+        real_path = environment.Path
+        monkeypatch.setattr(environment, "Path", lambda value: CyclicPath(value)
+                            if str(value) == result["path"] else real_path(value))
+    elif change == "nul_path":
+        result["path"] = str(package_dir / "sentinel-private-\x00/qtbase_zh_TW.qm")
+    elif change == "read_failure":
+        real_file = environment._file
+        def failed_read(path):
+            if path == source:
+                raise OSError("sentinel-private-file-read")
+            return real_file(path)
+        monkeypatch.setattr(environment, "_file", failed_read)
+    elif change == "wrong_package":
+        external = tmp_path / "outside/qtbase_zh_TW.qm"
+        external.parent.mkdir()
+        external.write_bytes(b"foreign catalogue")
+        result.update(environment._file(external))
+    elif change == "missing":
+        source.unlink()
+    elif change == "basename":
+        result["path"] = str(source.parent / "different.qm")
+    elif change == "hash":
+        result["sha256"] = "0" * 64
+    elif change == "bytes":
+        result["bytes"] += 1
+    elif change == "target":
+        result["target"] = "arbitrary/target"
+    elif change == "symlink":
+        target = source.with_suffix(".real")
+        source.rename(target)
+        source.symlink_to(target)
+    events = []
+    class IsolatedChild:
+        def __enter__(self):
+            events.append("enter")
+            return self
+        def call(self, function, expected_package):
+            assert function is environment._query_qt_translation and expected_package == str(package_dir)
+            events.append("query")
+            if change == "query_failure":
+                raise RuntimeError("synthetic isolated Qt import failure")
+            if change == "path_drift":
+                environment.os.environ["PATH"] = "unexpected;" + environment.os.environ["PATH"]
+            if change == "override_drift":
+                environment.os.environ["Qt_Plugin_Path"] = "sentinel-private-override"
+            return result
+        def __exit__(self, *args):
+            events.append("exit")
+            if change == "shutdown_failure":
+                raise RuntimeError("synthetic strict child shutdown failure")
+    monkeypatch.setattr(environment, "_qt_isolation", IsolatedChild)
+    checks = []
+    real_receipt = environment.package_receipt
+    def receipt():
+        checks.append("checked")
+        return real_receipt()
+    monkeypatch.setattr(environment, "package_receipt", receipt)
+    modules = {key: value for key, value in sys.modules.items() if key == "PySide6" or key.startswith("PySide6.")}
+    parent = dict(environment.os.environ)
+    if change:
+        with pytest.raises(RuntimeError) as exc:
+            environment.qt_translation_input()
+        assert "sentinel-private" not in str(exc.value)
+    else:
+        assert environment.qt_translation_input() == result
+    assert events == ["enter", "query", "exit"] and checks == ["checked", "checked"]
+    assert modules == {key: value for key, value in sys.modules.items() if key == "PySide6" or key.startswith("PySide6.")}
+    if change not in {"path_drift", "override_drift"}:
+        assert dict(environment.os.environ) == parent
+
+
+def test_spec_and_quick_probe_share_strict_isolated_qt_helper(tmp_path, monkeypatch):
+    import ast
+    source = (environment.ROOT / "TaxOpsControlDesk.spec").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    imports = [alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names]
+    imports += [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
+    assert not any(name == "PySide6" or name.startswith("PySide6.") for name in imports)
+    assert source.index("_qt_translation_input = qt_translation_input()") < source.index("a = Analysis(")
+    assert 'datas=[("assets/app_icon.ico", "assets"), (str(_qt_translation), _qt_translation_target)' in source
+    assert source.index("a = Analysis(") < source.index("filter_system_runtime(a.binaries, a.datas)")
+    calls = []
+    fake = SimpleNamespace(Python=lambda **kwargs: calls.append(kwargs) or "isolated context")
+    monkeypatch.setitem(sys.modules, "PyInstaller", SimpleNamespace(isolated=fake))
+    assert environment._qt_isolation() == "isolated context" and calls == [{"strict_mode": True}]
+    child = {"PATH": "prepared child", "TAXOPS_PACKAGE_ENV_RECEIPT_SHA256": "anchored"}
+    monkeypatch.setattr(environment, "prepare_environment", lambda **kwargs: (child, {}))
+    runs = []
+    waits = []
+    process = SimpleNamespace(wait=lambda **kwargs: waits.append(kwargs) or 0)
+    monkeypatch.setattr(environment, "subprocess", SimpleNamespace(Popen=lambda command, **kwargs:
+        runs.append((command, kwargs)) or process))
+    parent = dict(os.environ)
+    environment.main(["--output", str(tmp_path / "preflight.json"), "--probe-qt-translation"])
+    assert len(runs) == 1 and runs[0][0][0] == str(Path(sys.executable).resolve())
+    assert "qt_translation_input()" in runs[0][0][-1]
+    assert runs[0][1] == {"env": child} and waits == [{"timeout": 120}]
+    assert dict(os.environ) == parent
+
+
+@pytest.mark.parametrize("failure", ["nonzero", "timeout", "cleanup_failed"])
+def test_qt_probe_preserves_failure_and_cleans_only_retained_live_tree(tmp_path, monkeypatch, failure):
+    from build_tools import owned_process_cleanup
+    child = {"PATH": "prepared child"}
+    monkeypatch.setattr(environment, "prepare_environment", lambda **kwargs: (child, {}))
+    events = []
+    class Process:
+        pid = 1234
+        _handle = "retained synthetic Windows handle"
+        def wait(self, timeout):
+            events.append(("wait", timeout))
+            if failure != "nonzero":
+                raise subprocess.TimeoutExpired("synthetic owned probe", timeout)
+            return 17
+    process = Process()
+    def launch(command, **kwargs):
+        assert Path(command[0]).is_absolute() and kwargs == {"env": child}
+        events.append("launch")
+        return process
+    monkeypatch.setattr(environment, "subprocess", SimpleNamespace(
+        Popen=launch, TimeoutExpired=subprocess.TimeoutExpired, CalledProcessError=subprocess.CalledProcessError))
+    evidence = tmp_path / "package-qt-probe-cleanup.json"
+    def cleanup(owned, output):
+        assert owned is process and owned._handle == "retained synthetic Windows handle" and output == evidence
+        events.append("cleanup")
+        record = {"status": "failed" if failure == "cleanup_failed" else "owned_tree_termination_requested",
+                  "descendant_cleanup_verified": False, "normal_cleanup": False}
+        output.write_text(json.dumps([record]), encoding="utf-8")
+        return record
+    monkeypatch.setattr(owned_process_cleanup, "terminate_owned_tree", cleanup)
+    error = subprocess.CalledProcessError if failure == "nonzero" else subprocess.TimeoutExpired
+    with pytest.raises(error):
+        environment.main(["--output", str(tmp_path / "preflight.json"), "--probe-qt-translation"])
+    assert events == ["launch", ("wait", 120)] + ([] if failure == "nonzero" else ["cleanup"])
+    if failure != "nonzero":
+        record = json.loads(evidence.read_text(encoding="utf-8"))[0]
+        assert record["descendant_cleanup_verified"] is False and record["normal_cleanup"] is False

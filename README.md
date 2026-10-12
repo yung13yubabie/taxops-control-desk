@@ -60,7 +60,7 @@
 
 本機重組後續回報完整來源測試及修改後 qgif 小型探針通過，設定頁 8 項回歸在原 900 秒內結束；但封裝被不同來源的系統 DLL 擋下，沒有產出合格重組 EXE。目前修正建置工具繼承的 DLL 搜尋路徑，以及驗收材料缺件的預檢。這些新修正仍須固定來源的完整回歸和新 Windows 建置；尚未完成的重組／乾淨離線驗收保留。
 
-建置隔離與材料預檢修正的 [run 38316893439](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38316893439) 已通過 Windows 全部 158 檔、4025 項，實值 branch coverage 91.1487758945386%；但封裝入口拒絕目前 Git 安裝布局，未產生新 EXE。後續僅適配官方新舊 Git 入口，仍不把 Git 的 DLL 目錄放回封裝搜尋路徑；快速預檢可提早回報工具問題，正式完整建置與 EXE 驗收仍須重新通過。
+最新 [run 38320875635](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38320875635) 已通過 Windows 全部 158 檔、4077 項，實值 branch coverage 91.1487758945386%。目前 Git 入口通過真 Windows 預檢，新舊布局另有契約測試，正式建置已進入 PyInstaller Analysis；但後續環境收據比對拒絕差異，仍未產生新 EXE。已核對固定 PySide6 原碼：查詢 Qt 翻譯資源時直接匯入會修改 Windows PATH；正以隔離查詢消除該副作用，保留嚴格比對並補安全的分項診斷。原失敗未記錄每個比較值，其他差異尚不能視為排除；新固定版仍須完整建置與實際 EXE 驗收。
 
 **候選尚未發布。** 最終 Release 必須附重新驗證的單一 EXE，以及必要的第三方授權通知與原始碼／重組材料；不以舊 ZIP 或只有原始碼代替 EXE。原始碼重組材料供有需要的接收者使用，不是一般使用者的安裝前提。具體方案見 [單檔 EXE 與重組驗收](docs/windows_onefile_gate.md) 和 [第三方元件說明](docs/third_party_licenses.md)。
 

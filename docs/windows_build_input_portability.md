@@ -39,6 +39,29 @@ same input-selection helper as a preflight of the current isolated venv. It does
 not build an EXE or prove release-only environment/package acceptance. The
 formal release-venv packaging check remains independent.
 
+Add `--probe-qt-translation` to exercise the spec's identical Qt-input helper in
+an absolute-Python child using the prepared environment. Qt's `QLibraryInfo`
+catalogue lookup runs inside pinned PyInstaller's `isolated.Python(strict_mode=True)`;
+the build process does not import PySide6 to locate that asset. The child returns
+only the catalogue path, target, SHA-256 and size. The parent independently checks
+its canonical origin inside the pinned PySide6 package, required filename,
+existence, bytes and target. Strict receipt checks run before the query and in
+`finally`, including import or shutdown failure. No PATH reset conceals drift.
+All existing Qt/plugin collection and translation embedding remain required.
+
+Strict isolation has a child-shutdown timeout, not an import/function-response
+timeout. The CLI probe has a separate 120-second process wait followed by bounded
+failure cleanup (up to 30 seconds for taskkill and 15 seconds for the parent wait); this
+does not make the spec query time-bounded. On timeout it retains the original
+Popen handle and requests failure-only owned-tree termination with the existing
+cleanup helper, recording `package-qt-probe-cleanup.json` beside the receipt.
+Cleanup success is not proof that arbitrary escaped descendants are gone, and
+the timed-out probe always remains a failure. See the official
+[pinned PyInstaller isolation implementation](https://github.com/pyinstaller/pyinstaller/blob/v6.11.1/PyInstaller/isolated/_parent.py) and
+[Qt library-path API](https://doc.qt.io/qt-6.10/qlibraryinfo.html).
+Compound receipt failures identify comparison names/booleans, PATH hashes/counts,
+override names and Python byte identities without dumping environment values.
+
 Child-only Python/Qt import-path variables are removed and user-site imports are
 disabled. PySide6, Shiboken and PyInstaller must resolve inside the pinned release
 venv. Existing version/notice validation remains mandatory. This is bounded

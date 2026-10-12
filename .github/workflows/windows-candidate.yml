@@ -140,7 +140,7 @@ jobs:
             scope = 'Same packaging input implementation in pinned test venv; not a release build or artifact acceptance'
             packaging_and_native_acceptance = 'not performed by this diagnostic step'
           } | ConvertTo-Json | Out-File -Encoding utf8 "$env:TAXOPS_UI_DIAGNOSTICS_DIR/package-input-boundary.json"
-          .\.venv-test\Scripts\python.exe -m build_tools.windows_package_environment --output "$env:TAXOPS_UI_DIAGNOSTICS_DIR/package-environment.json" *> "$env:TAXOPS_UI_DIAGNOSTICS_DIR/package-input-process.log"
+          .\.venv-test\Scripts\python.exe -m build_tools.windows_package_environment --output "$env:TAXOPS_UI_DIAGNOSTICS_DIR/package-environment.json" --probe-qt-translation *> "$env:TAXOPS_UI_DIAGNOSTICS_DIR/package-input-process.log"
           $code = $LASTEXITCODE
           Get-Content "$env:TAXOPS_UI_DIAGNOSTICS_DIR/package-input-process.log"
           if ($code -ne 0) { exit $code }

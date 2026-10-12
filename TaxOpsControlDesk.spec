@@ -6,8 +6,6 @@ Run with:  python -m build_tools.package_windows
 """
 
 from PyInstaller.utils.hooks import collect_submodules
-import PySide6
-from PySide6.QtCore import QLibraryInfo
 from pathlib import Path
 import sys
 
@@ -22,10 +20,11 @@ from build_tools.dependency_licenses import NOTICE_SOURCE, validate_build_enviro
 
 validate_build_environment()
 
-_qt_translation = Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)) / "qtbase_zh_TW.qm"
-_qt_translation_target = str(Path("PySide6") / _qt_translation.parent.relative_to(Path(PySide6.__file__).parent))
-if not _qt_translation.is_file():
-    raise RuntimeError("Required Traditional Chinese Qt catalogue is missing")
+from build_tools.windows_package_environment import qt_translation_input
+
+_qt_translation_input = qt_translation_input()
+_qt_translation = Path(_qt_translation_input["path"])
+_qt_translation_target = _qt_translation_input["target"]
 
 _migration_modules = collect_submodules("taxops.db.migrations")
 _expected_migrations = {

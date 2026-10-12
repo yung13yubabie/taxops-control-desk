@@ -212,12 +212,36 @@ def package_receipt() -> dict:
     if os.environ.get("TAXOPS_PACKAGE_ENV_RECEIPT_SHA256") != receipt_hash:
         raise RuntimeError("Package environment receipt differs from its prepared child anchor")
     report = json.loads(receipt_bytes.decode("utf-8"))
-    path_values = [value for key, value in os.environ.items() if key.upper() == "PATH"]
-    if (report.get("schema") != 1 or report.get("status") != "passed"
-            or path_values != [report.get("child_path")]
-            or any(key.upper() in _IMPORT_VARIABLES or key.upper() == "GIT_EXEC_PATH" for key in os.environ)
-            or report.get("release_python") != _file(Path(sys.executable).resolve())):
-        raise RuntimeError("Package child environment differs from its receipt")
+    path_items = [(key, value) for key, value in os.environ.items() if key.upper() == "PATH"]
+    path_values = [value for _key, value in path_items]
+    overrides = sorted(key for key in os.environ if key.upper() in _IMPORT_VARIABLES or key.upper() == "GIT_EXEC_PATH")
+    python = _file(Path(sys.executable).resolve())
+    matches = {"schema": report.get("schema") == 1, "status": report.get("status") == "passed",
+               "PATH": path_values == [report.get("child_path")], "import_overrides": not overrides,
+               "release_python": report.get("release_python") == python}
+    if not all(matches.values()):
+        # Unknown PATH/override values may contain private data. Report only names,
+        # counts and hashes, sufficient to identify the failed comparison.
+        expected_path = report.get("child_path")
+        def path_identity(value):
+            return {"sha256": hashlib.sha256(value.encode("utf-8")).hexdigest(),
+                    "entries": len(value.split(";"))} if isinstance(value, str) else None
+        expected_python = report.get("release_python")
+        if not isinstance(expected_python, dict):
+            expected_python = {}
+        expected_hash = expected_python.get("sha256")
+        if not isinstance(expected_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_hash):
+            expected_hash = None
+        expected_size = expected_python.get("bytes")
+        if type(expected_size) is not int or expected_size < 0:
+            expected_size = None
+        comparisons = {"matches": matches,
+                       "PATH": {"expected": path_identity(expected_path),
+                                "observed": [{"key": key, **path_identity(value)} for key, value in path_items]},
+                       "import_overrides": {"expected": [], "observed": overrides},
+                       "release_python": {"expected": {"sha256": expected_hash, "bytes": expected_size},
+                                          "observed": {key: python[key] for key in ("sha256", "bytes")}}}
+        raise RuntimeError("Package child environment differs from its receipt: " + json.dumps(comparisons, sort_keys=True))
     _, current = release_inputs()
     if any(report.get(key) != value for key, value in current.items()):
         raise RuntimeError("Package release inputs differ from their receipt")
@@ -242,11 +266,89 @@ def package_receipt() -> dict:
     return {"filename": path.name, "sha256": receipt_hash}
 
 
+def _query_qt_translation(expected_package: str) -> dict:
+    """Executed only by PyInstaller's isolated child; return scalar asset data."""
+    import hashlib
+    from pathlib import Path
+    import PySide6
+    from PySide6.QtCore import QLibraryInfo
+
+    package = Path(PySide6.__file__).resolve().parent
+    if package != Path(expected_package).resolve():
+        raise RuntimeError("Isolated Qt package differs from the pinned release origin")
+    source = Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)) / "qtbase_zh_TW.qm"
+    if not source.is_file() or source.is_symlink():
+        raise RuntimeError("Required Traditional Chinese Qt catalogue is missing or symlinked")
+    source = source.resolve()
+    if not source.is_relative_to(package):
+        raise RuntimeError("Qt catalogue is outside the pinned release package")
+    payload = source.read_bytes()
+    return {"path": str(source), "sha256": hashlib.sha256(payload).hexdigest(), "bytes": len(payload),
+            "target": str(Path("PySide6") / source.parent.relative_to(package))}
+
+
+def _qt_isolation():
+    from PyInstaller import isolated
+    return isolated.Python(strict_mode=True)
+
+
+def qt_translation_input() -> dict:
+    """Query Qt without importing it in the build process or accepting PATH drift.
+
+    Strict mode bounds child shutdown, not a blocked import/function call. The
+    optional CLI probe additionally has an outer subprocess timeout.
+    """
+    package_receipt()
+    _, identity = release_inputs()
+    package = Path(identity["packages"]["PySide6"]["path"]).parent
+    try:
+        with _qt_isolation() as child:
+            result = child.call(_query_qt_translation, str(package))
+    finally:
+        # Validate on success, import failure and failed child shutdown alike.
+        package_receipt()
+    if (not isinstance(result, dict) or set(result) != {"path", "sha256", "bytes", "target"}
+            or not isinstance(result["path"], str) or not isinstance(result["target"], str)
+            or not isinstance(result["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", result["sha256"])
+            or type(result["bytes"]) is not int or result["bytes"] <= 0):
+        raise RuntimeError("Isolated Qt catalogue result has an invalid schema")
+    try:
+        source = Path(result["path"])
+        canonical = source.resolve()
+        if (source.name != "qtbase_zh_TW.qm" or not source.is_absolute()
+                or not canonical.is_relative_to(package)):
+            raise RuntimeError("Isolated Qt catalogue is outside the pinned release package")
+        asset = _file(source)
+        expected = {**asset, "target": str(Path("PySide6") / canonical.parent.relative_to(package))}
+    except (OSError, ValueError, RuntimeError):
+        raise RuntimeError("Isolated Qt catalogue path or bytes are invalid") from None
+    if result != expected:
+        raise RuntimeError("Isolated Qt catalogue identity differs from the actual release asset")
+    return expected
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Preflight the current venv's package input selection, without building an EXE")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--probe-qt-translation", action="store_true",
+                        help="Also run the spec's isolated Qt query in a prepared child (120-second wait plus bounded failure cleanup)")
     args = parser.parse_args(argv)
-    prepare_environment(report_path=args.output)
+    child, _ = prepare_environment(report_path=args.output)
+    if args.probe_qt_translation:
+        command = [str(Path(sys.executable).resolve()), "-c",
+                   "import json; from build_tools.windows_package_environment import qt_translation_input; "
+                   "print(json.dumps(qt_translation_input(), sort_keys=True))"]
+        # Keep the original Windows launcher handle live during failure cleanup.
+        # A Popen context manager could wait indefinitely if tree cleanup fails.
+        process = subprocess.Popen(command, env=child)
+        try:
+            code = process.wait(timeout=120)
+        except subprocess.TimeoutExpired:
+            from build_tools.owned_process_cleanup import terminate_owned_tree
+            terminate_owned_tree(process, args.output.parent / "package-qt-probe-cleanup.json")
+            raise
+        if code:
+            raise subprocess.CalledProcessError(code, command)
     print("Input-selection preflight passed; no PyInstaller build or EXE acceptance was performed.")
 
 
