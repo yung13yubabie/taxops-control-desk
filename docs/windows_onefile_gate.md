@@ -191,3 +191,28 @@ that `_exit` calls `ExitProcess`, which still performs
 [DLL process-detach notifications](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-exitprocess).
 That makes native termination a hypothesis to test, not an attribution to
 Qt or a reason to accept an arbitrary nonzero value instead of 77.
+
+### Full-application source comparison
+
+The separate `build_tools.app_exit_contrast` diagnostic runs the actual
+`taxops.ui.app.run()` and actual `MainWindow` from an explicitly selected
+clean source tree. It creates two new synthetic profiles and singleton
+names, verifies schema 28 and writes one synthetic client through the real
+service. At the same post-show, pre-event-loop checkpoint, one case closes
+normally (0), and the other retains the original CRT `os._exit(77)` call.
+This does not change or overwrite the five smaller Qt controls.
+
+```powershell
+& '<existing venv>\Scripts\python.exe' -m build_tools.app_exit_contrast `
+  --python '<existing venv>\Scripts\python.exe' `
+  --source-tree '<exact fixed source tree>' `
+  --output '<new directory outside the source checkout>'
+```
+
+The existing pinned venv/image bindings and outer/inner observation limits
+apply. Source identity is checked before and after the two processes.
+Receipts retain actual exit values, raw streams, application readiness,
+synthetic DB path and source-file hashes. The full-application source run
+still does not include the frozen bootloader or prove identical VC bytes.
+A matching source outcome must not be called a fix or explanation for the
+original frozen PySide6 fault.

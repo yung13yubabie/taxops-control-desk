@@ -54,13 +54,21 @@ jobs:
             source_tree = $tree
             helper_sha256 = (Get-FileHash build_tools/qt_exit_contrast.py -Algorithm SHA256).Hash.ToLowerInvariant()
             runtime_pins_sha256 = (Get-FileHash requirements-release-hashed.txt -Algorithm SHA256).Hash.ToLowerInvariant()
-            scope = 'Five source-process controls on a hosted Windows runner; not frozen EXE or clean-OS acceptance.'
+            app_helper_sha256 = (Get-FileHash build_tools/app_exit_contrast.py -Algorithm SHA256).Hash.ToLowerInvariant()
+            scope = 'Five small Qt controls plus two real TaxOps source controls on hosted Windows; not frozen EXE or clean-OS acceptance.'
           } | ConvertTo-Json | Out-File -Encoding utf8 artifacts/source-provenance.json
           .\.venv-contrast\Scripts\python.exe -m pip freeze --all | Out-File -Encoding utf8 artifacts/environment.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run all five isolated native Qt controls and preserve mismatches
         run: |
           .\.venv-contrast\Scripts\python.exe -m build_tools.qt_exit_contrast --python .venv-contrast\Scripts\python.exe --output artifacts/native-exit-controls
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compare the real TaxOps source close and original CRT exit
+        run: |
+          $tree = git rev-parse 'HEAD^{tree}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $output = Join-Path $env:RUNNER_TEMP 'TaxOps-app-exit-controls'
+          .\.venv-contrast\Scripts\python.exe -m build_tools.app_exit_contrast --python .venv-contrast\Scripts\python.exe --source-tree $tree --output $output
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload only the synthetic control receipts and raw streams
         if: always()
@@ -76,5 +84,11 @@ jobs:
             artifacts/native-exit-controls/*/stdout.bin
             artifacts/native-exit-controls/*/stderr.bin
             artifacts/native-exit-controls/*/forced-cleanup.json
+            ${{ runner.temp }}/TaxOps-app-exit-controls/app-contrast.json
+            ${{ runner.temp }}/TaxOps-app-exit-controls/*/child.json
+            ${{ runner.temp }}/TaxOps-app-exit-controls/*/process.json
+            ${{ runner.temp }}/TaxOps-app-exit-controls/*/stdout.bin
+            ${{ runner.temp }}/TaxOps-app-exit-controls/*/stderr.bin
+            ${{ runner.temp }}/TaxOps-app-exit-controls/*/forced-cleanup.json
           if-no-files-found: error
           retention-days: 7
