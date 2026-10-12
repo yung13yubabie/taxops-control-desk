@@ -141,14 +141,40 @@ x64** virtual environment containing **PySide6 6.10.2 / Qt 6.10.2**:
 
 Run from the fixed source checkout. The output must not already exist. No
 packages are installed, application modules imported, or databases opened.
-Three fresh processes use separate synthetic profiles: no Qt import followed
+Five fresh processes use separate synthetic profiles. The original three are: no Qt import followed
 by `os._exit(77)`; `QApplication` plus `QWidget.show()` followed synchronously
 by `os._exit(77)` before `exec()`; and the same widget closed normally through
-its event loop with expected exit 0. Wrong versions stop before further exit
+its event loop with expected exit 0. The final two use the same `QWidget`
+subclass and child `QPushButton`: `clicked` connects to an undecorated Python
+bound method, one real `click()` must increment its counter exactly once,
+and strong sender/receiver references remain alive. One calls `_exit(77)`
+synchronously after that ready checkpoint; the other closes normally through
+the event loop with expected exit 0. The connection shape is identical in
+this pair; no disconnection, cleanup, alternative termination API or
+`@Slot` variation is inserted before abrupt exit. Each receipt records the
+callback count and readiness. A missing callback or case mismatch fails.
+These controls test a narrow signal-connection hypothesis; they do not
+establish the cause of a different frozen failure.
+
+Wrong versions stop before further exit
 injection. An exit-code mismatch remains a failure while the remaining
-controls run. Receipts preserve each retained `Popen` process's actual exit
+controls run. Schema-2 receipts preserve the retained `Popen` outer process's actual exit
 value, hexadecimal value, raw streams, runtime versions and module-file
-identities. Timeout cleanup applies only to the retained owned process tree.
+identities. The child must report either that exact PID with the harness as
+its parent, or one different PID whose exact parent is the owned outer PID
+and whose runtime is the pinned Windows virtual environment. This relation
+also requires exact launcher and base-interpreter path/hash/size identities
+from the specified venv's `pyvenv.cfg` home. The child records its own true
+image through `GetModuleFileNameW(NULL)`, plus `sys.executable`,
+`sys._base_executable`, `sys.prefix` and `sys.base_prefix`; all must match
+the configured expectations. Only the current process image is queried.
+[CPython 3.11.9's venv launcher project](https://github.com/python/cpython/blob/v3.11.9/PCbuild/venvlauncher.vcxproj)
+builds `PC/launcher.c` with `VENV_REDIRECT`;
+[that launcher](https://github.com/python/cpython/blob/v3.11.9/PC/launcher.c)
+creates one interpreter child, waits and forwards its exit code. This
+explains the permitted single-level relationship, but its inner exit code
+remains explicitly unobserved by this harness. No exited PID is reopened
+and unrelated or deeper parent chains are rejected. Timeout cleanup applies only to the retained owned process tree.
 
 These are **source native-Qt controls, not frozen EXE acceptance**. In
 particular, source wheels may contain different VC DLL bytes from the
