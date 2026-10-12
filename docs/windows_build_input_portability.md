@@ -10,9 +10,34 @@ Python for both PyInstaller checks and the build.
 Only PyInstaller children receive the bounded PATH: release/base Python
 executable directories, WinAPI-derived System32/Windows directories, Windows
 PowerShell's system directory and the existing Git for Windows `cmd` launcher.
-Git's broader `mingw64/bin`, Qt SDK, JDK and unrelated inherited PATH directories
-are not appended. Conflicting case-insensitive PATH keys, missing tools or a Git
+Git's root `bin`, implementation `mingw64/bin` or `ucrt64/bin`, Qt SDK, JDK and
+unrelated inherited PATH directories are not appended. Conflicting
+case-insensitive PATH keys, missing tools or a Git
 launcher directory containing DLLs fail explicitly. No software is installed.
+
+Discovery recognizes only existing Git for Windows `cmd`, root `bin` and the
+exact legacy `mingw64/bin` or newer `ucrt64/bin` entry points, then uses only the
+same root's `cmd/git.exe`. Existing implementation hashes/sizes are recorded.
+The cmd wrapper's version and exec-path metadata must identify one corresponding
+same-root implementation; metadata is decoded as strict UTF-8, including Unicode
+installation paths. Neither implementation directory is added to PATH.
+Child-only `GIT_EXEC_PATH` overrides are removed for this check. Discovery paths
+are saved before layout validation so failures retain their useful context.
+This is a layout/metadata check, not an executable-authenticity claim.
+Receipt consumption rechecks the same bounded layout and recorded tool bytes,
+requires all three tool identities and rejects reintroduced Git exec-path overrides.
+The completed receipt bytes are SHA-256 bound through a separate child environment
+value before consumption. This detects changed query metadata; it is not a
+security signature against an attacker controlling the parent environment.
+See the official [wrapper design](https://gitforwindows.org/git-wrapper.html),
+[wrapper source](https://github.com/git-for-windows/MINGW-packages/blob/main/mingw-w64-git/git-wrapper.c)
+and [addon root-bin installation](https://github.com/git-for-windows/MINGW-packages/blob/main/mingw-w64-git/PKGBUILD),
+and [2.56 release layout change](https://github.com/git-for-windows/git/releases/tag/v2.56.0.windows.1).
+
+`python -m build_tools.windows_package_environment --output <receipt>` runs the
+same input-selection helper as a preflight of the current isolated venv. It does
+not build an EXE or prove release-only environment/package acceptance. The
+formal release-venv packaging check remains independent.
 
 Child-only Python/Qt import-path variables are removed and user-site imports are
 disabled. PySide6, Shiboken and PyInstaller must resolve inside the pinned release

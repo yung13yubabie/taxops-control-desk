@@ -60,6 +60,8 @@
 
 本機重組後續回報完整來源測試及修改後 qgif 小型探針通過，設定頁 8 項回歸在原 900 秒內結束；但封裝被不同來源的系統 DLL 擋下，沒有產出合格重組 EXE。目前修正建置工具繼承的 DLL 搜尋路徑，以及驗收材料缺件的預檢。這些新修正仍須固定來源的完整回歸和新 Windows 建置；尚未完成的重組／乾淨離線驗收保留。
 
+建置隔離與材料預檢修正的 [run 38316893439](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38316893439) 已通過 Windows 全部 158 檔、4025 項，實值 branch coverage 91.1487758945386%；但封裝入口拒絕目前 Git 安裝布局，未產生新 EXE。後續僅適配官方新舊 Git 入口，仍不把 Git 的 DLL 目錄放回封裝搜尋路徑；快速預檢可提早回報工具問題，正式完整建置與 EXE 驗收仍須重新通過。
+
 **候選尚未發布。** 最終 Release 必須附重新驗證的單一 EXE，以及必要的第三方授權通知與原始碼／重組材料；不以舊 ZIP 或只有原始碼代替 EXE。原始碼重組材料供有需要的接收者使用，不是一般使用者的安裝前提。具體方案見 [單檔 EXE 與重組驗收](docs/windows_onefile_gate.md) 和 [第三方元件說明](docs/third_party_licenses.md)。
 
 已知限制：Hosted Windows 測試不是乾淨離線 Windows 10/11 實機；人工 DPI、輸入法、列印、輔助功能及簽署／SmartScreen 仍需核對。原生 Windows 合成中文字形抽查已通過，但不代表所有姓名或字集；小尺寸月曆在 offscreen 第六週文字下緣仍略裁切。缺繁中翻譯檔時只有有限按鈕後備，EXE gate 仍要求完整翻譯資產。

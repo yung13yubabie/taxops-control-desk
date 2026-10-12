@@ -133,6 +133,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\.venv-test\Scripts\python.exe -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preflight packaging inputs in the diagnostic environment
+        if: always()
+        run: |
+          @{
+            scope = 'Same packaging input implementation in pinned test venv; not a release build or artifact acceptance'
+            packaging_and_native_acceptance = 'not performed by this diagnostic step'
+          } | ConvertTo-Json | Out-File -Encoding utf8 "$env:TAXOPS_UI_DIAGNOSTICS_DIR/package-input-boundary.json"
+          .\.venv-test\Scripts\python.exe -m build_tools.windows_package_environment --output "$env:TAXOPS_UI_DIAGNOSTICS_DIR/package-environment.json" *> "$env:TAXOPS_UI_DIAGNOSTICS_DIR/package-input-process.log"
+          $code = $LASTEXITCODE
+          Get-Content "$env:TAXOPS_UI_DIAGNOSTICS_DIR/package-input-process.log"
+          if ($code -ne 0) { exit $code }
       - name: Run each complete diagnostic file and retain every failure
         run: |
           $files = @('test_native_font_probe', 'test_qt_geometry_diagnostics', 'test_deep_chinese_ui', 'test_frozen_self_test', 'test_novice_client_forms', 'test_ui_stage_5_date_field', 'test_v032_receipt_workbench')

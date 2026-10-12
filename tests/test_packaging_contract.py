@@ -21,3 +21,19 @@ def test_release_requirements_pin_runtime_and_packaging_dependencies() -> None:
     for package in ("PySide6", "Jinja2", "openpyxl", "PyInstaller", "setuptools"):
         assert any(line.startswith(f"{package}==") for line in lines), package
     assert all("==" in line for line in lines)
+
+
+def test_quick_packaging_preflight_calls_shared_cli_and_preserves_nonzero() -> None:
+    workflow = Path(".github/workflows/windows-candidate.yml").read_text(encoding="utf-8")
+    main, quick = workflow.split("  windows-ui-diagnostics:", 1)
+    step = quick.split("      - name: Preflight packaging inputs in the diagnostic environment", 1)[1]
+    step = step.split("      - name:", 1)[0]
+    assert "python.exe -m build_tools.windows_package_environment --output" in step
+    assert "pinned test venv; not a release build or artifact acceptance" in step
+    assert 'package-environment.json' in step and 'package-input-boundary.json' in step
+    assert 'package-input-process.log' in step
+    assert "$code = $LASTEXITCODE" in step and "if ($code -ne 0) { exit $code }" in step
+    assert "continue-on-error" not in step
+    assert "build_tools.package_windows" in main and "build_tools.verify_onefile" in main
+    assert "build_tools.run_test_matrix" in main
+    assert "build_tools.windows_package_environment --output" not in main
