@@ -30,13 +30,7 @@ TaxOps Control Desk 是 Windows 離線桌面工作台。資料預設保存在本
 
 ## 開發與驗證
 
-開始工作前依序閱讀：
-
-1. `.ai/spec-kit.md`
-2. `.ai/CURRENT_STATE.md`
-3. `.ai/TASKS.md`
-4. `.ai/DECISIONS.md`
-5. UI 工作再讀 `.ai/DESIGN.md`
+開始工作前閱讀 [CONTRIBUTING](CONTRIBUTING.md)、[安全政策](SECURITY.md) 與 [公開開發契約](docs/development_contract.md)。
 
 常用命令：
 
