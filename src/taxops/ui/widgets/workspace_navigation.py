@@ -100,7 +100,7 @@ class WorkspaceNavigation(QWidget):
         self._local_label = QLabel("本機資料")
         self._local_label.setObjectName("WorkspaceLocal")
         self._local_label.setToolTip(
-            "資料保存在本機；核心工作不需要連線。工商線上補查與快取下載需要網路。"
+            "資料保存在本機；核心工作不需要連線。工商線上補查與本機稅籍資料下載需要網路。"
         )
         self._layout.addWidget(self._local_label)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)

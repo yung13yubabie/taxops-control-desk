@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import json
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from types import SimpleNamespace
 
 import pytest
 from build_tools import run_test_matrix as matrix
@@ -36,12 +37,16 @@ def _fixture(tmp_path, monkeypatch, *, percentage=91.0, first_exit=0, timeout=Fa
         if "json" in command:
             Path(command[-1]).write_text(json.dumps({"meta": {"branch_coverage": True}, "totals": {"percent_covered": percentage}}))
         return subprocess.CompletedProcess(command, 0, "synthetic coverage output", "")
-    monkeypatch.setattr(matrix.subprocess, "run", fake_run)
+    monkeypatch.setattr(matrix, "subprocess", SimpleNamespace(
+        run=fake_run, TimeoutExpired=subprocess.TimeoutExpired,
+    ))
     return root, calls
 
 
 def test_each_file_gets_own_process_then_coverage_is_combined(tmp_path, monkeypatch):
+    stdlib_run = subprocess.run
     root, calls = _fixture(tmp_path, monkeypatch)
+    assert subprocess.run is stdlib_run
     result = matrix.run_matrix(tmp_path / "output")
     assert result["status"] == "passed" and result["full_suite"] is True
     children = [command for command in calls if "pytest" in command]
@@ -49,6 +54,7 @@ def test_each_file_gets_own_process_then_coverage_is_combined(tmp_path, monkeypa
     assert all("--parallel-mode" in command and "--branch" in command for command in children)
     assert result["totals"]["tests"] == 2
     assert [row["exit_code"] for row in result["files"]] == [0, 0]
+    assert [row["file"] for row in result["files"]] == ["tests/test_alpha.py", "tests/test_beta.py"]
     assert (tmp_path / "output" / "matrix.json").is_file()
 
 
@@ -67,6 +73,13 @@ def test_crash_or_timeout_records_unrun_files(tmp_path, monkeypatch, kind):
     assert result["status"] == "failed"
     assert len(result["files"]) == 1
     assert result["unrun_files"] == ["tests/test_beta.py"]
+
+
+@pytest.mark.parametrize("path_type", [PurePosixPath, PureWindowsPath])
+def test_report_paths_use_posix_separators_for_both_host_flavors(monkeypatch, path_type):
+    root = path_type("repo")
+    monkeypatch.setattr(matrix, "ROOT", root)
+    assert matrix._report_path(root / "tests" / "test_beta.py") == "tests/test_beta.py"
 
 
 def test_existing_results_are_not_reused(tmp_path, monkeypatch):

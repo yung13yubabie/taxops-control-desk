@@ -73,14 +73,18 @@ def _activate_window(window) -> None:
 def run() -> int:
     """Entry point used by ``python -m taxops``."""
     _set_windows_app_user_model_id()
+    from PySide6.QtCore import QCoreApplication, Qt
+    from ..i18n.qt import install_chinese
+    QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_DontUseNativeDialogs)
     try:
         container = bootstrap()
-    except UnsupportedSchemaError as exc:
+    except UnsupportedSchemaError:
         from PySide6.QtWidgets import QApplication, QMessageBox
 
         app = QApplication.instance() or QApplication(sys.argv)
+        install_chinese(app)
         _set_app_icon(app)
-        QMessageBox.critical(None, "資料庫版本不相容", str(exc))
+        QMessageBox.critical(None, "資料版本不相容", "這份資料由較新版本的程式建立，為保護資料已停止開啟。請改用最新版本；不要刪除或覆蓋原本資料。")
         return 1
     try:
         # Local import so the test/CI process can import bootstrap without
@@ -91,6 +95,7 @@ def run() -> int:
         from .single_instance import SingleInstanceGuard
 
         app = QApplication.instance() or QApplication(sys.argv)
+        install_chinese(app)
         _set_app_icon(app)
         from .style import apply as apply_style
         apply_style(app)

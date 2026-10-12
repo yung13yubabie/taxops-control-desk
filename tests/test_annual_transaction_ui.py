@@ -120,12 +120,12 @@ def test_panel_loads_first_bounded_page_and_exact_derived_balances(
     assert panel.transaction_id_at(0) == transaction.id
     assert panel.table.item(0, panel.DATE_COLUMN).text() == "2026-05-10"
     assert panel.table.item(0, panel.CATEGORY_COLUMN).text() == "應納稅額"
-    assert panel.table.item(0, panel.AMOUNT_COLUMN).text() == "NT$ 62,000"
+    assert panel.table.item(0, panel.AMOUNT_COLUMN).text() == "新臺幣 62,000"
     assert panel.table.item(0, panel.REFERENCE_COLUMN).toolTip() == "115年度營所稅"
-    assert panel.tax_liability_label.text() == "NT$ 62,000"
-    assert panel.client_tax_collection_label.text() == "NT$ 43,400"
-    assert panel.collection_shortfall_label.text() == "NT$ 18,600"
-    assert panel.unpaid_tax_label.text() == "NT$ 62,000"
+    assert panel.tax_liability_label.text() == "新臺幣 62,000"
+    assert panel.client_tax_collection_label.text() == "新臺幣 43,400"
+    assert panel.collection_shortfall_label.text() == "新臺幣 18,600"
+    assert panel.unpaid_tax_label.text() == "新臺幣 62,000"
 
 
 def test_add_dialog_saves_large_text_amount_and_panel_rereads_balance(
@@ -160,8 +160,8 @@ def test_add_dialog_saves_large_text_amount_and_panel_rereads_balance(
     assert rows[0].reference == "大額稅款繳納"
     assert rows[0].notes == "保留繁中\n與換行"
     assert panel.transaction_id_at(0) == rows[0].id
-    assert panel.tax_payment_label.text() == "NT$ 2,147,483,648"
-    assert panel.tax_overpayment_label.text() == "NT$ 2,147,483,648"
+    assert panel.tax_payment_label.text() == "新臺幣 2,147,483,648"
+    assert panel.tax_overpayment_label.text() == "新臺幣 2,147,483,648"
     assert (
         panel.feedback_label.text()
         == "交易紀錄已儲存並重新核對帳務。"
@@ -277,8 +277,8 @@ def test_edit_dialog_updates_same_id_and_panel_rereads_balance(
     assert page.rows[0].amount == 6_000
     assert page.rows[0].reference == "修正後應收"
     assert panel.transaction_id_at(0) == original.id
-    assert panel.fee_receivable_label.text() == "NT$ 6,000"
-    assert panel.outstanding_fee_label.text() == "NT$ 6,000"
+    assert panel.fee_receivable_label.text() == "新臺幣 6,000"
+    assert panel.outstanding_fee_label.text() == "新臺幣 6,000"
 
 
 def test_item_dialog_uses_horizontal_splitter_for_fields_and_ledger(
@@ -349,7 +349,7 @@ def test_delete_dialog_requires_reason_soft_deletes_and_rereads_balance(
     assert deleted is not None
     assert deleted.deleted_at is not None
     assert panel.table.rowCount() == 0
-    assert panel.tax_liability_label.text() == "NT$ 0"
+    assert panel.tax_liability_label.text() == "新臺幣 0"
     audit = container.annual_transactions.connection.execute(
         "SELECT detail_json FROM audit_logs "
         "WHERE action = 'annual_transaction.delete' AND target_id = ?",
@@ -825,7 +825,7 @@ def test_committed_read_dependency_failure_retries_full_verification(
         assert retry_calls[0][1] == {"include_deleted": False}
     assert panel.add_button.isEnabled()
     assert not panel.retry_button.isVisible()
-    assert panel.fee_receivable_label.text() == "NT$ 1,300"
+    assert panel.fee_receivable_label.text() == "新臺幣 1,300"
     assert "已儲存" in panel.feedback_label.text()
 
 
@@ -1220,7 +1220,7 @@ def test_selected_delete_button_opens_reason_dialog_and_refreshes_real_row(
         item.id, limit=100, offset=0
     ).total == 0
     assert panel.table.rowCount() == 0
-    assert panel.tax_payment_label.text() == "NT$ 0"
+    assert panel.tax_payment_label.text() == "新臺幣 0"
 
 
 @pytest.mark.parametrize(
@@ -1234,7 +1234,7 @@ def test_selected_delete_button_opens_reason_dialog_and_refreshes_real_row(
         (
             "transaction_date_input",
             "2026-2-01",
-            "交易日期格式不正確，請使用 YYYY-MM-DD",
+            "交易日期格式不正確，請依西元年-月-日填寫（例如 2026-10-31）",
         ),
         (
             "reference_input",
@@ -1581,7 +1581,7 @@ def test_900_by_540_keeps_ledger_actions_table_and_pagination_reachable(
     assert panel.table.font().pointSize() >= 10
     assert isinstance(panel.balance_scroll, QScrollArea)
     assert panel.balance_scroll.verticalScrollBar().maximum() > 0
-    assert panel.tax_liability_label.text() == "NT$ 9,000,000,000,000"
+    assert panel.tax_liability_label.text() == "新臺幣 9,000,000,000,000"
     longest_caption = panel._balance_caption_labels[
         "client_tax_collection"
     ]

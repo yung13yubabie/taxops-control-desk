@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ..i18n.errors import UserFacingError
+
 from PySide6.QtCore import QSignalBlocker, QSize
 from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -197,33 +199,33 @@ class MainWindow(QMainWindow):
                    target.task_id, target.attachment_id)
             if any(value is not None and (type(value) is not int or value <= 0)
                    for value in ids):
-                raise ValueError("工作連結無效，請重新選取。")
+                raise UserFacingError("工作連結無效，請重新選取。")
             if target.task_id is not None:
                 if target.page_id != PAGE_TASKS:
-                    raise ValueError("待辦連結的目的地不正確。")
+                    raise UserFacingError("待辦連結的目的地不正確。")
                 task = self._container.tasks.get_task(target.task_id)
                 if task is None or (
                     target.engagement_id is not None
                     and task.engagement_id != target.engagement_id
                 ):
-                    raise ValueError("待辦已刪除、所屬資料已停用，或案件範圍已變更。")
+                    raise UserFacingError("待辦已刪除、所屬資料已停用，或案件範圍已變更。")
             if target.engagement_id is not None:
                 if target.page_id not in {PAGE_ENGAGEMENTS, PAGE_TASKS, PAGE_ATTACHMENTS}:
-                    raise ValueError("案件連結的目的地不正確。")
+                    raise UserFacingError("案件連結的目的地不正確。")
                 if self._container.engagements.get_engagement(target.engagement_id) is None:
-                    raise ValueError("案件已刪除或所屬客戶已停用。")
+                    raise UserFacingError("案件已刪除或所屬客戶已停用。")
             if target.request_id is not None:
                 request = self._container.doc_requests.get_request(target.request_id)
                 if (target.page_id != PAGE_ENGAGEMENTS or request is None
                         or request.engagement_id != target.engagement_id):
-                    raise ValueError("索件批次已刪除或不屬於這個案件。")
+                    raise UserFacingError("索件批次已刪除或不屬於這個案件。")
             if target.attachment_id is not None:
                 attachment = self._container.attachments.get(target.attachment_id)
                 if (target.page_id != PAGE_ATTACHMENTS or attachment is None
                         or attachment.status == "archived"
                         or target.engagement_id is None
                         or attachment.engagement_id != target.engagement_id):
-                    raise ValueError("附件已封存、所屬資料已停用，或不屬於這個案件。")
+                    raise UserFacingError("附件已封存、所屬資料已停用，或不屬於這個案件。")
             page = self._stack.widget(self._page_indices[target.page_id])
             opened = None
             if target.page_id == PAGE_ENGAGEMENTS and target.engagement_id is not None:
@@ -233,12 +235,12 @@ class MainWindow(QMainWindow):
             elif target.page_id == PAGE_ATTACHMENTS and target.engagement_id is not None:
                 opened = page.open_context(target.engagement_id, target.attachment_id)
             elif any(value is not None for value in ids):
-                raise ValueError("工作連結缺少指定資料，請重新選取。")
+                raise UserFacingError("工作連結缺少指定資料，請重新選取。")
             else:
                 self.navigate_to(target.page_id)
                 return self._stack.currentWidget() is page
             if opened is False:
-                raise ValueError("讀取指定工作失敗，請重新整理後再試。")
+                raise UserFacingError("讀取指定工作失敗，請重新整理後再試。")
             # open_context has already loaded and selected the exact target.
             # A generic activation refresh here would overwrite drill-down scope
             # from a hidden master-table selection or a bounded combo list.
@@ -247,12 +249,10 @@ class MainWindow(QMainWindow):
             self._stack.setCurrentWidget(page)
             self.statusBar().showMessage("已開啟指定工作。", 5000)
             return True
-        except ValueError as exc:
+        except UserFacingError as exc:
             QMessageBox.warning(self, "無法開啟工作", str(exc))
         except Exception as exc:
-            self._container.system_log.warn(
-                "navigation target failed", detail={"exc": type(exc).__name__}
-            )
+            self._container.system_log.error("navigation target failed", exc=exc)
             QMessageBox.warning(self, "無法開啟工作", "讀取工作資料失敗，請重新整理後再試。")
         return False
 

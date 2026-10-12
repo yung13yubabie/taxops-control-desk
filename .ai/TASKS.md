@@ -1,5 +1,32 @@
 # TASKS
 
+## 2026-10-12 繁中整合候選後續
+
+- [x] 白話繁中與Qt視窗翻譯、自測17項、固定247fe2c完整137檔矩陣與raw coverage核對。
+- [x] 最終247fe2c整合SHA獨立翻譯gate複驗與文件定稿。
+- [ ] 等tree更新既有draft PR並執行新Windows gate。
+- [ ] 新Windows完整gate、frozen EXE及乾淨離線Windows實機驗收；不merge/tag/Release。
+
+下列勾選狀態屬各歷史片段，最新進度以上段與docs/reliability_latest_port.md為準。
+
+## 2026-10-12 新手與Windows後續
+
+- [x] 新手三組、日期焦點、Windows layout與測試契約修補；固定4985acd完成獨立抽查與fresh136檔量測。
+- [x] 第一輪draft PR #2/Windows平台證據已取得，3223pass／4fail，未產生EXE。
+- [ ] 白話繁中文字與Qt標準視窗翻譯片段整合、英文locale/frozen檢查與独立驗證。
+- [ ] 新整合候選等tree更新PR，重跑Windows完整gate；乾淨離線/DPI/IME/Narrator與既有GC限制仍待驗。
+
+## 2026-10-12 新手收件表單
+
+- [x] 有界關聯選單、讀取錯誤禁存及重試、五類對話捲動內容與固定底部操作；新真Qt回歸。
+- [ ] 獨立固定SHA審查、整合後全套及Windows驗收。詳見 `docs/novice_intake_review_20261012.md`。
+
+## 2026-10-12 新手工具表單局部修復
+
+- [x] 模板展開／工商長中文結果短窗捲動、固定開立與流程輸入提示；297 focused tests passed／1 existing skipped。
+- [ ] 固定 SHA 獨立 review、整合後重跑及 Windows DPI/EXE 驗收。詳見 docs/novice_tool_forms_20261012.md。
+
+
 ## 2026-10-12 候選 gate 狀態
 
 - [x] 最新基底可靠性與 UI 獨立審查、完整矩陣、最後 UI 小修相關回歸。

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ...i18n.status_labels import label_for
+
 from PySide6.QtCore import QItemSelectionModel, Qt
 from PySide6.QtWidgets import (
     QComboBox,
@@ -350,7 +352,7 @@ class TasksPage(QWidget):
                     "（載入案件失敗）", userData=_ALL_ENGAGEMENTS
                 )
             for eng in engs:
-                label = f"{eng.engagement_name} [{STATUS_LABELS.get(eng.tax_type, eng.tax_type)}]"
+                label = f"{eng.engagement_name} [{label_for(STATUS_LABELS, eng.tax_type)}]"
                 self._eng_combo.addItem(label, userData=eng.id)
             if selected is not None:
                 idx = self._eng_combo.findData(selected)
@@ -411,7 +413,7 @@ class TasksPage(QWidget):
                     task, client_cache, eng_client_cache
                 ),
                 "title": title,
-                "priority": PRIORITY_LABELS.get(task.priority, task.priority),
+                "priority": label_for(PRIORITY_LABELS, task.priority),
                 "status": status_to_label(task.status),
                 "assignee": task.assignee or "",
                 "due_date": task.due_date or "",
@@ -773,7 +775,7 @@ class TasksPage(QWidget):
         if not allowed_statuses:
             return
         label_to_value = {
-            STATUS_LABELS.get(status, status): status
+            label_for(STATUS_LABELS, status): status
             for status in allowed_statuses
         }
         choices = sorted(label_to_value)

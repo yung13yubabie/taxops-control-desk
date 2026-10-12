@@ -7,6 +7,7 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,10 +19,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _passing_windows_report():
-    return {"schema": 1, "status": "passed", "app_version": "test", "frozen": True,
+    report = {"schema": 1, "status": "passed", "app_version": "test", "frozen": True,
             "platform": "win32", "qt_platform": "windows", "network_attempts": [],
             "clean_os_verified": False, "manual_gui_verified": False,
             "checks": [{"name": name, "status": "passed"} for name in gate.EXPECTED_CHECKS]}
+    language = next(c for c in report["checks"] if c["name"] == "qt_traditional_chinese_widgets_and_fallback")
+    language.update(catalogue_loaded=True, initial_locale="en_US", locale="zh_TW",
+                    missing_catalogue={"fully_localized": False})
+    return report
 
 
 def _fake_bundle(root):
@@ -56,6 +61,23 @@ def test_source_self_test_runs_real_isolated_roundtrip(tmp_path):
     from taxops.db.migrations import MIGRATIONS
     assert payload["app_version"] == __version__
     assert next(c for c in payload["checks"] if c["name"] == "all_migrations")["count"] == len(MIGRATIONS)
+    language = next(c for c in payload["checks"] if c["name"] == "qt_traditional_chinese_widgets_and_fallback")
+    assert language["initial_locale"] == "en_US" and language["locale"] == "zh_TW"
+    assert language["catalogue_loaded"] is True
+    assert language["standard_buttons"] == {"Ok": "確定", "Cancel": "取消", "Save": "儲存", "Open": "開啟"}
+    assert language["calendar"]["month"] == "1月"
+    assert len(language["calendar"]["weekdays"]) == 7
+    for kind in ("open", "save", "directory"):
+        dialog = language["file_dialogs"][kind]
+        assert all(dialog["labels"].values())
+        assert dialog["non_native"] is True and dialog["selection_preserved"] is True
+        assert dialog["folder_metadata"]["type"] == "資料夾"
+        assert dialog["folder_metadata"]["name"] == "合成 English 資料夾"
+    fallback = language["missing_catalogue"]
+    assert fallback["catalogue_loaded"] is False and fallback["fully_localized"] is False
+    assert fallback["status"] == "standard_buttons_only"
+    assert fallback["standard_buttons"] == language["standard_buttons"]
+    assert all(fallback["file_dialog"]["labels"].values())
     with pytest.raises(gate.BundleVerificationError, match="frozen Windows"):
         gate.validate_report(payload)
 
@@ -150,6 +172,18 @@ def test_gate_requires_every_check_to_pass():
         gate.validate_report(report)
 
 
+@pytest.mark.parametrize("change", [
+    {"catalogue_loaded": False}, {"initial_locale": "zh_TW"}, {"locale": "en_US"},
+    {"missing_catalogue": {"fully_localized": True}}, {"missing_catalogue": {}},
+])
+def test_gate_rejects_partial_or_unexercised_qt_translation(change):
+    report = _passing_windows_report()
+    language = next(c for c in report["checks"] if c["name"] == "qt_traditional_chinese_widgets_and_fallback")
+    language.update(change)
+    with pytest.raises(gate.BundleVerificationError, match="Complete Qt translation"):
+        gate.validate_report(report)
+
+
 def test_archive_roundtrip_and_user_data_rejection(tmp_path):
     bundle = _fake_bundle(tmp_path / "bundle")
     archive = tmp_path / "candidate.zip"
@@ -186,7 +220,18 @@ def test_gate_executes_extracted_artifact_and_preserves_tested_zip(tmp_path, mon
     bundle = _fake_bundle(tmp_path / "bundle")
     output = tmp_path / "output"
     launched = []
-    monkeypatch.setattr(gate.sys, "platform", "win32")
+    stdlib_run = subprocess.run
+    # Windows platform.platform() may use subprocess.check_output("ver").
+    # Exercise a real stdlib probe while only the gate's EXE launcher is mocked.
+    def platform_probe():
+        return subprocess.check_output(
+            [sys.executable, "-c", "print('synthetic-platform-probe')"], text=True,
+        ).strip()
+    monkeypatch.setattr(gate, "platform", SimpleNamespace(
+        platform=platform_probe, python_version=gate.platform.python_version,
+        machine=gate.platform.machine,
+    ))
+    monkeypatch.setattr(gate, "sys", SimpleNamespace(platform="win32"))
     def fake_run(argv, **kwargs):
         exe = Path(argv[0])
         assert exe != bundle / "TaxOpsControlDesk.exe"
@@ -196,8 +241,11 @@ def test_gate_executes_extracted_artifact_and_preserves_tested_zip(tmp_path, mon
         launched.append(exe)
         Path(argv[-1]).write_text(json.dumps(_passing_windows_report()), encoding="utf-8")
         return subprocess.CompletedProcess(argv, 0, "", "")
-    monkeypatch.setattr(gate.subprocess, "run", fake_run)
+    monkeypatch.setattr(gate, "subprocess", SimpleNamespace(run=fake_run))
+    assert subprocess.run is stdlib_run
     result = gate.verify_bundle(bundle, output)
+    assert result["runner_os"] == "synthetic-platform-probe"
+    assert len(launched) == 1
     candidate = output / "TaxOpsControlDesk-windows-candidate.zip"
     assert result["sha256"] == gate._sha256(candidate)
     assert not launched[0].exists()
@@ -208,12 +256,12 @@ def test_gate_executes_extracted_artifact_and_preserves_tested_zip(tmp_path, mon
 def test_gate_failure_never_publishes_candidate(tmp_path, monkeypatch, failure):
     bundle = _fake_bundle(tmp_path / "bundle")
     output = tmp_path / "output"
-    monkeypatch.setattr(gate.sys, "platform", "win32")
+    monkeypatch.setattr(gate, "sys", SimpleNamespace(platform="win32"))
     def fake_run(argv, **kwargs):
         if failure == "timeout":
             raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
         return subprocess.CompletedProcess(argv, 0, "", "")
-    monkeypatch.setattr(gate.subprocess, "run", fake_run)
+    monkeypatch.setattr(gate, "subprocess", SimpleNamespace(run=fake_run))
     with pytest.raises((gate.BundleVerificationError, subprocess.TimeoutExpired)):
         gate.verify_bundle(bundle, output)
     assert not (output / "TaxOpsControlDesk-windows-candidate.zip").exists()

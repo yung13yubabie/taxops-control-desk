@@ -18,6 +18,7 @@ import zipfile
 from pathlib import Path
 
 EXPECTED_CHECKS = frozenset({
+    "qt_traditional_chinese_widgets_and_fallback",
     "qt_application_and_icon", "image_codecs", "qt_pdf_and_pdf_widgets", "ssl_runtime",
     "all_migrations", "main_window_construct_show_close", "client_case_document_task_and_fts",
     "attachment_upload_accept_readback", "workflow_and_canvas_assets", "xlsx_roundtrip",
@@ -28,6 +29,7 @@ EXPECTED_CHECKS = frozenset({
 _REQUIRED_FILES = frozenset({
     "taxopscontroldesk.exe", "python311.dll", "_ssl.pyd", "sqlite3.dll",
     "qwindows.dll", "qjpeg.dll", "qico.dll", "qtpdf.pyd", "qtpdfwidgets.pyd", "app_icon.ico",
+    "qtbase_zh_tw.qm",
 })
 _FORBIDDEN_DIRS = frozenset({".git", ".ai", "tests", "__pycache__", "attachments", "taxopsbackups"})
 
@@ -86,6 +88,11 @@ def validate_report(report: dict) -> None:
     passed = {c.get("name") for c in checks if c.get("status") == "passed"}
     if not EXPECTED_CHECKS.issubset(passed) or any(c.get("status") != "passed" for c in checks):
         raise BundleVerificationError("Required artifact checks are absent, failed, or skipped")
+    language = next(c for c in checks if c.get("name") == "qt_traditional_chinese_widgets_and_fallback")
+    if (language.get("catalogue_loaded") is not True or language.get("initial_locale") != "en_US"
+            or language.get("locale") != "zh_TW"
+            or language.get("missing_catalogue", {}).get("fully_localized") is not False):
+        raise BundleVerificationError("Complete Qt translation and partial fallback evidence required")
     if report.get("clean_os_verified") is not False or report.get("manual_gui_verified") is not False:
         raise BundleVerificationError("Automated report overstates clean-OS/manual acceptance")
 

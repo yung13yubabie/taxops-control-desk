@@ -515,7 +515,7 @@ def test_cache_status_renders_populated_and_failure_states(
     )
     page._refresh_cache_status()
     assert page._cache_status_label.text() == (
-        "快取版本：v20260712  │  筆數：1,234  │  資料日期：2026-07-11  │  來源：官方 ZIP"
+        "本機稅籍資料版本：v20260712  │  筆數：1,234  │  資料日期：2026-07-11  │  來源：官方 ZIP"
     )
 
     monkeypatch.setattr(
@@ -523,7 +523,7 @@ def test_cache_status_renders_populated_and_failure_states(
         lambda *_args: (_ for _ in ()).throw(RuntimeError("metadata corrupt")),
     )
     page._refresh_cache_status()
-    assert page._cache_status_label.text() == "無法取得快取狀態。"
+    assert page._cache_status_label.text() == "無法取得本機稅籍資料狀態。"
 
 
 def test_download_button_rejects_unofficial_url(page, container, monkeypatch):

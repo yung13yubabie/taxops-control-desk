@@ -88,7 +88,7 @@ class _BookmarkDialog(QDialog):
         path_row = QHBoxLayout()
         self._path_edit = QLineEdit(path)
         self._path_edit.setPlaceholderText(
-            r"本機路徑或 UNC（例如 C:\Users\… 或 \\server\share\…）"
+            r"電腦或公司共用資料夾位置（例如 C:\Users\… 或 \\server\share\…）"
         )
         path_row.addWidget(self._path_edit, stretch=1)
         browse_btn = QPushButton("瀏覽…")
@@ -101,7 +101,7 @@ class _BookmarkDialog(QDialog):
         self._category_edit.setMaxLength(50)
         form.addRow("分類：", self._category_edit)
 
-        hint = QLabel("可貼上完整路徑；UNC 路徑請以 \\\\ 開頭。")
+        hint = QLabel("可貼上完整路徑；公司共用資料夾位置請以 \\\\ 開頭。")
         hint.setStyleSheet("color: #64748B; font-size: 12px;")
         form.addRow("", hint)
 
@@ -148,7 +148,7 @@ class FolderBookmarksPage(QWidget):
         outer.addWidget(title)
 
         hint = QLabel(
-            "管理常用本機資料夾或內網路徑（UNC）的快捷書籤。雙擊或選取後按「開啟資料夾」即可開啟。"
+            "管理常用本機資料夾或公司共用資料夾的快捷書籤。雙擊或選取後按「開啟資料夾」即可開啟。"
         )
         hint.setStyleSheet("color: #64748B; font-size: 13px;")
         hint.setWordWrap(True)

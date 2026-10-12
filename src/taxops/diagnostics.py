@@ -73,6 +73,7 @@ def _run_checks(root: Path, report: dict) -> None:
     from .ui.app import bootstrap
     from .ui.main_window import MainWindow
     from .ui.style import apply
+    from .diagnostics_qt_language import verify_chinese_widgets
 
     def passed(name, **detail):
         report["checks"].append({"name": name, "status": "passed", **detail})
@@ -80,6 +81,7 @@ def _run_checks(root: Path, report: dict) -> None:
     app = QApplication.instance() or QApplication([])
     report.update(qt_binding=qt_binding_version, qt_platform=app.platformName())
     apply(app)
+    passed("qt_traditional_chinese_widgets_and_fallback", **verify_chinese_widgets(app, root))
     icon = asset_path("app_icon.ico")
     _require(icon.is_file() and not QIcon(str(icon)).isNull(), "Packaged icon unavailable")
     passed("qt_application_and_icon")

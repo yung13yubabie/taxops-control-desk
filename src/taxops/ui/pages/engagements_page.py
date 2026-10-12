@@ -16,6 +16,8 @@ jump back to any ancestor level.
 
 from __future__ import annotations
 
+from ...i18n.status_labels import label_for
+
 import datetime
 import logging
 
@@ -598,7 +600,7 @@ class EngagementsPage(QWidget):
             return
         allowed = self._container.engagements.valid_next_statuses(eng_id)
         choices = sorted(
-            STATUS_LABELS.get(s, s) for s in allowed if s != eng.status
+            label_for(STATUS_LABELS, s) for s in allowed if s != eng.status
         )
         if not choices:
             QMessageBox.information(self, "無可用狀態", "此案件目前無法切換到其他狀態。")

@@ -52,10 +52,10 @@ BUTTON_LABELS: dict[str, str] = dict(
             "settings.copy_attachments_path": "複製附件路徑",
             "settings.save_display_name": "儲存使用者顯示名稱",
             "settings.save_query_mode": "儲存查詢模式",
-            "tax_cache.import_zip": "從 ZIP 匯入稅籍資料",
-            "tax_cache.import_bundle": "匯入稅籍快取包",
-            "tax_cache.export_bundle": "匯出稅籍快取包",
-            "tax_cache.verify": "驗證快取",
+            "tax_cache.import_zip": "從壓縮檔匯入稅籍資料",
+            "tax_cache.import_bundle": "匯入稅籍資料包",
+            "tax_cache.export_bundle": "匯出稅籍資料包",
+            "tax_cache.verify": "驗證本機稅籍資料",
             "tax_cache.regenerate_matches": "重新產生客戶對照結果",
         }
     )
@@ -92,3 +92,13 @@ ANNUAL_TRANSACTION_CATEGORY_LABELS: dict[str, str] = dict(
         }
     )
 )
+
+
+def file_type_label(extension: str) -> str:
+    """Describe a stored file format without exposing a MIME identifier."""
+    return {
+        ".pdf": "可攜式文件（PDF）", ".jpg": "圖片（JPG）", ".jpeg": "圖片（JPEG）",
+        ".png": "圖片（PNG）", ".xlsx": "試算表（XLSX）", ".xls": "試算表（XLS）",
+        ".docx": "文字文件（DOCX）", ".doc": "文字文件（DOC）",
+        ".txt": "純文字檔（TXT）", ".csv": "表格文字檔（CSV）",
+    }.get(extension.lower(), "其他檔案格式")

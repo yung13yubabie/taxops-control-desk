@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ...i18n.status_labels import label_for
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -561,7 +563,7 @@ class AnnualAttachmentPanel(QWidget):
                 str(row_data.id),
                 row_data.original_filename,
                 str(row_data.request_id) if row_data.request_id is not None else "案件層級",
-                _STATUS_LABELS.get(row_data.status, row_data.status),
+                label_for(_STATUS_LABELS, row_data.status),
                 f"{row_data.file_size / 1024:.1f} KB",
                 row_data.uploaded_at,
             )

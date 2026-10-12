@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -193,7 +194,7 @@ class CreateLinkedRequestDialog(QDialog):
         self.request_name_input = QLineEdit()
         self.request_name_input.setPlaceholderText("例如：115 年度營所稅結算索件")
         self.due_date_input = QLineEdit()
-        self.due_date_input.setPlaceholderText("YYYY-MM-DD（可留空）")
+        self.due_date_input.setPlaceholderText("西元年-月-日（可留空）")
         self.notes_input = QPlainTextEdit()
         self.notes_input.setPlaceholderText("索件說明（保留換行）")
         self.notes_input.setMinimumHeight(90)
@@ -265,7 +266,7 @@ class CreateLinkedRequestDialog(QDialog):
                 )
         if len(notes) > 2000 or _contains_bad_control(notes):
             return self._invalid(
-                "索件說明不得超過 2,000 個字，且不可包含控制字元。",
+                "索件說明不得超過 2,000 個字，且不可包含無法顯示的字元。",
                 self.notes_input,
             )
         try:
@@ -673,11 +674,14 @@ class AnnualWorkflowDialog(QDialog):
         context_frame = QFrame()
         context_frame.setFrameShape(QFrame.Shape.StyledPanel)
         context = QGridLayout(context_frame)
-        self.client_label = QLabel("—")
-        self.work_label = QLabel("—")
+        self.client_label = QLineEdit("—")
+        self.client_label.setReadOnly(True)
+        self.work_label = QLineEdit("—")
+        self.work_label.setReadOnly(True)
         self.operation_year_label = QLabel("—")
         self.engagement_id_label = QLabel("—")
-        self.engagement_name_label = QLabel("—")
+        self.engagement_name_label = QLineEdit("—")
+        self.engagement_name_label.setReadOnly(True)
         self.state_label = QLabel("載入中")
         self.summary_request_count = QLabel("0")
         self.summary_item_counts = QLabel("文件項目 0")
@@ -685,21 +689,29 @@ class AnnualWorkflowDialog(QDialog):
             ("客戶", self.client_label),
             ("年度工作", self.work_label),
             ("作業年度", self.operation_year_label),
-            ("案件 ID", self.engagement_id_label),
+            ("案件編號", self.engagement_id_label),
             ("案件名稱", self.engagement_name_label),
             ("連結狀態", self.state_label),
             ("索件批次", self.summary_request_count),
             ("項目狀態", self.summary_item_counts),
         )
-        for index, (caption, value) in enumerate(fields):
-            row, column_group = divmod(index, 4)
-            column = column_group * 2
+        positions = (
+            (0, 0, 3), (0, 4, 3), (1, 0, 1), (1, 2, 1),
+            (2, 0, 3), (1, 4, 1), (1, 6, 1), (2, 4, 3),
+        )
+        for (caption, value), (row, column, span) in zip(fields, positions):
             label = QLabel(caption)
             label.setStyleSheet("color: #475569; font-size: 14px;")
-            value.setTextFormat(Qt.TextFormat.PlainText)
+            if isinstance(value, QLabel):
+                value.setTextFormat(Qt.TextFormat.PlainText)
+                value.setWordWrap(True)
+            value.setAccessibleName(caption)
+            value.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
             value.setStyleSheet("font-size: 14px; font-weight: 600;")
             context.addWidget(label, row, column)
-            context.addWidget(value, row, column + 1)
+            context.addWidget(value, row, column + 1, 1, span)
+        for column in (1, 3, 5, 7):
+            context.setColumnStretch(column, 1)
         layout.addWidget(context_frame)
 
         self.feedback_label = QLabel()
@@ -825,6 +837,9 @@ class AnnualWorkflowDialog(QDialog):
     ) -> None:
         self.client_label.setText(client.client_name)
         self.work_label.setText(context.item.title)
+        for field in (self.client_label, self.work_label):
+            field.setToolTip(field.text())
+            field.setCursorPosition(0)
         self.operation_year_label.setText(str(context.operation_year))
         self.summary_request_count.setText(str(summary.request_count))
         self.summary_item_counts.setText(
@@ -841,12 +856,14 @@ class AnnualWorkflowDialog(QDialog):
                 )
             )
         )
+        self.summary_item_counts.setToolTip(self.summary_item_counts.text())
         self._last_context = context
         self._last_summary = summary
         engagement = overview.engagement
         if engagement is None:
             self.engagement_id_label.setText("—")
             self.engagement_name_label.setText("—")
+            self.engagement_name_label.setToolTip("")
             self.state_label.setText("尚未連結案件")
             self.request_page.setEnabled(False)
             self.attachment_panel.set_context(None)
@@ -856,6 +873,8 @@ class AnnualWorkflowDialog(QDialog):
             return
         self.engagement_id_label.setText(str(engagement.id))
         self.engagement_name_label.setText(engagement.engagement_name)
+        self.engagement_name_label.setToolTip(engagement.engagement_name)
+        self.engagement_name_label.setCursorPosition(0)
         self.state_label.setText("已連結案件")
         if not self.request_page.load_engagement(engagement.id):
             raise AnnualWorkError("annual_work.workflow.page_read_failed")

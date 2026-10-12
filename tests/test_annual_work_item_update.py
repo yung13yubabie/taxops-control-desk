@@ -990,7 +990,7 @@ def test_new_detail_and_pagination_errors_have_visible_chinese_messages(
 @pytest.mark.parametrize(
     ("code", "message"),
     [
-        ("annual_work.item_id.invalid", "年度工作識別碼不正確"),
+        ("annual_work.item_id.invalid", "年度工作資料編號不正確，請重新整理後再選擇"),
         (
             "annual_work.transaction.already_active",
             "目前已有資料操作進行中，請完成後再試",
@@ -999,19 +999,19 @@ def test_new_detail_and_pagination_errors_have_visible_chinese_messages(
             "annual_work.work_status.transition_required",
             "完成、取消或重新開啟必須使用對應的專用操作",
         ),
-        ("annual_work.transaction.busy", "資料庫忙碌中，請稍後再試"),
+        ("annual_work.transaction.busy", "其他資料操作尚未完成，請稍後再試"),
         ("annual_work.work_status.invalid", "工作狀態不正確"),
         ("annual_work.filing_status.invalid", "申報狀態不正確"),
         ("annual_work.document_status.invalid", "文件狀態不正確"),
         ("annual_work.tax_status.invalid", "稅款狀態不正確"),
         ("annual_work.fee_status.invalid", "服務費狀態不正確"),
-        ("annual_transactions.work_item_id.invalid", "年度工作識別碼不正確"),
-        ("annual_transactions.transaction_id.invalid", "交易紀錄識別碼不正確"),
+        ("annual_transactions.work_item_id.invalid", "年度工作資料編號不正確，請重新整理後再選擇"),
+        ("annual_transactions.transaction_id.invalid", "交易紀錄資料編號不正確，請重新整理後再選擇"),
         ("annual_transactions.category.invalid", "交易類別不正確"),
         ("annual_transactions.amount.invalid", "交易金額不正確"),
         (
             "annual_transactions.date.invalid",
-            "交易日期格式不正確，請使用 YYYY-MM-DD",
+            "交易日期格式不正確，請依西元年-月-日填寫（例如 2026-10-31）",
         ),
         (
             "annual_transactions.reference.invalid",
@@ -1030,7 +1030,7 @@ def test_new_detail_and_pagination_errors_have_visible_chinese_messages(
             "目前已有交易資料操作進行中，請完成後再試",
         ),
         ("annual_transactions.sort.invalid", "交易歷史排序條件不正確"),
-        ("annual_transactions.transaction.busy", "交易資料庫忙碌中，請稍後再試"),
+        ("annual_transactions.transaction.busy", "其他交易操作尚未完成，請稍後再試"),
         (
             "annual_transactions.transaction_not_found",
             "找不到指定的交易紀錄",

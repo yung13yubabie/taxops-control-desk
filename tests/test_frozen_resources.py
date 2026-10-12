@@ -34,15 +34,23 @@ def test_source_assets_ignore_working_directory_and_unrelated_meipass(
 
 
 class _ApplicationProbe:
-    def __init__(self) -> None:
+    """Observe a real QApplication; translation initialization needs a QObject."""
+
+    def __init__(self, app: QApplication, monkeypatch) -> None:
         self.icons: list[object] = []
         self.styles: list[str] = []
+        self._set_icon = app.setWindowIcon
+        self._set_style = app.setStyleSheet
+        monkeypatch.setattr(app, "setWindowIcon", self.setWindowIcon)
+        monkeypatch.setattr(app, "setStyleSheet", self.setStyleSheet)
 
     def setWindowIcon(self, icon: object) -> None:
         self.icons.append(icon)
+        self._set_icon(icon)
 
     def setStyleSheet(self, stylesheet: str) -> None:
         self.styles.append(stylesheet)
+        self._set_style(stylesheet)
 
 
 @pytest.mark.parametrize("layout", ["internal", "custom_internal", "legacy_flat"])
@@ -79,9 +87,9 @@ def test_both_icon_loaders_use_frozen_bundle_assets(
         return original_icon(source)
 
     monkeypatch.setattr(QtGui, "QIcon", record_icon)
-    probe = _ApplicationProbe()
-    app_module._set_app_icon(probe)
-    style.apply(probe)
+    probe = _ApplicationProbe(qapp, monkeypatch)
+    app_module._set_app_icon(qapp)
+    style.apply(qapp)
 
     assert loaded_paths == [str(icon_path), str(icon_path)]
     assert len(probe.icons) == 2
@@ -94,11 +102,11 @@ def test_missing_frozen_icon_keeps_existing_generated_fallback(
 ) -> None:
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path / "_internal"), raising=False)
-    probe = _ApplicationProbe()
+    probe = _ApplicationProbe(qapp, monkeypatch)
 
-    app_module._set_app_icon(probe)
+    app_module._set_app_icon(qapp)
     assert probe.icons == []
-    style.apply(probe)
+    style.apply(qapp)
 
     assert len(probe.icons) == 1
     assert not probe.icons[0].isNull()

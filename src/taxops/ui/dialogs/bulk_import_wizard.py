@@ -148,8 +148,8 @@ class BulkImportWizard(QDialog):
         layout.addWidget(QLabel("請選擇資料來源："))
 
         self._rb_excel = QRadioButton("Excel 檔案 (.xlsx)")
-        self._rb_csv = QRadioButton("CSV 檔案 (.csv)")
-        self._rb_paste = QRadioButton("貼上表格文字（Tab 或逗號分隔）")
+        self._rb_csv = QRadioButton("表格文字檔（CSV） (.csv)")
+        self._rb_paste = QRadioButton("貼上表格文字（欄位間以定位字元或逗號分隔）")
         self._rb_excel.setChecked(True)
 
         for rb in (self._rb_excel, self._rb_csv, self._rb_paste):
@@ -329,7 +329,7 @@ class BulkImportWizard(QDialog):
         if self._rb_excel.isChecked():
             f, _ = QFileDialog.getOpenFileName(self, "選擇 Excel 檔案", "", "Excel (*.xlsx)")
         else:
-            f, _ = QFileDialog.getOpenFileName(self, "選擇 CSV 檔案", "", "CSV (*.csv)")
+            f, _ = QFileDialog.getOpenFileName(self, "選擇 表格文字檔（CSV）", "", "CSV (*.csv)")
         if f:
             self._file_path_label.setText(f)
 
@@ -347,7 +347,7 @@ class BulkImportWizard(QDialog):
             else:
                 path_str = self._file_path_label.text()
                 if path_str == "尚未選擇檔案":
-                    QMessageBox.warning(self, "未選擇檔案", "請先選擇 CSV 檔案。")
+                    QMessageBox.warning(self, "未選擇檔案", "請先選擇 表格文字檔（CSV）。")
                     return False
                 self._headers, self._raw_rows = parse_csv(Path(path_str))
         except BulkParseError as exc:

@@ -610,6 +610,8 @@ def apply(app: object) -> None:
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 
+    from ..i18n.qt import install_chinese
+    install_chinese(app)
     app.setStyleSheet(APP_STYLESHEET)  # type: ignore[attr-defined]
 
     icon_path = asset_path("app_icon.ico")

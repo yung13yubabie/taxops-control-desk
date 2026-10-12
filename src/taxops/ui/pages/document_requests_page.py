@@ -15,6 +15,8 @@ page uses to drill into a specific engagement.
 
 from __future__ import annotations
 
+from ...i18n.status_labels import label_for
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -1584,7 +1586,7 @@ class DocumentRequestsPage(QWidget):
         req_id = self._selected_request_id()
         if req_id is None:
             return
-        label_to_value = {STATUS_LABELS.get(s, s): s for s in VALID_REQUEST_STATUSES}
+        label_to_value = {label_for(STATUS_LABELS, s): s for s in VALID_REQUEST_STATUSES}
         choices = sorted(label_to_value)
         req_row = self._selected_request_row()
         if req_row is None:
@@ -1936,7 +1938,7 @@ class DocumentRequestsPage(QWidget):
         req_id = self._selected_request_id()
         if req_id is None:
             return
-        label_to_value = {STATUS_LABELS.get(s, s): s for s in VALID_ITEM_STATUSES}
+        label_to_value = {label_for(STATUS_LABELS, s): s for s in VALID_ITEM_STATUSES}
         choices = sorted(label_to_value)
         item_row = self._selected_item_row()
         if item_row is None:

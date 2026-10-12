@@ -233,3 +233,48 @@ def test_archived_selected_case_or_lease_file_blocks_manual_review(page, contain
     page._manual_btn.click()
     assert not targets and not editors
     assert warnings and "附件已失效" in warnings[0]
+
+
+@pytest.mark.parametrize("width", [900, 1093, 1280])
+def test_receipt_filter_row_shrinks_without_clipping_native_controls(qapp, page, records, width):
+    """A wider native combo must not turn the supported 900px page into 913px.
+
+    This is a deterministic minimum-width stress case, not a Windows DPI
+    emulation. The unchanged compact-geometry test still runs on real Windows.
+    """
+    old = qapp.styleSheet()
+    try:
+        apply_style(qapp)
+        _select(page, records[4])
+        # Platform fonts/styles change native control minimums. Exceed the old
+        # single-row minimum on Linux as well so this catches the fixed search.
+        page._eng_combo.setMinimumWidth(324)
+        qapp.processEvents()
+        for requested_width in (width, 1280, width):
+            page.resize(requested_width, 614)
+            qapp.processEvents()
+            assert page.width() == requested_width
+            assert page._toolbar_widget.minimumSizeHint().width() <= page._toolbar_widget.width()
+            controls = (page._owner_kind, page._eng_combo, page._search, page._refresh_btn)
+            if requested_width < 1000:
+                controls += (page._preview_btn,)
+            for control in controls:
+                assert control.isVisible()
+                assert page.rect().contains(control.mapTo(page, control.rect().topLeft()))
+                assert page.rect().contains(control.mapTo(page, control.rect().bottomRight()))
+            assert page._search.width() >= page._search.fontMetrics().horizontalAdvance("搜尋檔名") + 32
+            assert page._today_btn.isVisible()
+            assert page._today_panel.isVisible() == (requested_width >= 1180)
+            if requested_width < 1000:
+                # The longer "return to list" label must fit too.
+                page._preview_btn.click()
+                qapp.processEvents()
+                assert page.width() == requested_width
+                assert page._manual_btn.isVisible()
+                for control in controls:
+                    assert page.rect().contains(control.mapTo(page, control.rect().bottomRight()))
+                page._preview_btn.click()
+                qapp.processEvents()
+                assert page.width() == requested_width
+    finally:
+        qapp.setStyleSheet(old)

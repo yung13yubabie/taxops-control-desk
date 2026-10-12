@@ -267,8 +267,10 @@ def test_info_dialog_labels_plain_text(qapp):
         accepted_at=None,
     )
     dlg = _AttachmentInfoDialog(att)
-    from PySide6.QtWidgets import QFormLayout, QLabel
-    form = dlg.layout()
+    from PySide6.QtWidgets import QFormLayout, QLabel, QScrollArea
+    scroll = dlg.findChild(QScrollArea)
+    assert scroll is not None
+    form = scroll.widget().layout()
     assert isinstance(form, QFormLayout)
     for i in range(form.rowCount()):
         item = form.itemAt(i, QFormLayout.ItemRole.FieldRole)

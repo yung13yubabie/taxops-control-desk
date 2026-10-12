@@ -1,5 +1,15 @@
 # CURRENT_STATE
 
+## 2026-10-12 繁中整合後固定量測
+
+程式固定 247fe2c，完整 137 檔：3333 項＝3327 passed＋5 既有 Linux IPC failed＋1 Windows-only skipped，raw branch coverage 90.93781920326865%，整體 exit 1 保留。source 17 項自測含真實英文起始語言→繁中 Qt 視窗及缺 QM 有限後備通過，frozen=false。翻譯來源21a336b已獨立抽查；247fe2c 整合版獨立複驗亦通過：74畫面／8語意、5檔58、source17及5個拒絕反例；範圍不累加。遠端仍為第一輪20cdc1a，尚未更新為此來源；新 Windows CI／EXE與乾淨離線實機驗收待完成。下列均為歷史階段紀錄。
+
+## 2026-10-12 新手修補後候選
+
+程式固定 4985acd：已整合新手表單防誤覆寫／選取保留、捲動與焦點、Windows layout與測試契約修正。完整 Linux 136 檔 3310 passed／5 IPC failed／1 Windows-only skipped，實值 branch coverage 90.87923762918129%；獨立新手 11 probe、38 結果斷言、5 檔130通過，範圍勿相加。第一輪遠端 draft PR #2 head20cdc1a 與本地bf1872b等tree，Windows3223pass／4fail阻擋EXE；新修補尚待新Windows檢查。白話繁中文字片段仍待整合。詳細依 docs/reliability_latest_port.md。未tag/Release/merge，乾淨離線Windows尚未驗收。
+
+以下保留較早階段紀錄，其待辦／未推送狀態不代表最新進度。
+
 ## 2026-10-12 0.33.0rc1 本地整合候選
 
 完整 Linux 矩陣固定 773efd4：132 檔、3219 passed／5 IPC 環境 failed／1 Windows-only skipped，raw branch coverage 90.65248785611134%。最後 87b49ac 加 4 行 layout 及封存 guard（2 新案例），9 檔 251 passed；其後僅文件。沒有把前一 SHA coverage 宣称為最後 tree 的新量測。已整合可靠性、schema/asset/Windows candidate gate、C 收件＋A 提醒；保留 v0.31 功能，版本 0.33.0rc1。README/CHANGELOG 與 `docs/reliability_latest_port.md` 為本輪入口。Windows 同 SHA 全套、乾淨離線 EXE、DPI 仍待驗；設定快取單選測試既有 GC exit -11 未解，勿宣稱全部穩定。未 push/tag/Release/merge。

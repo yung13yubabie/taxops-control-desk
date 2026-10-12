@@ -2,8 +2,8 @@
 
 The editor is the top of the form. The field-source explanation that used to occupy
 that position sits in a collapsed disclosure at the bottom, and the real-data preview
-sits in a second one, so the default state has exactly one vertical scroll region —
-the body editor — and fits without an outer scroll area.
+sits in a second one. A scrollable form keeps both disclosures reachable on short
+screens while the save and cancel actions stay outside the scrolling content.
 
 The available-field list is grouped by where each value comes from and filtered by a
 search box. Double-click still inserts, and the exact text that will be inserted is
@@ -11,6 +11,8 @@ shown before the user commits to it.
 """
 
 from __future__ import annotations
+
+from ...i18n.status_labels import label_for
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
@@ -25,6 +27,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -173,9 +176,18 @@ class TemplateFormDialog(QDialog):
         else:
             self.setWindowTitle("編輯模板" if is_edit else "新增模板")
         self.setModal(True)
-        self.setMinimumWidth(760)
+        self.setMinimumWidth(600)
 
-        outer = QVBoxLayout(self)
+        self.resize(760, 600)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        content = QWidget()
+        outer = QVBoxLayout(content)
+        self._scroll.setWidget(content)
+        root.addWidget(self._scroll, 1)
         outer.setContentsMargins(
             tokens.SPACING_XL, tokens.SPACING_XL, tokens.SPACING_XL, tokens.SPACING_XL
         )
@@ -185,14 +197,16 @@ class TemplateFormDialog(QDialog):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self._name = QLineEdit()
+        self._name.setAccessibleName("模板名稱（必填）")
         self._name.setMaxLength(200)
-        self._name.setPlaceholderText("必填")
+        self._name.setPlaceholderText("必填，例如：每月資料提醒")
 
         self._type = QComboBox()
         for value, label in _TYPE_CHOICES:
             self._type.addItem(label, userData=value)
 
         self._body = QTextEdit()
+        self._body.setAccessibleName("模板內容（必填）")
         self._body.setMinimumHeight(180)
         self._body.setPlaceholderText(
             "輸入模板內容。雙擊右側欄位即可插入。\n"
@@ -232,7 +246,7 @@ class TemplateFormDialog(QDialog):
         var_col.addWidget(self._var_search)
 
         self._var_list = QListWidget()
-        self._var_list.setMinimumWidth(240)
+        self._var_list.setMinimumWidth(200)
         self._var_list.setMaximumWidth(280)
         var_col.addWidget(self._var_list, stretch=1)
 
@@ -240,13 +254,13 @@ class TemplateFormDialog(QDialog):
         # list shows 客戶名稱 but the body receives 【客戶名稱】.
         self._insert_format = QLabel()
         self._insert_format.setWordWrap(True)
-        self._insert_format.setMinimumWidth(240)
+        self._insert_format.setMinimumWidth(200)
         self._insert_format.setMaximumWidth(280)
         var_col.addWidget(self._insert_format)
 
         self._var_detail = QLabel()
         self._var_detail.setWordWrap(True)
-        self._var_detail.setMinimumWidth(240)
+        self._var_detail.setMinimumWidth(200)
         self._var_detail.setMaximumWidth(280)
         self._var_detail.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
@@ -324,7 +338,8 @@ class TemplateFormDialog(QDialog):
         set_button_role(self._save_btn, tokens.ROLE_PRIMARY)
         set_button_role(cancel_btn, tokens.ROLE_SECONDARY)
         self._save_btn.setDefault(True)
-        outer.addWidget(buttons)
+        buttons.setContentsMargins(tokens.SPACING_XL, 0, tokens.SPACING_XL, tokens.SPACING_MD)
+        root.addWidget(buttons)
 
         for a, b in [
             (self._name, self._type),
@@ -446,7 +461,7 @@ class TemplateFormDialog(QDialog):
 
     def _refresh_variable_list(self) -> None:
         template_type = str(self._type.currentData() or "custom")
-        type_label = TEMPLATE_TYPE_LABELS.get(template_type, template_type)
+        type_label = label_for(TEMPLATE_TYPE_LABELS, template_type)
         keys = self._variable_keys_for_type(template_type)
         needle = self._var_search.text().strip()
 

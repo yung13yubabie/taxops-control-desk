@@ -6,13 +6,21 @@ Run with:  pyinstaller TaxOpsControlDesk.spec --noconfirm --clean
 """
 
 from PyInstaller.utils.hooks import collect_submodules
+import PySide6
+from PySide6.QtCore import QLibraryInfo
+from pathlib import Path
+
+_qt_translation = Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)) / "qtbase_zh_TW.qm"
+_qt_translation_target = str(Path("PySide6") / _qt_translation.parent.relative_to(Path(PySide6.__file__).parent))
+if not _qt_translation.is_file():
+    raise RuntimeError("Required Traditional Chinese Qt catalogue is missing")
 
 
 a = Analysis(
     ["build_tools/pyinstaller_entry.py"],
     pathex=["src"],
     binaries=[],
-    datas=[("assets/app_icon.ico", "assets")],
+    datas=[("assets/app_icon.ico", "assets"), (str(_qt_translation), _qt_translation_target)],
     hiddenimports=[
         # PySide6 modules not always auto-detected but loaded at runtime
         "PySide6.QtSvg",

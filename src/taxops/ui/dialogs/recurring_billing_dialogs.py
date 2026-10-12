@@ -95,7 +95,8 @@ class _BulkPasteDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("批量貼上開立明細")
         self.setModal(True)
-        self.setMinimumSize(680, 520)
+        self.setMinimumSize(520, 380)
+        self.resize(680, 520)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 20, 20, 20)
@@ -110,9 +111,10 @@ class _BulkPasteDialog(QDialog):
 
         sample = QLabel(
             "範例：\n"
-            "台積電\t120000\tvat\t月度顧問費\n"
-            "聯發科\t80000\tservice\t顧問服務"
+            "台積電\t120000\t營業稅\t月度顧問費\n"
+            "聯發科\t80000\t服務費\t顧問服務"
         )
+        sample.setWordWrap(True)
         sample.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         sample.setStyleSheet(
             "font-family: Consolas, monospace; background: #F8FAFC; "
@@ -128,10 +130,11 @@ class _BulkPasteDialog(QDialog):
         outer.addLayout(tool_row)
 
         self._text = QTextEdit()
+        self._text.setAccessibleName("開立明細（每列四欄，以定位字元分隔）")
         self._text.setPlaceholderText(
-            "台積電\t120000\tvat\t月度顧問費\n聯發科\t80000\tservice\t"
+            "台積電\t120000\t營業稅\t月度顧問費\n聯發科\t80000\t服務費\t"
         )
-        self._text.setMinimumHeight(220)
+        self._text.setMinimumHeight(100)
         outer.addWidget(self._text)
 
         buttons = QDialogButtonBox()
@@ -195,7 +198,7 @@ class PlanDialog(QDialog):
 
         self._name = QLineEdit()
         self._name.setMaxLength(200)
-        self._name.setPlaceholderText("必填")
+        self._name.setPlaceholderText("必填，例如：每月服務費開立")
         form.addWidget(QLabel("方案名稱 *"), 0, 0)
         form.addWidget(self._name, 0, 1)
 
@@ -243,12 +246,13 @@ class PlanDialog(QDialog):
 
         self._contract_ref = QLineEdit()
         self._contract_ref.setMaxLength(200)
-        self._contract_ref.setPlaceholderText("選填")
+        self._contract_ref.setPlaceholderText("選填，例如：合約-2026-001")
         form.addWidget(QLabel("合約編號"), 0, 2)
         form.addWidget(self._contract_ref, 0, 3)
 
         self._notes = QTextEdit()
         self._notes.setFixedHeight(56)
+        self._notes.setPlaceholderText("選填，補充此筆資料的說明")
         form.addWidget(QLabel("備註"), 5, 0)
         form.addWidget(self._notes, 5, 1, 1, 3)
 
@@ -597,22 +601,23 @@ class LineDialog(QDialog):
 
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
 
         self._bill_to = QLineEdit()
         self._bill_to.setMaxLength(200)
         self._bill_to.setMinimumWidth(320)
-        self._bill_to.setPlaceholderText("必填，例：台積電EDA部")
+        self._bill_to.setPlaceholderText("必填，例：範例公司研發部")
         form.addRow(QLabel("開立對象 *"), self._bill_to)
 
         self._amount = QLineEdit()
         self._amount.setMinimumWidth(180)
         self._amount.setPlaceholderText("整數，例：120000")
-        form.addRow(QLabel("金額 (NT$) *"), self._amount)
+        form.addRow(QLabel("金額（新臺幣） *"), self._amount)
 
         self._desc = QLineEdit()
         self._desc.setMaxLength(500)
-        self._desc.setPlaceholderText("選填")
+        self._desc.setPlaceholderText("選填，例如：本期服務項目")
         form.addRow(QLabel("說明"), self._desc)
 
         self._tax_type = QComboBox()
@@ -727,7 +732,7 @@ class ConfirmOccurrenceDialog(QDialog):
 
         self._amount = QLineEdit()
         self._amount.setText(str(line.amount))
-        form.addRow(QLabel("確認金額 (NT$) *"), self._amount)
+        form.addRow(QLabel("確認金額（新臺幣） *"), self._amount)
 
         self._issue_date = DateField(required=False)
         self._issue_date.set_value(occurrence.expected_issue_date)
@@ -740,6 +745,7 @@ class ConfirmOccurrenceDialog(QDialog):
 
         self._notes = QTextEdit()
         self._notes.setFixedHeight(56)
+        self._notes.setPlaceholderText("選填，補充此筆資料的說明")
         form.addRow(QLabel("備註"), self._notes)
 
         outer.addLayout(form)
@@ -824,7 +830,7 @@ class SkipOccurrenceDialog(QDialog):
 
         self._reason = QTextEdit()
         self._reason.setFixedHeight(80)
-        self._reason.setPlaceholderText("必填")
+        self._reason.setPlaceholderText("必填，請填寫本次不開立的實際原因")
         form.addRow(QLabel("跳過原因 *"), self._reason)
 
         outer.addLayout(form)

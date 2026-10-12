@@ -61,7 +61,7 @@ def test_detail_loads_real_item_context_and_saves_exact_multiline(
     detail.title_input.setText("營業稅 01–02 月（人工調整）")
     detail.tax_year_input.setText("2027")
     detail.period_code_input.setText("01–02")
-    detail.due_date_input.setText("2026-03-16")
+    detail.due_date_input.set_value("2026-03-16")
     detail.notes_input.setPlainText(notes)
     for combo, value in (
         (detail.work_status_combo, "in_progress"),
@@ -285,7 +285,9 @@ def test_invalid_detail_focuses_first_relevant_field_without_writing(
     dialog.show()
     detail = dialog.detail
     field = getattr(detail, field_name)
-    if field_name == "notes_input":
+    if field_name == "due_date_input":
+        field._edit.setText(value)
+    elif field_name == "notes_input":
         field.setPlainText(value)
     else:
         field.setText(value)

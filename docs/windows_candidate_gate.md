@@ -2,9 +2,17 @@
 
 ## Status and scope
 
-The workflow and test code are implemented. They were locally validated as
-source and synthetic contracts on Linux; **the new Windows workflow and a real
-frozen Windows EXE have not yet been run or accepted in this change**.
+The first Windows run completed on the original candidate, but failed its source
+test gate: **3223 passed / 4 failed, no EXE built**. See
+[run 38206960124](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38206960124).
+Its head was `20cdc1a`, with checkout merge `c314c6c`; both had the exact tree of
+local source `bf1872b`. The four failures concerned receipt minimum width, a test
+mock intercepting Windows platform detection, and two report-path assertions.
+Their fixes and the later Chinese UI slice are included in source snapshot
+`247fe2c`, whose complete Linux matrix has 3327 passed / 5 IPC-environment failed /
+1 platform skipped across all 137 files, and raw branch coverage
+90.93781920326865%. **A new Windows run of the final integrated
+candidate and frozen EXE verification remain required.**
 
 `.github/workflows/windows-candidate.yml` runs only for pull requests or an
 explicit manual dispatch. It has `contents: read`, does not request secrets,
@@ -95,9 +103,18 @@ Required native/runtime and service checks:
     and client address/lease ownership, annual records/links/transactions,
     attachment/workflow/canvas bytes, FTS, integrity, foreign keys and audit
 12. Temporary-data cleanup
+13. Real Traditional Chinese standard buttons, calendar month/weekdays, and
+    open/save/directory Qt file dialogs, starting from an English locale;
+    nonempty meaningful prompts and actual buttons, generated folder metadata,
+    and unchanged selected paths/content. A genuinely missing-catalogue check
+    verifies the limited button fallback and reports `fully_localized: false`,
+    then restores the complete catalogue.
 
-These flows produce 16 required named checks in the machine-readable report.
+These flows produce 17 required named checks in the machine-readable report.
 They are representative synthetic runtime checks, not exhaustive domain tests.
+The bundle must contain `qtbase_zh_TW.qm`; a missing catalogue or a report that
+claims complete localization for the fallback fails the gate. Source report
+`247fe2c` passed these 17 checks, but is explicitly `frozen: false`.
 
 CPython socket audit events are denied during these synthetic operations. A
 caught/swallowed attempt still makes the final result fail. This guard does not
@@ -158,6 +175,8 @@ acceptance still includes:
   import/query, PDF/image preview, exports, complete backup/restore, and audit
 - Traditional Chinese glyphs, actual dialogs, keyboard behavior, and
   100/125/150/200% scaling
+  (the baseline 320 px calendar still has slight sixth-row text-bottom clipping
+  in Linux offscreen rendering; the source language checks do not waive this)
 - A copied populated supported-version database plus assets upgraded by the
   candidate, with an intact pre-upgrade backup; an explicit refusal of unknown
   newer schema versions

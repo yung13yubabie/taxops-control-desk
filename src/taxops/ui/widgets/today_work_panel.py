@@ -131,7 +131,7 @@ class TodayWorkPanel(QWidget):
         layout.addWidget(self._summary)
         self._list = QListWidget()
         self._list.setObjectName("TodayWorkList")
-        self._list.setAccessibleName("待辦與索件提醒清單，按 Enter 開啟選取項目")
+        self._list.setAccessibleName("待辦與索件提醒清單，按確認鍵開啟選取項目")
         self._list.setWordWrap(False)
         self._list.setUniformItemSizes(True)
         self._list.setTextElideMode(Qt.TextElideMode.ElideRight)

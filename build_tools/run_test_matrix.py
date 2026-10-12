@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
-from pathlib import Path
+from pathlib import Path, PurePath
 
 ROOT = Path(__file__).resolve().parents[1]
 MINIMUM_COVERAGE = 90.0
@@ -37,6 +37,11 @@ def _junit_counts(path: Path) -> dict[str, int]:
 
 def _text(value: str | bytes | None) -> str:
     return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value or ""
+
+
+def _report_path(path: PurePath) -> str:
+    """Use repository-relative POSIX paths in reports on every host OS."""
+    return path.relative_to(ROOT).as_posix()
 
 
 def run_matrix(output: Path, *, files: list[Path] | None = None, timeout: int = 900) -> dict:
@@ -73,7 +78,7 @@ def run_matrix(output: Path, *, files: list[Path] | None = None, timeout: int = 
                    "--source=taxops", "-m", "pytest", str(path), "-q", "--tb=short",
                    "-p", "no:cacheprovider", f"--junitxml={junit}"]
         started = time.monotonic()
-        result = {"file": str(path.relative_to(ROOT)), "status": "failed", "exit_code": None}
+        result = {"file": _report_path(path), "status": "failed", "exit_code": None}
         try:
             process = subprocess.run(command, cwd=ROOT, env=env, timeout=timeout,
                                      capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -101,7 +106,7 @@ def run_matrix(output: Path, *, files: list[Path] | None = None, timeout: int = 
         summary["files"].append(result)
         print(f"{index + 1}/{len(selected)} {path.name}: {result['status']} (exit={result['exit_code']})", flush=True)
         if fatal:
-            summary["unrun_files"] = [str(p.relative_to(ROOT)) for p in selected[index + 1:]]
+            summary["unrun_files"] = [_report_path(p) for p in selected[index + 1:]]
             save()
             break
         save()

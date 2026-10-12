@@ -8,6 +8,8 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QFrame,
+    QScrollArea,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -23,6 +25,7 @@ from ...services.engagements import (
     EngagementsService,
 )
 from ._shared import TAX_TYPE_CHOICES
+from ._discard_changes import confirm_discard
 from ..widgets.date_field import DateField
 
 
@@ -40,12 +43,18 @@ class NewEngagementDialog(QDialog):
         self.setWindowTitle("新增案件")
         self.setModal(True)
         self.setMinimumWidth(460)
+        self.resize(520, 480)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 20, 20, 20)
         outer.setSpacing(12)
 
-        form = QFormLayout()
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        form = QFormLayout(content)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self._name = QLineEdit()
@@ -62,11 +71,14 @@ class NewEngagementDialog(QDialog):
 
         self._owner = QLineEdit()
         self._owner.setMaxLength(100)
+        self._owner.setPlaceholderText("可留空，例如 王小明")
 
         self._due_date = DateField(required=False)
 
         self._notes = QTextEdit()
         self._notes.setFixedHeight(72)
+        self._notes.setTabChangesFocus(True)
+        self._notes.setPlaceholderText("可留空，補充案件處理事項")
 
         form.addRow(QLabel("案件名稱 *"), self._name)
         form.addRow(QLabel("稅種 *"), self._tax_type)
@@ -75,7 +87,13 @@ class NewEngagementDialog(QDialog):
         form.addRow(QLabel("到期日"), self._due_date)
         form.addRow(QLabel("備註"), self._notes)
 
-        outer.addLayout(form)
+        for row in range(form.rowCount()):
+            label = form.itemAt(row, QFormLayout.ItemRole.LabelRole).widget()
+            field = form.itemAt(row, QFormLayout.ItemRole.FieldRole).widget()
+            label.setBuddy(field)
+            field.setAccessibleName(label.text().replace(" *", "（必填）"))
+        self.scroll_area.setWidget(content)
+        outer.addWidget(self.scroll_area, 1)
 
         buttons = QDialogButtonBox()
         self._save_btn = buttons.addButton(
@@ -89,14 +107,31 @@ class NewEngagementDialog(QDialog):
             (self._name, self._tax_type),
             (self._tax_type, self._period),
             (self._period, self._owner),
-            (self._owner, self._save_btn),
+            (self._owner, self._due_date),
+            (self._due_date, self._notes),
+            (self._notes, self._save_btn),
         ]:
             self.setTabOrder(a, b)
 
+        self._initial_values = self._form_values()
         self._save_btn.clicked.connect(self.on_save)
         cancel_btn.clicked.connect(self.reject)
 
+    def _form_values(self) -> tuple:
+        return (
+            self._name.text(), self._tax_type.currentData(), self._period.text(),
+            self._owner.text(), self._due_date.raw_text(), self._notes.toPlainText(),
+        )
+
+    def reject(self) -> None:
+        if self._form_values() != self._initial_values:
+            confirm_discard(self, lambda: QDialog.reject(self))
+            return
+        super().reject()
+
     def on_save(self) -> None:
+        if getattr(self, "_discard_confirmation", None) is not None:
+            return
         self._save_btn.setEnabled(False)
         try:
             due_date = self._due_date.validated_value()

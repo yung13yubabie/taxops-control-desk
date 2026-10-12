@@ -1,5 +1,22 @@
 # RESOURCE CLEANUP AUDIT
 
+## 2026-10-12 Qt 翻譯自測資源
+
+固定247fe2c完整137檔各自process均正常返回，5個IPC斷言失敗保留。翻譯自測只建立臨時合成檔案與自身widgets；逐一close/deleteLater並只對該物件送DeferredDelete，舊translator保持Python引用到定向清理完成；缺QM案例finally恢復完整catalogue。真實source 17項自測exit0，未因此宣稱既有單選pytest GC根因已修，Windows frozen尚待驗。
+
+## 2026-10-12 固定4985acd與Windows對照
+
+新DateField測試只用qtbot持有並回收自己widgets，沒有新增worker／網路。136檔完整矩陣各自process正常返回（5個IPC環境assert失敗保留）；第一輪Windows132檔正常返回，settings全檔30pass不代表Linux單選GC限制已修。Gate測試替身已限制模組，保留真stdlib subprocess探針；每次等待完成。source self-test16項臨時合成資料清理通過，未把Linux當EXE驗收。
+
+## 2026-10-12 新手收件表單測試
+
+新增真Qt對話測試以合成fixture SQLite、逐檔process執行；對話reject/deleteLater，fixture關閉資料庫。未新增worker、網路或subprocess。截圖可選輸出到明確測試目錄。
+
+## 2026-10-12 新手工具表單測試
+
+新增測試沿用隔離container fixture並關閉widgets；長中文圖probe使用TemporaryDirectory並close容器。逐檔獨立process跑Qt聚焦回歸，未下載／未新增worker，未宣稱既有settings GC限制已修復。
+
+
 ## 2026-10-12 保留未解的單選清理證據
 
 settings 的 test_import_and_export_bundle_buttons_run_services 在 f02dc5d 與 773efd4 單選 pytest 均斷言 pass 後 GC exit -11；普通程式加明確 DeferredDelete 對照 exit 0，同時更動兩個因素，根因未定。132 檔完整矩陣無 native crash 不等於此限制已修復；詳見 reliability_latest_port。

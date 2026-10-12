@@ -1,5 +1,22 @@
 # HANDOFF
 
+## 2026-10-12 247fe2c 繁中整合量測
+
+完整矩陣137檔，3327 pass／5既有IPC fail／1skip，實值branch90.93781920326865%；原始matrix有完整247fe2c來源，前後HEAD和clean核實。source 17 checks exit0但不是EXE。最終獨立複驗已通過，純文件收尾後以精確tree更新既有draft PR #2再跑Windows。不得把原20cdc1a的4fail自動改綠，不merge/tag/Release。已知小月曆第六週下緣裁切及Qt單選GC限制保留。
+
+## 2026-10-12 4985acd 新手統合量測
+
+新手三組、共享DateField、Windows gate mock／portable JSON與收件寬度修正已統合。136檔完整Linux量測3310pass／5既有IPCfail／1skip，raw branch90.87923762918129%；獨立11probe＋38斷言＋5檔130過。原遠端候選20cdc1a（等tree bf1872b）Windows4fail，未build EXE；資料與指令見docs/reliability_latest_port.md。下一步先整合白話繁中文字與Qt視窗翻譯、自測，再獨立驗證與更新draft PR執行同SHA Windows gate。不要挪用4985acd量測代表後續未測tree。未merge/tag/Release。
+
+## 2026-10-12 新手收件表單交接
+
+五個限定UI檔修復；讀 `docs/novice_intake_review_20261012.md` 與 `tests/test_novice_intake_forms.py`。下一步獨立review及整合回歸；未改共享UI，未發布。
+
+## 2026-10-12 新手工具表單交接
+
+局部修正模板、固定開立、流程dialog與registry/settings頁；新增5個真Qt短窗/取消測試。聚焦297 passed／1 existing skipped；未改稅法、下載或共享widgets。先讀 docs/novice_tool_forms_20261012.md；下一步固定SHA獨立review與整合。Windows未驗收。
+
+
 ## 2026-10-12 0.33.0rc1 本地整合候選
 
 完整 Linux 矩陣固定 773efd4：132 檔、3219 passed／5 IPC 環境 failed／1 Windows-only skipped，raw branch coverage 90.65248785611134%。最後 87b49ac 加 4 行 layout 及封存 guard（2 新案例），9 檔 251 passed；其後僅文件。沒有把前一 SHA coverage 宣称為最後 tree 的新量測。已整合可靠性、schema/asset/Windows candidate gate、C 收件＋A 提醒；保留 v0.31 功能，版本 0.33.0rc1。README/CHANGELOG 與 `docs/reliability_latest_port.md` 為本輪入口。Windows 同 SHA 全套、乾淨離線 EXE、DPI 仍待驗；設定快取單選測試既有 GC exit -11 未解，勿宣稱全部穩定。未 push/tag/Release/merge。

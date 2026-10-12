@@ -1,4 +1,4 @@
-"""工商 / 稅籍查詢頁 — MOF 本地快取 + 官方 GCIS 單筆補查."""
+"""工商 / 稅籍查詢頁 — MOF 本機稅籍資料 + 官方 GCIS 單筆補查."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QScrollArea,
     QMessageBox,
     QPushButton,
     QHeaderView,
@@ -47,7 +48,7 @@ _RESULT_FIELDS: tuple[tuple[str, str], ...] = (
     ("industries", "行業資料"),
 )
 
-_NOT_FOUND_MSG = "本地快取查無此統一編號，可能是快取未更新或資料來源未涵蓋。"
+_NOT_FOUND_MSG = "本機稅籍資料查無此統一編號，可能是本機稅籍資料未更新或資料來源未涵蓋。"
 
 
 class _GCISWorker(QThread):
@@ -80,7 +81,15 @@ class RegistryPage(QWidget):
         self._gcis_worker: _GCISWorker | None = None
         self._local_worker: LocalRegistrySearchWorker | None = None
 
-        layout = QVBoxLayout(self)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        self._scroll.setWidget(content)
+        root.addWidget(self._scroll)
         layout.setSpacing(16)
         layout.setContentsMargins(24, 24, 24, 24)
 
@@ -100,13 +109,13 @@ class RegistryPage(QWidget):
         self._query_edit.returnPressed.connect(self._on_search_local)
         search_layout.addWidget(self._query_edit, stretch=1)
 
-        self._search_btn = QPushButton("查詢本地快取")
+        self._search_btn = QPushButton("查詢本機稅籍資料")
         self._search_btn.setIcon(toolbar_icon("refresh"))
         self._search_btn.clicked.connect(self._on_search_local)
         search_layout.addWidget(self._search_btn)
 
-        self._gcis_btn = QPushButton("GCIS 工商查詢")
-        self._gcis_btn.setToolTip("依統一編號向經濟部 GCIS 官方 API 單筆補查")
+        self._gcis_btn = QPushButton("經濟部工商查詢")
+        self._gcis_btn.setToolTip("用統一編號查詢經濟部最新登記資料")
         self._gcis_btn.clicked.connect(self._on_search_gcis)
         search_layout.addWidget(self._gcis_btn)
 
@@ -139,6 +148,7 @@ class RegistryPage(QWidget):
 
         self._result_group = QGroupBox("查詢結果")
         result_form = QFormLayout(self._result_group)
+        result_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         result_form.setHorizontalSpacing(16)
         result_form.setVerticalSpacing(8)
 
@@ -356,6 +366,8 @@ class RegistryPage(QWidget):
                 value = "\n".join(lines) if lines else "此來源未提供行業資料"
             else:
                 value = str(result.get(field_key) or "")
+            if field_key == "source" and value == "GCIS 官方線上查詢":
+                value = "經濟部官方線上查詢"
             self._result_labels[field_key].setText(value)
             self._result_labels[field_key].setToolTip(value)
         self._result_group.setVisible(True)
@@ -364,11 +376,11 @@ class RegistryPage(QWidget):
     def _on_search_gcis(self) -> None:
         tax_id = self._query_edit.text().strip()
         if len(tax_id) != 8 or not tax_id.isdigit():
-            self._clear_result("GCIS 線上補查僅支援 8 位數統一編號。")
+            self._clear_result("經濟部線上查詢僅支援 8 位數統一編號。")
             return
         if self._gcis_worker is not None or self._local_worker is not None:
             return
-        self._clear_result("正在查詢經濟部 GCIS 官方資料…")
+        self._clear_result("正在查詢經濟部登記資料…")
         self._set_search_busy(True)
 
         worker = _GCISWorker(tax_id, self)
@@ -407,15 +419,15 @@ class RegistryPage(QWidget):
             expected_tax_id is not None
             and self._query_edit.text().strip() != expected_tax_id
         ):
-            self._clear_result("查詢條件已變更，舊的 GCIS 結果已忽略。")
+            self._clear_result("查詢條件已變更，先前的查詢結果已忽略。")
             return
         if result is None:
             self._clear_result(
-                "GCIS 官方查無可用資料；這不代表該統編不存在，可能是資料類型或介接權限未涵蓋。"
+                "經濟部查無可用資料；這不代表該統編不存在，可能是資料尚未提供或目前無權查閱。"
             )
             return
         self._set_result(result)
-        self._status_label.setText("GCIS 官方線上補查完成。")
+        self._status_label.setText("經濟部登記資料查詢完成。")
 
     def _on_apply_to_client(self) -> None:
         if self._result is None:

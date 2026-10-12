@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from ...i18n.status_labels import UNKNOWN_STATUS_TEXT, label_for
+
+from ...i18n.errors import UserFacingError
+from ...i18n.labels import file_type_label
+
 import logging
 from pathlib import Path
 
@@ -20,6 +25,8 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPlainTextEdit,
+    QScrollArea,
+    QSizePolicy,
     QLineEdit,
     QTabBar,
     QToolButton,
@@ -100,18 +107,24 @@ class _AttachmentInfoDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("附件資訊")
         self.setMinimumWidth(480)
-        form = QFormLayout(self)
+        outer = QVBoxLayout(self)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        body = QWidget()
+        form = QFormLayout(body)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        scroll.setWidget(body)
+        outer.addWidget(scroll, 1)
         form.setSpacing(10)
         form.addRow("編號：", _plain_label(str(att.id)))
         form.addRow("原始檔名：", _plain_label(att.original_filename))
         form.addRow("檔案位置：", _plain_label(att.stored_filename))
         form.addRow("副檔名：", _plain_label(att.extension))
-        size_kb = f"{att.file_size / 1024:.1f} KB ({att.file_size:,} bytes)"
+        size_kb = f"{att.file_size / 1024:.1f} 千位元組（{att.file_size:,} 位元組）"
         form.addRow("大小：", _plain_label(size_kb))
-        form.addRow("SHA-256：", _plain_label(att.file_hash_sha256))
-        form.addRow("MIME 類型：", _plain_label(att.mime_type))
-        form.addRow("狀態：", _plain_label(_STATUS_LABELS.get(att.status, att.status)))
-        form.addRow("上傳者：", _plain_label(att.uploaded_by))
+        form.addRow("檔案格式：", _plain_label(file_type_label(att.extension)))
+        form.addRow("狀態：", _plain_label(label_for(_STATUS_LABELS, att.status)))
+        form.addRow("上傳者：", _plain_label("本機使用者" if att.uploaded_by == "local_user" else att.uploaded_by))
         form.addRow("上傳時間：", _plain_label(att.uploaded_at))
         if att.accepted_by:
             form.addRow("驗收者：", _plain_label(att.accepted_by))
@@ -121,7 +134,14 @@ class _AttachmentInfoDialog(QDialog):
             form.addRow("備註：", _plain_label(att.notes))
         close_btn = QPushButton("關閉")
         close_btn.clicked.connect(self.accept)
-        form.addRow("", close_btn)
+        for row in range(form.rowCount()):
+            field = form.itemAt(row, QFormLayout.ItemRole.FieldRole).widget()
+            field.setWordWrap(True)
+            field.setMinimumWidth(0)
+            field.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+            field.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        outer.addWidget(close_btn)
+        self.resize(640, 480)
 
 
 class AttachmentsPage(QWidget):
@@ -153,6 +173,10 @@ class AttachmentsPage(QWidget):
 
         self._toolbar_widget = ActionBar()
         self._toolbar_layout = self._toolbar_widget.layout()
+        # Give spare width to the filters, rather than the spacer before tools.
+        # Native Windows font/style minimums must be able to shrink the search.
+        self._toolbar_layout.setStretch(0, 1)
+        self._toolbar_layout.setStretch(1, 0)
         filters = QWidget()
         filter_row = QHBoxLayout(filters)
         filter_row.setContentsMargins(0, 0, 0, 0)
@@ -173,7 +197,7 @@ class AttachmentsPage(QWidget):
         self._search.setAccessibleName("搜尋收件列表")
         self._search.setClearButtonEnabled(True)
         self._search.setMaxLength(150)
-        self._search.setMinimumWidth(245)
+        self._search.setToolTip("搜尋檔名、客戶、案件或租約")
         filter_row.addWidget(self._search, 2)
         self._toolbar_widget.add_leading_widget(filters, stretch=1)
         self._refresh_btn = make_button("重新整理", role="quiet", icon_role="refresh")
@@ -288,7 +312,7 @@ class AttachmentsPage(QWidget):
             self._file_actions.append(action)
         self._location_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._location_btn.customContextMenuRequested.connect(self._show_location_menu)
-        self._copy_url_action = self._file_menu.addAction("複製 file:// URL", self._on_copy_selected_url)
+        self._copy_url_action = self._file_menu.addAction("複製檔案連結", self._on_copy_selected_url)
         self._more_btn.setMenu(self._file_menu)
         self._review_actions.addWidget(self._manual_btn, 0, 0, 1, 3)
         self._review_actions.addWidget(self._accept_btn, 1, 0)
@@ -394,17 +418,17 @@ class AttachmentsPage(QWidget):
 
     def open_context(self, engagement_id: int, attachment_id: int | None = None) -> None:
         if self._container.engagements.get_engagement(engagement_id) is None:
-            raise ValueError("案件已刪除或所屬客戶已停用。")
+            raise UserFacingError("案件已刪除或所屬客戶已停用。")
         rows = self._container.attachments.list_by_engagement(engagement_id)
         if attachment_id is not None and not any(row.id == attachment_id for row in rows):
-            raise ValueError("附件已刪除或不屬於這個案件。")
+            raise UserFacingError("附件已刪除或不屬於這個案件。")
         self._owner_kind.setCurrentIndex(0)
         self._search.clear()
         self._status_tabs.setCurrentIndex(3)
         self._load_engagements()
         index = self._eng_combo.findData(engagement_id)
         if index < 0:
-            raise ValueError("找不到這個案件。")
+            raise UserFacingError("找不到這個案件。")
         self._eng_combo.setCurrentIndex(index)
         self._load_attachments()
         if attachment_id is not None:
@@ -523,7 +547,7 @@ class AttachmentsPage(QWidget):
         rows = self._filtered_attachments()
         position = next((index for index, att in enumerate(rows) if att.id == attachment_id), None)
         if position is None:
-            raise ValueError("附件已失效或不在目前範圍。")
+            raise UserFacingError("附件已失效或不在目前範圍。")
         self._page = position // self._page_size
         self._render_table()
         self._table.selectRow(position % self._page_size)
@@ -550,7 +574,7 @@ class AttachmentsPage(QWidget):
             vals = {
                 "id": str(att.id), "original_filename": f"{att.original_filename}\n{context}",
                 "extension": att.extension, "file_size": f"{att.file_size / 1024:.1f} KB",
-                "status": _STATUS_LABELS.get(att.status, att.status), "uploaded_at": att.uploaded_at[:10],
+                "status": label_for(_STATUS_LABELS, att.status), "uploaded_at": att.uploaded_at[:10],
             }
             for col, key in enumerate(_COLUMNS):
                 item = QTableWidgetItem(vals[key])
@@ -647,29 +671,29 @@ class AttachmentsPage(QWidget):
         try:
             current = self._container.attachments.get(att.id)
             if current is None or current.status == "archived" or current.engagement_id != att.engagement_id or current.lease_id != att.lease_id or current.client_id != att.client_id or current.request_id != att.request_id:
-                raise ValueError("附件已失效或歸屬已變更，請重新整理收件。")
+                raise UserFacingError("附件已失效或歸屬已變更，請重新整理收件。")
             if att.engagement_id is None:
                 self._open_lease_owner(att)
                 return
             eng = self._container.engagements.get_engagement(att.engagement_id)
             if eng is None:
-                raise ValueError("案件已刪除或所屬客戶已停用。")
+                raise UserFacingError("案件已刪除或所屬客戶已停用。")
             if att.request_id is not None:
                 request = self._container.doc_requests.get_request(att.request_id)
                 if request is None or request.engagement_id != eng.id:
-                    raise ValueError("原索件批次已失效，未自動改連結。")
+                    raise UserFacingError("原索件批次已失效，未自動改連結。")
             self.navigate_requested.emit(NavigationTarget(PAGE_ENGAGEMENTS, engagement_id=eng.id, request_id=att.request_id))
-        except ValueError as exc:
+        except UserFacingError as exc:
             QMessageBox.warning(self, "無法開啟核對", str(exc))
         except Exception as exc:
-            self._container.system_log.warn("attachment review navigation failed", detail={"exc": type(exc).__name__})
+            self._container.system_log.error("attachment review navigation failed", exc=exc)
             QMessageBox.warning(self, "無法開啟核對", "讀取核對資料失敗，請重新整理後再試。")
 
     def _open_lease_owner(self, att) -> None:
         lease = self._container.client_leases.get_lease(att.lease_id)
         client = self._container.clients.get_client(att.client_id)
         if lease is None or client is None or lease.client_id != client.id:
-            raise ValueError("租約或客戶已失效，未開啟其他客戶資料。")
+            raise UserFacingError("租約或客戶已失效，未開啟其他客戶資料。")
         dialog = EditClientDialog(self._container, client, parent=self)
         dialog.setWindowTitle(f"租約管理：{client.client_name} / {lease.lease_name}")
         for row, entry in enumerate(dialog.leases_editor._entries):
@@ -746,29 +770,30 @@ class AttachmentsPage(QWidget):
         self._inspector.add_widget(self._preview_body)
         self._help_btn.setChecked(False)
         self._context_warning.hide()
-        status = _STATUS_LABELS.get(att.status, att.status)
+        status = label_for(_STATUS_LABELS, att.status)
         self._manual_btn.setText("開啟索件核對" if att.engagement_id is not None else "管理此客戶租約")
         try:
             if att.engagement_id is None:
                 lease = self._container.client_leases.get_lease(att.lease_id) if att.lease_id is not None else None
                 if lease is None or lease.client_id != att.client_id:
-                    raise ValueError("租約已失效或附件歸屬不一致，請確認資料。")
+                    raise UserFacingError("租約已失效或附件歸屬不一致，請確認資料。")
                 self._association_label.setText("租約附件")
-                lease_state = {"active": "有效", "expired": "已到期", "terminated": "已終止"}.get(lease.status, lease.status)
+                lease_state = {"active": "有效", "expired": "已到期", "terminated": "已終止"}.get(lease.status, UNKNOWN_STATUS_TEXT)
                 self._facts_label.setText(f"附件：{status} · 租約：{lease_state}\n租約迄日：{lease.end_date or '未設定'}\n下一步：查看租約與附件，不涉及索件清單。")
             else:
                 request = None
                 if att.request_id is not None:
                     request = self._container.doc_requests.get_request(att.request_id)
                     if request is None or request.engagement_id != att.engagement_id:
-                        raise ValueError("原索件批次已失效，未自動改連結。")
+                        raise UserFacingError("原索件批次已失效，未自動改連結。")
                 self._association_label.setText(f"索件批次：{request.request_name}" if request else "尚未指定索件批次")
                 summary = self._container.doc_requests.summary_by_engagement(att.engagement_id)
                 due = request.due_date if request else None
                 self._facts_label.setText(f"{status} · 索件期限 {due or '未設定'}\n全案缺件 {summary.missing} · 不完整 {summary.incomplete} · 待確認 {summary.pending_confirm}")
         except Exception as exc:
+            self._container.system_log.error("attachment context read failed", exc=exc)
             self._facts_label.setText(f"附件：{status}")
-            self._context_warning.setText(str(exc) if isinstance(exc, ValueError) else "核對摘要讀取失敗。請重新整理，未顯示舊摘要。")
+            self._context_warning.setText(str(exc) if isinstance(exc, UserFacingError) else "核對摘要讀取失敗。請重新整理，未顯示舊摘要。")
             self._context_warning.show()
             self._manual_btn.setEnabled(False)
         self._update_preview(att)
@@ -837,8 +862,8 @@ class AttachmentsPage(QWidget):
             f"檔案：{att.original_filename}\n"
             f"位置：{file_path}\n"
             f"大小：{size_kb}\n"
-            f"類型：{att.mime_type}\n"
-            f"狀態：{_STATUS_LABELS.get(att.status, att.status)}\n"
+            f"類型：{file_type_label(att.extension)}\n"
+            f"狀態：{label_for(_STATUS_LABELS, att.status)}\n"
             f"上傳：{att.uploaded_at}"
         )
         self._preview_stack.setCurrentIndex(_PREVIEW_META)
@@ -951,7 +976,7 @@ class AttachmentsPage(QWidget):
         if att is None:
             return
         menu = QMenu(self._more_btn)
-        copy_url_action = QAction("複製 file:// URL", menu)
+        copy_url_action = QAction("複製檔案連結", menu)
         copy_url_action.triggered.connect(lambda _=False, a=att: self._copy_file_url(a))
         menu.addAction(copy_url_action)
         menu.exec(self._more_btn.mapToGlobal(pos))

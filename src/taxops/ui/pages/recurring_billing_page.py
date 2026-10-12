@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ...i18n.status_labels import UNKNOWN_STATUS_TEXT, label_for
+
 import datetime
 import logging
 from collections import defaultdict
@@ -84,7 +86,7 @@ _CLIENT_TOGGLE = (
 
 
 def _fmt(cents: int) -> str:
-    return f"NT${cents:,}"
+    return f"新臺幣 {cents:,}"
 
 
 # ── line row ──────────────────────────────────────────────────────────────────
@@ -251,7 +253,7 @@ class _OccRow(QWidget):
             row.addWidget(self._reopen_btn)
         else:
             icon = "✗" if occ.status == "skipped" else "—"
-            label = {"skipped": "已跳過", "cancelled": "已取消"}.get(occ.status, occ.status)
+            label = {"skipped": "已跳過", "cancelled": "已取消"}.get(occ.status, UNKNOWN_STATUS_TEXT)
             s = QLabel(f"{icon} {label}")
             s.setStyleSheet(f"color: {color};")
             row.addWidget(s)
@@ -334,7 +336,7 @@ class _PlanSection(QFrame):
         self._toggle_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         h_row.addWidget(self._toggle_btn)
 
-        freq_label = _FREQ_LABELS.get(plan.frequency, plan.frequency)
+        freq_label = label_for(_FREQ_LABELS, plan.frequency)
         freq_lbl = QLabel(f"[{freq_label}]")
         freq_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         h_row.addWidget(freq_lbl)

@@ -495,9 +495,9 @@ class AnnualWorkspaceDialog(QDialog):
                 try:
                     normalized = datetime.date.fromisoformat(raw_due).isoformat()
                 except ValueError:
-                    raise _InputError("到期日須為 YYYY-MM-DD 格式。", widgets.due_date)
+                    raise _InputError("請依西元年-月-日輸入到期日，例如 2026-10-31。", widgets.due_date)
                 if normalized != raw_due:
-                    raise _InputError("到期日須為 YYYY-MM-DD 格式。", widgets.due_date)
+                    raise _InputError("請依西元年-月-日輸入到期日，例如 2026-10-31。", widgets.due_date)
             selected.append(self.preview_table.draft_for_row(row, year))
         if not selected:
             focus = (

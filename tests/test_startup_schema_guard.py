@@ -121,6 +121,9 @@ def test_run_shows_clear_schema_error_and_exits_nonzero(monkeypatch) -> None:
 
     assert app_module.run() == 1
     assert len(messages) == 1
-    assert messages[0][1] == "資料庫版本不相容"
-    assert messages[0][2] == str(error)
+    assert messages[0][1] == "資料版本不相容"
+    assert "較新版本" in messages[0][2]
+    assert "不要刪除或覆蓋" in messages[0][2]
+    assert "9999_future_schema" not in messages[0][2]
+    assert "資料遷移" not in messages[0][2]
     assert QApplication.instance() is app

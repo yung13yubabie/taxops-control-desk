@@ -35,10 +35,10 @@ from taxops.ui.action_registry import ACTION_REGISTRY, PAGE_SETTINGS
 # ---------------------------------------------------------------------------
 
 _SLICE2_ENABLED = {
-    "從 ZIP 匯入稅籍資料",
-    "匯入稅籍快取包",
-    "匯出稅籍快取包",
-    "驗證快取",
+    "從壓縮檔匯入稅籍資料",
+    "匯入稅籍資料包",
+    "匯出稅籍資料包",
+    "驗證本機稅籍資料",
     "重新產生客戶對照結果",
 }
 
@@ -92,7 +92,7 @@ def test_no_company_does_not_exist_in_any_error_message() -> None:
 
 def test_not_found_message_uses_canonical_text() -> None:
     msg = ERROR_MESSAGES["registry.cache.not_found_message"]
-    assert "本地快取查無此統一編號" in msg
+    assert "本機稅籍資料查無此統一編號" in msg
     assert _FORBIDDEN not in msg
 
 
