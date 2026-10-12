@@ -43,7 +43,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m venv .venv-release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          .\.venv-release\Scripts\python.exe -m pip install --only-binary=:all: -r requirements-release.txt
+          .\.venv-release\Scripts\python.exe -m pip install --only-binary=:all: --require-hashes -r requirements-release-hashed.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\.venv-release\Scripts\python.exe -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -53,13 +53,23 @@ jobs:
         run: |
           .\.venv-test\Scripts\python.exe -m build_tools.run_test_matrix --output artifacts\source-tests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Build candidate from the isolated release environment
+      - name: Stage the fixed official Microsoft component and build the single EXE
         run: |
+          $source = Get-Content build_tools/vc_redist_source.json -Raw | ConvertFrom-Json
+          $payload = $source.package.payloads[0]
+          $vsix = Join-Path $env:RUNNER_TEMP "TaxOps-Microsoft.VC.fixed.vsix"
+          Invoke-WebRequest -Uri $payload.url -OutFile $vsix
+          if ((Get-FileHash -Algorithm SHA256 $vsix).Hash.ToLowerInvariant() -ne $payload.sha256) { throw "Official Microsoft VSIX hash mismatch" }
+          $env:TAXOPS_VC_REDIST_VSIX = $vsix
           .\.venv-release\Scripts\python.exe -m build_tools.package_windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Test the zipped artifact with its own frozen runtime
+      - name: Test the exact single EXE payload and normal bootloader lifecycle
         run: |
-          .\.venv-release\Scripts\python.exe -m build_tools.verify_windows_bundle --output artifacts\windows-candidate
+          .\.venv-release\Scripts\python.exe -m build_tools.verify_onefile --output artifacts\windows-onefile --source-matrix artifacts\source-tests\matrix.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Export matching Application Code recombination materials
+        run: |
+          .\.venv-release\Scripts\python.exe -m build_tools.make_recombine_kit --exe artifacts\windows-onefile\TaxOpsControlDesk.exe --provenance artifacts\windows-onefile\onefile-provenance.json --output artifacts\TaxOpsControlDesk-recombine-kit.zip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Record acceptance boundary
         if: always()

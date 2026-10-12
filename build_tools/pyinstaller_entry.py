@@ -15,6 +15,14 @@ def main() -> None:
         from taxops.diagnostics import main as diagnostics_main
 
         sys.exit(diagnostics_main(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "--recombine-probe":
+        from build_tools.recombine_probe import main as recombine_main
+
+        sys.exit(recombine_main(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "--onefile-probe":
+        from build_tools.onefile_runtime_probe import main as onefile_main
+
+        sys.exit(onefile_main(sys.argv[2:]))
     from taxops.ui.app import run
 
     sys.exit(run())

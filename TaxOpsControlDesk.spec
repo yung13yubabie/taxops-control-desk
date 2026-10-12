@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for TaxOps Control Desk (Windows one-dir build).
+"""PyInstaller spec for TaxOps Control Desk (Windows single-file build).
 
-Output: dist/TaxOpsControlDesk/TaxOpsControlDesk.exe
+Output: dist/TaxOpsControlDesk.exe
 Run with:  pyinstaller TaxOpsControlDesk.spec --noconfirm --clean
 """
 
@@ -9,7 +9,6 @@ from PyInstaller.utils.hooks import collect_submodules
 import PySide6
 from PySide6.QtCore import QLibraryInfo
 from pathlib import Path
-from shutil import copyfile
 import sys
 
 # The pyinstaller console script does not guarantee the spec directory is on
@@ -35,6 +34,8 @@ a = Analysis(
     hiddenimports=[
         # PySide6 modules not always auto-detected but loaded at runtime
         "PySide6.QtSvg",
+        "PySide6.support",
+        "PySide6.support.deprecated",
         "PySide6.QtXml",
         "PySide6.QtPrintSupport",
         "PySide6.QtNetwork",
@@ -70,7 +71,12 @@ a = Analysis(
     noarchive=False,
 )
 
+from build_tools.official_vc_runtime import stage_analysis
+from build_tools.recombine_inputs import apply_recombination
 from build_tools.windows_system_runtime import filter_system_runtime
+
+a.binaries = stage_analysis(a.binaries)
+a.pure, a.binaries = apply_recombination(a.pure, a.binaries)
 
 # Windows 10 1809+ supplies these exact system APIs; keep the app-local VC DLLs.
 a.binaries = filter_system_runtime(a.binaries, a.datas)
@@ -80,8 +86,10 @@ pyz = PYZ(a.pure, a.zipped_data)
 exe = EXE(
     pyz,
     a.scripts,
-    [],
-    exclude_binaries=True,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    exclude_binaries=False,
     name="TaxOpsControlDesk",
     debug=False,
     bootloader_ignore_signals=False,
@@ -94,18 +102,3 @@ exe = EXE(
     argv_emulation=False,
     target_arch=None,
 )
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=False,
-    upx_exclude=["vcruntime140.dll", "python3*.dll"],
-    name="TaxOpsControlDesk",
-)
-
-# Keep the notice index discoverable beside the executable; all original texts
-# remain under the default PyInstaller _internal directory.
-copyfile(NOTICE_SOURCE / "README.txt", Path(coll.name) / "THIRD_PARTY_NOTICES.txt")

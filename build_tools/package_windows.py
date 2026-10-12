@@ -3,7 +3,7 @@
 Usage:
     python -m build_tools.package_windows
 
-Output: dist/TaxOpsControlDesk/TaxOpsControlDesk.exe
+Output: dist/TaxOpsControlDesk.exe
 
 Requires PyInstaller to be installed:
     pip install pyinstaller
@@ -19,7 +19,7 @@ from build_tools.dependency_licenses import validate_build_environment
 
 _PROJECT_ROOT = Path(__file__).parent.parent
 _SPEC = _PROJECT_ROOT / "TaxOpsControlDesk.spec"
-_EXE = _PROJECT_ROOT / "dist" / "TaxOpsControlDesk" / "TaxOpsControlDesk.exe"
+_EXE = _PROJECT_ROOT / "dist" / "TaxOpsControlDesk.exe"
 
 
 def _check_pyinstaller() -> None:

@@ -407,8 +407,10 @@ def test_spec_filter_and_native_extracted_artifact_gate_are_wired():
     assert (
         spec.index("a = Analysis(")
         < spec.index("a.binaries = filter_system_runtime(a.binaries, a.datas)")
-        < spec.index("coll = COLLECT(")
+        < spec.index("exe = EXE(")
     )
+    assert "coll = COLLECT(" not in spec
+    assert "exclude_binaries=False" in spec
     assert (
         "verify_native_dependencies(exe.parent, output)"
         in (runtime.ROOT / "build_tools/verify_windows_bundle.py").read_text()

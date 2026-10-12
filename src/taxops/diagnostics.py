@@ -105,6 +105,7 @@ def _run_checks(root: Path, report: dict) -> None:
     from .ui.main_window import MainWindow
     from .ui.style import apply
     from .diagnostics_qt_language import verify_chinese_widgets
+    from .diagnostics_notices import verify_notice_widgets
 
     def passed(name, **detail):
         report["checks"].append({"name": name, "status": "passed", **detail})
@@ -164,6 +165,8 @@ def _run_checks(root: Path, report: dict) -> None:
             window.show()
             app.processEvents()
             _require(window.isVisible(), "MainWindow failed to become visible")
+            passed("offline_third_party_notices_view_and_export",
+                   **verify_notice_widgets(window, app, root))
         finally:
             window.close()
             window.deleteLater()

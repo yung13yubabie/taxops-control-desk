@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
 import subprocess
@@ -27,6 +28,11 @@ def _passing_windows_report():
     language = next(c for c in report["checks"] if c["name"] == "qt_traditional_chinese_widgets_and_fallback")
     language.update(catalogue_loaded=True, initial_locale="en_US", locale="zh_TW",
                     missing_catalogue={"fully_localized": False})
+    notices = next(c for c in report["checks"] if c["name"] == "offline_third_party_notices_view_and_export")
+    manifest = (gate.NOTICE_SOURCE / "manifest.json").read_bytes()
+    notices.update(entry="settings", displayed_text_verified=True, export_bytes_verified=True,
+                   file_count=len(json.loads(manifest)["files"]) + 1,
+                   manifest_sha256=hashlib.sha256(manifest).hexdigest(), export_sha256="0" * 64)
     return report
 
 
@@ -58,6 +64,9 @@ def test_source_self_test_runs_real_isolated_roundtrip(tmp_path):
     assert payload["status"] == "passed"
     assert payload["frozen"] is False
     assert payload["network_attempts"] == []
+    notices = next(c for c in payload["checks"] if c["name"] == "offline_third_party_notices_view_and_export")
+    assert notices["displayed_text_verified"] is True and notices["export_bytes_verified"] is True
+    assert notices["manifest_sha256"] == hashlib.sha256((gate.NOTICE_SOURCE / "manifest.json").read_bytes()).hexdigest()
     assert gate.EXPECTED_CHECKS.issubset({c["name"] for c in payload["checks"]})
     untouched = [tmp_path / "must_not_touch", tmp_path / "must_not_touch_profile"]
     observed = {
@@ -298,7 +307,8 @@ def test_windows_workflow_is_nonpublishing_and_pinned():
     assert "contents: read" in workflow and "contents: write" not in workflow
     assert "secrets." not in workflow
     assert "persist-credentials: false" in workflow
-    assert "build_tools.verify_windows_bundle" in workflow
+    assert "build_tools.verify_onefile" in workflow
+    assert "build_tools.make_recombine_kit" in workflow
     assert "build_tools.run_test_matrix" in workflow
     assert "--files" not in workflow
     for line in workflow.splitlines():
@@ -381,3 +391,18 @@ def test_native_dependency_failure_blocks_candidate_and_frozen_execution(tmp_pat
         gate.verify_bundle(bundle, output)
     assert not (output / "TaxOpsControlDesk-windows-candidate.zip").exists()
     assert json.loads((output / "bundle-provenance.json").read_text())["status"] == "failed"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("entry", "unavailable"), ("displayed_text_verified", False),
+    ("export_bytes_verified", False), ("file_count", 0), ("file_count", True),
+    ("manifest_sha256", "0" * 64), ("export_sha256", ""), ("export_sha256", 12),
+    ("export_sha256", "g" * 64),
+])
+def test_frozen_gate_rejects_incomplete_notice_evidence(field, value):
+    report = _passing_windows_report()
+    gate.validate_report(report)
+    notices = next(c for c in report["checks"] if c["name"] == "offline_third_party_notices_view_and_export")
+    notices[field] = value
+    with pytest.raises(gate.BundleVerificationError, match="notice"):
+        gate.validate_report(report)

@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from build_tools.dependency_licenses import (
@@ -148,17 +147,9 @@ def reviewed_policy(manifest: dict | None = None) -> tuple[dict, dict]:
 
 
 def source_identity() -> dict:
-    process = subprocess.run(
-        ["git", "rev-parse", "HEAD", "HEAD^{tree}"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    commit, tree = process.stdout.split()
+    from build_tools.source_materials import source_identity as identify_materials
     return {
-        "source_commit": commit,
-        "source_tree": tree,
+        **identify_materials(ROOT),
         "github_sha": os.environ.get("GITHUB_SHA"),
         "notice_manifest_sha256": sha256(NOTICE_SOURCE / "manifest.json"),
     }

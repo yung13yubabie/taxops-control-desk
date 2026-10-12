@@ -23,6 +23,7 @@ def _fixture(tmp_path, monkeypatch, *, percentage=91.0, first_exit=0, timeout=Fa
     for name in ("test_alpha.py", "test_beta.py"):
         (tests / name).write_text("# synthetic fixture only\n")
     monkeypatch.setattr(matrix, "ROOT", root)
+    monkeypatch.setattr(matrix, "source_identity", lambda _root: {"source_commit": "synthetic", "source_tree": "synthetic-tree"})
     calls = []
     def fake_run(command, **kwargs):
         calls.append(command)

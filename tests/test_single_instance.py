@@ -15,7 +15,12 @@ import pytest
 from PySide6.QtWidgets import QApplication
 from PySide6.QtNetwork import QLocalServer
 
-from taxops.ui.single_instance import SingleInstanceGuard
+from taxops.ui.single_instance import InstanceLockError, SingleInstanceGuard
+
+
+@pytest.fixture(autouse=True)
+def isolated_lock_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-data"))
 
 
 @pytest.fixture()
@@ -79,7 +84,9 @@ def test_listen_failure_does_not_fail_open(
     )
 
     guard = SingleInstanceGuard(server_name)
-    assert guard.acquire() is False
+    with pytest.raises(InstanceLockError):
+        guard.acquire()
+    assert not guard.lock_path.exists()
 
 
 def test_notify_existing_fires_activation_signal_across_processes(

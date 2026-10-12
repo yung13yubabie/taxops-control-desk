@@ -154,7 +154,8 @@ def test_spec_and_package_entrypoint_require_notices():
     assert "validate_build_environment()" in spec and "validate_build_environment()" in package
     assert '(str(NOTICE_SOURCE), "third_party_licenses")' in spec
     assert 'hookspath=["build_tools/pyinstaller_hooks"]' in spec
-    assert '"THIRD_PARTY_NOTICES.txt"' in spec
+    assert "COLLECT(" not in spec and "exclude_binaries=False" in spec
+    assert "third_party_licenses" in (ROOT / "src/taxops/core/third_party_notices.py").read_text()
     assert "assets/third_party_licenses/** -text" in (ROOT / ".gitattributes").read_text()
 
 
