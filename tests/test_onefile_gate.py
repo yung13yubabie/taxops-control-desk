@@ -124,3 +124,19 @@ def test_real_service_fixture_survives_database_close_and_reopen(tmp_path):
             probe.persistent_client(container, record, initialize=False)
     finally:
         container.close()
+
+
+@pytest.mark.parametrize("code", [77, 0, 1, -1, 3221225477])
+def test_owned_crash_actual_outer_code_is_preserved_before_strict_77_assertion(code):
+    provenance = {}
+    if code == 77:
+        gate.check_owned_crash_exit(code, 1234, provenance)
+    else:
+        with pytest.raises(gate.BundleVerificationError, match=f"observed outer bootloader {code}"):
+            gate.check_owned_crash_exit(code, 1234, provenance)
+    assert provenance["owned_crash_process"] == {
+        "bootloader_pid": 1234, "bootloader_exit_code": code,
+        "bootloader_exit_code_hex": f"0x{code & 0xffffffff:08x}",
+        "requested_child_exit_code": 77, "child_exit_code": None,
+        "child_exit_code_observed": False,
+    }

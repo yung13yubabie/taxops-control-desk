@@ -225,7 +225,20 @@ def verify_unusable_profile(exe: Path, output: Path, inventory: dict, *, timeout
             "same_profile_recovered_after_storage_error": True}
 
 
-def verify_lifecycle(exe: Path, output: Path, inventory: dict, *, timeout: int) -> dict:
+def check_owned_crash_exit(code: int, pid: int, provenance: dict) -> None:
+    provenance["owned_crash_process"] = {
+        "bootloader_pid": pid, "bootloader_exit_code": code,
+        "bootloader_exit_code_hex": f"0x{code & 0xffffffff:08x}",
+        "requested_child_exit_code": 77, "child_exit_code": None,
+        "child_exit_code_observed": False,
+    }
+    if code != 77:
+        raise BundleVerificationError(
+            f"Owned crash probe did not exit with the requested code 77; "
+            f"observed outer bootloader {code} (0x{code & 0xffffffff:08x}); inner exit unobserved")
+
+
+def verify_lifecycle(exe: Path, output: Path, inventory: dict, *, timeout: int, provenance: dict) -> dict:
     profile = output / "隔離使用者 空白"
     env = isolated_environment(profile)
     profile_token = uuid.uuid4().hex
@@ -315,8 +328,8 @@ def verify_lifecycle(exe: Path, output: Path, inventory: dict, *, timeout: int) 
     # Do not infer or promise outer-bootloader force-kill cleanup from this test.
     crashed = subprocess.Popen(command("owned-crash", "--crash-after-ready"), cwd=exe.parent, env=env)
     try:
-        if crashed.wait(timeout=timeout) != 77:
-            raise BundleVerificationError("Owned crash probe did not exit with the requested code")
+        crash_exit_code = crashed.wait(timeout=timeout)
+        check_owned_crash_exit(crash_exit_code, crashed.pid, provenance)
     finally:
         if crashed.poll() is None:
             terminate_owned_tree(crashed, output / "forced-process-cleanup.json")
@@ -357,7 +370,7 @@ def verify_lifecycle(exe: Path, output: Path, inventory: dict, *, timeout: int) 
     if len(paths) != len(set(paths)):
         raise BundleVerificationError("Distinct process evidence reused an extraction path")
     return {"lifecycle_loaded_modules": loaded, "normal_gui_launches": 4, "duplicate_launches": 2,
-            "simultaneous_start_one_winner": True, "owned_child_crash_exit_code": 77,
+            "simultaneous_start_one_winner": True, "requested_owned_child_crash_exit_code": 77,
             "normal_start_after_crash": True, "recorded_crash_extraction_remaining": crash_mei.exists(),
             "persistent_client_id": expected_client["id"], "persistent_business_record_verified": True,
             "normal_bootloader_cleanup_verified": True, "database": str(database),
@@ -402,7 +415,7 @@ def verify(exe: Path, output: Path, *, timeout: int = 180, recombined: bool = Fa
         (output / "embedded-inventory.json").write_text(json.dumps(payload["entries"], indent=2) + "\n", encoding="utf-8")
         result.update(verify_unusable_temp(actual, output, timeout=timeout))
         result.update(verify_unusable_profile(actual, output, payload["entries"], timeout=timeout))
-        result.update(verify_lifecycle(actual, output, payload["entries"], timeout=timeout))
+        result.update(verify_lifecycle(actual, output, payload["entries"], timeout=timeout, provenance=result))
         result["normal_temp_retry_after_failure"] = True
         environment = isolated_environment(output / "selftest-profile")
         report = output / "frozen-self-test.json"

@@ -126,3 +126,42 @@ an empty windowed-program stream as proof that no error occurred. Failure cleanu
 uses only the existing retained-owned-process helper; it does not erase residual
 files or count forced termination as normal cleanup. This focused trace does not
 replace the full source, loader, frozen self-test or lifecycle gate.
+
+### Native Qt source exit controls
+
+When an intentional `os._exit(77)` does not produce the requested exit value,
+run the separate source control only in an existing Windows CPython **3.11.9
+x64** virtual environment containing **PySide6 6.10.2 / Qt 6.10.2**:
+
+```powershell
+& '<existing venv>\Scripts\python.exe' -m build_tools.qt_exit_contrast `
+  --python '<existing venv>\Scripts\python.exe' `
+  --output '<new diagnostic directory>'
+```
+
+Run from the fixed source checkout. The output must not already exist. No
+packages are installed, application modules imported, or databases opened.
+Three fresh processes use separate synthetic profiles: no Qt import followed
+by `os._exit(77)`; `QApplication` plus `QWidget.show()` followed synchronously
+by `os._exit(77)` before `exec()`; and the same widget closed normally through
+its event loop with expected exit 0. Wrong versions stop before further exit
+injection. An exit-code mismatch remains a failure while the remaining
+controls run. Receipts preserve each retained `Popen` process's actual exit
+value, hexadecimal value, raw streams, runtime versions and module-file
+identities. Timeout cleanup applies only to the retained owned process tree.
+
+These are **source native-Qt controls, not frozen EXE acceptance**. In
+particular, source wheels may contain different VC DLL bytes from the
+reviewed official VC replacements in the EXE. Module-file origins do not
+prove actual loaded native VC paths; this small control does not collect
+that inventory. A source failure can establish that TaxOps and the onefile
+bootloader are not necessary to reproduce that source failure. A source pass
+cannot rule out a frozen-only DLL or loader difference.
+
+[CPython 3.11.9](https://github.com/python/cpython/blob/v3.11.9/Modules/posixmodule.c)
+calls CRT `_exit` directly.
+[Microsoft documents](https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/cwait?view=msvc-170)
+that `_exit` calls `ExitProcess`, which still performs
+[DLL process-detach notifications](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-exitprocess).
+That makes native termination a hypothesis to test, not an attribution to
+Qt or a reason to accept an arbitrary nonzero value instead of 77.
