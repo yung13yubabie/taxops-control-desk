@@ -2,7 +2,7 @@
 """PyInstaller spec for TaxOps Control Desk (Windows single-file build).
 
 Output: dist/TaxOpsControlDesk.exe
-Run with:  pyinstaller TaxOpsControlDesk.spec --noconfirm --clean
+Run with:  python -m build_tools.package_windows
 """
 
 from PyInstaller.utils.hooks import collect_submodules
@@ -14,6 +14,9 @@ import sys
 # The pyinstaller console script does not guarantee the spec directory is on
 # sys.path. Analysis.pathex is applied later than this build-time gate.
 sys.path.insert(0, str(Path(SPECPATH).resolve()))
+# collect_submodules runs while constructing Analysis arguments, before its
+# pathex is applied. Use only this source tree, never an inherited PYTHONPATH.
+sys.path.insert(0, str(Path(SPECPATH).resolve() / "src"))
 
 from build_tools.dependency_licenses import NOTICE_SOURCE, validate_build_environment
 
@@ -23,6 +26,14 @@ _qt_translation = Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPa
 _qt_translation_target = str(Path("PySide6") / _qt_translation.parent.relative_to(Path(PySide6.__file__).parent))
 if not _qt_translation.is_file():
     raise RuntimeError("Required Traditional Chinese Qt catalogue is missing")
+
+_migration_modules = collect_submodules("taxops.db.migrations")
+_expected_migrations = {
+    "taxops.db.migrations." + path.stem
+    for path in (Path(SPECPATH).resolve() / "src/taxops/db/migrations").glob("_m*.py")
+}
+if not _expected_migrations or not _expected_migrations.issubset(_migration_modules):
+    raise RuntimeError("Required source migration hidden imports are missing")
 
 
 a = Analysis(
@@ -50,7 +61,7 @@ a = Analysis(
         "jinja2.compiler",
         "jinja2.runtime",
         "jinja2.filters",
-    ] + collect_submodules("taxops.db.migrations"),
+    ] + _migration_modules,
     hookspath=["build_tools/pyinstaller_hooks"],
     hooksconfig={},
     runtime_hooks=[],

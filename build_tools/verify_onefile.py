@@ -19,6 +19,8 @@ from build_tools.source_materials import source_identity
 from build_tools.owned_process_cleanup import terminate_owned_tree
 from build_tools.windows_loaded_modules import validate_loaded_modules, windows_system_roots
 from build_tools.recombine_probe import verify_runtime_versions
+from build_tools.onefile_inputs import assert_inputs_unchanged, preflight_files, validate_official_receipt
+from build_tools.windows_system_runtime import STAGING_REPORT
 from build_tools.verify_windows_bundle import (
     BundleVerificationError, _REQUIRED_FILES, isolated_environment,
     validate_report, verify_native_dependencies,
@@ -404,24 +406,34 @@ def check_source_matrix(path: Path) -> dict:
             "source_file_count": len(results), "raw_branch_coverage": report["raw_percent_covered"]}
 
 
-def verify(exe: Path, output: Path, *, timeout: int = 180, recombined: bool = False, source_matrix: Path | None = None) -> dict:
+def verify(exe: Path, output: Path, *, timeout: int = 180, recombined: bool = False,
+           source_matrix: Path | None = None, build_staging: Path | None = None) -> dict:
     if sys.platform != "win32":
         raise BundleVerificationError("Onefile acceptance requires Windows")
     output.mkdir(parents=True, exist_ok=False)
     result = {"schema": 1, "status": "failed", "single_file": True,
               "clean_os_verified": False, "manual_gui_verified": False,
-              "source_exe_sha256": sha256(exe), "recombined": recombined}
+              "source_exe_sha256": None, "recombined": recombined}
     try:
-        result.update(check_source_matrix(source_matrix or Path("artifacts/source-tests/matrix.json")))
+        matrix = source_matrix or Path("artifacts/source-tests/matrix.json")
+        staging = build_staging or STAGING_REPORT.parent
+        result["acceptance_inputs"] = preflight_files(exe, matrix, staging)
+        result["source_exe_sha256"] = result["acceptance_inputs"]["exe"]["sha256"]
+        result.update(check_source_matrix(matrix))
         relocated = output / "只有一個程式 中文 空白"
         relocated.mkdir()
         actual = relocated / "TaxOpsControlDesk.exe"
         shutil.copyfile(exe, actual)
+        if sha256(actual) != result["source_exe_sha256"]:
+            raise BundleVerificationError("EXE changed while preparing its relocated copy")
         inspected = output / "payload-inspection"
         payload = inspect_payload(actual, inspected)
         result.update({k: v for k, v in payload.items() if k != "entries"})
-        result.update(verify_native_dependencies(inspected, output))
+        result.update(validate_official_receipt(inspected, staging / "official-vc.json"))
+        result.update(verify_native_dependencies(inspected, output,
+                                               staging_report=staging / "windows-system-runtime.json"))
         (output / "embedded-inventory.json").write_text(json.dumps(payload["entries"], indent=2) + "\n", encoding="utf-8")
+        assert_inputs_unchanged(result["acceptance_inputs"])
         result.update(verify_unusable_temp(actual, output, timeout=timeout))
         result.update(verify_unusable_profile(actual, output, payload["entries"], timeout=timeout))
         result.update(verify_lifecycle(actual, output, payload["entries"], timeout=timeout, provenance=result))
@@ -449,6 +461,7 @@ def verify(exe: Path, output: Path, *, timeout: int = 180, recombined: bool = Fa
             raise BundleVerificationError("Self-test extraction survived a normal exit")
         if [p.name for p in actual.parent.iterdir()] != ["TaxOpsControlDesk.exe"]:
             raise BundleVerificationError("Normal use unexpectedly required/wrote sidecar files")
+        assert_inputs_unchanged(result["acceptance_inputs"])
         result["status"] = "passed"
         # Keep the user artifact exactly one file; evidence stays separately.
         shutil.copyfile(actual, output / "TaxOpsControlDesk.exe")
@@ -466,9 +479,13 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=Path("artifacts/windows-onefile"))
     parser.add_argument("--recombined", action="store_true")
     parser.add_argument("--source-matrix", type=Path, default=Path("artifacts/source-tests/matrix.json"))
+    parser.add_argument("--build-staging", type=Path, default=STAGING_REPORT.parent,
+                        help="Directory containing all five receipts from the same build artifact")
     args = parser.parse_args()
     try:
-        print(json.dumps(verify(args.exe.resolve(), args.output.resolve(), recombined=args.recombined, source_matrix=args.source_matrix.resolve()), indent=2))
+        print(json.dumps(verify(args.exe.resolve(), args.output.resolve(), recombined=args.recombined,
+                                source_matrix=args.source_matrix.resolve(),
+                                build_staging=args.build_staging.resolve()), indent=2))
         return 0
     except Exception as exc:
         print(f"FAIL: {exc}", file=sys.stderr)

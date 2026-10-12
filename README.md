@@ -54,7 +54,11 @@
 - 較早的完整資料夾套件已通過 Windows 回歸及 17 項 EXE 自測；它是歷史基準，不能當作單一 EXE 已驗收。固定版本、雜湊及歷次結果見 [Windows 候選驗證](docs/windows_candidate_gate.md)。
 - 第一個真正單檔 EXE 已由 [run 38280844680](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38280844680) 建出：來源完整 152 檔、3807 項通過，實值 branch coverage 91.05698731866956%。該 EXE 的受控 CRT 中止沒有得到預期退出碼，因此整體驗收失敗，沒有作為成品發布。
 - 故障注入現明確模擬不經正常清理的本人程序中止，仍須取得退出碼 77、重啟及資料／鎖恢復、18 項實際 EXE 自測。原 CRT/PySide 異常證據保留，不能以新模型聲稱已修好 PySide。[run 38293931640](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38293931640) 的 153 檔、3838 項來源測試通過，但新 EXE 在同步雙開時未將通知送達勝方視窗，整體仍失敗，尚未執行新中止控制及後續 18 項自測。此通知問題、本機稅籍資料交易與測試準備修正均須以新固定來源重驗。
-- 本機原設定頁回歸重複匯入同一份 1,705,060 筆公開資料，超過原 900 秒限制。測試現共享一次完整真匯入，各測項使用獨立 SQLite 複本，保留兩組原斷言；沒有縮減資料、刪除失敗或提高時限。Windows 是否改善仍由固定版本實跑決定。
+- 本機原設定頁回歸重複匯入同一份 1,705,060 筆公開資料，超過原 900 秒限制。測試現共享一次完整真匯入，各測項使用獨立 SQLite 複本，保留兩組原斷言；沒有縮減資料、刪除失敗或提高時限。後續固定版本的本機回報見下段。
+
+較新的 [run 38298961816](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38298961816) 已取得 155 檔、3897 項全部通過，原始分支覆蓋率 91.1487758945386%。該新 EXE 的雙開通知、中止碼 77、重啟資料保留及 18 項功能檢查通過；完整驗收仍失敗，原因是末端模組快照出現 8 個宿主 Tortoise 元件。另一次 [獨立 Shell 觀察](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38303276207) 在相同 runner 映像的不同虛擬機重現相同路徑與檔案雜湊；它沒有改寫原驗收失敗或豁免核心元件來源。
+
+本機重組後續回報完整來源測試及修改後 qgif 小型探針通過，設定頁 8 項回歸在原 900 秒內結束；但封裝被不同來源的系統 DLL 擋下，沒有產出合格重組 EXE。目前修正建置工具繼承的 DLL 搜尋路徑，以及驗收材料缺件的預檢。這些新修正仍須固定來源的完整回歸和新 Windows 建置；尚未完成的重組／乾淨離線驗收保留。
 
 **候選尚未發布。** 最終 Release 必須附重新驗證的單一 EXE，以及必要的第三方授權通知與原始碼／重組材料；不以舊 ZIP 或只有原始碼代替 EXE。原始碼重組材料供有需要的接收者使用，不是一般使用者的安裝前提。具體方案見 [單檔 EXE 與重組驗收](docs/windows_onefile_gate.md) 和 [第三方元件說明](docs/third_party_licenses.md)。
 
@@ -67,6 +71,10 @@
 ## 開發
 
 維持 Python / PySide6 / SQLite。安裝開發依賴後，用 `python -m build_tools.run_test_matrix --help` 查看參數，再執行逐檔測試與合併 coverage；Windows 發行套件使用隔離環境及 `requirements-release.txt` 固定版本。
+
+在另一部 Windows 驗收既有 EXE 時，請使用同一份建置產物的完整收據；工具會在啟動 EXE 前列出缺件。材料與命令見 [跨主機驗收輸入](docs/onefile_acceptance_inputs.md)。
+
+封裝工具將子程序的 DLL 搜尋路徑限定於既定工具來源，並以完整相依驗證處理可缺席的系統 API 合約檔案；實作界線及仍會拒絕的不同來源 bytes 見 [Windows 建置可攜性](docs/windows_build_input_portability.md)。這不是對任意 Windows 或編譯環境的相容保證。
 
 開始改碼前閱讀 [CONTRIBUTING](CONTRIBUTING.md)、[安全政策](SECURITY.md) 與 [公開開發契約](docs/development_contract.md)。物件責任見 `docs/product_object_model.md`；錯誤必須可見，不能以空資料掩蓋失敗，見 `docs/no_silent_failure.md`。新增測試使用合成資料；既有公開工商 fixture 也保留在完整回歸中。不得提交真實客戶、會計資料或私人操作紀錄；新測試與截圖使用合成資料。
 

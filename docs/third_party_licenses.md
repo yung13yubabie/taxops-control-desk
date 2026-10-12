@@ -186,9 +186,10 @@ for both groups, and maps retained files to exact official distributions:
   10.0.26100.1742, are excluded before collection for the Windows 10 1809+ /
   Windows 11 x64 target. Their original hashes are retained under
   `excluded_windows_system_binaries`; they are not current distributed files.
-  The OS supplies these API contracts and UCRT. The exact 43-name policy never
-  expands to unreviewed API/ext DLLs, and requires new review if source bytes
-  or staging inventory change.
+  The OS supplies these API contracts and UCRT. The fixed 43-name policy never
+  expands to unreviewed API/ext DLLs. Present changed bytes require new review;
+  schema-2 builds may record optional physical-file absence only with complete
+  native dependency proof under the [bounded input policy](windows_build_input_portability.md).
 
 The byte mapping is a provenance check, not a determination of entitlement or
 noncompliance. These limited questions do not prevent local repair or candidate
@@ -206,10 +207,13 @@ support relying on OS-provided APIs for this
 This does not remove the ten separately bundled VC files or establish their
 redistribution basis. No application runtime hash lock is introduced.
 
-`windows_system_runtime` filters the exact reviewed 43 destinations and hashes
-after Analysis and before COLLECT. It records the complete before/after binary
+`windows_system_runtime` filters the fixed reviewed destinations and present hashes
+after Analysis and before EXE creation. It records the complete before/after binary
 inventory and original source paths under `artifacts/build-staging/`; generated
-build evidence is not committed. Changed/missing/duplicate inputs fail closed.
+build evidence is not committed. Changed present, missing required or duplicate
+inputs fail closed. Optional physical-file absence is explicitly recorded and
+requires the linked schema-2 native proof; the older mandatory-present policy is
+historical. See the [complete receipt contract](windows_build_input_portability.md).
 The extracted new ZIP is checked against that receipt, all ten VC files and the
 notice manifest before its frozen EXE runs. Normal and delay PE imports, bundled
 export forwarders and imported symbols are checked. PE parser truncation is a

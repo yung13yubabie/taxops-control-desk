@@ -94,6 +94,11 @@ separate from a successful local build.
 
 Reuse existing verified local inputs without downloads or reinstalls
 -------------------------------------------------------------------
+Packaging uses a separate child-only bounded PATH and the pinned release venv,
+while compiler/SDK selection and parent PATH remain unchanged. See
+docs/windows_build_input_portability.md for required schema-2 evidence, explicit
+optional-file absence, native OS proof and the remaining different-hash limit.
+
 If the build machine already has separate pinned test/release environments,
 append both --test-python "<test venv>/Scripts/python.exe" and
 --release-python "<release venv>/Scripts/python.exe". The script validates their

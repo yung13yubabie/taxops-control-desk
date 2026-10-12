@@ -16,17 +16,19 @@ import sys
 from pathlib import Path
 
 from build_tools.dependency_licenses import validate_build_environment
+from build_tools.windows_package_environment import prepare_environment
 
 _PROJECT_ROOT = Path(__file__).parent.parent
 _SPEC = _PROJECT_ROOT / "TaxOpsControlDesk.spec"
 _EXE = _PROJECT_ROOT / "dist" / "TaxOpsControlDesk.exe"
 
 
-def _check_pyinstaller() -> None:
+def _check_pyinstaller(env: dict[str, str]) -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "PyInstaller", "--version"],
+        [str(Path(sys.executable).resolve()), "-m", "PyInstaller", "--version"],
         capture_output=True,
         text=True,
+        env=env,
     )
     if result.returncode != 0:
         print("ERROR: PyInstaller not found. Install it with:")
@@ -40,17 +42,19 @@ def build() -> None:
         sys.exit(1)
 
     validate_build_environment()
-    _check_pyinstaller()
+    env, _receipt = prepare_environment()
+    _check_pyinstaller(env)
 
     print(f"Building from: {_SPEC}")
     result = subprocess.run(
         [
-            sys.executable, "-m", "PyInstaller",
+            str(Path(sys.executable).resolve()), "-m", "PyInstaller",
             str(_SPEC),
             "--noconfirm",
             "--clean",
         ],
         cwd=str(_PROJECT_ROOT),
+        env=env,
     )
 
     if result.returncode != 0:

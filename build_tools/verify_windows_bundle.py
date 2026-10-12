@@ -134,10 +134,14 @@ def isolated_environment(root: Path) -> dict[str, str]:
     return env
 
 
-def verify_native_dependencies(bundle: Path, output: Path) -> dict:
+def verify_native_dependencies(bundle: Path, output: Path, *, staging_report: Path | None = None) -> dict:
     """Check the extracted ZIP against staging and this host's OS providers."""
     files = [p for p in bundle.rglob("*") if p.is_file()]
-    return {**validate_system_runtime_bundle(bundle, files), **validate_staging_report(bundle),
+    system = validate_system_runtime_bundle(bundle, files)
+    proof_output = output / "current-host-native-proof"
+    staging = (validate_staging_report(bundle, proof_output=proof_output) if staging_report is None
+               else validate_staging_report(bundle, staging_report, proof_output=proof_output))
+    return {**system, **staging,
             **verify_pe_dependencies(bundle, output / "pe-dependencies.json")}
 
 
