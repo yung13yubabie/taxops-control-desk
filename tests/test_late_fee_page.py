@@ -247,7 +247,7 @@ def test_mode_toggle_clears_result_and_switches_filter_visibility(qapp, containe
     cleared as well as the stale sentence, and the whole history section hides."""
     page = LateFeePage(container)
     page._result_label.setText("stale result")
-    page._result_penalty_value.setText("NT$ 999")
+    page._result_penalty_value.setText("新臺幣 999")
     page._table.setRowCount(1)
 
     page._manual_check.setChecked(True)
@@ -347,8 +347,8 @@ def test_manual_calculation_real_button_renders_exact_result(qapp, container) ->
 
     assert page._result_days_value.text() == "5 天"
     assert page._result_rate_value.text() == "1%"
-    assert page._result_penalty_value.text() == "NT$ 100"
-    assert page._result_total_value.text() == "NT$ 10,100"
+    assert page._result_penalty_value.text() == "新臺幣 100"
+    assert page._result_total_value.text() == "新臺幣 10,100"
     assert page._result_label.text() == "手動試算結果未儲存。"
 
 

@@ -92,7 +92,7 @@ REVIEW_NOTE_STATUS_LABELS: dict[str, str] = {
     "reopened": "重新開啟",
 }
 
-UNKNOWN_STATUS_TEXT = "未知狀態，請聯絡系統管理員"
+UNKNOWN_STATUS_TEXT = "無法辨識的狀態，請重新整理或聯絡維護人員"
 
 ANNUAL_WORK_STATUS_LABELS: dict[str, str] = {
     "not_started": "未開始",
@@ -149,3 +149,12 @@ def status_to_label(value: str | None) -> str:
     if not value:
         return UNKNOWN_STATUS_TEXT
     return STATUS_LABELS.get(value, UNKNOWN_STATUS_TEXT)
+
+
+def label_for(labels: dict[str, str], value: str | None) -> str:
+    """Keep unknown machine values in local diagnostics, never in a label."""
+    if value in labels:
+        return labels[value]
+    import logging
+    logging.getLogger(__name__).warning("Unrecognised UI status value: %r", value)
+    return UNKNOWN_STATUS_TEXT

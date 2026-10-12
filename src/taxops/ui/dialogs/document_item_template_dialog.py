@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -68,9 +69,15 @@ class DocumentItemTemplateDialog(QDialog):
         self.setWindowTitle("選擇文件項目")
         self.setModal(True)
         self.setMinimumWidth(440)
-        self.setMinimumHeight(440)
+        self.setMinimumHeight(320)
 
-        outer = QVBoxLayout(self)
+        layout = QVBoxLayout(self)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        body = QWidget()
+        outer = QVBoxLayout(body)
+        scroll.setWidget(body)
+        layout.addWidget(scroll, 1)
         outer.setContentsMargins(20, 20, 20, 20)
         outer.setSpacing(12)
 
@@ -130,7 +137,8 @@ class DocumentItemTemplateDialog(QDialog):
         ok_btn = buttons.addButton("確定", QDialogButtonBox.ButtonRole.AcceptRole)
         cancel_btn = buttons.addButton("取消", QDialogButtonBox.ButtonRole.RejectRole)
         ok_btn.setDefault(True)
-        outer.addWidget(buttons)
+        layout.addWidget(buttons)
+        self.resize(560, 540)
 
         ok_btn.clicked.connect(self.accept)
         cancel_btn.clicked.connect(self.reject)
@@ -138,6 +146,9 @@ class DocumentItemTemplateDialog(QDialog):
         self.setTabOrder(self._custom_input, self._custom_list)
         self.setTabOrder(self._custom_list, ok_btn)
 
+        for label in body.findChildren(QLabel):
+            label.setWordWrap(True)
+        self._custom_input.setAccessibleName("自訂文件項目名稱")
         self._restore_preset()
 
     def selected_items(self) -> tuple[str, ...]:

@@ -199,8 +199,8 @@ def test_result_is_a_labelled_card_not_a_sentence(qapp, container) -> None:
 
     assert page._result_days_value.text() == "5 天"
     assert page._result_rate_value.text() == "1%"
-    assert page._result_penalty_value.text() == "NT$ 2,060"
-    assert page._result_total_value.text() == "NT$ 208,060"
+    assert page._result_penalty_value.text() == "新臺幣 2,060"
+    assert page._result_total_value.text() == "新臺幣 208,060"
     assert page._result_label.text() == "手動試算結果未儲存。"
 
 
@@ -224,11 +224,11 @@ def test_amounts_are_right_aligned_with_thousands_separators(qapp, container) ->
     assert page._base_spin.prefix() == ""
     assert page._base_spin.suffix() == ""
     assert "元" not in page._base_spin.text()
-    assert "NT$" not in page._base_spin.text()
+    assert "新臺幣" not in page._base_spin.text()
     assert page._base_spin.isGroupSeparatorShown()
     assert "218,095" in page._base_spin.text()
     assert page._base_spin.alignment() & Qt.AlignmentFlag.AlignRight
-    assert page._amount_unit_label.text() == "NT$"
+    assert page._amount_unit_label.text() == "新臺幣"
 
     for value in (
         page._result_days_value,
@@ -258,7 +258,7 @@ def test_changing_an_input_retires_the_displayed_result(qapp, container) -> None
     page._actual_payment_date.set_value("2026-03-20")
     page._base_spin.setValue(10_000)
     page._calc_btn.click()
-    assert page._result_penalty_value.text() == "NT$ 100"
+    assert page._result_penalty_value.text() == "新臺幣 100"
 
     page._base_spin.setValue(20_000)
 
@@ -314,7 +314,7 @@ def test_segment_columns_show_start_end_days_rate_and_amount(qapp, container) ->
     assert page._schedule_table.item(1, 1).text() == "2026-03-21"
     assert page._schedule_table.item(1, 2).text() == "第 4–6 日"
     assert page._schedule_table.item(1, RATE_COLUMN).text() == "1%"
-    assert page._schedule_table.item(1, 4).text() == "NT$ 100"
+    assert page._schedule_table.item(1, 4).text() == "新臺幣 100"
 
     last = page._schedule_table.rowCount() - 1
     assert page._schedule_table.item(last, 1).text() == "（之後）"
@@ -505,8 +505,8 @@ def test_displayed_numbers_equal_the_statutory_functions(
     penalty = round(100_000 * rate / 100, 2)
     assert page._result_days_value.text() == f"{days} 天"
     assert page._result_rate_value.text() == f"{rate:g}%"
-    assert page._result_penalty_value.text() == f"NT$ {penalty:,.0f}"
-    assert page._result_total_value.text() == f"NT$ {100_000 + penalty:,.0f}"
+    assert page._result_penalty_value.text() == f"新臺幣 {penalty:,.0f}"
+    assert page._result_total_value.text() == f"新臺幣 {100_000 + penalty:,.0f}"
 
 
 def test_segment_rows_mirror_build_penalty_schedule(qapp, container) -> None:

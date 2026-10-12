@@ -1,6 +1,6 @@
 """Stage 5 — DateField rebuild.
 
-Each assertion states a condition from the acceptance column of defect G14 in
+Assertions exercise the public date-field acceptance contract in
 `docs/desktop_ux_contract.md`: click-to-select, a 300–340px popup, an in-field quiet
 clear icon, month stepping separated from year adjustment, and no confirm step.
 

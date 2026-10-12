@@ -9,32 +9,32 @@ databases, backups, and exports outside the repository. Local ignored files are
 not a secure storage mechanism. Do not attach real customer data to issues or CI.
 
 Read [development contracts](docs/development_contract.md),
-[design guidelines](docs/design_guidelines.md), and the existing architecture and
-packaging documentation. Public contracts belong in documentation; execution
-history and private instructions do not.
+[the object model](docs/product_object_model.md),
+[error handling](docs/no_silent_failure.md), [design guidelines](docs/design_guidelines.md),
+and [desktop UI contracts](docs/desktop_ux_contract.md). Product contracts belong
+in public documentation; execution history and private instructions do not.
 
 ## Setup and checks
 
-Use Python 3.11 or newer in an isolated environment. Install the project's
-`pyproject.toml` development dependencies, and use `requirements-release.txt`
-for the isolated Windows release build as described in the packaging checklist.
+Python 3.11 or newer is required. Use an isolated virtual environment and the
+pinned release/CI dependencies:
 
 ```text
+python -m venv .venv
+python -m pip install -r requirements-release.txt -r requirements-ci.txt
 python -m build_tools.check_repository_hygiene
-python -m pytest tests/test_repository_hygiene.py -q
-python -m coverage run -m pytest
-python -m coverage report --precision=2
+python -m build_tools.run_test_matrix --output artifacts/source-tests
 ```
 
-The existing complete test/coverage gate remains unchanged at 90% branch-aware
-coverage. Failures remain failures. The new hygiene-only workflow checks tracked
-content and cannot substitute for full application tests or EXE acceptance.
-These commands describe this branch's existing tooling; no candidate-version
-matrix runner or newer application feature is introduced by this change.
+Activate `.venv` before the install and test commands using your shell's normal
+activation command. The matrix starts each test file in a separate process and
+combines raw branch coverage. All test files run; failures remain failures, and
+the unrounded branch coverage gate stays at 90%. Do not replace this gate with a
+focused suite, the hygiene-only workflow, or the focused Windows diagnostic job.
 
-Follow [the packaging checklist](docs/packaging_checklist.md) for Windows builds
-and manual acceptance. A smoke test alone is not clean offline Windows/DPI
-acceptance. Use synthetic data for new tests and diagnostics.
+Windows packaging and frozen verification use a separate release-only environment;
+follow [the Windows candidate gate](docs/windows_candidate_gate.md). A source or
+hosted-runner pass is not clean offline Windows/DPI acceptance.
 
 ## Before committing
 

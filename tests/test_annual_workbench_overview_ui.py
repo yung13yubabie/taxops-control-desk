@@ -64,8 +64,8 @@ def test_apply_unpaid_tax_filter_shows_exact_chinese_row_and_money(
     assert page.overview_table.rowCount() == 1
     assert page.overview_table.item(0, 0).text() == "青山精密工業股份有限公司"
     assert page.overview_table.item(0, 2).text() == "青山精密 2026 年營所稅結算申報"
-    assert page.overview_table.item(0, 11).text() == "NT$ 22,000"
-    assert page.metric_value_labels[5].text() == "未繳稅 NT$ 22,000"
+    assert page.overview_table.item(0, 11).text() == "新臺幣 22,000"
+    assert page.metric_value_labels[5].text() == "未繳稅 新臺幣 22,000"
 
     cell = page.overview_table.item(0, AnnualOverviewTable.TITLE_COLUMN)
     qtbot.mouseClick(
@@ -77,7 +77,7 @@ def test_apply_unpaid_tax_filter_shows_exact_chinese_row_and_money(
     # one paragraph of plain text, so each value is asserted by the name it carries.
     assert page.inspector.title_label.text() == "青山精密 2026 年營所稅結算申報"
     fields = page.inspector.field_values()
-    assert fields["未繳稅"] == "NT$ 22,000"
+    assert fields["未繳稅"] == "新臺幣 22,000"
     assert fields["客戶"] == "青山精密工業股份有限公司（TW-ALPINE-001）"
     assert fields["稅款狀態"] == "稅款未確認"
     assert all(
@@ -208,9 +208,9 @@ def test_all_metrics_are_exact_and_apply_clear_send_allowlisted_filters(
         "客戶數 1",
         "異常數 1",
         "缺件風險數 1",
-        "收款短缺 NT$ 18,600",
-        "未繳稅 NT$ 22,000",
-        "未收服務費 NT$ 3,000",
+        "收款短缺 新臺幣 18,600",
+        "未繳稅 新臺幣 22,000",
+        "未收服務費 新臺幣 3,000",
         "超收筆數 0",
     ]
 

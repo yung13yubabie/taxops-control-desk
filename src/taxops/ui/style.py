@@ -18,6 +18,8 @@ them from this module.
 
 from __future__ import annotations
 
+from ..core.resources import asset_path
+
 from PySide6.QtGui import QIcon
 
 from . import icons, tokens
@@ -605,18 +607,14 @@ def toolbar_icon(role: str) -> QIcon:
 
 def apply(app: object) -> None:
     """Apply the global stylesheet and app icon to a QApplication instance."""
-    import sys
-    from pathlib import Path
-
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 
+    from ..i18n.qt import install_chinese
+    install_chinese(app)
     app.setStyleSheet(APP_STYLESHEET)  # type: ignore[attr-defined]
 
-    if getattr(sys, "frozen", False):
-        icon_path = Path(sys.executable).parent / "assets" / "app_icon.ico"
-    else:
-        icon_path = Path(__file__).resolve().parents[3] / "assets" / "app_icon.ico"
+    icon_path = asset_path("app_icon.ico")
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))  # type: ignore[attr-defined]
         return
@@ -671,3 +669,31 @@ __all__ = [
     "apply",
     "toolbar_icon",
 ]
+
+# Document-first shell, preserving the shared roles, fonts and inline-SVG icons.
+APP_STYLESHEET += f"""
+QWidget#WorkspaceNavigation {{ background: {tokens.WORKSPACE_NAV_BG}; }}
+QWidget#WorkspaceNavigation QLabel {{ background: transparent; color: {tokens.WORKSPACE_NAV_TEXT}; }}
+QLabel#WorkspaceBrand {{ font-size: {tokens.FONT_PAGE_TITLE}px; font-weight: 700; padding-right: {tokens.SPACING_MD}px; }}
+QWidget#WorkspaceNavigation QPushButton {{ background: transparent; color: {tokens.WORKSPACE_NAV_TEXT}; border: 2px solid transparent; }}
+QWidget#WorkspaceNavigation QPushButton:hover {{ background: {tokens.WORKSPACE_NAV_HOVER}; }}
+QWidget#WorkspaceNavigation QPushButton:checked {{ background: {tokens.WORKSPACE_NAV_ACTIVE}; color: {tokens.TEXT}; border-bottom-color: {tokens.WORKSPACE_NAV_ACTIVE}; }}
+QWidget#WorkspaceNavigation QPushButton:focus {{ border: 2px solid {tokens.FOCUS_RING}; }}
+QWidget#TodayWorkPanel {{ background: {tokens.REMINDER_SURFACE}; border-radius: {tokens.RADIUS_MD}px; }}
+QWidget#TodayWorkPanel QLabel {{ background: transparent; }}
+QTabBar#ReceiptStages::tab {{ background: transparent; color: {tokens.TEXT_MUTED}; border-bottom: 3px solid transparent; padding: {tokens.SPACING_SM}px {tokens.SPACING_MD}px; }}
+QTabBar#ReceiptStages::tab:selected {{ color: {tokens.TEXT}; border-bottom: 3px solid {tokens.PRIMARY}; font-weight: 600; }}
+QLabel#ReceiptFacts {{ color: {tokens.TEXT}; background: {tokens.SURFACE_SECTION}; padding: {tokens.SPACING_SM}px; }}
+QLabel#ReceiptError {{ color: {tokens.DANGER}; background: {tokens.DANGER_SOFT}; padding: {tokens.SPACING_SM}px; }}
+QLabel#ReceiptFeedback {{ color: {tokens.TEXT}; background: {tokens.SURFACE_SECTION}; padding: {tokens.SPACING_SM}px; }}
+QWidget#DocumentWorkbench QToolButton {{ background: {tokens.SURFACE_CONTENT}; color: {tokens.TEXT}; border: 1px solid {tokens.BORDER}; border-radius: {tokens.RADIUS_MD}px; padding: {tokens.SPACING_SM}px {tokens.SPACING_LG}px; }}
+QWidget#DocumentWorkbench QToolButton:focus {{ border: 2px solid {tokens.FOCUS_RING}; }}
+"""
+
+APP_STYLESHEET += f"""
+QWidget#DocumentWorkbench QTableWidget::item {{ padding: 2px {tokens.SPACING_SM}px; }}
+QWidget#DocumentWorkbench QFrame#Inspector QLabel {{ background: transparent; }}
+QListWidget#TodayWorkList {{ background: transparent; border: none; }}
+QListWidget#TodayWorkList::item {{ padding: {tokens.SPACING_SM}px {tokens.SPACING_XS}px; border-bottom: 1px solid {tokens.BORDER}; }}
+QListWidget#TodayWorkList::item:selected {{ background: {tokens.SURFACE_SELECTED}; color: {tokens.TEXT}; }}
+"""

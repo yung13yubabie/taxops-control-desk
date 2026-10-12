@@ -1,10 +1,10 @@
 """Settings page.
 
 Slice 2 enables five tax-cache offline workflow buttons:
-  - 從 ZIP 匯入稅籍資料
-  - 匯入稅籍快取包
-  - 匯出稅籍快取包
-  - 驗證快取
+  - 從壓縮檔匯入稅籍資料
+  - 匯入稅籍資料包
+  - 匯出稅籍資料包
+  - 驗證本機稅籍資料
   - 重新產生客戶對照結果
 
 HTTP download (下載財政部稅籍資料) and GCIS query remain disabled (Slice 3).
@@ -66,9 +66,14 @@ from ..widgets.flow_layout import FlowLayout
 _log = logging.getLogger(__name__)
 
 _QUERY_MODE_LABELS = {
-    "local_only": "僅使用本機快取",
+    "local_only": "僅使用本機稅籍資料",
     "allow_online": "允許線上下載更新",
 }
+
+
+def _display_name_text(value: str | None) -> str:
+    """The reserved default actor is a placeholder, not a typed user name."""
+    return "" if not value or value == "local_user" else value
 
 
 def _middle_elide(text: str, max_chars: int = 60) -> str:
@@ -209,9 +214,10 @@ class SettingsPage(QWidget):
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
 
         self._display_name = QLineEdit(
-            self._container.settings.get("display.local_user_name") or "local_user"
+            _display_name_text(self._container.settings.get("display.local_user_name"))
         )
         self._display_name.setMaxLength(100)
+        self._display_name.setPlaceholderText("未填寫時顯示為本機使用者；例如：王小明")
         save_btn = QPushButton(BUTTON_LABELS["settings.save_display_name"])
         self._save_display_name_btn = save_btn
         save_btn.clicked.connect(self.on_save_display_name)
@@ -226,7 +232,7 @@ class SettingsPage(QWidget):
         return group
 
     def _build_tax_cache_group(self) -> QGroupBox:
-        group = QGroupBox("稅籍快取管理")
+        group = QGroupBox("本機稅籍資料管理")
         layout = QVBoxLayout(group)
         layout.setSpacing(12)
 
@@ -256,9 +262,9 @@ class SettingsPage(QWidget):
         form.addRow(QLabel("查詢模式"), mode_wrap)
 
         for label, key in (
-            ("財政部資料集頁 URL", "tax_cache.dataset_url"),
-            ("財政部下載 URL", "tax_cache.download_url"),
-            ("GCIS Swagger URL", "tax_cache.gcis_swagger_url"),
+            ("財政部資料介紹網址", "tax_cache.dataset_url"),
+            ("財政部下載網址", "tax_cache.download_url"),
+            ("經濟部查詢服務說明網址", "tax_cache.gcis_swagger_url"),
         ):
             value_label = QLabel(self._container.settings.get(key) or "")
             value_label.setTextInteractionFlags(
@@ -345,16 +351,16 @@ class SettingsPage(QWidget):
             )
             if status.has_cache:
                 text = (
-                    f"快取版本：{status.cache_version or '未知'}  │  "
+                    f"本機稅籍資料版本：{status.cache_version or '未知'}  │  "
                     f"筆數：{status.row_count:,}  │  "
                     f"資料日期：{status.data_freshness_iso or '未知'}  │  "
                     f"來源：{status.last_import_source or '未知'}"
                 )
             else:
-                text = "尚無快取資料，請先匯入財政部 ZIP 或快取包。"
+                text = "尚無本機稅籍資料，請先匯入財政部壓縮檔 或稅籍資料包。"
         except Exception:
             _log.warning("_refresh_cache_status: failed to read cache status", exc_info=True)
-            text = "無法取得快取狀態。"
+            text = "無法取得本機稅籍資料狀態。"
         self._cache_status_label.setText(text)
 
     # ------------------------------------------------------------------
@@ -459,6 +465,7 @@ class SettingsPage(QWidget):
         worker.succeeded.connect(_on_succeeded)
         worker.errored.connect(_on_errored)
         worker.finished.connect(_on_thread_finished)
+        worker.finished.connect(progress.deleteLater)
         worker.finished.connect(worker.deleteLater)
         worker.start()
 
@@ -467,14 +474,14 @@ class SettingsPage(QWidget):
     # ------------------------------------------------------------------
     def on_import_zip(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "選擇財政部稅籍資料", "", "ZIP 檔案 (*.zip)"
+            self, "選擇財政部稅籍資料", "", "壓縮檔（ZIP） (*.zip)"
         )
         if not path:
             return
         reply = QMessageBox.question(
             self,
             "確認匯入",
-            f"確定要匯入以下稅籍資料？\n\n{path}\n\n匯入將覆蓋現有快取，此操作無法復原。",
+            f"確定要匯入以下稅籍資料？\n\n{path}\n\n匯入將覆蓋現有本機稅籍資料，此操作無法復原。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
@@ -500,16 +507,16 @@ class SettingsPage(QWidget):
     def on_import_bundle(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "選擇稅籍快取包",
+            "選擇稅籍資料包",
             "",
-            "稅籍快取包 (*.taxops-cache.zip *.zip)",
+            "稅籍資料包 (*.taxops-cache.zip *.zip)",
         )
         if not path:
             return
         reply = QMessageBox.question(
             self,
             "確認匯入",
-            f"確定要匯入快取包？\n\n{path}\n\n匯入成功後將覆蓋現有快取。",
+            f"確定要匯入稅籍資料包？\n\n{path}\n\n匯入成功後將覆蓋現有本機稅籍資料。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
@@ -522,7 +529,7 @@ class SettingsPage(QWidget):
 
         self._run_async(
             _do,
-            "匯入快取包中，請稍候...",
+            "匯入稅籍資料包中，請稍候...",
             on_success=lambda r: QMessageBox.information(
                 self,
                 "匯入完成",
@@ -537,9 +544,9 @@ class SettingsPage(QWidget):
         default_name = suggested_bundle_filename(meta.get("cache_version"))
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "匯出稅籍快取包",
+            "匯出稅籍資料包",
             str(self._container.paths.data_root / default_name),
-            "稅籍快取包 (*.taxops-cache.zip)",
+            "稅籍資料包 (*.taxops-cache.zip)",
         )
         if not path:
             return
@@ -551,7 +558,7 @@ class SettingsPage(QWidget):
 
         self._run_async(
             _do,
-            "匯出快取包中，請稍候...",
+            "匯出稅籍資料包中，請稍候...",
             on_success=lambda r: QMessageBox.information(
                 self,
                 "匯出完成",
@@ -572,13 +579,13 @@ class SettingsPage(QWidget):
             return
 
         status_text = (
-            "✓ 快取完整"
+            "✓ 本機稅籍資料完整"
             if result.row_count_matches
-            else "⚠ 快取筆數與紀錄不符，建議重新匯入"
+            else "⚠ 本機稅籍資料筆數與紀錄不符，建議重新匯入"
         )
         QMessageBox.information(
             self,
-            "驗證快取結果",
+            "驗證本機稅籍資料結果",
             f"{status_text}\n\n"
             f"版本：{result.cache_version or '無'}\n"
             f"記錄筆數：{result.metadata_row_count if result.metadata_row_count is not None else '無'}\n"
@@ -609,7 +616,7 @@ class SettingsPage(QWidget):
                 f"已處理 {summary.client_count} 位客戶。\n\n"
                 f"完全比對：{hist.get('matched', 0)}\n"
                 f"名稱不符：{mismatch_count}\n"
-                f"快取查無：{hist.get('not_found', 0)}\n"
+                f"本機稅籍資料查無：{hist.get('not_found', 0)}\n"
                 f"需人工確認：{hist.get('needs_manual_review', 0)}",
             )
             if mismatch_count > 0:
@@ -661,8 +668,8 @@ class SettingsPage(QWidget):
         # Step 2: Confirm cache overwrite
         reply2 = QMessageBox.question(
             self,
-            "確認覆蓋快取",
-            "下載完成後將自動匯入並覆蓋現有快取。\n\n此操作無法復原，確定繼續嗎？",
+            "確認覆蓋本機稅籍資料",
+            "下載完成後將自動匯入並覆蓋現有本機稅籍資料。\n\n此操作無法復原，確定繼續嗎？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -674,19 +681,12 @@ class SettingsPage(QWidget):
         def _do(container: ServiceContainer):
             try:
                 download_registry_zip(url, tmp_path)
-                result = container.tax_cache_importer.import_zip(tmp_path)
+                result = container.tax_cache_importer.import_zip(
+                    tmp_path, source_url=url, record_download=True
+                )
             finally:
                 if tmp_path.exists():
                     tmp_path.unlink(missing_ok=True)
-            container.audit.record(
-                action="tax_cache.download",
-                target_type="tax_cache",
-                detail={
-                    "source_url": url,
-                    "row_count": result.row_count,
-                    "cache_version": result.cache_version,
-                },
-            )
             return result
 
         self._run_async(
@@ -731,7 +731,7 @@ class SettingsPage(QWidget):
             )
             return
         self._container.audit.set_actor(cleaned)
-        self._display_name.setText(cleaned)
+        self._display_name.setText(_display_name_text(cleaned))
         QMessageBox.information(self, "已儲存", "設定已儲存")
 
     def on_save_query_mode(self) -> None:
@@ -811,6 +811,13 @@ class SettingsPage(QWidget):
         info.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout.addWidget(info)
 
+        backup_scope = QLabel(
+            "完整備份包含資料庫、附件及工作紀錄圖片。\n"
+            "舊版 .sqlite 僅含資料庫，無法補回遺失的附件或圖片。"
+        )
+        backup_scope.setWordWrap(True)
+        layout.addWidget(backup_scope)
+
         btn_wrap = QWidget()
         btn_row = FlowLayout(btn_wrap, h_spacing=8, v_spacing=6)
 
@@ -839,22 +846,38 @@ class SettingsPage(QWidget):
         QMessageBox.information(
             self,
             "備份完成",
-            f"已備份至：\n{row.backup_path}\n\n檔案大小：{row.file_size:,} bytes",
+            f"已完整備份資料庫、附件及工作紀錄圖片至：\n{row.backup_path}"
+            f"\n\n檔案大小：{row.file_size:,} bytes" + self._backup_cleanup_notice(),
+        )
+
+    def _backup_cleanup_notice(self) -> str:
+        paths = self._container.backup.cleanup_warnings
+        if not paths:
+            return ""
+        return (
+            "\n\n操作已完成，但部分暫存檔案未能清理，可能繼續占用磁碟空間。"
+            "請保留復原紀錄，確認資料後再處理：\n" + "\n".join(map(str, paths))
         )
 
     def on_restore(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "選擇備份檔", "", "SQLite 備份 (*.sqlite)"
+            self, "選擇備份檔", "", "TaxOps 備份 (*.taxops.zip *.sqlite)"
         )
         if not path:
             return
 
+        scope_warning = (
+            "這是舊版備份，不包含附件或圖片；遺失的檔案不會被還原。\n"
+            if Path(path).suffix.lower() == ".sqlite" else
+            "將驗證並還原資料庫、附件及工作紀錄圖片。\n"
+        )
         reply1 = QMessageBox.question(
             self,
             "確認還原",
             f"確定要從以下備份還原？\n\n{path}\n\n"
-            "還原前會自動建立目前資料的備份快照。\n"
-            "還原後現有資料將被取代。",
+            f"{scope_warning}"
+            "還原前會先保存目前的資料，現有附件與圖片會保留，不會刪除。\n"
+            "多次還原會增加磁碟用量。還原後資料庫內容將被取代。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -886,5 +909,5 @@ class SettingsPage(QWidget):
         QMessageBox.information(
             self,
             "還原完成",
-            "資料已還原。建議重新啟動應用程式以確保狀態一致。",
+            "資料已還原，請重新開啟程式後再繼續使用。" + self._backup_cleanup_notice(),
         )

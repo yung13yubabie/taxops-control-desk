@@ -1,26 +1,23 @@
-"""Main application window: left navigation + stacked content."""
+"""Document-first shell with grouped navigation and stable deep links."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QCloseEvent
+from ..i18n.errors import UserFacingError
+
+from PySide6.QtCore import QSignalBlocker, QSize
+from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
-    QHBoxLayout,
-    QListWidget,
-    QListWidgetItem,
     QMainWindow,
     QMessageBox,
-    QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from . import icons, tokens
-from ..i18n import NAV_LABELS
 from ..services.container import ServiceContainer
-from .widgets.buttons import make_icon_button
+from .navigation import NAV_ICON_ROLES, NavigationTarget
+from .widgets.workspace_navigation import WorkspaceNavigation
 from .action_registry import (
     NAV_ORDER,
     PAGE_ANNUAL_WORKBENCH,
@@ -49,29 +46,11 @@ from .pages.recurring_billing_page import RecurringBillingPage
 from .pages.registry_page import RegistryPage
 from .pages.templates_page import TemplatesPage
 
-_SIDEBAR_EXPANDED_MIN = tokens.SIDEBAR_EXPANDED_WIDTH
-_SIDEBAR_EXPANDED_MAX = tokens.SIDEBAR_EXPANDED_MAX_WIDTH
-# Wide enough for a centred icon plus its hit target. The former 32px left a bare
-# strip that erased every module's identity once collapsed.
-_SIDEBAR_COLLAPSED_WIDTH = tokens.SIDEBAR_COLLAPSED_WIDTH
+# Compatibility for the established per-page glyph contract.
+_NAV_ICON_ROLES = NAV_ICON_ROLES
+
 _WINDOW_MIN_SIZE = QSize(900, 540)
 _WINDOW_MAX_INITIAL_SIZE = QSize(1280, 720)
-
-# One glyph per module, so a collapsed sidebar still says which page is which.
-_NAV_ICON_ROLES: dict[str, str] = {
-    PAGE_CLIENTS: "nav-clients",
-    PAGE_ANNUAL_WORKBENCH: "nav-calendar",
-    PAGE_ENGAGEMENTS: "nav-engagements",
-    PAGE_TASKS: "nav-tasks",
-    PAGE_WORK_RECORDS: "nav-work-records",
-    PAGE_TEMPLATES: "nav-templates",
-    PAGE_REGISTRY: "nav-registry",
-    PAGE_LATE_FEE: "trial",
-    PAGE_ATTACHMENTS: "nav-attachments",
-    PAGE_FOLDER_BOOKMARKS: "nav-folders",
-    PAGE_RECURRING_BILLING: "nav-billing",
-    PAGE_SETTINGS: "nav-settings",
-}
 
 
 def _initial_window_size(available: QSize) -> QSize:
@@ -103,71 +82,24 @@ class MainWindow(QMainWindow):
             self.setMinimumSize(_WINDOW_MIN_SIZE)
 
         central = QWidget(self)
-        layout = QHBoxLayout(central)
+        layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-
-        # Sidebar wrapper: toggle button on top, nav list below
-        self._sidebar = QWidget()
-        self._sidebar.setObjectName("Sidebar")
-        sidebar_layout = QVBoxLayout(self._sidebar)
-        sidebar_layout.setContentsMargins(0, 0, 0, 0)
-        sidebar_layout.setSpacing(0)
-
-        # Sidebar header: a 32x32 quiet icon button, not a full-width blue bar.
-        header_row = QHBoxLayout()
-        header_row.setContentsMargins(
-            tokens.SPACING_SM, tokens.SPACING_SM, tokens.SPACING_SM, tokens.SPACING_XS
-        )
-        header_row.setSpacing(0)
-        self._collapse_btn = make_icon_button(
-            "chevron-left",
-            tooltip="收合側邊欄",
-            accessible_name="收合側邊欄",
-            icon_color=tokens.SIDEBAR_TEXT,
-        )
-        self._collapse_btn.setObjectName("SidebarToggle")
-        header_row.addStretch(1)
-        header_row.addWidget(self._collapse_btn)
-        sidebar_layout.addLayout(header_row)
-
-        self._collapsed = False
-        self._nav = QListWidget()
-        self._nav.setObjectName("MainNav")
-        self._nav.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self._nav.setIconSize(QSize(tokens.ICON_SIZE_LG, tokens.ICON_SIZE_LG))
-        sidebar_layout.addWidget(self._nav)
-
-        self._sidebar.setMinimumWidth(_SIDEBAR_EXPANDED_MIN)
-        self._sidebar.setMaximumWidth(_SIDEBAR_EXPANDED_MAX)
-        layout.addWidget(self._sidebar)
-
+        self._nav = WorkspaceNavigation()
+        layout.addWidget(self._nav)
         self._stack = QStackedWidget()
         layout.addWidget(self._stack, stretch=1)
-
         self._page_indices: dict[str, int] = {}
         self._build_pages()
-
         self._nav.currentRowChanged.connect(self._on_nav_changed)
-        self._nav.setCurrentRow(self._page_indices.get(PAGE_CLIENTS, 0))
-
-        # Restore sidebar collapse state from persisted setting
-        collapsed_val = container.settings.get("ui.sidebar_collapsed") or "0"
-        if collapsed_val == "1":
-            self._apply_collapsed(save=False)
-
-        self._collapse_btn.clicked.connect(self._on_toggle_sidebar)
-
+        self._nav.setCurrentRow(NAV_ORDER.index(PAGE_ATTACHMENTS))
+        self.statusBar().showMessage("本機資料 · 核心工作可離線使用")
+        self._nav_shortcut = QShortcut(QKeySequence("F6"), self)
+        self._nav_shortcut.activated.connect(self._focus_navigation)
         self.setCentralWidget(central)
 
     def _build_pages(self) -> None:
         for page_id in NAV_ORDER:
-            label = NAV_LABELS.get(page_id, page_id)
-            item = QListWidgetItem(label)
-            # KeyError here is intentional: a new page must declare its glyph rather
-            # than fall back to a generic one.
-            item.setIcon(icons.icon(_NAV_ICON_ROLES[page_id], tokens.SIDEBAR_TEXT))
-            self._nav.addItem(item)
             page: QWidget
             if page_id == PAGE_CLIENTS:
                 page = ClientsPage(self._container)
@@ -204,14 +136,20 @@ class MainWindow(QMainWindow):
             index = self._stack.addWidget(page)
             self._page_indices[page_id] = index
 
+            signal = getattr(page, "navigate_requested", None)
+            if signal is not None:
+                signal.connect(self.open_target)
+
     def navigate_to(self, page_id: str, filter_key: str = "") -> None:
+        if not self._can_navigate():
+            return
         idx = self._page_indices.get(page_id)
         if idx is not None:
             nav_idx = NAV_ORDER.index(page_id) if page_id in NAV_ORDER else -1
             if nav_idx >= 0 and self._nav.currentRow() != nav_idx:
                 self._nav.setCurrentRow(nav_idx)
             else:
-                if not filter_key:
+                if not filter_key and page_id != PAGE_ATTACHMENTS:
                     page = self._stack.widget(idx)
                     if hasattr(page, "clear_filter"):
                         page.clear_filter()
@@ -222,11 +160,101 @@ class MainWindow(QMainWindow):
                     page.set_filter(filter_key)
 
     def _on_nav_changed(self, idx: int) -> None:
-        if idx >= 0:
-            page = self._stack.widget(idx)
+        if idx < 0:
+            return
+        if not self._can_navigate():
+            self._nav.blockSignals(True)
+            self._nav.setCurrentRow(self._stack.currentIndex())
+            self._nav.blockSignals(False)
+            return
+        page = self._stack.widget(idx)
+        # Global destinations deliberately reset their list filters. The receipt
+        # workbench retains its queue/search/selection when returning from a case.
+        if NAV_ORDER[idx] != PAGE_ATTACHMENTS:
             if hasattr(page, "clear_filter"):
                 page.clear_filter()
-            self._activate_page(idx)
+        self._activate_page(idx)
+
+    def _can_navigate(self) -> bool:
+        modal = QApplication.activeModalWidget()
+        if modal is not None and modal is not self:
+            self.statusBar().showMessage("請先完成或取消目前的對話框，再切換工作。")
+            return False
+        page = self._stack.currentWidget()
+        can_leave = getattr(page, "can_leave_page", None)
+        return bool(can_leave()) if can_leave is not None else True
+
+    def _focus_navigation(self) -> None:
+        if self._can_navigate():
+            self._nav.focus_current()
+
+    def open_target(self, target: NavigationTarget) -> bool:
+        """Resolve exact IDs before replacing a visible page or editor context."""
+        if not isinstance(target, NavigationTarget) or not self._can_navigate():
+            return False
+        if target.page_id not in self._page_indices:
+            return False
+        try:
+            ids = (target.engagement_id, target.request_id,
+                   target.task_id, target.attachment_id)
+            if any(value is not None and (type(value) is not int or value <= 0)
+                   for value in ids):
+                raise UserFacingError("工作連結無效，請重新選取。")
+            if target.task_id is not None:
+                if target.page_id != PAGE_TASKS:
+                    raise UserFacingError("待辦連結的目的地不正確。")
+                task = self._container.tasks.get_task(target.task_id)
+                if task is None or (
+                    target.engagement_id is not None
+                    and task.engagement_id != target.engagement_id
+                ):
+                    raise UserFacingError("待辦已刪除、所屬資料已停用，或案件範圍已變更。")
+            if target.engagement_id is not None:
+                if target.page_id not in {PAGE_ENGAGEMENTS, PAGE_TASKS, PAGE_ATTACHMENTS}:
+                    raise UserFacingError("案件連結的目的地不正確。")
+                if self._container.engagements.get_engagement(target.engagement_id) is None:
+                    raise UserFacingError("案件已刪除或所屬客戶已停用。")
+            if target.request_id is not None:
+                request = self._container.doc_requests.get_request(target.request_id)
+                if (target.page_id != PAGE_ENGAGEMENTS or request is None
+                        or request.engagement_id != target.engagement_id):
+                    raise UserFacingError("索件批次已刪除或不屬於這個案件。")
+            if target.attachment_id is not None:
+                attachment = self._container.attachments.get(target.attachment_id)
+                if (target.page_id != PAGE_ATTACHMENTS or attachment is None
+                        or attachment.status == "archived"
+                        or target.engagement_id is None
+                        or attachment.engagement_id != target.engagement_id):
+                    raise UserFacingError("附件已封存、所屬資料已停用，或不屬於這個案件。")
+            page = self._stack.widget(self._page_indices[target.page_id])
+            opened = None
+            if target.page_id == PAGE_ENGAGEMENTS and target.engagement_id is not None:
+                opened = page.open_context(target.engagement_id, target.request_id)
+            elif target.page_id == PAGE_TASKS and target.task_id is not None:
+                opened = page.open_task(target.task_id)
+            elif target.page_id == PAGE_ATTACHMENTS and target.engagement_id is not None:
+                opened = page.open_context(target.engagement_id, target.attachment_id)
+            elif any(value is not None for value in ids):
+                raise UserFacingError("工作連結缺少指定資料，請重新選取。")
+            else:
+                self.navigate_to(target.page_id)
+                return self._stack.currentWidget() is page
+            if opened is False:
+                raise UserFacingError("讀取指定工作失敗，請重新整理後再試。")
+            # open_context has already loaded and selected the exact target.
+            # A generic activation refresh here would overwrite drill-down scope
+            # from a hidden master-table selection or a bounded combo list.
+            with QSignalBlocker(self._nav):
+                self._nav.setCurrentRow(NAV_ORDER.index(target.page_id))
+            self._stack.setCurrentWidget(page)
+            self.statusBar().showMessage("已開啟指定工作。", 5000)
+            return True
+        except UserFacingError as exc:
+            QMessageBox.warning(self, "無法開啟工作", str(exc))
+        except Exception as exc:
+            self._container.system_log.error("navigation target failed", exc=exc)
+            QMessageBox.warning(self, "無法開啟工作", "讀取工作資料失敗，請重新整理後再試。")
+        return False
 
     def _activate_page(self, idx: int) -> None:
         self._stack.setCurrentIndex(idx)
@@ -246,31 +274,6 @@ class MainWindow(QMainWindow):
                 },
             )
 
-    def _on_toggle_sidebar(self) -> None:
-        if self._collapsed:
-            self._apply_expanded(save=True)
-        else:
-            self._apply_collapsed(save=True)
-
-    def _set_nav_collapsed(self, collapsed: bool) -> None:
-        """Hide or restore navigation labels while keeping icons and tooltips.
-
-        The list itself stays visible in both states. Hiding it — the previous
-        behaviour — left a blank strip with no way to tell the modules apart.
-        """
-        for row, page_id in enumerate(NAV_ORDER):
-            item = self._nav.item(row)
-            if item is None:
-                continue
-            label = NAV_LABELS.get(page_id, page_id)
-            item.setText("" if collapsed else label)
-            item.setToolTip(label if collapsed else "")
-        self._nav.setProperty("collapsed", "true" if collapsed else "false")
-        style = self._nav.style()
-        if style is not None:
-            style.unpolish(self._nav)
-            style.polish(self._nav)
-
     def closeEvent(self, event: QCloseEvent) -> None:
         settings_page = getattr(self, "_settings_page", None)
         registry_page = getattr(self, "_registry_page", None)
@@ -288,37 +291,3 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         super().closeEvent(event)
-
-    def _apply_collapsed(self, *, save: bool) -> None:
-        self._collapsed = True
-        self._set_nav_collapsed(True)
-        self._collapse_btn.setIcon(icons.icon("chevron-right", tokens.SIDEBAR_TEXT))
-        self._collapse_btn.setToolTip("展開側邊欄")
-        self._collapse_btn.setAccessibleName("展開側邊欄")
-        self._sidebar.setMinimumWidth(_SIDEBAR_COLLAPSED_WIDTH)
-        self._sidebar.setMaximumWidth(_SIDEBAR_COLLAPSED_WIDTH)
-        if save:
-            try:
-                self._container.settings.set_setting("ui.sidebar_collapsed", "1")
-            except Exception as err:
-                self._container.system_log.warn(
-                    "sidebar collapse setting save failed",
-                    detail={"exc": type(err).__name__, "msg": str(err)},
-                )
-
-    def _apply_expanded(self, *, save: bool) -> None:
-        self._collapsed = False
-        self._set_nav_collapsed(False)
-        self._collapse_btn.setIcon(icons.icon("chevron-left", tokens.SIDEBAR_TEXT))
-        self._collapse_btn.setToolTip("收合側邊欄")
-        self._collapse_btn.setAccessibleName("收合側邊欄")
-        self._sidebar.setMinimumWidth(_SIDEBAR_EXPANDED_MIN)
-        self._sidebar.setMaximumWidth(_SIDEBAR_EXPANDED_MAX)
-        if save:
-            try:
-                self._container.settings.set_setting("ui.sidebar_collapsed", "0")
-            except Exception as err:
-                self._container.system_log.warn(
-                    "sidebar expand setting save failed",
-                    detail={"exc": type(err).__name__, "msg": str(err)},
-                )

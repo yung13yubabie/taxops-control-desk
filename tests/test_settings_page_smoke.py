@@ -8,7 +8,7 @@ Covers everything verifiable without a real display or human interaction:
 - Cache status label updates after import
 
 QFileDialog / QProgressDialog / QThread visual interaction requires a real
-desktop and is explicitly left as [待驗收] in docs/packaging_checklist.md.
+desktop and is explicitly left as [待驗收] in docs/windows_candidate_gate.md.
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ def test_empty_cache_status_label(qt_app, tmp_path) -> None:
         page = SettingsPage(container)
         text = page._cache_status_label.text()
         assert text.strip() != ""
-        assert "快取" in text
+        assert "本機稅籍資料" in text
     finally:
         container.close()
 
@@ -182,7 +182,7 @@ def test_verify_cache_after_real_import_shows_healthy(qt_app, tmp_path) -> None:
 
         assert captured, "QMessageBox.information was not called"
         report = captured[0]
-        assert "快取完整" in report or "✓" in report, (
+        assert "本機稅籍資料完整" in report or "✓" in report, (
             f"expected healthy report; got:\n{report}"
         )
         assert any(marker in report for marker in ("1,705", "1705", "170")), (

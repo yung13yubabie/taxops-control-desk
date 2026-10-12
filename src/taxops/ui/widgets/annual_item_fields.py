@@ -26,6 +26,7 @@ from ...i18n.status_labels import (
 )
 from ...services.annual_work import UpdateAnnualWorkItemInput
 from ..style import TEXT_MUTED
+from .date_field import DateField
 
 
 _TERMINAL_WORK_STATUSES = frozenset(
@@ -50,7 +51,9 @@ class AnnualItemFields(QScrollArea):
 
         context_group = QGroupBox("客戶與年度")
         context_form = QFormLayout(context_group)
-        self.client_label = QLabel()
+        context_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        self.client_label = _readonly_line()
+        self.client_label.setAccessibleName("客戶（唯讀）")
         self.operation_year_input = _readonly_line()
         self.suggested_due_date_input = _readonly_line()
         context_form.addRow("客戶", self.client_label)
@@ -60,6 +63,7 @@ class AnnualItemFields(QScrollArea):
 
         detail_group = QGroupBox("工作內容")
         detail_form = QFormLayout(detail_group)
+        detail_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.title_input = _line(
             "AnnualItemTitle", "輸入清楚可辨識的工作名稱"
         )
@@ -69,9 +73,10 @@ class AnnualItemFields(QScrollArea):
         self.period_code_input = _line(
             "AnnualItemPeriod", "例如 01–02；無則留白"
         )
-        self.due_date_input = _line(
-            "AnnualItemDueDate", "YYYY-MM-DD；無則留白"
-        )
+        self.due_date_input = DateField(required=False)
+        self.due_date_input.setObjectName("AnnualItemDueDate")
+        self.due_date_input.setAccessibleName("採用期限（可留空）")
+        self.due_date_input.setFocusProxy(self.due_date_input.findChild(QLineEdit))
         detail_form.addRow("工作名稱", self.title_input)
         detail_form.addRow("課稅年度", self.tax_year_input)
         detail_form.addRow("所屬期間", self.period_code_input)
@@ -80,6 +85,7 @@ class AnnualItemFields(QScrollArea):
 
         status_group = QGroupBox("獨立狀態")
         status_form = QFormLayout(status_group)
+        status_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.work_status_combo = QComboBox()
         self.filing_status_combo = QComboBox()
         self.document_status_combo = QComboBox()
@@ -121,6 +127,7 @@ class AnnualItemFields(QScrollArea):
         notes_group = QGroupBox("備註")
         notes_layout = QVBoxLayout(notes_group)
         notes_hint = QLabel("保留繁體中文、換行與定位字元；上限 100,000 字。")
+        notes_hint.setWordWrap(True)
         notes_hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 14px;")
         self.notes_input = QPlainTextEdit()
         self.notes_input.setObjectName("AnnualItemNotes")
@@ -183,6 +190,7 @@ class AnnualItemFields(QScrollArea):
             self.work_status_combo, _TERMINAL_WORK_STATUSES
         )
         self.client_label.setText(client.client_name)
+        self.client_label.setCursorPosition(0)
         self.client_label.setToolTip(
             f"{client.client_name}（{client.client_code}）"
         )
@@ -195,7 +203,7 @@ class AnnualItemFields(QScrollArea):
             "" if item.tax_year is None else str(item.tax_year)
         )
         self.period_code_input.setText(item.period_code or "")
-        self.due_date_input.setText(item.due_date or "")
+        self.due_date_input.set_value(item.due_date)
         self.notes_input.setPlainText(item.notes or "")
         self.transition_reason_input.setPlainText(
             item.exception_reason or ""
@@ -230,7 +238,7 @@ class AnnualItemFields(QScrollArea):
             title=self.title_input.text(),
             tax_year=tax_year,  # type: ignore[arg-type]
             period_code=self.period_code_input.text() or None,
-            due_date=self.due_date_input.text() or None,
+            due_date=self.due_date_input.raw_text() or None,
             notes=self.notes_input.toPlainText() or None,
             work_status=self.work_status_combo.currentData(),
             filing_status=self.filing_status_combo.currentData(),

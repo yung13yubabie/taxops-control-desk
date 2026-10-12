@@ -219,13 +219,14 @@ def test_save_display_name_validation_error_is_visible(
     assert len(warnings) == 1
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows shell integration")
 def test_open_and_copy_helpers_cover_success_and_failure(
     page, container, monkeypatch
 ):
     warnings = []
     infos = []
     opened = []
-    monkeypatch.setattr(os, "startfile", lambda path: opened.append(path))
+    monkeypatch.setattr(os, "startfile", lambda path: opened.append(path), raising=False)
     monkeypatch.setattr(
         "taxops.ui.pages.settings_page.QMessageBox.warning",
         lambda _parent, _title, body: warnings.append(body),
@@ -514,7 +515,7 @@ def test_cache_status_renders_populated_and_failure_states(
     )
     page._refresh_cache_status()
     assert page._cache_status_label.text() == (
-        "快取版本：v20260712  │  筆數：1,234  │  資料日期：2026-07-11  │  來源：官方 ZIP"
+        "本機稅籍資料版本：v20260712  │  筆數：1,234  │  資料日期：2026-07-11  │  來源：官方 ZIP"
     )
 
     monkeypatch.setattr(
@@ -522,7 +523,7 @@ def test_cache_status_renders_populated_and_failure_states(
         lambda *_args: (_ for _ in ()).throw(RuntimeError("metadata corrupt")),
     )
     page._refresh_cache_status()
-    assert page._cache_status_label.text() == "無法取得快取狀態。"
+    assert page._cache_status_label.text() == "無法取得本機稅籍資料狀態。"
 
 
 def test_download_button_rejects_unofficial_url(page, container, monkeypatch):
@@ -588,10 +589,11 @@ def test_download_button_runs_download_import_cleanup_audit_and_exact_success(
     monkeypatch.setattr(
         "taxops.ui.pages.settings_page.download_registry_zip", download
     )
+    imports = []
     monkeypatch.setattr(
         container.tax_cache_importer,
         "import_zip",
-        lambda path: result if path == tmp_path else None,
+        lambda path, **kwargs: imports.append((path, kwargs)) or result,
     )
     infos: list[tuple[str, str]] = []
     monkeypatch.setattr(
@@ -610,8 +612,6 @@ def test_download_button_runs_download_import_cleanup_audit_and_exact_success(
             "已成功下載並匯入 4,321 筆稅籍資料。\n版本：v4321\n資料日期：2026-07-11",
         )
     ]
-    audit = container.conn.execute(
-        "SELECT action, detail_json FROM audit_logs WHERE action = 'tax_cache.download' ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    assert audit is not None
-    assert audit[0] == "tax_cache.download"
+    # The importer owns the transaction; durable audit is verified with the
+    # real importer/worker in test_reliability_regressions.py.
+    assert imports == [(tmp_path, {"source_url": url, "record_download": True})]

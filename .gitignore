@@ -42,6 +42,11 @@ htmlcov/
 Thumbs.db
 desktop.ini
 
+# Isolated candidate environments and generated evidence
+.venv-test/
+.venv-release/
+artifacts/
+
 # Local collaboration context is private; public contracts belong in docs/.
 .ai/
 .agent/

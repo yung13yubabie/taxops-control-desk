@@ -169,7 +169,7 @@ class AnnualTransactionPanel(QWidget):
             ("tax_overpayment_label", "稅款溢繳"),
             ("fee_overpayment_label", "服務費溢收"),
         )):
-            value = QLabel("NT$ 0")
+            value = QLabel("新臺幣 0")
             value.setObjectName(attr)
             value.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextSelectableByMouse

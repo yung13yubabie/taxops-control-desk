@@ -10,10 +10,11 @@ import logging
 import os
 import sqlite3
 import tempfile
-from contextlib import closing
+from contextlib import closing, contextmanager
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
+from uuid import uuid4
 
 from ..core.paths import AppPaths
 from ..db.migrate import apply_migrations
@@ -21,6 +22,11 @@ from ..db.migrations import MIGRATIONS
 from ..repositories.audit_logs import AuditLogRepository
 from ..repositories.backup import BackupRepository, BackupRow
 from .audit import AuditService
+from .backup_bundle import (
+    ASSET_NAMES, DATABASE_NAME, FULL_BACKUP_SUFFIX, BackupBundleError,
+    install_assets, read_bundle, references, rewrite_references,
+    validate_references, write_bundle, write_restore_history,
+)
 
 _log = logging.getLogger(__name__)
 _SCHEMA_OBJECT_TYPES = ("table", "index", "trigger", "view")
@@ -42,9 +48,72 @@ class BackupService:
         self._conn = conn
         self._repo = repo
         self._audit = audit
+        self._cleanup_warnings: list[Path] = []
+
+    @property
+    def cleanup_warnings(self) -> tuple[Path, ...]:
+        """Owned temporary paths that could not be removed in the last operation."""
+        return tuple(self._cleanup_warnings)
+
+    def _cleanup_warning(self, path: Path) -> None:
+        self._cleanup_warnings.append(path)
+        _log.warning("Temporary backup path may remain after cleanup failure: %s", path,
+                     exc_info=True)
+
+    @contextmanager
+    def _staging_directory(self, *, prefix: str, directory: Path):
+        temporary = tempfile.TemporaryDirectory(prefix=prefix, dir=directory)
+        try:
+            yield Path(temporary.name)
+        finally:
+            # Cleanup is not the business operation. In particular it must not
+            # turn an already committed backup/restore into a reported failure.
+            try:
+                temporary.cleanup()
+            except OSError:
+                self._cleanup_warning(Path(temporary.name))
+
+    def _cleanup_sqlite_best_effort(self, path: Path) -> None:
+        try:
+            self._remove_sqlite_files(path)
+        except OSError:
+            self._cleanup_warning(path)
 
     def create_backup(self, paths: AppPaths, *, notes: str | None = None) -> BackupRow:
-        """Backup the live DB and record the operation."""
+        """Create a verified portable database-and-assets backup."""
+        self._cleanup_warnings.clear()
+        self._require_idle_connection()
+        paths.backups_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"office_desk_{datetime.now():%Y%m%d_%H%M%S_%f}{FULL_BACKUP_SUFFIX}"
+        destination = paths.backups_dir / filename
+        try:
+            with self._staging_directory(prefix=".backup_stage_", directory=paths.backups_dir) as stage:
+                database = stage / DATABASE_NAME
+                with closing(sqlite3.connect(database)) as snapshot:
+                    self._conn.backup(snapshot)
+                archive = stage / filename
+                manifest = write_bundle(database, paths, archive)
+                archive.replace(destination)
+                with self._conn:
+                    row = self._repo.insert(
+                        filename=filename, backup_path=str(destination),
+                        file_size=destination.stat().st_size, notes=notes,
+                    )
+                    self._audit.record(
+                        action="backup.create", target_type="backup", target_id=str(row.id),
+                        detail={"filename": filename, "format": "full-v1",
+                                "file_count": len(manifest["files"]), "file_size": row.file_size},
+                    )
+            return row
+        except Exception as exc:
+            destination.unlink(missing_ok=True)
+            code = str(exc) if isinstance(exc, BackupBundleError) else "backup.create.failed"
+            raise BackupError(code) from exc
+
+    def create_database_snapshot(self, paths: AppPaths, *, notes: str | None = None) -> BackupRow:
+        """Explicit legacy DB-only snapshot; it does not include file assets."""
+        self._cleanup_warnings.clear()
+        self._require_idle_connection()
         paths.backups_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         filename = f"office_desk_{ts}.sqlite"
@@ -66,7 +135,7 @@ class BackupService:
                 notes=notes,
             )
             self._audit.record(
-                action="backup.create",
+                action="backup.create.database_only",
                 target_type="backup",
                 target_id=str(row.id),
                 detail={"filename": filename, "file_size": file_size},
@@ -75,19 +144,38 @@ class BackupService:
 
     def restore_backup(self, backup_path: Path, paths: AppPaths) -> None:
         """Validate and migrate staging before replacing the live database."""
+        self._cleanup_warnings.clear()
+        self._require_idle_connection()
         self._validate_backup_file(backup_path)
         paths.backups_dir.mkdir(parents=True, exist_ok=True)
+        if backup_path.name.lower().endswith(FULL_BACKUP_SUFFIX):
+            try:
+                with self._staging_directory(prefix=".restore_bundle_", directory=paths.backups_dir) as directory:
+                    manifest = read_bundle(backup_path, directory)
+                    self._restore_from_stage(
+                        directory / DATABASE_NAME, backup_path, paths,
+                        full_bundle=(directory, manifest),
+                    )
+            except BackupError:
+                raise
+            except BackupBundleError as exc:
+                raise BackupError(str(exc)) from exc
+            except Exception as exc:
+                raise BackupError("backup.restore.failed") from exc
+            return
         stage_path = self._create_stage_copy(backup_path, paths.backups_dir)
         try:
             self._restore_from_stage(stage_path, backup_path, paths)
         finally:
-            self._remove_sqlite_files(stage_path)
+            self._cleanup_sqlite_best_effort(stage_path)
 
     def _restore_from_stage(
         self,
         stage_path: Path,
         backup_path: Path,
         paths: AppPaths,
+        *,
+        full_bundle: tuple[Path, dict] | None = None,
     ) -> None:
         stage_conn: sqlite3.Connection | None = None
         try:
@@ -109,6 +197,13 @@ class BackupService:
             apply_migrations(stage_conn)
             self._assert_integrity(stage_conn)
             self._assert_taxops_database(stage_conn, require_current=True)
+            if full_bundle is not None:
+                validate_references(
+                    stage_conn, {entry["path"]: entry for entry in full_bundle[1]["files"]}
+                )
+        except BackupBundleError as exc:
+            stage_conn.close()
+            raise BackupError(str(exc)) from exc
         except BackupError:
             stage_conn.close()
             raise
@@ -128,10 +223,44 @@ class BackupService:
         except Exception as exc:
             stage_conn.close()
             if before_path is not None:
-                self._remove_sqlite_files(before_path)
+                self._cleanup_sqlite_best_effort(before_path)
             raise BackupError("backup.before_restore.failed") from exc
 
+        history: dict | None = None
+        restore_id = uuid4().hex
         try:
+            if full_bundle is not None:
+                directory, manifest = full_bundle
+                history = {
+                    "version": 1, "restore_id": restore_id,
+                    "created_at": datetime.now().astimezone().isoformat(),
+                    "state": "prepared", "source_backup": backup_path.name,
+                    "manifest_sha256": manifest["manifest_sha256"],
+                    "before_restore_database": before_filename,
+                    "policy": "retain_previous_assets_and_restore_namespaces",
+                    "namespaces": [f"{name}/restored_{restore_id}" for name in ASSET_NAMES],
+                    "source_files": manifest["files"],
+                    "planned_mapping": {
+                        entry["path"]: (
+                            f"{entry['path'].split('/', 1)[0]}/restored_{restore_id}/"
+                            f"{index}{Path(entry['path']).suffix}"
+                        )
+                        for index, entry in enumerate(manifest["files"])
+                        if entry["path"] != DATABASE_NAME
+                    },
+                    "references": [
+                        {"path": f"{root}/{relative}", "required": required}
+                        for root, relative, required in references(stage_conn)
+                    ],
+                }
+                write_restore_history(paths, restore_id, history)
+                mapping = install_assets(directory, manifest, paths, restore_id)
+                rewrite_references(stage_conn, mapping, restore_id)
+                history["mapping"] = {
+                    f"{root}/{old}": f"{root}/{new}" for (root, old), new in mapping.items()
+                }
+                history["state"] = "assets_ready"
+                write_restore_history(paths, restore_id, history)
             stage_repo = BackupRepository(stage_conn)
             stage_audit = AuditService(
                 AuditLogRepository(stage_conn),
@@ -150,20 +279,45 @@ class BackupService:
                     detail={
                         "restored_from": str(backup_path),
                         "before_restore_snapshot": str(before_path),
+                        "restore_id": restore_id,
+                        "format": "full-v1" if full_bundle is not None else "database-only",
                     },
                 )
             self._assert_integrity(stage_conn)
             stage_conn.backup(self._conn)
         except Exception as exc:
-            raise BackupError("backup.restore.failed") from exc
+            if history is not None:
+                history["state"] = "failed_before_commit"
+                self._write_history_best_effort(paths, restore_id, history)
+            code = str(exc) if isinstance(exc, BackupBundleError) else "backup.restore.failed"
+            raise BackupError(code) from exc
         finally:
             stage_conn.close()
+        if history is not None:
+            history["state"] = "committed"
+            self._write_history_best_effort(paths, restore_id, history)
+
+    def _require_idle_connection(self) -> None:
+        if self._conn.in_transaction:
+            raise BackupError("backup.pending_changes")
+
+    @staticmethod
+    def _write_history_best_effort(paths: AppPaths, restore_id: str, history: dict) -> None:
+        try:
+            write_restore_history(paths, restore_id, history)
+        except Exception:
+            # The prepared journal plus the DB audit restore_id remain the
+            # recovery authority if disk failure interrupts this final update.
+            _log.exception("Could not update restore retention history %s", restore_id)
 
     @staticmethod
     def _validate_backup_file(backup_path: Path) -> None:
         if not backup_path.exists():
             raise BackupError("backup.file_not_found")
-        if backup_path.suffix.lower() != ".sqlite" or not backup_path.is_file():
+        if not backup_path.is_file() or not (
+            backup_path.suffix.lower() == ".sqlite"
+            or backup_path.name.lower().endswith(FULL_BACKUP_SUFFIX)
+        ):
             raise BackupError("backup.invalid_file")
 
     @staticmethod

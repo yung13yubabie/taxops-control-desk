@@ -173,24 +173,34 @@ class AnnualTransactionDialog(QDialog):
 
         self.transaction_date_input = QLineEdit()
         self.transaction_date_input.setObjectName("AnnualTransactionDate")
-        self.transaction_date_input.setPlaceholderText("YYYY-MM-DD")
+        self.transaction_date_input.setPlaceholderText("西元年-月-日，例如 2026-05-21")
+        self.transaction_date_input.setToolTip("必填，西元年-月-日，例如 2026-05-21。")
 
         self.amount_input = QLineEdit()
         self.amount_input.setObjectName("AnnualTransactionAmount")
-        self.amount_input.setPlaceholderText("0 至 9,000,000,000,000")
+        self.amount_input.setPlaceholderText("例如 1200；整數、無逗號")
+        self.amount_input.setToolTip("必填，新臺幣元。0 至 9,000,000,000,000；不含逗號或小數。")
 
         self.reference_input = QLineEdit()
         self.reference_input.setObjectName("AnnualTransactionReference")
+        self.reference_input.setPlaceholderText("可留空，例如 匯款末五碼、收據編號")
 
         self.notes_input = QPlainTextEdit()
         self.notes_input.setObjectName("AnnualTransactionNotes")
+        self.notes_input.setPlaceholderText("可留空，例如 收款或付款的補充說明")
+        self.notes_input.setTabChangesFocus(True)
         self.notes_input.setMinimumHeight(120)
 
-        form.addRow("分類", self.category_combo)
-        form.addRow("日期", self.transaction_date_input)
-        form.addRow("金額", self.amount_input)
-        form.addRow("參考資訊", self.reference_input)
-        form.addRow("備註", self.notes_input)
+        form.addRow("分類（必填）", self.category_combo)
+        form.addRow("日期（西元，必填）", self.transaction_date_input)
+        form.addRow("金額（新臺幣元，必填）", self.amount_input)
+        form.addRow("參考資訊（可留空）", self.reference_input)
+        form.addRow("備註（可留空）", self.notes_input)
+        for row in range(form.rowCount()):
+            label = form.itemAt(row, QFormLayout.ItemRole.LabelRole).widget()
+            field = form.itemAt(row, QFormLayout.ItemRole.FieldRole).widget()
+            label.setBuddy(field)
+            field.setAccessibleName(label.text())
         layout.addLayout(form)
 
         self.feedback_label = QLabel()

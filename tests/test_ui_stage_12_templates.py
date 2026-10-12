@@ -361,7 +361,7 @@ def test_dialog_has_one_scrolling_text_region_by_default(container, qapp):
     ]
 
     assert visible_text_areas == [dialog._body]
-    assert dialog.findChildren(QScrollArea) == []
+    assert dialog.findChildren(QScrollArea) == [dialog._scroll]
     assert len(dialog.findChildren(QListWidget)) == 1
 
 

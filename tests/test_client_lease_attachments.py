@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import datetime, timezone
+import errno
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 from taxops.security.file_guard import MAX_FILE_SIZE
-from taxops.services.attachments import AttachmentValidationError
+from taxops.services.attachments import AttachmentValidationError, UploadAttachmentInput
+from taxops.services.engagements import CreateEngagementInput
 from taxops.services.client_leases import LeaseInput
 from taxops.services.clients import CreateClientInput
 
@@ -46,10 +50,17 @@ def test_upload_list_resolve_and_archive_lease_attachment(container, tmp_path):
     assert row.notes == "中文備註\n第二行"
     assert len(row.file_hash_sha256) == 64
     assert container.attachments.list_by_lease(lease.id) == [row]
-    assert container.attachments.resolve_file_path(row.id).read_bytes() == b"real lease content"
-    assert container.conn.execute(
-        "SELECT COUNT(*) FROM attachment_versions WHERE attachment_id = ?", (row.id,)
-    ).fetchone()[0] == 1
+    assert (
+        container.attachments.resolve_file_path(row.id).read_bytes()
+        == b"real lease content"
+    )
+    assert (
+        container.conn.execute(
+            "SELECT COUNT(*) FROM attachment_versions WHERE attachment_id = ?",
+            (row.id,),
+        ).fetchone()[0]
+        == 1
+    )
 
     archived = container.attachments.delete_attachment(row.id)
     assert archived.status == "archived"
@@ -76,9 +87,9 @@ def test_archived_lease_keeps_existing_attachment_readable_and_manageable(
     archived_attachment = container.attachments.delete_attachment(row.id)
     assert archived_attachment.status == "archived"
     assert container.attachments.list_by_lease(lease.id) == []
-    assert container.attachments.list_by_lease(
-        lease.id, include_archived=True
-    ) == [archived_attachment]
+    assert container.attachments.list_by_lease(lease.id, include_archived=True) == [
+        archived_attachment
+    ]
 
 
 def test_archived_lease_history_listing_is_owner_guarded(container, tmp_path):
@@ -156,8 +167,10 @@ def test_lease_upload_uses_extension_and_size_guards(container, tmp_path, monkey
     def oversized(path: Path, *args, **kwargs):
         result = original_stat(path, *args, **kwargs)
         if path == source:
+
             class Stat:
                 st_size = MAX_FILE_SIZE + 1
+
             return Stat()
         return result
 
@@ -192,19 +205,58 @@ def test_db_or_audit_failure_rolls_back_and_cleans_file(
     assert _stored_files(container.paths.attachments_dir) == []
 
 
-def test_copy_failure_cleans_partial_file(container, tmp_path, monkeypatch):
+@pytest.mark.parametrize("owner", ["lease", "engagement"])
+def test_copy_failure_cleans_partial_file(container, tmp_path, monkeypatch, owner):
+    """Preserve prior evidence, rollback three failed copies, then retry once."""
     client, lease = _client_and_lease(container)
+    engagement = container.engagements.create_engagement(
+        CreateEngagementInput(client.id, "合成案件", "vat", "2026-10")
+    )
+    source = _source(tmp_path, body=b"synthetic ordinary evidence")
+
+    def upload():
+        if owner == "lease":
+            return container.attachments.upload_lease_attachment(
+                client.id, lease.id, source
+            )
+        return container.attachments.upload_attachment(
+            UploadAttachmentInput(engagement.id, None, source)
+        )
+
+    original = upload()
+    original_path = container.attachments.resolve_file_path(original.id)
+    tables = ("attachments", "attachment_versions", "audit_logs")
+
+    def snapshot():
+        with closing(sqlite3.connect(container.paths.db_path)) as fresh:
+            return {
+                table: fresh.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+                for table in tables
+            }
+
+    before = snapshot()
+    files = set(_stored_files(container.paths.attachments_dir))
 
     def fail_copy(_source, destination):
         Path(destination).write_bytes(b"partial")
-        raise OSError("copy failed")
+        raise OSError(errno.ENOSPC, "synthetic ordinary copy failure")
 
-    monkeypatch.setattr("taxops.services.attachments.shutil.copy2", fail_copy)
-    with pytest.raises(OSError, match="copy failed"):
-        container.attachments.upload_lease_attachment(
-            client.id, lease.id, _source(tmp_path)
-        )
-    assert _stored_files(container.paths.attachments_dir) == []
+    with monkeypatch.context() as scoped:
+        scoped.setattr("taxops.services.attachments.shutil.copy2", fail_copy)
+        for _ in range(3):
+            with pytest.raises(OSError, match="synthetic ordinary copy failure"):
+                upload()
+            assert snapshot() == before
+            assert set(_stored_files(container.paths.attachments_dir)) == files
+            assert original_path.read_bytes() == source.read_bytes()
+    retried = upload()
+    assert (
+        container.attachments.resolve_file_path(retried.id).read_bytes()
+        == source.read_bytes()
+    )
+    assert len(snapshot()["attachments"]) == 2
+    assert len(snapshot()["attachment_versions"]) == 2
+    assert len(snapshot()["audit_logs"]) == len(before["audit_logs"]) + 1
 
 
 def test_repeated_storage_collision_is_stable_validation_error(

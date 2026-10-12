@@ -28,7 +28,7 @@ The product is not:
 
 Primary source specification:
 
-This document describes the public architecture. Preserve current source and regression contracts; material behavior changes require review.
+This document describes the public architecture. Current object responsibilities are defined in `docs/product_object_model.md`; behavior changes require tests and review.
 
 ## Tech Stack
 
@@ -45,7 +45,7 @@ Do not use npm, Vite, React, a web backend, cloud databases, or automatic outbou
 
 ## Commands
 
-Commands are placeholders until project metadata is created:
+Development and packaging entry points:
 
 ```powershell
 python -m pytest
@@ -55,7 +55,7 @@ python -m build_tools.package_windows
 python -m build_tools.smoke_test_exe
 ```
 
-Packaging commands must be made real before MVP can be marked complete.
+See `CONTRIBUTING.md` for the complete test and candidate gate.
 
 ## Project Structure
 

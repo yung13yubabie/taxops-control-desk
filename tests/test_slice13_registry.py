@@ -185,7 +185,7 @@ class TestRegistryPageUI:
         page._query_edit.setText("00000000")
         page._on_search_local()
         _wait_for_local_search(page)
-        assert "快取" in page._status_label.text()
+        assert "本機稅籍資料" in page._status_label.text()
 
     def test_empty_query_does_not_crash(self):
         container = _fresh_container()
@@ -228,7 +228,7 @@ class TestRegistryPageUI:
 
         assert page._result["business_name"] == "GCIS 補查公司"
         assert not page._result_group.isHidden()
-        assert "GCIS" in page._status_label.text()
+        assert "經濟部" in page._status_label.text()
 
     def test_local_name_search_runs_in_worker_and_offers_multiple_results(self, monkeypatch):
         import time
@@ -623,7 +623,7 @@ class TestRegistryActionContracts:
 
         contracts = [a for a in ACTION_REGISTRY if a.page == PAGE_REGISTRY and a.enabled]
         labels = [a.button_label for a in contracts]
-        assert "查詢本地快取" in labels
+        assert "查詢本機稅籍資料" in labels
 
     def test_apply_to_client_contract_exists(self):
         from taxops.ui.action_registry import ACTION_REGISTRY, PAGE_REGISTRY
@@ -637,7 +637,7 @@ class TestRegistryActionContracts:
 
         contract = next(
             a for a in ACTION_REGISTRY
-            if a.page == PAGE_REGISTRY and a.button_label == "GCIS 工商查詢"
+            if a.page == PAGE_REGISTRY and a.button_label == "經濟部工商查詢"
         )
         assert contract.enabled
         assert contract.handler == "RegistryPage._on_search_gcis"
@@ -648,7 +648,7 @@ class TestRegistryActionContracts:
 
         contract = next(
             a for a in ACTION_REGISTRY
-            if a.page == PAGE_REGISTRY and a.button_label == "查詢本地快取"
+            if a.page == PAGE_REGISTRY and a.button_label == "查詢本機稅籍資料"
         )
         assert "TaxRegistryRepository" in contract.service
         assert contract.test_marker == "test_registry_local_search"

@@ -38,7 +38,7 @@ from .buttons import make_button, make_icon_button
 _log = logging.getLogger(__name__)
 
 _ISO_FMT = "yyyy-MM-dd"
-_PLACEHOLDER = "yyyy-MM-dd"
+_PLACEHOLDER = "西元年-月-日"
 
 # Audit G14 remedy: a 300-340px popup, narrower than the dialog it opens over.
 POPUP_WIDTH = 320
@@ -48,7 +48,7 @@ POPUP_WIDTH = 320
 _MIN_YEAR = 1
 _MAX_YEAR = 9999
 
-_ERROR_FORMAT = "日期格式不正確，請輸入 yyyy-MM-dd（例：2026-05-21）"
+_ERROR_FORMAT = "日期格式不正確，請輸入 西元年-月-日（例：2026-05-21）"
 _ERROR_REQUIRED = "必填日期"
 
 # Gap between the trailing icons and the line edit's right border.
@@ -213,6 +213,9 @@ class _CalendarPopup(QDialog):
         self._cal = QCalendarWidget()
         self._cal.setNavigationBarVisible(False)  # replaced by the header below
         self._cal.setGridVisible(False)
+        self._cal.setHorizontalHeaderFormat(
+            QCalendarWidget.HorizontalHeaderFormat.SingleLetterDayNames
+        )
         self._cal.setVerticalHeaderFormat(
             QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader
         )
@@ -469,7 +472,14 @@ class DateField(QWidget):
         Both icons are counted even when the clear icon is hidden, so a required
         field and an optional one keep the same footprint.
         """
-        text_room = self._edit.fontMetrics().horizontalAdvance(_PLACEHOLDER)
+        metrics = self._edit.fontMetrics()
+        # A localized hint may be narrower than the ten-character ISO value.
+        widest_digit = max("0123456789", key=metrics.horizontalAdvance)
+        numeric_sample = f"{widest_digit * 4}-{widest_digit * 2}-{widest_digit * 2}"
+        text_room = max(
+            metrics.horizontalAdvance(_PLACEHOLDER),
+            metrics.horizontalAdvance(numeric_sample),
+        )
         icons_room = (
             self._cal_btn.width() + self._clear_btn.width() + _ICON_GAP * 3
         )
@@ -486,8 +496,8 @@ class DateField(QWidget):
         """Return normalized ISO string or None (if empty).
 
         Raises DateField.InvalidInput if raw_text is non-empty but not a valid
-        date. Also marks the field with an inline error message so the user
-        sees exactly which field is wrong.
+        date. Also marks the field with an inline error message and focuses its
+        input so explicit form validation leads to the date needing correction.
         """
         text = self._edit.text().strip()
         if not text:
@@ -495,6 +505,7 @@ class DateField(QWidget):
         parsed = _parse_iso(text)
         if parsed is None:
             self.set_error(_ERROR_FORMAT)
+            self._edit.setFocus(Qt.FocusReason.OtherFocusReason)
             raise DateField.InvalidInput(f"invalid date text: {text!r}")
         return parsed.isoformat()
 

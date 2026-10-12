@@ -64,7 +64,7 @@ def test_backup_creates_sqlite_file(svc, paths):
 def test_backup_filename_format(svc, paths):
     row = svc.create_backup(paths)
     assert row.filename.startswith("office_desk_")
-    assert row.filename.endswith(".sqlite")
+    assert row.filename.endswith(".taxops.zip")
 
 
 def test_backups_created_in_same_second_have_unique_names(svc, paths):
@@ -76,8 +76,8 @@ def test_backups_created_in_same_second_have_unique_names(svc, paths):
     assert Path(second.backup_path).exists()
 
 
-def test_backup_file_is_readable_sqlite(svc, paths):
-    row = svc.create_backup(paths)
+def test_explicit_database_snapshot_is_readable_sqlite(svc, paths):
+    row = svc.create_database_snapshot(paths)
     with sqlite3.connect(row.backup_path) as c:
         tables = c.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
@@ -195,7 +195,7 @@ def test_restore_rejects_non_taxops_sqlite_without_touching_live_db(
 
 
 def test_restore_rejects_unknown_migration_version(svc, paths):
-    backup_row = svc.create_backup(paths)
+    backup_row = svc.create_database_snapshot(paths)
     forged = Path(backup_row.backup_path)
     with sqlite3.connect(forged) as forged_conn:
         forged_conn.execute(
@@ -210,7 +210,7 @@ def test_restore_rejects_unknown_migration_version(svc, paths):
 
 
 def test_restore_rejects_unknown_trigger_before_migration(svc, paths):
-    backup_row = svc.create_backup(paths)
+    backup_row = svc.create_database_snapshot(paths)
     forged = Path(backup_row.backup_path)
     with sqlite3.connect(forged) as forged_conn:
         forged_conn.execute(
@@ -229,7 +229,7 @@ def test_restore_rejects_same_object_names_with_modified_table_ddl(
     svc,
     paths,
 ):
-    backup_row = svc.create_backup(paths)
+    backup_row = svc.create_database_snapshot(paths)
     forged = Path(backup_row.backup_path)
     with sqlite3.connect(forged) as forged_conn:
         forged_conn.execute(
@@ -248,7 +248,7 @@ def test_restore_rejects_same_object_names_with_modified_table_ddl(
 
 
 def test_restore_rejects_foreign_key_corruption(svc, paths):
-    backup_row = svc.create_backup(paths)
+    backup_row = svc.create_database_snapshot(paths)
     forged = Path(backup_row.backup_path)
     with sqlite3.connect(forged) as forged_conn:
         forged_conn.execute("PRAGMA foreign_keys = OFF")

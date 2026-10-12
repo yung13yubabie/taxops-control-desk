@@ -98,7 +98,7 @@ RATE_COLUMN = 3
 _SCHEDULE_NUMERIC_FROM = 2
 
 _ALL = -1
-_CURRENCY_UNIT = "NT$"
+_CURRENCY_UNIT = "新臺幣"
 # A present answer for a value that has none yet, per the spec's loud rule.
 _NO_VALUE = "—"
 _NEEDS_REVIEW = "需人工確認"

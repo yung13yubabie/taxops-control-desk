@@ -155,3 +155,11 @@ BUTTON_ROLES: frozenset[str] = frozenset(
 # Roles that must never carry a destructive action, and roles that must never be
 # used for routine navigation or view controls. Tests assert both directions.
 DESTRUCTIVE_ROLES: frozenset[str] = frozenset({ROLE_DANGER, ROLE_DANGER_QUIET})
+
+# Document-first workspace additions; existing component contracts stay unchanged.
+RECEIPT_ROW_HEIGHT = 52
+WORKSPACE_NAV_BG = "#254D43"
+WORKSPACE_NAV_HOVER = "#386455"
+WORKSPACE_NAV_TEXT = "#E8F1EB"
+WORKSPACE_NAV_ACTIVE = "#CEE0BB"
+REMINDER_SURFACE = "#F0F3E9"

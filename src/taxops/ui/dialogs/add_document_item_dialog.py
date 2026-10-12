@@ -49,13 +49,14 @@ class AddDocumentItemDialog(QDialog):
         layout.setSpacing(12)
 
         layout.addWidget(QLabel("文件項目名稱（每行一個）："))
-        layout.addWidget(
-            QLabel(
-                f"限制：單一索件批次最多 {MAX_ITEMS_PER_REQUEST:,} 項；"
-                f"本次貼上總字數最多 {MAX_ITEM_NAMES_TOTAL_LENGTH:,} 字。"
-            )
+        hint = QLabel(
+            f"限制：單一索件批次最多 {MAX_ITEMS_PER_REQUEST:,} 項；"
+            f"本次貼上總字數最多 {MAX_ITEM_NAMES_TOTAL_LENGTH:,} 字。"
         )
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
         self._text_edit = QPlainTextEdit()
+        self._text_edit.setAccessibleName("文件項目名稱，必填，每行一個")
         self._text_edit.setPlaceholderText("例：\n進項憑證\n銷項發票明細\n銀行對帳單")
         layout.addWidget(self._text_edit, stretch=1)
 

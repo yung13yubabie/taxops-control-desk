@@ -13,7 +13,7 @@ from ...services.annual_work import AnnualWorkStatusPresentation
 
 
 def format_twd(amount: int) -> str:
-    return f"NT$ {amount:,}"
+    return f"新臺幣 {amount:,}"
 
 
 class AnnualOverviewTable(QTableWidget):

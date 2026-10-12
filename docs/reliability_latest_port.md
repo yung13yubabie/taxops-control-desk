@@ -1,0 +1,57 @@
+# 可靠性契約與候選驗證界線
+
+候選版本為 `0.33.0rc1`，維持 Python/PySide6/SQLite 與 schema 28。保留客戶雙地址、多租約/業別、年度法遵/工作/交易、介面設計系統與模板 sandbox。版本名稱不代表已發布。
+
+## 完整備份與復原保留物
+
+設定頁現在產生 `.taxops.zip`：一致的 SQLite 快照、附件、流程圖片及畫布圖片。manifest 列出每檔大小與 SHA-256；所有 active attachment（包括沒有案件的租約/客戶附件）及圖片引用必須完整，才會建立成功紀錄。資料庫本身保留全部年度與租約關聯。
+
+還原先在暫存區驗證、遷移及檢查外鍵，接著將檔案放入新的 `restored_<id>` namespace，最後切換資料庫。原有檔案不覆寫也不自動刪除；`restore_history` 記錄時間、來源、引用、對照、狀態與原 DB 回復快照。失敗前已複製的 namespace 與原資產是復原保留物，可能占用磁碟。多次還原會累積空間；本輪不自動清理它們。磁碟寫入失敗在 DB 提交前保持原資料，提交後單純暫存清理失敗會顯示成功與警告，不會刪除已完成備份或誤稱還原未發生。
+
+舊 `.sqlite` 繼續可還原，但只含資料庫，不能憑空補回附件。UI 在確認前明示此限制。請將備份另存到可復原的位置；同一硬碟上的檔案無法防止整顆硬碟故障。本格式未加密，應依事務所存取與保存規範保管。
+
+## 資料與資源契約
+
+- 索件 accepted 混合狀態不能倒退；批次更新維持交易一致性。
+- 工商來源稽核與匯入同一交易，完成後釋放進度對話框及所屬執行緒連線。
+- 附件複製失敗不改動既有 bytes、資料列、版本與稽核；重試不得新增重複資產。
+- 未知 migration/schema 必須非破壞地拒絕，啟動失敗必須關閉已建立連線。
+- 年度設定讀取失敗時禁存；重試保留輸入及關聯，失效關聯不得默認清空。
+- Qt 繁中自測須从英文語言設定開始，缺完整翻譯不得宣称完整中文成功。
+
+## 公開候選檢查
+
+[Windows run 38206960124](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38206960124) 完整 3227 項為 3223 通過、4 失敗，branch coverage 90.76079821452015%。失敗正確阻擋 EXE build。
+
+[第二輪 Windows](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38213344318) 完整 3333 項為 3325 通過、8 失敗，branch coverage 91.0367722165475%，同樣未產生 EXE。
+
+[第三輪 Windows](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38221303640) 在 head `16865f0` / checkout `a6d0bd4` 完整執行 139 檔：3397 項中 3392 通過、5 失敗，0 errors/skips/未跑；實值 branch coverage 91.03763046184291%。日期欄寬與選檔路徑測試已通過。5 項失敗為收件寬度兩項、年度附件分頁列溢出、自測在外部 profile 建立空 cache 目錄，以及幾何診斷測試誤要求有效字體名稱必定非空。失敗仍阻擋 EXE。該 run 的 tree 與 `db27edc` 相同，早於 feature 清理合併後的本輪整合。
+
+後續來源修正保持原 900 px 與無外部檔案副作用斷言：收件自適應 splitter 不再將寬版最小值鎖死父視窗；年度附件狀態與分頁分列；自測在暫存範圍內設定 profile/cache 環境路徑並於 finally 恢復。三者已有獨立 Linux 重播與功能回驗，後續第六輪同候選 Windows 完整矩陣亦通過。幾何診斷必須忠實記錄真實 QFontInfo，包括未解析的空名稱，不能偽造字型成功。平行診斷不是完整發布 gate。
+
+[第四輪 Windows](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38224732979) 的五檔診斷 165/165 通過，原生 qwindows 合成中文 glyph/PNG 亦通過；原生字型有 Microsoft JhengHei UI，罕字另使用系統 fallback。這不代表乾淨 client 或全部姓名已驗收。完整矩陣在第 64/140 檔的新增字型診斷測試，於 offscreen 讀 raw-font metadata 時發生 access violation；前 63 檔 1772 項通過，76 檔未跑。68.3824467406557% 是中止子集，不能冒稱最終 coverage；仍未建置 EXE。後續修正必須保留 invalid 字型的失敗判定，並重新通過完整 gate。
+
+[第五輪 Windows](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38226805820) 證明最初的 invalid 字型保護不足：同一 offscreen 字型測試仍在 metadata 行崩潰。其餘六個 quick 檔 169 項與原生 qwindows 探針通過；full 仍為第 64/140 檔中止、1772 個已完成 JUnit 測試、76 檔未跑，無 EXE。診斷工具改在入口拒絕非原生 Windows 或空字型庫，明確回 unsupported/failed，不進 raw-font API；完整 source 檔仍測拒絕與純 glyph 正負契約，真正字形由 qwindows job 驗證。這不是把 offscreen 不支援偽裝成功，也不宣稱 C++ 根因已證明。
+
+## 第六輪 Windows 與套件交付檢查
+
+[第六輪 Windows](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38228288029) 使用 head `74bc560ceeb34f6ce83483974af8eb1226c29c8c`、實際 checkout merge `481b55058309366ae62b0f06a903f2ed8936d14d`；tree 均為 `06876d464c66d80160f8900e77ca2592f2065280`，與本地來源 `8dd5369` 一致。完整 140/140 檔、3429/3429 項通過，0 failures/errors/skips/unrun，實值 branch coverage **91.06710039545861%**。七檔 quick 193 項另過，與完整套件重疊，不相加。
+
+PyInstaller 首次完成本候選建置；同一 ZIP 解壓到另一個中文與空白路徑後，實際 EXE 的 17 項自測全部通過。報告為 `frozen=true`、`platform=win32`、`qt_platform=windows`、版本 `0.33.0rc1`，Python 3.11.9 / PySide6 6.10.2；包括 schema 28、客戶雙地址、租約與案件附件、年度工作/交易、完整備份跨目錄還原、PDF、繁中選檔與缺翻譯檔負例。`network_attempts=[]` 只代表受測 Python socket 事件，沒有原生網路或整部作業系統沙箱保證。
+
+當輪 app-only ZIP 為 54,024,285 bytes、236 檔，SHA-256 `4a9782b058c7a236cfdbd987e08d2c690320638f0e55b4a8b3a31e5a3b457731`。独立檢查其 hash 與 ZIP CRC 一致，但發現未使用的 Qt VirtualKeyboard DLL/plugin，以及第三方授權通知缺口；因此**此 ZIP 暫不交付**。後續排除多餘模組與補通知是打包輸入變更，必須重新建置、驗證及記錄新 hash，不能沿用本包自測作為新包證明。
+
+原生 Windows 合成字形探針另已通過，PNG 中所列繁中可讀；字型庫共 86 個 family，包含 Microsoft JhengHei UI，罕字另由系統 fallback 提供。這不保證任意姓名/所有字集，亦不代表乾淨離線 Windows、全部畫面、縮放、IME 或輔助工具驗收。
+
+## 可重現驗證
+
+執行 [CONTRIBUTING](../CONTRIBUTING.md) 的逐檔矩陣與 [Windows 候選 gate](windows_candidate_gate.md)。每次使用固定來源、全套檔案、原始 branch coverage 至少 90%；任何失敗維持失敗。聚焦測試或 source self-test 不可替代 Windows frozen 自測。
+
+## 未驗收與已知限制
+
+- Linux IPC 受環境限制的五項失敗仍保留；Windows 專用項目按原平台條件執行。
+- 設定頁單選測試曾在斷言通過後於 Qt/pytest 清理階段 exit -11；根因未確認，全檔正常退出不等於已修復。
+- 小月曆第六週文字下緣在 offscreen 測量略裁切。
+- Windows offscreen PNG 出現中文字方框；這不能判定原生 Windows 缺字型。獨立 qwindows 字型庫、實際 glyph run 與 PNG 診斷已在該 hosted runner 通過；這仍不是乾淨 Windows 與所有字形驗收。
+- 乾淨離線 Windows、無 Python 核心操作、DPI/IME/Narrator、真實資料升級、publisher signing/SmartScreen 與完整安全對抗尚未驗收。
+- 所有測試數字只代表其來源版本與平台，不可移用為後續來源或完整發布驗收。

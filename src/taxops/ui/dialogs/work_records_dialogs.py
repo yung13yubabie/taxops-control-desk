@@ -108,17 +108,20 @@ class WorkflowTemplateDialog(QDialog):
         self._on_submit = on_submit
         self.setWindowTitle(title)
         self.setModal(True)
-        self.setMinimumWidth(680)
-        self.setMinimumHeight(520)
+        self.setMinimumSize(560, 380)
+        self.resize(680, 520)
 
         outer = QVBoxLayout(self)
         form = QFormLayout()
         self._name = QLineEdit(name)
+        self._name.setAccessibleName("流程名稱（必填）")
         self._name.setMaxLength(200)
-        form.addRow("流程名稱", self._name)
+        self._name.setPlaceholderText("必填，例如：每月資料核對流程")
+        form.addRow("流程名稱 *", self._name)
         outer.addLayout(form)
 
         self._stages = QTextEdit()
+        self._stages.setAccessibleName("流程階段與步驟（必填）")
         self._stages.setPlainText(stages_text)
         self._stages.setPlaceholderText(
             "前期準備\n"
@@ -128,13 +131,17 @@ class WorkflowTemplateDialog(QDialog):
             "檢查附件\n"
             "送件並記錄收件號"
         )
-        outer.addWidget(QLabel("流程格式：空行分階段；每段第一行是階段名稱，後面每行是一個步驟。"))
+        hint = QLabel("流程格式：空行分階段；每段第一行是階段名稱，後面每行是一個步驟。")
+        hint.setWordWrap(True)
+        outer.addWidget(hint)
         outer.addWidget(self._stages, stretch=1)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         _ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        _ok.setText("儲存流程")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
         _ok.setDefault(True)
         outer.addWidget(buttons)
         buttons.accepted.connect(self.accept)

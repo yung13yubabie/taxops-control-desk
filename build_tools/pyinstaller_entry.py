@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import sys
 
-from taxops.ui.app import run
-
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
+        from taxops.diagnostics import main as diagnostics_main
+
+        sys.exit(diagnostics_main(sys.argv[2:]))
+    from taxops.ui.app import run
+
     sys.exit(run())
 
 

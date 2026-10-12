@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ...i18n.status_labels import label_for
+
 from dataclasses import dataclass
 from typing import Callable
 
@@ -97,7 +99,7 @@ class AnnualTaskPanel(QWidget):
         self.assignee_input.setMaxLength(100)
         self.due_date_input = QLineEdit()
         self.due_date_input.setMaxLength(20)
-        self.due_date_input.setPlaceholderText("YYYY-MM-DD")
+        self.due_date_input.setPlaceholderText("西元年-月-日")
         self.priority_combo = QComboBox()
         for label, value in _PRIORITIES:
             self.priority_combo.addItem(label, value)
@@ -419,8 +421,8 @@ class AnnualTaskPanel(QWidget):
             values = (
                 str(row_data.id),
                 row_data.title,
-                _STATUS_LABELS.get(row_data.status, row_data.status),
-                _PRIORITY_LABELS.get(row_data.priority, row_data.priority),
+                label_for(_STATUS_LABELS, row_data.status),
+                label_for(_PRIORITY_LABELS, row_data.priority),
                 row_data.assignee or "—",
                 row_data.due_date or "—",
                 row_data.updated_at,
@@ -452,7 +454,7 @@ class AnnualTaskPanel(QWidget):
         if selected is not None:
             for status in sorted(allowed_task_status_transitions(selected.status)):
                 self.status_combo.addItem(
-                    _STATUS_LABELS.get(status, status), status
+                    label_for(_STATUS_LABELS, status), status
                 )
         self._restore_buttons()
 

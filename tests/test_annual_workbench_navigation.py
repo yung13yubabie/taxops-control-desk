@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import Mock
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QLabel, QListWidget, QStackedWidget
+from PySide6.QtWidgets import QApplication, QLabel, QStackedWidget
 
 from taxops.i18n import NAV_LABELS
 from taxops.ui.action_registry import (
@@ -16,16 +16,9 @@ from taxops.ui.action_registry import (
     actions_for_page,
 )
 from taxops.ui.main_window import MainWindow
+from taxops.ui.widgets.workspace_navigation import WorkspaceNavigation
 from taxops.ui.pages.annual_workbench_page import AnnualWorkbenchPage
 from taxops.ui.style import apply as apply_style
-
-
-def _nav_row(nav: QListWidget, label: str) -> int:
-    for row in range(nav.count()):
-        item = nav.item(row)
-        if item is not None and item.text() == label:
-            return row
-    raise AssertionError(f"navigation item not found: {label}")
 
 
 def test_annual_workbench_is_after_clients_and_before_engagements() -> None:
@@ -35,23 +28,16 @@ def test_annual_workbench_is_after_clients_and_before_engagements() -> None:
     assert NAV_ORDER[annual_index + 1] == PAGE_ENGAGEMENTS
 
 
-def test_sidebar_click_opens_real_annual_workbench(qtbot, container) -> None:
+def test_primary_navigation_click_opens_real_annual_workbench(qtbot, container) -> None:
     window = MainWindow(container)
     qtbot.addWidget(window)
     window.show()
 
-    nav = window.findChild(QListWidget, "MainNav")
+    nav = window.findChild(WorkspaceNavigation)
     stack = window.findChild(QStackedWidget)
     assert nav is not None
     assert stack is not None
-
-    annual_row = _nav_row(nav, "年度工作檯")
-    item_rect = nav.visualItemRect(nav.item(annual_row))
-    qtbot.mouseClick(
-        nav.viewport(),
-        Qt.MouseButton.LeftButton,
-        pos=item_rect.center(),
-    )
+    qtbot.mouseClick(nav._buttons[PAGE_ANNUAL_WORKBENCH], Qt.MouseButton.LeftButton)
 
     page = stack.currentWidget()
     assert isinstance(page, AnnualWorkbenchPage)

@@ -16,6 +16,8 @@ jump back to any ancestor level.
 
 from __future__ import annotations
 
+from ...i18n.status_labels import label_for
+
 import datetime
 import logging
 
@@ -350,6 +352,35 @@ class EngagementsPage(QWidget):
     # Public API — kept for backward compatibility with 21B tests + main_window
     # ------------------------------------------------------------------
 
+    def open_context(self, engagement_id: int, request_id: int | None = None) -> bool:
+        """Open a case/request by stable ID, independent of bounded master lists."""
+        engagement = self._container.engagements.get_engagement(engagement_id)
+        if engagement is None:
+            raise ValueError("案件已刪除或所屬客戶已停用。")
+        request = None
+        if request_id is not None:
+            request = self._container.doc_requests.get_request(request_id)
+            if request is None or request.engagement_id != engagement_id:
+                raise ValueError("索件批次已刪除或不屬於這個案件。")
+        if not self._requests_page.load_engagement(engagement_id):
+            return False
+        if request is not None:
+            # Select through the paginated public API. Row positions are neither
+            # stable identities nor guaranteed to be on the currently loaded page.
+            if not self._requests_page.select_request_id(request.id):
+                return False
+            if not self._items_page.load_request_items(request.id):
+                return False
+        self._current_engagement_id = engagement_id
+        self._current_request_id = request_id
+        self._bc_engagement_btn.setText(engagement.engagement_name)
+        if request is None:
+            self._show_requests()
+        else:
+            self._bc_request_btn.setText(request.request_name)
+            self._show_items()
+        return True
+
     def set_filter(self, filter_key: str) -> None:
         self._filter_key = filter_key
         self._refresh_engagements()
@@ -361,11 +392,21 @@ class EngagementsPage(QWidget):
         self._show_master()
 
     def refresh_context(self) -> None:
+        # Hidden master selection must never replace an explicit drill-down scope.
+        if self._stack.currentIndex() != _PAGE_LIST and self._current_engagement_id is not None:
+            request_id = (
+                self._current_request_id
+                if self._stack.currentIndex() == _PAGE_ITEMS else None
+            )
+            self.open_context(self._current_engagement_id, request_id)
+            return
         self._on_load_and_refresh()
         self._requests_page.refresh_context()
 
     # Slice 21B alias retained for tests.
     def _sync_embedded_to_selection(self) -> None:
+        if self._stack.currentIndex() != _PAGE_LIST:
+            return
         eng_id = self._selected_engagement_id()
         if eng_id is None:
             self._requests_page.clear_filter()
@@ -480,6 +521,8 @@ class EngagementsPage(QWidget):
         self._status_btn.setEnabled(has_sel)
         self._delete_btn.setEnabled(has_sel)
         self._open_btn.setEnabled(has_sel)
+        if self._stack.currentIndex() != _PAGE_LIST:
+            return
         # 21B legacy sync — populate the requests page so tests that read
         # ``_doc_requests_widget._engagement_id`` after selectRow keep passing
         # without forcing a drill-down navigation.
@@ -557,7 +600,7 @@ class EngagementsPage(QWidget):
             return
         allowed = self._container.engagements.valid_next_statuses(eng_id)
         choices = sorted(
-            STATUS_LABELS.get(s, s) for s in allowed if s != eng.status
+            label_for(STATUS_LABELS, s) for s in allowed if s != eng.status
         )
         if not choices:
             QMessageBox.information(self, "無可用狀態", "此案件目前無法切換到其他狀態。")

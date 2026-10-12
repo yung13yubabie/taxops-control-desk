@@ -1,6 +1,6 @@
 """Stage 6 — annual workbench: actionable KPIs, five core columns, inspector.
 
-Each test states one acceptance condition from the stage's row in
+Each test exercises an annual-workbench acceptance condition in
 `docs/desktop_ux_contract.md`: eight KPI tiles no longer render at zero, the core
 table carries five columns so client and title stop being truncated, the four
 detailed statuses move off the row into the inspector, and the selected row is no
@@ -127,9 +127,9 @@ def test_metric_label_texts_and_order_are_unchanged(qtbot, container) -> None:
         "客戶數 1",
         "異常數 1",
         "缺件風險數 1",
-        "收款短缺 NT$ 62,000",
-        "未繳稅 NT$ 22,000",
-        "未收服務費 NT$ 0",
+        "收款短缺 新臺幣 62,000",
+        "未繳稅 新臺幣 22,000",
+        "未收服務費 新臺幣 0",
         "超收筆數 0",
     ]
 
@@ -201,7 +201,7 @@ def test_hidden_columns_keep_their_values_so_nothing_is_lost(
 
     table = page.overview_table
     assert table.item(0, AnnualOverviewTable.UNPAID_TAX_COLUMN).text() == (
-        "NT$ 22,000"
+        "新臺幣 22,000"
     )
     assert table.item(0, AnnualOverviewTable.YEAR_COLUMN).text() == "2026"
     assert all(

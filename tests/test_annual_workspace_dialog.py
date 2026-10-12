@@ -175,7 +175,7 @@ def test_no_selection_and_invalid_date_keep_dialog_open_and_focus_first_error(
     due_input.setText("2026-02-30")
     qtbot.mouseClick(dialog.confirm_button, Qt.MouseButton.LeftButton)
     assert dialog.result() != QDialog.DialogCode.Accepted
-    assert dialog.feedback_label.text() == "到期日須為 YYYY-MM-DD 格式。"
+    assert dialog.feedback_label.text() == "請依西元年-月-日輸入到期日，例如 2026-10-31。"
     assert due_input.hasFocus()
 
 

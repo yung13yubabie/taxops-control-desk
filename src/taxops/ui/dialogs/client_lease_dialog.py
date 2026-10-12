@@ -34,6 +34,7 @@ from ...services.client_leases import (
     validate_lease_input,
 )
 from ..widgets.date_field import DateField
+from ._discard_changes import confirm_discard
 
 if TYPE_CHECKING:
     from ...services.container import ServiceContainer
@@ -87,10 +88,13 @@ class ClientLeaseDialog(QDialog):
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 0, 8, 0)
         form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
         self.lease_name = QLineEdit(initial.lease_name)
+        self.lease_name.setPlaceholderText("必填，例如 台北辦公室租約")
         self.premises_address = _plain(initial.premises_address or "")
         self.landlord_name = QLineEdit(initial.landlord_name or "")
+        self.landlord_name.setPlaceholderText("可留空，填寫出租人姓名或名稱")
         self.start_date = DateField(required=False)
         self.start_date.set_value(initial.start_date)
         self.end_date = DateField(required=False)
@@ -109,7 +113,7 @@ class ClientLeaseDialog(QDialog):
         self.status.setCurrentIndex(max(0, index))
         self.notes = _plain(initial.notes or "")
         for label, widget in (
-            ("租約名稱", self.lease_name),
+            ("租約名稱（必填）", self.lease_name),
             ("租賃處所地址", self.premises_address),
             ("房東／出租人", self.landlord_name),
             ("租約起日", self.start_date),
@@ -120,7 +124,10 @@ class ClientLeaseDialog(QDialog):
             ("狀態", self.status),
             ("備註", self.notes),
         ):
-            form.addRow(label, widget)
+            field_label = QLabel(label)
+            field_label.setBuddy(widget)
+            widget.setAccessibleName(label)
+            form.addRow(field_label, widget)
         content_layout.addLayout(form)
 
         attachment_row = QHBoxLayout()
@@ -142,14 +149,33 @@ class ClientLeaseDialog(QDialog):
         self.scroll_area.setWidget(content)
         outer.addWidget(self.scroll_area, 1)
 
+        self.feedback_label = QLabel()
+        self.feedback_label.setWordWrap(True)
+        outer.addWidget(self.feedback_label)
+
         buttons = QDialogButtonBox()
         self.save_button = buttons.addButton("套用租約", QDialogButtonBox.ButtonRole.AcceptRole)
         self.cancel_button = buttons.addButton("取消", QDialogButtonBox.ButtonRole.RejectRole)
         outer.addWidget(buttons)
+        self._initial_values = self._form_values()
         self.save_button.clicked.connect(self._save)
         self.cancel_button.clicked.connect(self.reject)
         self.upload_attachment_button.clicked.connect(self._upload_attachment)
         self.view_attachments_button.clicked.connect(self._view_attachments)
+
+    def _form_values(self) -> tuple:
+        return (
+            self.lease_name.text(), self.premises_address.toPlainText(),
+            self.landlord_name.text(), self.start_date.raw_text(), self.end_date.raw_text(),
+            self.monthly_rent.text(), self.deposit_amount.text(), self.reminder_days.value(),
+            self.status.currentData(), self.notes.toPlainText(),
+        )
+
+    def reject(self) -> None:
+        if self._form_values() != self._initial_values:
+            confirm_discard(self, lambda: QDialog.reject(self))
+            return
+        super().reject()
 
     @staticmethod
     def _amount(editor: QLineEdit) -> int | None:
@@ -161,7 +187,10 @@ class ClientLeaseDialog(QDialog):
         return int(raw)
 
     def _save(self) -> None:
+        if getattr(self, "_discard_confirmation", None) is not None:
+            return
         self.save_button.setEnabled(False)
+        self.feedback_label.clear()
         try:
             payload = LeaseInput(
                 lease_name=self.lease_name.text(),
@@ -181,6 +210,15 @@ class ClientLeaseDialog(QDialog):
         except DateField.InvalidInput:
             QMessageBox.warning(self, "租約輸入有誤", "日期格式不正確，請使用西元年月日。")
         except ClientLeaseValidationError as exc:
+            invalid_field = {
+                "client_lease.name.required": self.lease_name,
+                "client_lease.date_range.invalid": self.end_date,
+            }.get(exc.code, self.lease_name)
+            self.feedback_label.setText(
+                _LEASE_ERRORS.get(exc.code, "租約資料不正確，請檢查輸入內容。")
+            )
+            self.scroll_area.ensureWidgetVisible(invalid_field)
+            invalid_field.setFocus()
             QMessageBox.warning(
                 self,
                 "租約輸入有誤",

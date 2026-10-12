@@ -256,90 +256,50 @@ def test_sidebar_collapse_setting_persists() -> None:
     container.close()
 
 
-def test_sidebar_collapsed_restored_on_window_init() -> None:
-    """Collapsing narrows the rail but must preserve module identity.
-
-    Replaces the earlier contract, which hid the navigation list outright and left a
-    blank strip. The rail now stays populated: every module keeps its icon and gains
-    a tooltip standing in for the hidden label.
-    """
+def test_old_sidebar_setting_does_not_hide_workspace_destinations() -> None:
+    """Old persisted preference survives but cannot hide the new top navigation."""
     _make_app()
-    conn = _fresh_conn()
-    container = _build_container(conn)
+    container = _build_container(_fresh_conn())
     container.settings.set_setting("ui.sidebar_collapsed", "1")
-
     from taxops.ui.main_window import MainWindow
-    from taxops.ui import tokens
-
+    from taxops.ui.action_registry import NAV_ORDER
     window = MainWindow(container)
-
-    assert not window._nav.isHidden(), "collapsed rail must stay visible"
-    assert window._collapsed is True
-    assert window._sidebar.maximumWidth() == tokens.SIDEBAR_COLLAPSED_WIDTH
-    assert tokens.SIDEBAR_COLLAPSED_WIDTH >= 52, "rail must fit an icon, not be a bare strip"
-
-    for row in range(window._nav.count()):
-        item = window._nav.item(row)
-        assert item.text() == "", "labels are hidden when collapsed"
-        assert item.toolTip(), "a hidden label must be reachable as a tooltip"
-        assert not item.icon().isNull(), "module icon must survive collapsing"
-
-    # The toggle is an icon button with an accessible name, not a text arrow.
-    assert window._collapse_btn.text() == ""
-    assert not window._collapse_btn.icon().isNull()
-    assert window._collapse_btn.toolTip() == "展開側邊欄"
-    assert window._collapse_btn.accessibleName() == "展開側邊欄"
-    assert window._collapse_btn.width() == tokens.ICON_BUTTON_SIZE
-    assert window._collapse_btn.height() == tokens.ICON_BUTTON_SIZE
-    container.close()
-
-
-def test_sidebar_expanded_on_window_init_by_default() -> None:
-    """Default state shows labels and icons together."""
-    _make_app()
-    conn = _fresh_conn()
-    container = _build_container(conn)
-
-    from taxops.ui.main_window import MainWindow
-    from taxops.ui import tokens
-
-    window = MainWindow(container)
-
     assert not window._nav.isHidden()
-    assert window._collapsed is False
-    assert window._sidebar.minimumWidth() == tokens.SIDEBAR_EXPANDED_WIDTH
-
-    for row in range(window._nav.count()):
-        item = window._nav.item(row)
-        assert item.text(), "labels are shown when expanded"
-        assert not item.icon().isNull(), "every module carries an icon"
-
-    assert window._collapse_btn.text() == ""
-    assert not window._collapse_btn.icon().isNull()
-    assert window._collapse_btn.toolTip() == "收合側邊欄"
+    assert set(window._nav._buttons) | set(window._nav._actions) == set(NAV_ORDER)
+    assert all(button.text() and not button.icon().isNull() for button in window._nav._buttons.values())
+    assert container.settings.get("ui.sidebar_collapsed") == "1"
+    window.close()
     container.close()
 
 
-def test_sidebar_toggle_round_trip_restores_labels() -> None:
-    """Collapsing then expanding must bring every label back."""
+def test_workspace_navigation_labels_and_icons_visible_by_default() -> None:
     _make_app()
-    conn = _fresh_conn()
-    container = _build_container(conn)
-
+    container = _build_container(_fresh_conn())
     from taxops.ui.main_window import MainWindow
-
     window = MainWindow(container)
-    original = [window._nav.item(r).text() for r in range(window._nav.count())]
+    assert not window._nav.isHidden()
+    for button in window._nav._buttons.values():
+        assert button.text() and button.accessibleName()
+        assert not button.icon().isNull()
+    for action in window._nav._actions.values():
+        assert action.text() and action.data()
+        assert not action.icon().isNull()
+    window.close()
+    container.close()
 
-    window._on_toggle_sidebar()
-    assert window._collapsed is True
-    assert all(window._nav.item(r).text() == "" for r in range(window._nav.count()))
 
-    window._on_toggle_sidebar()
-    assert window._collapsed is False
-    restored = [window._nav.item(r).text() for r in range(window._nav.count())]
-    assert restored == original
-    assert all(window._nav.item(r).toolTip() == "" for r in range(window._nav.count()))
+def test_tools_round_trip_restores_current_destination_label() -> None:
+    _make_app()
+    container = _build_container(_fresh_conn())
+    from taxops.ui.main_window import MainWindow
+    from taxops.ui.action_registry import PAGE_CLIENTS, PAGE_ATTACHMENTS
+    window = MainWindow(container)
+    window._nav._actions[PAGE_CLIENTS].trigger()
+    assert window._nav._tools_button.text() == "客戶管理"
+    window._nav._buttons[PAGE_ATTACHMENTS].click()
+    assert window._nav._tools_button.text() == "資料與工具"
+    assert window._nav._buttons[PAGE_ATTACHMENTS].isChecked()
+    window.close()
     container.close()
 
 
@@ -405,39 +365,19 @@ def test_page_label_format_combined() -> None:
     container.close()
 
 
-def test_sidebar_save_failure_logs_warning(capsys) -> None:
-    """sidebar collapse/expand setting save failure must call system_log.warn, not swallow silently."""
-    from unittest.mock import MagicMock
-
-    _make_app()
-    conn = _fresh_conn()
-    container = _build_container(conn)
-
+def test_workspace_navigation_does_not_write_legacy_sidebar_setting(monkeypatch) -> None:
+    """Navigation is local UI state; unavailable setting writes cannot block it."""
+    from unittest.mock import Mock
     from taxops.ui.main_window import MainWindow
-
+    from taxops.ui.action_registry import PAGE_CLIENTS, PAGE_ATTACHMENTS
+    _make_app()
+    container = _build_container(_fresh_conn())
+    write = Mock(side_effect=RuntimeError("DB locked"))
+    monkeypatch.setattr(container.settings, "set_setting", write)
     window = MainWindow(container)
-
-    # Replace settings with one that always raises on set_setting
-    broken_settings = MagicMock()
-    broken_settings.get.return_value = "0"
-    broken_settings.set_setting.side_effect = RuntimeError("DB locked")
-    window._container = MagicMock()
-    window._container.settings = broken_settings
-
-    warn_calls = []
-    window._container.system_log.warn.side_effect = lambda msg, **kw: warn_calls.append(msg)
-
-    # Trigger collapse save
-    window._apply_collapsed(save=True)
-    assert any("sidebar" in m for m in warn_calls), (
-        f"system_log.warn must be called on save failure; got: {warn_calls}"
-    )
-
-    warn_calls.clear()
-    # Trigger expand save
-    window._apply_expanded(save=True)
-    assert any("sidebar" in m for m in warn_calls), (
-        f"system_log.warn must be called on expand save failure; got: {warn_calls}"
-    )
-
+    window._nav._actions[PAGE_CLIENTS].trigger()
+    window._nav._buttons[PAGE_ATTACHMENTS].click()
+    assert window._nav._buttons[PAGE_ATTACHMENTS].isChecked()
+    write.assert_not_called()
+    window.close()
     container.close()

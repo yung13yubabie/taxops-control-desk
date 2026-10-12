@@ -82,6 +82,7 @@ class TaxRegistryImporter:
         zip_path: Path | str,
         *,
         source_url: str | None = None,
+        record_download: bool = False,
         on_progress=None,
     ) -> ImportResult:
         """Validate + import a local ``BGMOPEN1.zip``.
@@ -142,6 +143,19 @@ class TaxRegistryImporter:
                             "data_freshness_iso": header.data_freshness_iso,
                         },
                     )
+                    if record_download:
+                        # This callback runs inside the cache replacement
+                        # transaction. Worker connection closure must not lose
+                        # download provenance or leave a partially audited import.
+                        self._audit.record(
+                            action="tax_cache.download",
+                            target_type=_AUDIT_TARGET_TYPE,
+                            detail={
+                                "source_url": source_url,
+                                "row_count": row_count,
+                                "cache_version": cache_version,
+                            },
+                        )
 
                 row_count = self._registry.replace_all_from_entries(
                     reader.entries(),

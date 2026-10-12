@@ -51,6 +51,8 @@ class QueryState:
 
 ## 密度規格
 
+以下是重設目標；末尾 Contracts 的共用元件尺寸描述既有相容性約束。採用新目標前須核對 `tokens.py` 與所有呼叫端測試，不把目標值當成目前全部畫面已達成的證明。
+
 寫入 `tokens.py`，頁面從那裡讀值。
 
 | 元素 | 值 |
@@ -148,6 +150,11 @@ contextual actions：開啟、編輯、複製下一年度、取消／封存。�
 
 第 7 題答「有」時，重新設計 context，不調樣式。
 
+## 錯誤處理與驗證
+
+遵循 [錯誤處理規範](no_silent_failure.md)。業務邏輯、資料庫語意、稽核流程、權限規則及法定計算不得因介面調整而改變。
+
+完整測試使用逐檔程序隔離及合併 branch coverage，執行方式見 [CONTRIBUTING](../CONTRIBUTING.md)。設計目標不代表已完成 Windows 實機驗收。
 
 ## Contracts
 
@@ -166,7 +173,7 @@ semantics. Its internals and appearance are open.
 **Shared widgets grow, they do not change.** `page_shell.py`, `inspector.py`,
 `buttons.py`, `tokens.py`, `icons.py`, `empty_state.py`, and `table_builder.py` are
 shared across pages. Add a method or a token; leave existing signatures and values
-alone. If your stage needs an existing one changed, report it instead.
+alone. If your stage needs an existing one changed, review all callers and regression tests first.
 
 **One primary per page.** `PageHeader.add_action` raises on a second primary and
 `ActionBar` raises on a sixth visible action. Those exceptions are the design working.
@@ -193,6 +200,8 @@ dialog becomes a tab or an inline sub-page in the first.
 are.** This is interface work. A change to any of them is semantic fog: report it.
 
 
-## Verification
+## 日期與年度列表驗收契約
 
-Use CONTRIBUTING.md and the existing test suite. These design targets are not proof of completed Windows/DPI acceptance. Density targets above and existing shared-widget constraints require caller/test review before changes.
+日期輸入支援直接輸入與點選日期，300–340 px 月曆彈窗、欄內清除、分離的月/年調整，點選日期即套用，不增加第二次確認。保持既有公開 API；用原測試檔驗證實際界限與鍵盤操作。
+
+年度工作列表維持五個主要欄位以避免客戶/名稱被過度裁切，四種詳細狀態置於 inspector；不可因零值而顯示無用的八張 KPI 卡，也不可把已選資料在下方再重複為另一塊文字。這些是介面契約，不能改變年度工作與待辦各自的完成語意。
