@@ -1,6 +1,27 @@
 # Windows candidate build and artifact self-test
 
-## Status and scope
+## Verified rebuilt candidate: run 38252711536
+
+The seventh [Windows run](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38252711536) completed successfully on 2026-10-12. All **141/141 complete test files and 3461/3461 tests** passed, with zero failures, errors, skips or unrun files. Combined raw branch coverage is **91.06710039545861%**, above the unchanged 90% gate. The separate seven-file suite passed 193 overlapping tests; do not add those to the full-suite count.
+
+Exact provenance:
+
+- PR head: `3a338b1462e824c1a18c058fef22358a042b8cb3`
+- Actual tested checkout: `466102a34b78eaafd9484b6e496afb9e0b3f2cb3`
+- Tested tree: `4294c59124980fd3b6f29539e01271f51b9d4d24`
+- [PR #2](https://github.com/yung13yubabie/taxops-control-desk/pull/2) merged into `feature/v030-annual-workbench` as `032333f1ea3efd96b48b2432ea9e96067ad0ef9c`, with the identical tree. This PR/manual-only workflow did not start a separate run for that merge commit.
+
+The newly built app-only ZIP contains the real EXE and runtime dependencies: **48,549,420 bytes, 492 files**, SHA-256 **`3e13a51749fbe4b972dbd7f56c9da2b316062a20e8aad6552dab952a7289d2ec`**. The outer evidence artifact is 51,484,388 bytes with SHA-256 `83a37784dd8bb3688d9f1e859ddc799ce06aeaeb36792afb68448b60780cf1bd`. Preserve the tested app ZIP bytes; source archives and the older candidate ZIP are not substitutes.
+
+The actual EXE extracted into the relocated Chinese/space path passed **17/17 required frozen checks**, with `frozen=true`, `platform=win32`, `qt_platform=windows`, version `0.33.0rc1`, and `network_attempts=[]`. The English-locale Chinese-widget check loaded the real catalogue and verified nonempty translated labels; its missing-catalogue negative case remained explicitly partial. PDF, printing-related dependencies, images, schema 28, annual/lease domains, complete backup and restore remained present. Separate native Windows synthetic glyph/PNG diagnostics passed; this is not full manual visual acceptance.
+
+Independent artifact QA recomputed both ZIP hashes/CRCs and all 141 JUnit totals, checked 123 PE files/imports/version resources, and matched **263 notice files** against reviewed bytes. Notice manifest SHA-256 is `6bb046176dc0f7d6769be82eaaec32ac19db8c473943aae8eb73933ad3d61495`; all 53 recorded Microsoft runtime identities matched. VirtualKeyboard and the unused QML/Quick chain were absent; Qt6OpenGL also disappeared with that unused dependency chain. Required Qt PDF/Print/Windows/image/TLS components remained. Known private/business-data path checks found no such files; this is not an exhaustive secret scan.
+
+**Technical acceptance supports the source merge, not a stable binary release.** The bundle still records the precise Microsoft redistribution questions for eight Qt-supplied VC DLLs and 43 API-set/UCRT files. Clean offline end-user Windows, manual DPI/IME/accessibility and signing remain unverified. See [distribution scope](third_party_licenses.md) and the [fixed source-access instructions](https://github.com/yung13yubabie/taxops-control-desk/blob/3a338b1462e824c1a18c058fef22358a042b8cb3/assets/third_party_licenses/SOURCE_ACCESS.txt).
+
+This section is a documentation-only record added after the build. Its later documentation commit/tree is not claimed as the source of this ZIP; the exact tested/build tree above remains authoritative.
+
+## Historical Windows runs
 
 The sixth run [38228288029](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38228288029) is the first complete Windows candidate pass: **140/140 files, 3429/3429 tests**, no failed/error/skipped/unrun tests, and raw branch coverage **91.06710039545861%**. Head `74bc560ceeb34f6ce83483974af8eb1226c29c8c` and checkout merge `481b55058309366ae62b0f06a903f2ed8936d14d` have tree `06876d464c66d80160f8900e77ca2592f2065280`, identical to local source `8dd5369`. The separate seven-file quick suite passed 193 tests; those overlap the full suite and are not additive.
 
@@ -77,7 +98,7 @@ The spec and packaging wrapper validate the pinned Python/release-package versio
 
 The custom QtGui hook retains upstream collection except the unused Qt VirtualKeyboard plugin. The application does not import that binding or use QML; the real bundle inventory rejects unreviewed Qt modules/plugins, including the unused VirtualKeyboard/Quick/QML chain. QtPdf, QtPdfWidgets, printing, Windows and image/TLS plugins remain required. Normal native IME is not claimed as manually verified by this change.
 
-Before a ZIP can be tested/published locally, the host verifies the full notice manifest against reviewed source bytes and checks Microsoft runtime file identities. Provenance separately reports `license_review_complete: false` and the precise outstanding distribution/source-delivery items. This flag does not weaken the runtime or coverage gates; it prevents a successful technical check being misreported as legal clearance. See [the exact scope and source mapping](third_party_licenses.md). No new commercial agreement is accepted by these build tools.
+Before a ZIP can be tested/published locally, the host verifies the full notice manifest against reviewed source bytes and checks Microsoft runtime file identities. Provenance separately reports `license_review_complete: false` and the precise outstanding Microsoft distribution items. The selected exact-source access and shared-DLL replacement directions are included; they do not establish Microsoft redistribution eligibility. This flag does not weaken the runtime or coverage gates; it prevents a successful technical check being misreported as legal clearance. See [the exact scope and source mapping](third_party_licenses.md). No new commercial agreement is accepted by these build tools.
 
 The earlier all-green ZIP is retained as evidence, not rewritten. A new packaging input requires a new actual ZIP hash and the same extracted frozen EXE verification, even when application source is unchanged.
 

@@ -46,11 +46,17 @@
 - 長表單與展開說明可捲動，儲存／取消留在可見位置；日期填錯會回到該欄位，空白欄位補上用途提示。
 - 操作提示、錯誤、空畫面與選檔視窗改用白話繁中；保留原本的客戶名稱、檔名與路徑。英文系統語言下的標準按鈕、月曆與選檔文字另有實際視窗檢查。
 
-第六輪 Windows 候選檢查已通過：完整 140 檔、3429 項全過，實值 branch coverage 91.06710039545861%；實際打包 EXE 的 17 項合成自測亦通過。套件檢查另發現缺少第三方授權通知及未使用的 Qt 虛擬鍵盤模組，來源已補入版本對應通知與檢查，並排除未使用的虛擬鍵盤；新的套件仍需重新建置與驗證，目前暫不提供下載。這仍不等於乾淨離線 Windows 驗收。第三方通知、原始碼取得及尚待確認的 Microsoft 分發條件見 [套件授權說明](docs/third_party_licenses.md)。
+[第七輪 Windows 候選檢查](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38252711536) 已通過：完整 **141 檔、3461 項全過**，沒有失敗、錯誤、跳過或未執行項目，實值 branch coverage **91.06710039545861%**。重新打包後，從 ZIP 解壓移動的實際 EXE 通過 **17 項合成自測**；獨立檢查也已核對套件、版本、授權文字與檔案雜湊。
+
+本輪新套件含實際 EXE 與執行所需檔案，共 492 檔、48,549,420 bytes，SHA-256 為 `3e13a51749fbe4b972dbd7f56c9da2b316062a20e8aad6552dab952a7289d2ec`。263 份第三方通知已隨包附入，未使用的 Qt 虛擬鍵盤與其 QML/Quick 依賴已排除；PDF 預覽與圖片讀取自測通過，列印所需元件保留。
+
+這份套件來源為 head `3a338b1`、測試 checkout `466102a`，完整 tree `4294c59124980fd3b6f29539e01271f51b9d4d24`；[PR #2](https://github.com/yung13yubabie/taxops-control-desk/pull/2) 合併至開發分支的 `032333f1` 與它完全同 tree。這次 README／驗證文件更新沒有重新產生二進位；後續文件 commit 不應被當作該 ZIP 的建置來源。
+
+**尚未正式發布。** 乾淨離線 Windows、人工縮放／輸入法與 Microsoft 元件的公開分發條件仍待確認，目前暫不提供成品下載。第三方通知、原始碼取得及具體待確認項目見 [套件授權說明](docs/third_party_licenses.md)。較早套件只保留為歷史驗證，不能代替本輪重新打包的 EXE。
 
 已知限制：Windows 模擬畫面曾出現中文字方框；同一測試機的原生 Windows 合成字形抽查已通過，乾淨實機仍待核對。小尺寸月曆在本機模擬畫面的第六週文字下緣仍略裁切，Windows 縮放與實機操作尚待驗收。繁中翻譯檔缺失時只提供有限按鈕後備，不能視為完整中文；候選 EXE 檢查會要求完整翻譯檔。
 
-可靠性契約與驗證限制見 [驗證紀錄](docs/reliability_latest_port.md)。全套逐檔獨立 process，coverage 實值門檻維持 **90%**；最終候選仍需 Windows 同 SHA 全套及乾淨離線驗收。
+可靠性契約與驗證限制見 [驗證紀錄](docs/reliability_latest_port.md)。全套逐檔獨立 process，coverage 實值門檻維持 **90%**；本輪已完成上述固定 tree 的 Windows 全套；乾淨離線實機驗收仍未完成。
 
 已發布版本可在 [GitHub Releases](https://github.com/yung13yubabie/taxops-control-desk/releases) 核對。repo 的 `dist/` 是建置輸出，不是永久下載來源。`docs/v0.32.0_test_checklist.md` 記錄較早 內部測試建置，並非本輪驗收。
 
