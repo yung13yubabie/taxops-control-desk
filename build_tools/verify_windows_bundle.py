@@ -17,6 +17,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from build_tools.dependency_licenses import LicenseAssetError, validate_bundle_licenses
+
 EXPECTED_CHECKS = frozenset({
     "qt_traditional_chinese_widgets_and_fallback",
     "qt_application_and_icon", "image_codecs", "qt_pdf_and_pdf_widgets", "ssl_runtime",
@@ -56,6 +58,10 @@ def archive_bundle(bundle: Path, archive: Path) -> dict:
             raise BundleVerificationError(f"Unexpected directory or symlink in bundle: {relative}")
         if path.suffix.lower() in {".sqlite", ".py", ".pyc", ".pyo"} or path.name.lower().endswith((".sqlite-wal", ".sqlite-shm", ".taxops.zip")):
             raise BundleVerificationError(f"Unexpected source or user data in bundle: {relative}")
+    try:
+        license_metadata = validate_bundle_licenses(bundle, files)
+    except (LicenseAssetError, OSError, ValueError, KeyError) as exc:
+        raise BundleVerificationError(f"Third-party license gate: {exc}") from exc
     with zipfile.ZipFile(archive, "x", compression=zipfile.ZIP_DEFLATED) as zipped:
         for path in files:
             zipped.write(path, Path("TaxOpsControlDesk") / path.relative_to(bundle))
@@ -64,7 +70,7 @@ def archive_bundle(bundle: Path, archive: Path) -> dict:
         if bad:
             raise BundleVerificationError(f"ZIP readback failed: {bad}")
     return {"file_count": len(files), "bytes": archive.stat().st_size,
-            "sha256": _sha256(archive)}
+            "sha256": _sha256(archive), **license_metadata}
 
 
 def _sha256(path: Path) -> str:

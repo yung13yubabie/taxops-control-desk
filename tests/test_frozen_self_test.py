@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -35,6 +36,9 @@ def _fake_bundle(root):
         if name == "taxopscontroldesk.exe":
             name = "TaxOpsControlDesk.exe"
         (root / name).write_bytes(b"synthetic test fixture, not executable")
+    from build_tools.dependency_licenses import NOTICE_DESTINATION, NOTICE_SOURCE
+    shutil.copytree(NOTICE_SOURCE, root / NOTICE_DESTINATION)
+    shutil.copyfile(NOTICE_SOURCE / "README.txt", root / "THIRD_PARTY_NOTICES.txt")
     return root
 
 

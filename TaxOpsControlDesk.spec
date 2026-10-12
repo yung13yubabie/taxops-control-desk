@@ -9,6 +9,16 @@ from PyInstaller.utils.hooks import collect_submodules
 import PySide6
 from PySide6.QtCore import QLibraryInfo
 from pathlib import Path
+from shutil import copyfile
+import sys
+
+# The pyinstaller console script does not guarantee the spec directory is on
+# sys.path. Analysis.pathex is applied later than this build-time gate.
+sys.path.insert(0, str(Path(SPECPATH).resolve()))
+
+from build_tools.dependency_licenses import NOTICE_SOURCE, validate_build_environment
+
+validate_build_environment()
 
 _qt_translation = Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)) / "qtbase_zh_TW.qm"
 _qt_translation_target = str(Path("PySide6") / _qt_translation.parent.relative_to(Path(PySide6.__file__).parent))
@@ -20,7 +30,8 @@ a = Analysis(
     ["build_tools/pyinstaller_entry.py"],
     pathex=["src"],
     binaries=[],
-    datas=[("assets/app_icon.ico", "assets"), (str(_qt_translation), _qt_translation_target)],
+    datas=[("assets/app_icon.ico", "assets"), (str(_qt_translation), _qt_translation_target),
+           (str(NOTICE_SOURCE), "third_party_licenses")],
     hiddenimports=[
         # PySide6 modules not always auto-detected but loaded at runtime
         "PySide6.QtSvg",
@@ -39,10 +50,12 @@ a = Analysis(
         "jinja2.runtime",
         "jinja2.filters",
     ] + collect_submodules("taxops.db.migrations"),
-    hookspath=[],
+    hookspath=["build_tools/pyinstaller_hooks"],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
+        # No application use; prevent accidental GPL-only/commercial binding.
+        "PySide6.QtVirtualKeyboard",
         # Test tooling — not needed at runtime
         "pytest",
         "_pytest",
@@ -87,3 +100,7 @@ coll = COLLECT(
     upx_exclude=["vcruntime140.dll", "python3*.dll"],
     name="TaxOpsControlDesk",
 )
+
+# Keep the notice index discoverable beside the executable; all original texts
+# remain under the default PyInstaller _internal directory.
+copyfile(NOTICE_SOURCE / "README.txt", Path(coll.name) / "THIRD_PARTY_NOTICES.txt")

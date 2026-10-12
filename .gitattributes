@@ -1,0 +1,3 @@
+# Notice hashes refer to original upstream bytes, including line endings and
+# upstream whitespace. Do not rewrite legal texts to satisfy style checks.
+assets/third_party_licenses/** -text -whitespace

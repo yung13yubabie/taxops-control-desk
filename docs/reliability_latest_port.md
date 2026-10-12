@@ -27,11 +27,21 @@
 
 [第三輪 Windows](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38221303640) 在 head `16865f0` / checkout `a6d0bd4` 完整執行 139 檔：3397 項中 3392 通過、5 失敗，0 errors/skips/未跑；實值 branch coverage 91.03763046184291%。日期欄寬與選檔路徑測試已通過。5 項失敗為收件寬度兩項、年度附件分頁列溢出、自測在外部 profile 建立空 cache 目錄，以及幾何診斷測試誤要求有效字體名稱必定非空。失敗仍阻擋 EXE。該 run 的 tree 與 `db27edc` 相同，早於 feature 清理合併後的本輪整合。
 
-後續來源修正保持原 900 px 與無外部檔案副作用斷言：收件自適應 splitter 不再將寬版最小值鎖死父視窗；年度附件狀態與分頁分列；自測在暫存範圍內設定 profile/cache 環境路徑並於 finally 恢復。三者已有獨立 Linux 重播與功能回驗，仍需新候選的 Windows 完整結果。幾何診斷必須忠實記錄真實 QFontInfo，包括未解析的空名稱，不能偽造字型成功。平行診斷不是完整發布 gate。
+後續來源修正保持原 900 px 與無外部檔案副作用斷言：收件自適應 splitter 不再將寬版最小值鎖死父視窗；年度附件狀態與分頁分列；自測在暫存範圍內設定 profile/cache 環境路徑並於 finally 恢復。三者已有獨立 Linux 重播與功能回驗，後續第六輪同候選 Windows 完整矩陣亦通過。幾何診斷必須忠實記錄真實 QFontInfo，包括未解析的空名稱，不能偽造字型成功。平行診斷不是完整發布 gate。
 
 [第四輪 Windows](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38224732979) 的五檔診斷 165/165 通過，原生 qwindows 合成中文 glyph/PNG 亦通過；原生字型有 Microsoft JhengHei UI，罕字另使用系統 fallback。這不代表乾淨 client 或全部姓名已驗收。完整矩陣在第 64/140 檔的新增字型診斷測試，於 offscreen 讀 raw-font metadata 時發生 access violation；前 63 檔 1772 項通過，76 檔未跑。68.3824467406557% 是中止子集，不能冒稱最終 coverage；仍未建置 EXE。後續修正必須保留 invalid 字型的失敗判定，並重新通過完整 gate。
 
 [第五輪 Windows](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38226805820) 證明最初的 invalid 字型保護不足：同一 offscreen 字型測試仍在 metadata 行崩潰。其餘六個 quick 檔 169 項與原生 qwindows 探針通過；full 仍為第 64/140 檔中止、1772 個已完成 JUnit 測試、76 檔未跑，無 EXE。診斷工具改在入口拒絕非原生 Windows 或空字型庫，明確回 unsupported/failed，不進 raw-font API；完整 source 檔仍測拒絕與純 glyph 正負契約，真正字形由 qwindows job 驗證。這不是把 offscreen 不支援偽裝成功，也不宣稱 C++ 根因已證明。
+
+## 第六輪 Windows 與套件交付檢查
+
+[第六輪 Windows](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38228288029) 使用 head `74bc560ceeb34f6ce83483974af8eb1226c29c8c`、實際 checkout merge `481b55058309366ae62b0f06a903f2ed8936d14d`；tree 均為 `06876d464c66d80160f8900e77ca2592f2065280`，與本地來源 `8dd5369` 一致。完整 140/140 檔、3429/3429 項通過，0 failures/errors/skips/unrun，實值 branch coverage **91.06710039545861%**。七檔 quick 193 項另過，與完整套件重疊，不相加。
+
+PyInstaller 首次完成本候選建置；同一 ZIP 解壓到另一個中文與空白路徑後，實際 EXE 的 17 項自測全部通過。報告為 `frozen=true`、`platform=win32`、`qt_platform=windows`、版本 `0.33.0rc1`，Python 3.11.9 / PySide6 6.10.2；包括 schema 28、客戶雙地址、租約與案件附件、年度工作/交易、完整備份跨目錄還原、PDF、繁中選檔與缺翻譯檔負例。`network_attempts=[]` 只代表受測 Python socket 事件，沒有原生網路或整部作業系統沙箱保證。
+
+當輪 app-only ZIP 為 54,024,285 bytes、236 檔，SHA-256 `4a9782b058c7a236cfdbd987e08d2c690320638f0e55b4a8b3a31e5a3b457731`。独立檢查其 hash 與 ZIP CRC 一致，但發現未使用的 Qt VirtualKeyboard DLL/plugin，以及第三方授權通知缺口；因此**此 ZIP 暫不交付**。後續排除多餘模組與補通知是打包輸入變更，必須重新建置、驗證及記錄新 hash，不能沿用本包自測作為新包證明。
+
+原生 Windows 合成字形探針另已通過，PNG 中所列繁中可讀；字型庫共 86 個 family，包含 Microsoft JhengHei UI，罕字另由系統 fallback 提供。這不保證任意姓名/所有字集，亦不代表乾淨離線 Windows、全部畫面、縮放、IME 或輔助工具驗收。
 
 ## 可重現驗證
 

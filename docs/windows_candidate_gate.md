@@ -2,6 +2,12 @@
 
 ## Status and scope
 
+The sixth run [38228288029](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38228288029) is the first complete Windows candidate pass: **140/140 files, 3429/3429 tests**, no failed/error/skipped/unrun tests, and raw branch coverage **91.06710039545861%**. Head `74bc560ceeb34f6ce83483974af8eb1226c29c8c` and checkout merge `481b55058309366ae62b0f06a903f2ed8936d14d` have tree `06876d464c66d80160f8900e77ca2592f2065280`, identical to local source `8dd5369`. The separate seven-file quick suite passed 193 tests; those overlap the full suite and are not additive.
+
+The actual built EXE, extracted from the candidate ZIP into a relocated Chinese/space path, passed all 17 required synthetic checks with `frozen=true`, `platform=win32`, `qt_platform=windows`, and app version `0.33.0rc1`. The app-only ZIP has SHA-256 `4a9782b058c7a236cfdbd987e08d2c690320638f0e55b4a8b3a31e5a3b457731`, 54,024,285 bytes and 236 entries. **Distribution of this ZIP is on hold:** independent package inventory found an unused Qt VirtualKeyboard plugin/library and incomplete third-party notices. A packaging fix requires a newly built ZIP, new provenance/hash, and a fresh frozen gate; the earlier ZIP must not be silently repacked and described as the tested artifact. Clean offline end-user Windows, DPI/IME/accessibility, and signing acceptance remain unverified.
+
+The following runs are historical diagnosis, not the current source-gate status.
+
 The first Windows run completed on the original candidate, but failed its source
 test gate: **3223 passed / 4 failed, no EXE built**. See
 [run 38206960124](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38206960124).
@@ -11,8 +17,7 @@ mock intercepting Windows platform detection, and two report-path assertions.
 Their fixes and the later Chinese UI slice are included in source snapshot
 `247fe2c`, whose complete Linux matrix has 3327 passed / 5 IPC-environment failed /
 1 platform skipped across all 137 files, and raw branch coverage
-90.93781920326865%. **A new Windows run of the final integrated
-candidate and frozen EXE verification remain required.**
+90.93781920326865%. **This historical snapshot did not pass the Windows or frozen gate.**
 
 The second run [38213344318](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38213344318) completed all 137 files at head `821d490` / merge `a931390`: **3325 passed / 8 failed**, no errors or skips, raw branch coverage 91.0367722165475%. It again correctly blocked the EXE. Follow-up fixes address date-width measurement and native path comparison; receipt/collaboration layout and the self-test-created profile directory remain under diagnosis.
 
@@ -65,6 +70,16 @@ This pins the procedure and dependencies, not a bit-for-bit reproducible binary.
 Runner images, package-index availability, wheel hashes, code signing, and a
 verified offline wheelhouse are separate concerns. Build/install steps need
 network access. That requirement does not make core EXE operation online.
+
+## Dependency notices and package inventory
+
+The spec and packaging wrapper validate the pinned Python/release-package versions and byte-preserved notice corpus before building. Original license text, copyright/credits, exact upstream source URLs and a shared-DLL replacement guide are included in the distribution; `THIRD_PARTY_NOTICES.txt` is discoverable beside the EXE. `.gitattributes` preserves those upstream bytes on Windows checkouts.
+
+The custom QtGui hook retains upstream collection except the unused Qt VirtualKeyboard plugin. The application does not import that binding or use QML; the real bundle inventory rejects unreviewed Qt modules/plugins, including the unused VirtualKeyboard/Quick/QML chain. QtPdf, QtPdfWidgets, printing, Windows and image/TLS plugins remain required. Normal native IME is not claimed as manually verified by this change.
+
+Before a ZIP can be tested/published locally, the host verifies the full notice manifest against reviewed source bytes and checks Microsoft runtime file identities. Provenance separately reports `license_review_complete: false` and the precise outstanding distribution/source-delivery items. This flag does not weaken the runtime or coverage gates; it prevents a successful technical check being misreported as legal clearance. See [the exact scope and source mapping](third_party_licenses.md). No new commercial agreement is accepted by these build tools.
+
+The earlier all-green ZIP is retained as evidence, not rewritten. A new packaging input requires a new actual ZIP hash and the same extracted frozen EXE verification, even when application source is unchanged.
 
 ## Source regression and coverage gate
 

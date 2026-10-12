@@ -15,6 +15,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from build_tools.dependency_licenses import validate_build_environment
+
 _PROJECT_ROOT = Path(__file__).parent.parent
 _SPEC = _PROJECT_ROOT / "TaxOpsControlDesk.spec"
 _EXE = _PROJECT_ROOT / "dist" / "TaxOpsControlDesk" / "TaxOpsControlDesk.exe"
@@ -37,6 +39,7 @@ def build() -> None:
         print(f"ERROR: Spec file not found: {_SPEC}")
         sys.exit(1)
 
+    validate_build_environment()
     _check_pyinstaller()
 
     print(f"Building from: {_SPEC}")
