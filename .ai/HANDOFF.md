@@ -1,5 +1,13 @@
 # HANDOFF
 
+## 2026-10-12 0.33.0rc1 本地整合候選
+
+完整 Linux 矩陣固定 773efd4：132 檔、3219 passed／5 IPC 環境 failed／1 Windows-only skipped，raw branch coverage 90.65248785611134%。最後 87b49ac 加 4 行 layout 及封存 guard（2 新案例），9 檔 251 passed；其後僅文件。沒有把前一 SHA coverage 宣称為最後 tree 的新量測。已整合可靠性、schema/asset/Windows candidate gate、C 收件＋A 提醒；保留 v0.31 功能，版本 0.33.0rc1。README/CHANGELOG 與 `docs/reliability_latest_port.md` 為本輪入口。Windows 同 SHA 全套、乾淨離線 EXE、DPI 仍待驗；設定快取單選測試既有 GC exit -11 未解，勿宣稱全部穩定。未 push/tag/Release/merge。
+
+## 2026-10-12 接手起點
+
+本輪基底是 f02dc5d（包含已發布 v0.31 與其後 15 commits），本地分支 `fix/reliability-v032-integration-20261012`。不要使用 main 的舊版修復/README 草稿覆蓋新版。讀 `docs/reliability_latest_port.md` 的範圍與聚焦測試；尚無本輪 Windows EXE 或全套 coverage 結果。下列舊 EXE/計數是歷史紀錄。
+
 ## Latest Handoff Update (2026-08-08 late - v0.32.0 test build, UX rebuild spec, batch B1)
 
 接手起點：`feature/v030-annual-workbench`，HEAD `cdfe2e4`，已推送。工作樹乾淨。

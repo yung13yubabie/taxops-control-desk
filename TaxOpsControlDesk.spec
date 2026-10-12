@@ -19,6 +19,8 @@ a = Analysis(
         "PySide6.QtXml",
         "PySide6.QtPrintSupport",
         "PySide6.QtNetwork",
+        "PySide6.QtPdf",
+        "PySide6.QtPdfWidgets",
         # openpyxl internal modules referenced by string at runtime
         "openpyxl.cell._writer",
         "openpyxl.styles.stylesheet",
@@ -58,7 +60,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,          # No console window in production
     icon="assets/app_icon.ico",
     version="build_tools/windows_version_info.txt",
@@ -73,7 +75,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=["vcruntime140.dll", "python3*.dll"],
     name="TaxOpsControlDesk",
 )

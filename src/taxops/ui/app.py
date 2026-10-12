@@ -11,8 +11,9 @@ import os
 import sys
 
 from ..core.paths import AppPaths, ensure_paths, resolve_paths
+from ..core.resources import asset_path
 from ..db.connection import open_connection
-from ..db.migrate import apply_migrations
+from ..db.migrate import UnsupportedSchemaError, apply_migrations
 from ..services.container import ServiceContainer, build_container
 
 _WINDOWS_APP_ID = "TaxOps.ControlDesk.Desktop"
@@ -20,15 +21,9 @@ _WINDOWS_APP_ID = "TaxOps.ControlDesk.Desktop"
 
 def _set_app_icon(app: object) -> None:
     """Set the QApplication window icon so the taskbar pin shows the custom icon."""
-    import pathlib
-
     from PySide6.QtGui import QIcon
 
-    if getattr(sys, "frozen", False):
-        # PyInstaller one-dir: exe lives in dist/TaxOpsControlDesk/
-        icon_path = pathlib.Path(sys.executable).parent / "assets" / "app_icon.ico"
-    else:
-        icon_path = pathlib.Path(__file__).parent.parent.parent.parent / "assets" / "app_icon.ico"
+    icon_path = asset_path("app_icon.ico")
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))  # type: ignore[attr-defined]
 
@@ -53,8 +48,12 @@ def bootstrap(paths: AppPaths | None = None) -> ServiceContainer:
         paths = resolve_paths(is_dev=is_dev)
     ensure_paths(paths)
     conn = open_connection(paths.db_path)
-    apply_migrations(conn)
-    return build_container(paths, conn)
+    try:
+        apply_migrations(conn)
+        return build_container(paths, conn)
+    except Exception:
+        conn.close()
+        raise
 
 
 _SINGLE_INSTANCE_NAME = "TaxOpsControlDesk.SingleInstance"
@@ -74,7 +73,15 @@ def _activate_window(window) -> None:
 def run() -> int:
     """Entry point used by ``python -m taxops``."""
     _set_windows_app_user_model_id()
-    container = bootstrap()
+    try:
+        container = bootstrap()
+    except UnsupportedSchemaError as exc:
+        from PySide6.QtWidgets import QApplication, QMessageBox
+
+        app = QApplication.instance() or QApplication(sys.argv)
+        _set_app_icon(app)
+        QMessageBox.critical(None, "資料庫版本不相容", str(exc))
+        return 1
     try:
         # Local import so the test/CI process can import bootstrap without
         # requiring Qt to be importable.

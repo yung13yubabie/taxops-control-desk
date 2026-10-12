@@ -459,6 +459,7 @@ class SettingsPage(QWidget):
         worker.succeeded.connect(_on_succeeded)
         worker.errored.connect(_on_errored)
         worker.finished.connect(_on_thread_finished)
+        worker.finished.connect(progress.deleteLater)
         worker.finished.connect(worker.deleteLater)
         worker.start()
 
@@ -674,19 +675,12 @@ class SettingsPage(QWidget):
         def _do(container: ServiceContainer):
             try:
                 download_registry_zip(url, tmp_path)
-                result = container.tax_cache_importer.import_zip(tmp_path)
+                result = container.tax_cache_importer.import_zip(
+                    tmp_path, source_url=url, record_download=True
+                )
             finally:
                 if tmp_path.exists():
                     tmp_path.unlink(missing_ok=True)
-            container.audit.record(
-                action="tax_cache.download",
-                target_type="tax_cache",
-                detail={
-                    "source_url": url,
-                    "row_count": result.row_count,
-                    "cache_version": result.cache_version,
-                },
-            )
             return result
 
         self._run_async(
@@ -811,6 +805,13 @@ class SettingsPage(QWidget):
         info.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout.addWidget(info)
 
+        backup_scope = QLabel(
+            "完整備份包含資料庫、附件及工作紀錄圖片。\n"
+            "舊版 .sqlite 僅含資料庫，無法補回遺失的附件或圖片。"
+        )
+        backup_scope.setWordWrap(True)
+        layout.addWidget(backup_scope)
+
         btn_wrap = QWidget()
         btn_row = FlowLayout(btn_wrap, h_spacing=8, v_spacing=6)
 
@@ -839,22 +840,38 @@ class SettingsPage(QWidget):
         QMessageBox.information(
             self,
             "備份完成",
-            f"已備份至：\n{row.backup_path}\n\n檔案大小：{row.file_size:,} bytes",
+            f"已完整備份資料庫、附件及工作紀錄圖片至：\n{row.backup_path}"
+            f"\n\n檔案大小：{row.file_size:,} bytes" + self._backup_cleanup_notice(),
+        )
+
+    def _backup_cleanup_notice(self) -> str:
+        paths = self._container.backup.cleanup_warnings
+        if not paths:
+            return ""
+        return (
+            "\n\n操作已完成，但部分暫存檔案未能清理，可能繼續占用磁碟空間。"
+            "請保留復原紀錄，確認資料後再處理：\n" + "\n".join(map(str, paths))
         )
 
     def on_restore(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "選擇備份檔", "", "SQLite 備份 (*.sqlite)"
+            self, "選擇備份檔", "", "TaxOps 備份 (*.taxops.zip *.sqlite)"
         )
         if not path:
             return
 
+        scope_warning = (
+            "這是舊版資料庫快照，不包含附件或圖片；遺失的檔案不會被還原。\n"
+            if Path(path).suffix.lower() == ".sqlite" else
+            "將驗證並還原資料庫、附件及工作紀錄圖片。\n"
+        )
         reply1 = QMessageBox.question(
             self,
             "確認還原",
             f"確定要從以下備份還原？\n\n{path}\n\n"
-            "還原前會自動建立目前資料的備份快照。\n"
-            "還原後現有資料將被取代。",
+            f"{scope_warning}"
+            "還原前會建立資料庫回復快照，現有附件與圖片保留，不會刪除。\n"
+            "多次還原會增加磁碟用量。還原後資料庫內容將被取代。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -886,5 +903,5 @@ class SettingsPage(QWidget):
         QMessageBox.information(
             self,
             "還原完成",
-            "資料已還原。建議重新啟動應用程式以確保狀態一致。",
+            "資料已還原。建議重新啟動應用程式以確保狀態一致。" + self._backup_cleanup_notice(),
         )

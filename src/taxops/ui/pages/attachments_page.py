@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QAction, QDesktopServices, QPixmap
+from PySide6.QtCore import Qt, QUrl, Signal, QTimer
+from PySide6.QtGui import QAction, QDesktopServices, QPixmap, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -15,10 +15,14 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
+    QGridLayout,
     QLabel,
     QMenu,
     QMessageBox,
     QPlainTextEdit,
+    QLineEdit,
+    QTabBar,
+    QToolButton,
     QPushButton,
     QSplitter,
     QStackedWidget,
@@ -27,13 +31,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from ...i18n import error_message
-from ...security.image_guard import ImageGuardError, validate_image_file
-from ...services.attachments import AttachmentValidationError, UploadAttachmentInput
-from ...services.container import ServiceContainer
-from ..style import toolbar_icon
-from ..widgets.buttons import set_button_role
-from ..widgets.flow_layout import FlowLayout
 
 try:  # PySide6 ships QtPdf on the supported Windows build.
     from PySide6.QtPdf import QPdfDocument
@@ -41,6 +38,20 @@ try:  # PySide6 ships QtPdf on the supported Windows build.
 except Exception:  # pragma: no cover - fallback for minimal Qt installs.
     QPdfDocument = None  # type: ignore[assignment]
     QPdfView = None  # type: ignore[assignment]
+
+from ...i18n import error_message
+from ...security.image_guard import ImageGuardError, validate_image_file
+from ...services.attachments import AttachmentValidationError, UploadAttachmentInput
+from ...services.container import ServiceContainer
+from ..navigation import NavigationTarget
+from ..action_registry import PAGE_ENGAGEMENTS, PAGE_CLIENTS
+from .. import tokens
+from ..widgets.buttons import make_button, set_button_role
+from ..widgets.page_shell import PageHeader, ActionBar, build_page_layout
+from ..widgets.inspector import Inspector
+from ..widgets.empty_state import EmptyState
+from ..dialogs.edit_client_dialog import EditClientDialog
+from ..widgets.today_work_panel import TodayWorkPanel, all_engagements
 
 _log = logging.getLogger(__name__)
 
@@ -54,10 +65,10 @@ _HEADERS = {
     "extension": "副檔名",
     "file_size": "大小",
     "status": "狀態",
-    "uploaded_at": "上傳時間",
+    "uploaded_at": "加入時間",
 }
 _STATUS_LABELS = {
-    "uploaded": "已上傳",
+    "uploaded": "待核對",
     "classified": "已分類",
     "needs_review": "待檢查",
     "accepted": "已驗收",
@@ -114,115 +125,233 @@ class _AttachmentInfoDialog(QDialog):
 
 
 class AttachmentsPage(QWidget):
-    def __init__(
-        self, container: ServiceContainer, parent: QWidget | None = None
-    ) -> None:
+    navigate_requested = Signal(object)
+
+    def __init__(self, container: ServiceContainer, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._container = container
         self._attachments: list = []
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(24, 20, 24, 20)
-        outer.setSpacing(16)
-
-        title = QLabel("附件管理")
-        title.setObjectName("PageTitle")
-        outer.addWidget(title)
-
-        # Filter row
-        filter_row = QHBoxLayout()
-        filter_row.setSpacing(8)
-        filter_row.addWidget(QLabel("案件："))
-        self._eng_combo = QComboBox()
-        self._eng_combo.setMinimumWidth(250)
-        filter_row.addWidget(self._eng_combo)
-        filter_row.addStretch()
-        outer.addLayout(filter_row)
-
-        # Action buttons
-        self._toolbar_widget = QWidget()
-        self._toolbar_layout = FlowLayout(
-            self._toolbar_widget, h_spacing=8, v_spacing=6
-        )
-
-        self._upload_btn = QPushButton("新增附件")
-        set_button_role(self._upload_btn, "primary")
-        self._upload_btn.setIcon(toolbar_icon("new"))
+        self._engagement_labels: dict[int, str] = {}
+        self._owner_labels: dict[int, str] = {}
+        self._load_error = False
+        self._context_error = False
+        self._review_mode = False
+        self._page = 0
+        self._page_size = 50
+        self._today_dialog: QDialog | None = None
+        self.setObjectName("DocumentWorkbench")
+        self._header = PageHeader("收件核對")
+        outer = build_page_layout(self._header, dense=True)
+        self.setLayout(outer)
+        self._today_btn = make_button("提醒載入中", role="secondary")
+        self._today_btn.setAccessibleName("待辦與索件提醒")
+        self._today_btn.clicked.connect(self._show_today_work)
+        self._header.add_action(self._today_btn)
+        self._upload_btn = make_button("新增附件", role="primary", icon_role="new")
         self._upload_btn.clicked.connect(self._on_upload)
-        self._toolbar_layout.addWidget(self._upload_btn)
+        self._header.add_action(self._upload_btn)
 
-        self._accept_btn = QPushButton("標記已驗收")
-        self._accept_btn.setIcon(toolbar_icon("complete"))
-        self._accept_btn.setEnabled(False)
-        self._accept_btn.clicked.connect(self._on_accept)
-        self._toolbar_layout.addWidget(self._accept_btn)
-
-        self._reject_btn = QPushButton("標記退回")
-        self._reject_btn.setIcon(toolbar_icon("delete"))
-        self._reject_btn.setEnabled(False)
-        self._reject_btn.clicked.connect(self._on_reject)
-        self._toolbar_layout.addWidget(self._reject_btn)
-
-        self._delete_btn = QPushButton("刪除附件")
-        self._delete_btn.setIcon(toolbar_icon("delete"))
-        self._delete_btn.setEnabled(False)
-        self._delete_btn.clicked.connect(self._on_delete)
-        self._toolbar_layout.addWidget(self._delete_btn)
-
-        self._info_btn = QPushButton("檔案資訊")
-        self._info_btn.setIcon(toolbar_icon("trial"))
-        self._info_btn.setEnabled(False)
-        self._info_btn.clicked.connect(self._on_show_info)
-        self._toolbar_layout.addWidget(self._info_btn)
-
-        self._open_btn = QPushButton("用系統程式開啟")
-        self._open_btn.setIcon(toolbar_icon("export"))
-        self._open_btn.setEnabled(False)
-        self._open_btn.clicked.connect(self._on_open_system)
-        self._toolbar_layout.addWidget(self._open_btn)
-
-        self._location_btn = QPushButton("檔案位置")
-        self._location_btn.setIcon(toolbar_icon("trial"))
-        self._location_btn.setEnabled(False)
-        self._location_btn.setToolTip("左鍵：開啟資料夾　右鍵：複製 file:// URL")
-        self._location_btn.clicked.connect(self._on_open_location)
-        self._location_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._location_btn.customContextMenuRequested.connect(
-            self._show_location_menu
-        )
-        self._toolbar_layout.addWidget(self._location_btn)
+        self._toolbar_widget = ActionBar()
+        self._toolbar_layout = self._toolbar_widget.layout()
+        filters = QWidget()
+        filter_row = QHBoxLayout(filters)
+        filter_row.setContentsMargins(0, 0, 0, 0)
+        filter_row.setSpacing(tokens.SPACING_SM)
+        self._owner_kind = QComboBox()
+        self._owner_kind.addItem("全部來源", "all")
+        self._owner_kind.addItem("案件附件", "engagement")
+        self._owner_kind.addItem("租約附件", "lease")
+        self._owner_kind.setAccessibleName("附件來源範圍")
+        filter_row.addWidget(self._owner_kind)
+        self._eng_combo = QComboBox()
+        self._eng_combo.setMinimumContentsLength(12)
+        self._eng_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self._eng_combo.setAccessibleName("案件範圍，租約附件不屬於案件")
+        filter_row.addWidget(self._eng_combo, 1)
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("搜尋檔名、客戶、案件或租約")
+        self._search.setAccessibleName("搜尋收件列表")
+        self._search.setClearButtonEnabled(True)
+        self._search.setMaxLength(150)
+        self._search.setMinimumWidth(245)
+        filter_row.addWidget(self._search, 2)
+        self._toolbar_widget.add_leading_widget(filters, stretch=1)
+        self._refresh_btn = make_button("重新整理", role="quiet", icon_role="refresh")
+        self._refresh_btn.clicked.connect(self.refresh_context)
+        self._toolbar_widget.add_tool_action(self._refresh_btn)
+        self._preview_btn = make_button("查看附件", role="secondary")
+        self._preview_btn.clicked.connect(self._toggle_review)
+        self._toolbar_widget.add_tool_action(self._preview_btn, role="secondary")
         outer.addWidget(self._toolbar_widget)
 
-        # Table
+        self._status_tabs = QTabBar()
+        self._status_tabs.setObjectName("ReceiptStages")
+        self._status_tabs.setExpanding(False)
+        self._status_tabs.setAccessibleName("附件狀態篩選")
+        for label, key in (("待核對", "pending"), ("已驗收", "accepted"), ("已退回", "rejected"), ("全部有效附件", "all")):
+            index = self._status_tabs.addTab(label)
+            self._status_tabs.setTabData(index, key)
+        outer.addWidget(self._status_tabs)
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.setChildrenCollapsible(False)
+        self._today_panel = TodayWorkPanel(container)
+        self._today_panel.setMinimumWidth(190)
+        self._today_panel.setMaximumWidth(240)
+        self._today_panel.navigate_requested.connect(self.navigate_requested)
+        self._today_panel.summary_changed.connect(self._today_btn.setText)
+        self._splitter.addWidget(self._today_panel)
+
+        self._table_panel = QWidget()
+        table_layout = QVBoxLayout(self._table_panel)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+        table_layout.setSpacing(tokens.SPACING_SM)
         self._table = QTableWidget(0, len(_COLUMNS))
         self._table.setHorizontalHeaderLabels([_HEADERS[c] for c in _COLUMNS])
-        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._table.verticalHeader().hide()
+        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._table.setColumnWidth(4, 100)
+        self._table.setColumnWidth(5, 110)
+        for column in (0, 2, 3):
+            self._table.setColumnHidden(column, True)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self._table.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self._table.setAccessibleName("收件列表，選取附件以查看狀態、期限及下一步")
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
+        self._table.itemActivated.connect(lambda _item: self._show_review())
+        table_layout.addWidget(self._table, 1)
+        self._empty_state = EmptyState("尚無附件", detail="選擇案件後新增；租約附件可從客戶管理加入。", action_text="開啟客戶管理", action_icon="nav-clients")
+        self._empty_label = self._empty_state.title_label
+        self._empty_state.action_button.clicked.connect(self._open_clients)
+        table_layout.addWidget(self._empty_state, 1)
+        self._error_label = QLabel("無法載入收件。請重新整理，或重新選擇有效案件。")
+        self._error_label.setObjectName("ReceiptError")
+        self._error_label.setWordWrap(True)
+        table_layout.addWidget(self._error_label, 1)
+        self._error_label.hide()
+        pagination = QHBoxLayout()
+        self._result_count = QLabel()
+        self._result_count.setObjectName("PageSubtitle")
+        pagination.addWidget(self._result_count, 1)
+        self._previous_btn = make_button("上一頁", role="quiet")
+        self._next_btn = make_button("下一頁", role="quiet")
+        self._previous_btn.clicked.connect(lambda: self._change_page(-1))
+        self._next_btn.clicked.connect(lambda: self._change_page(1))
+        pagination.addWidget(self._previous_btn)
+        pagination.addWidget(self._next_btn)
+        table_layout.addLayout(pagination)
+        self._splitter.addWidget(self._table_panel)
 
-        # Preview panel (right side of splitter)
-        preview_panel = self._build_preview_panel()
-
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self._table)
-        splitter.addWidget(preview_panel)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
-        outer.addWidget(splitter, 1)
-
-        self._eng_combo.currentIndexChanged.connect(self._load_attachments)
-        self._load_engagements()
+        self._review_panel = QWidget()
+        review_layout = QVBoxLayout(self._review_panel)
+        review_layout.setContentsMargins(0, 0, 0, 0)
+        review_layout.setSpacing(tokens.SPACING_SM)
+        self._inspector = Inspector(placeholder="選取附件，查看所屬資料與核對狀態。")
+        self._inspector.setMinimumWidth(285)
+        self._inspector.layout().setContentsMargins(tokens.SPACING_MD, tokens.SPACING_MD, tokens.SPACING_MD, tokens.SPACING_MD)
+        self._inspector.layout().setSpacing(tokens.SPACING_SM)
+        self._inspector.title_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._inspector.subtitle_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._preview_body = self._build_preview_panel()
+        review_layout.addWidget(self._inspector, 1)
+        self._action_box = QWidget()
+        self._review_actions = QGridLayout(self._action_box)
+        self._review_actions.setContentsMargins(0, 0, 0, 0)
+        self._review_actions.setSpacing(tokens.SPACING_SM)
+        self._manual_btn = make_button("開啟索件核對", role="secondary")
+        self._manual_btn.clicked.connect(self._on_manual_review)
+        self._accept_btn = make_button("標記已驗收", role="secondary")
+        self._accept_btn.clicked.connect(self._on_accept)
+        self._reject_btn = make_button("標記退回", role="secondary")
+        self._reject_btn.clicked.connect(self._on_reject)
+        self._more_btn = QToolButton()
+        self._more_btn.setText("更多")
+        self._more_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._more_btn.setAccessibleName("更多附件操作，資訊、開啟、位置與刪除")
+        self._file_menu = QMenu(self._more_btn)
+        # Preserve actual buttons for existing callers; menu and code share a path.
+        self._file_actions = []
+        for name, label, handler, role in (
+            ("_info_btn", "檔案資訊", self._on_show_info, "quiet"),
+            ("_open_btn", "用系統程式開啟", self._on_open_system, "quiet"),
+            ("_location_btn", "檔案位置", self._on_open_location, "quiet"),
+            ("_delete_btn", "刪除附件", self._on_delete, "danger"),
+        ):
+            button = make_button(label, role=role, parent=self)
+            button.hide()
+            button.clicked.connect(handler)
+            setattr(self, name, button)
+            action = self._file_menu.addAction(label)
+            action.triggered.connect(button.click)
+            self._file_actions.append(action)
+        self._location_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._location_btn.customContextMenuRequested.connect(self._show_location_menu)
+        self._copy_url_action = self._file_menu.addAction("複製 file:// URL", self._on_copy_selected_url)
+        self._more_btn.setMenu(self._file_menu)
+        self._review_actions.addWidget(self._manual_btn, 0, 0, 1, 3)
+        self._review_actions.addWidget(self._accept_btn, 1, 0)
+        self._review_actions.addWidget(self._reject_btn, 1, 1)
+        self._review_actions.addWidget(self._more_btn, 1, 2)
+        review_layout.addWidget(self._action_box)
+        self._splitter.addWidget(self._review_panel)
+        self._splitter.setStretchFactor(0, 0)
+        self._splitter.setStretchFactor(1, 3)
+        self._splitter.setStretchFactor(2, 2)
+        self._splitter.setSizes([210, 620, 350])
+        outer.addWidget(self._splitter, 1)
+        self._feedback = QLabel()
+        self._feedback.setTextFormat(Qt.TextFormat.PlainText)
+        self._feedback.setWordWrap(True)
+        self._feedback.setObjectName("ReceiptFeedback")
+        self._feedback.hide()
+        outer.addWidget(self._feedback)
+        self._eng_combo.currentIndexChanged.connect(self._scope_changed)
+        self._owner_kind.currentIndexChanged.connect(self._owner_kind_changed)
+        self._search.textChanged.connect(self._filter_changed)
+        self._status_tabs.currentChanged.connect(self._filter_changed)
+        self._search_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
+        self._search_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._search_shortcut.activated.connect(self._search.setFocus)
+        QWidget.setTabOrder(self._today_btn, self._upload_btn)
+        QWidget.setTabOrder(self._upload_btn, self._owner_kind)
+        QWidget.setTabOrder(self._owner_kind, self._eng_combo)
+        QWidget.setTabOrder(self._eng_combo, self._search)
+        QWidget.setTabOrder(self._search, self._refresh_btn)
+        QWidget.setTabOrder(self._refresh_btn, self._status_tabs)
+        QWidget.setTabOrder(self._status_tabs, self._table)
+        self.refresh_context()
 
     def _build_preview_panel(self) -> QWidget:
         panel = QWidget()
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(8, 0, 0, 0)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        header = QLabel("預覽")
-        header.setStyleSheet("font-weight: bold;")
-        layout.addWidget(header)
+        self._preview_title = self._inspector.title_label
+        self._association_label = QLabel()
+        self._association_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._association_label.setWordWrap(True)
+        self._association_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        layout.addWidget(self._association_label)
+        self._facts_label = QLabel()
+        self._facts_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._facts_label.setWordWrap(True)
+        self._facts_label.setObjectName("ReceiptFacts")
+        layout.addWidget(self._facts_label)
+        self._context_warning = QLabel()
+        self._context_warning.setTextFormat(Qt.TextFormat.PlainText)
+        self._context_warning.setWordWrap(True)
+        self._context_warning.setObjectName("ReceiptError")
+        self._context_warning.hide()
+        layout.addWidget(self._context_warning)
+        self._help_btn = make_button("核對說明", role="link")
+        self._help_btn.setCheckable(True)
+        self._help_text = QLabel("附件只連結案件或索件批次，尚未連結到個別索件項目。\n驗收附件不會自動完成索件；請逐項人工確認。租約附件只歸屬租約。")
+        self._help_text.setWordWrap(True)
+        self._help_text.hide()
+        self._help_btn.toggled.connect(self._toggle_help)
 
         self._preview_stack = QStackedWidget()
 
@@ -232,7 +361,7 @@ class AttachmentsPage(QWidget):
 
         self._preview_image = QLabel()
         self._preview_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._preview_image.setMinimumSize(160, 160)
+        self._preview_image.setMinimumSize(80, 80)
         self._preview_stack.addWidget(self._preview_image)  # index 1
 
         self._preview_text = QPlainTextEdit()
@@ -257,76 +386,304 @@ class AttachmentsPage(QWidget):
             self._preview_pdf = None
 
         self._preview_stack.setCurrentIndex(_PREVIEW_NONE)
+        self._preview_stack.setMinimumHeight(100)
         layout.addWidget(self._preview_stack, 1)
+        layout.addWidget(self._help_btn)
+        layout.addWidget(self._help_text)
         return panel
 
-    def clear_filter(self) -> None:
-        # 重新載入案件清單（更新因外部操作而異動的選項）
+    def open_context(self, engagement_id: int, attachment_id: int | None = None) -> None:
+        if self._container.engagements.get_engagement(engagement_id) is None:
+            raise ValueError("案件已刪除或所屬客戶已停用。")
+        rows = self._container.attachments.list_by_engagement(engagement_id)
+        if attachment_id is not None and not any(row.id == attachment_id for row in rows):
+            raise ValueError("附件已刪除或不屬於這個案件。")
+        self._owner_kind.setCurrentIndex(0)
+        self._search.clear()
+        self._status_tabs.setCurrentIndex(3)
         self._load_engagements()
-        # 強制重置回「全部案件」（index 0），_load_engagements 會保留原選擇
-        self._eng_combo.blockSignals(True)
-        self._eng_combo.setCurrentIndex(0)
-        self._eng_combo.blockSignals(False)
+        index = self._eng_combo.findData(engagement_id)
+        if index < 0:
+            raise ValueError("找不到這個案件。")
+        self._eng_combo.setCurrentIndex(index)
         self._load_attachments()
+        if attachment_id is not None:
+            self._select_attachment_id(attachment_id)
+
+    def clear_filter(self) -> None:
+        self._owner_kind.setCurrentIndex(0)
+        self._page = 0
+        self._search.clear()
+        self._status_tabs.setCurrentIndex(0)
+        self._eng_combo.setCurrentIndex(0)
+        self.refresh_context()
 
     def refresh_context(self) -> None:
-        """Reload engagement choices when the page becomes active."""
+        self._feedback.hide()
         self._load_engagements()
+        self._today_panel.refresh()
 
     def _load_engagements(self) -> None:
         selected_id = self._eng_combo.currentData()
         self._eng_combo.blockSignals(True)
         self._eng_combo.clear()
-        self._eng_combo.addItem("全部案件", _ALL)
+        self._eng_combo.addItem("所有案件／租約", _ALL)
+        self._engagement_labels = {}
+        self._context_error = False
         try:
-            for eng in self._container.engagements.list_all():
-                self._eng_combo.addItem(eng.engagement_name, eng.id)
+            clients = {}
+            for eng in all_engagements(self._container):
+                if eng.client_id not in clients:
+                    client = self._container.clients.get_client(eng.client_id)
+                    clients[eng.client_id] = f"{client.client_code} · {client.client_name}" if client is not None else "客戶資料不可用"
+                label = f"{clients[eng.client_id]} / {eng.engagement_name}"
+                self._engagement_labels[eng.id] = label
+                self._eng_combo.addItem(label, eng.id)
+                self._eng_combo.setItemData(self._eng_combo.count() - 1, label, Qt.ItemDataRole.ToolTipRole)
         except Exception as exc:
-            self._container.system_log.warn(
-                "attachments: failed to load engagements",
-                detail={"exc": type(exc).__name__, "msg": str(exc)},
-            )
-        if selected_id is not None:
-            for i in range(self._eng_combo.count()):
-                if self._eng_combo.itemData(i) == selected_id:
-                    self._eng_combo.setCurrentIndex(i)
-                    break
+            self._context_error = True
+            self._container.system_log.warn("attachments: failed to load engagements", detail={"exc": type(exc).__name__, "msg": str(exc)})
+        index = self._eng_combo.findData(selected_id)
+        if selected_id not in (None, _ALL) and index < 0:
+            # A removed scope must not silently broaden to another customer's files.
+            self._eng_combo.addItem("原案件已失效，請重新選擇範圍", selected_id)
+            index = self._eng_combo.count() - 1
+        self._eng_combo.setCurrentIndex(max(index, 0))
         self._eng_combo.blockSignals(False)
         self._load_attachments()
+
+    def _open_clients(self) -> None:
+        self.navigate_requested.emit(NavigationTarget(PAGE_CLIENTS))
+
+    def _scope_changed(self) -> None:
+        self._page = 0
+        self._load_attachments()
+
+    def _owner_kind_changed(self) -> None:
+        lease_only = self._owner_kind.currentData() == "lease"
+        if lease_only:
+            self._eng_combo.blockSignals(True)
+            self._eng_combo.setCurrentIndex(0)
+            self._eng_combo.blockSignals(False)
+        self._eng_combo.setEnabled(not lease_only)
+        self._page = 0
+        self._load_attachments()
+
+    def _filter_changed(self, *_args) -> None:
+        self._page = 0
+        self._render_table()
+
+    def _change_page(self, delta: int) -> None:
+        self._page = max(0, self._page + delta)
+        self._render_table()
 
     def _load_attachments(self) -> None:
         eng_id = self._eng_combo.currentData()
         self._attachments = []
+        self._owner_labels = {}
+        self._load_error = self._context_error or (eng_id != _ALL and eng_id not in self._engagement_labels)
         try:
-            if eng_id == _ALL:
-                self._attachments = self._container.attachments.list_all()
-            elif eng_id:
-                self._attachments = self._container.attachments.list_by_engagement(eng_id)
+            if not self._load_error:
+                # Existing API returns the complete active ownership set. The UI
+                # presents bounded pages and searches this complete local result.
+                rows = self._container.attachments.list_all() if eng_id == _ALL else self._container.attachments.list_by_engagement(eng_id)
+                clients = {}
+                leases = {}
+                for att in rows:
+                    if att.engagement_id is not None:
+                        self._owner_labels[att.id] = self._engagement_labels.get(att.engagement_id, "案件資料已失效")
+                    elif att.lease_id is not None and att.client_id is not None:
+                        if att.client_id not in clients:
+                            client = self._container.clients.get_client(att.client_id)
+                            clients[att.client_id] = f"{client.client_code} · {client.client_name}" if client is not None else "客戶資料已失效"
+                        if att.lease_id not in leases:
+                            lease = self._container.client_leases.get_lease(att.lease_id)
+                            leases[att.lease_id] = lease.lease_name if lease is not None else "租約已失效"
+                        self._owner_labels[att.id] = f"{clients[att.client_id]} / 租約：{leases[att.lease_id]}"
+                    else:
+                        self._owner_labels[att.id] = "附件歸屬不完整"
+                kind = self._owner_kind.currentData()
+                self._attachments = [att for att in rows if kind == "all" or (kind == "lease" and att.lease_id is not None) or (kind == "engagement" and att.engagement_id is not None)]
         except Exception as exc:
-            self._container.system_log.warn(
-                "attachments: failed to load attachments",
-                detail={"exc": type(exc).__name__, "msg": str(exc)},
-            )
+            self._load_error = True
+            self._attachments = []
+            self._container.system_log.warn("attachments: failed to load attachments", detail={"exc": type(exc).__name__, "msg": str(exc)})
         self._render_table()
-        self._on_selection_changed()
 
-    def _render_table(self) -> None:
+    def _filtered_attachments(self) -> list:
+        stage = self._status_tabs.tabData(self._status_tabs.currentIndex())
+        query = self._search.text().strip().casefold()
+        return [att for att in self._attachments if self._in_stage(att, stage) and query in f"{att.original_filename} {self._owner_labels.get(att.id, '')}".casefold()]
+
+    @staticmethod
+    def _in_stage(att, key) -> bool:
+        return key == "all" or (att.status in {"uploaded", "classified", "needs_review"} if key == "pending" else att.status == key)
+
+    def _select_attachment_id(self, attachment_id: int) -> None:
+        rows = self._filtered_attachments()
+        position = next((index for index, att in enumerate(rows) if att.id == attachment_id), None)
+        if position is None:
+            raise ValueError("附件已失效或不在目前範圍。")
+        self._page = position // self._page_size
+        self._render_table()
+        self._table.selectRow(position % self._page_size)
+
+    def _render_table(self, *_args) -> None:
+        old_item = self._table.item(self._table.currentRow(), 0)
+        old_id = old_item.text() if old_item else None
+        self._status_tabs.blockSignals(True)
+        for index, label in enumerate(("待核對", "已驗收", "已退回", "全部有效附件")):
+            key = self._status_tabs.tabData(index)
+            count = sum(self._in_stage(att, key) for att in self._attachments)
+            self._status_tabs.setTabText(index, f"{label} {count}")
+        self._status_tabs.blockSignals(False)
+        filtered = self._filtered_attachments()
+        pages = max(1, (len(filtered) + self._page_size - 1) // self._page_size)
+        self._page = min(self._page, pages - 1)
+        visible = filtered[self._page * self._page_size:(self._page + 1) * self._page_size]
         self._table.blockSignals(True)
         self._table.setRowCount(0)
-        for att in self._attachments:
+        for att in visible:
             row = self._table.rowCount()
             self._table.insertRow(row)
+            context = self._owner_labels.get(att.id, "附件歸屬不完整")
             vals = {
-                "id": str(att.id),
-                "original_filename": att.original_filename,
-                "extension": att.extension,
-                "file_size": f"{att.file_size / 1024:.1f} KB",
-                "status": _STATUS_LABELS.get(att.status, att.status),
-                "uploaded_at": att.uploaded_at,
+                "id": str(att.id), "original_filename": f"{att.original_filename}\n{context}",
+                "extension": att.extension, "file_size": f"{att.file_size / 1024:.1f} KB",
+                "status": _STATUS_LABELS.get(att.status, att.status), "uploaded_at": att.uploaded_at[:10],
             }
             for col, key in enumerate(_COLUMNS):
-                self._table.setItem(row, col, QTableWidgetItem(vals[key]))
+                item = QTableWidgetItem(vals[key])
+                item.setToolTip(vals[key])
+                self._table.setItem(row, col, item)
+            self._table.setRowHeight(row, tokens.RECEIPT_ROW_HEIGHT)
+            if str(att.id) == old_id:
+                self._table.selectRow(row)
         self._table.blockSignals(False)
+        count = self._table.rowCount()
+        self._table.setVisible(bool(count) and not self._load_error)
+        self._empty_state.setVisible(not count and not self._load_error)
+        self._empty_label.setText("沒有符合條件的附件" if self._attachments else "尚無附件")
+        self._empty_state.detail_label.setText("可清除搜尋或切換狀態。" if self._attachments else "選擇案件後新增；租約附件可從客戶管理加入。")
+        self._empty_state.action_button.setVisible(not self._attachments)
+        self._error_label.setVisible(self._load_error)
+        self._result_count.setText("收件載入失敗" if self._load_error else f"{len(filtered)} 份附件 · 第 {self._page + 1} / {pages} 頁")
+        self._previous_btn.setEnabled(self._page > 0 and not self._load_error)
+        self._next_btn.setEnabled(self._page + 1 < pages and not self._load_error)
+        self._on_selection_changed()
+
+    def resizeEvent(self, event) -> None:
+        if event is not None:
+            super().resizeEvent(event)
+        if not hasattr(self, "_review_panel"):
+            return
+        compact = self.width() < 1000
+        self._today_panel.setVisible(self.width() >= 1180)
+        self._preview_btn.setVisible(compact)
+        self._association_label.setVisible(not compact)
+        self._status_tabs.setVisible(not (compact and self._review_mode))
+        controls = (self._manual_btn, self._accept_btn, self._reject_btn, self._more_btn)
+        for control in controls:
+            self._review_actions.removeWidget(control)
+        if compact:
+            for column, control in enumerate(controls):
+                self._review_actions.addWidget(control, 0, column)
+        else:
+            self._review_actions.addWidget(self._manual_btn, 0, 0, 1, 3)
+            self._review_actions.addWidget(self._accept_btn, 1, 0)
+            self._review_actions.addWidget(self._reject_btn, 1, 1)
+            self._review_actions.addWidget(self._more_btn, 1, 2)
+        self._table_panel.setVisible(not compact or not self._review_mode)
+        self._review_panel.setVisible(not compact or self._review_mode)
+        self._preview_btn.setText("返回附件列表" if compact and self._review_mode else "附件預覽")
+
+    def _toggle_review(self) -> None:
+        self._review_mode = not self._review_mode
+        self.resizeEvent(None)
+        if not self._review_mode:
+            self._table.setFocus()
+
+    def _show_review(self) -> None:
+        if self._selected_attachment() is None:
+            return
+        self._review_mode = True
+        self.resizeEvent(None)
+        self._manual_btn.setFocus()
+
+    def _show_today_work(self) -> None:
+        if self._today_panel.isVisible():
+            self._today_panel._list.setFocus()
+            return
+        if self._today_dialog is not None:
+            self._today_dialog.raise_()
+            self._today_dialog.activateWindow()
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("待辦與索件提醒")
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.resize(500, 460)
+        layout = QVBoxLayout(dialog)
+        panel = TodayWorkPanel(self._container)
+        layout.addWidget(panel)
+        close = QPushButton("返回收件核對")
+        close.clicked.connect(dialog.reject)
+        layout.addWidget(close)
+        def navigate(target):
+            dialog.accept()
+            QTimer.singleShot(0, lambda: self.navigate_requested.emit(target))
+        panel.navigate_requested.connect(navigate)
+        dialog.finished.connect(lambda _result: setattr(self, "_today_dialog", None))
+        self._today_dialog = dialog
+        panel.refresh()
+        dialog.open()
+
+    def _toggle_help(self, checked: bool) -> None:
+        self._help_text.setVisible(checked)
+
+    def _on_manual_review(self) -> None:
+        att = self._selected_attachment()
+        if att is None:
+            return
+        try:
+            current = self._container.attachments.get(att.id)
+            if current is None or current.status == "archived" or current.engagement_id != att.engagement_id or current.lease_id != att.lease_id or current.client_id != att.client_id or current.request_id != att.request_id:
+                raise ValueError("附件已失效或歸屬已變更，請重新整理收件。")
+            if att.engagement_id is None:
+                self._open_lease_owner(att)
+                return
+            eng = self._container.engagements.get_engagement(att.engagement_id)
+            if eng is None:
+                raise ValueError("案件已刪除或所屬客戶已停用。")
+            if att.request_id is not None:
+                request = self._container.doc_requests.get_request(att.request_id)
+                if request is None or request.engagement_id != eng.id:
+                    raise ValueError("原索件批次已失效，未自動改連結。")
+            self.navigate_requested.emit(NavigationTarget(PAGE_ENGAGEMENTS, engagement_id=eng.id, request_id=att.request_id))
+        except ValueError as exc:
+            QMessageBox.warning(self, "無法開啟核對", str(exc))
+        except Exception as exc:
+            self._container.system_log.warn("attachment review navigation failed", detail={"exc": type(exc).__name__})
+            QMessageBox.warning(self, "無法開啟核對", "讀取核對資料失敗，請重新整理後再試。")
+
+    def _open_lease_owner(self, att) -> None:
+        lease = self._container.client_leases.get_lease(att.lease_id)
+        client = self._container.clients.get_client(att.client_id)
+        if lease is None or client is None or lease.client_id != client.id:
+            raise ValueError("租約或客戶已失效，未開啟其他客戶資料。")
+        dialog = EditClientDialog(self._container, client, parent=self)
+        dialog.setWindowTitle(f"租約管理：{client.client_name} / {lease.lease_name}")
+        for row, entry in enumerate(dialog.leases_editor._entries):
+            if entry.lease_id == lease.id:
+                dialog.leases_editor.table.selectRow(row)
+                break
+        QTimer.singleShot(0, lambda: dialog.scroll_area.ensureWidgetVisible(dialog.leases_editor))
+        dialog.exec()
+        self.refresh_context()
+
+    def _on_copy_selected_url(self) -> None:
+        att = self._selected_attachment()
+        if att is not None:
+            self._copy_file_url(att)
 
     def _selected_attachment(self):
         rows = self._table.selectedItems()
@@ -368,15 +725,53 @@ class AttachmentsPage(QWidget):
         return QUrl.fromLocalFile(str(path)).toString()
 
     def _on_selection_changed(self) -> None:
-        selected_attachment = self._selected_attachment()
-        has = selected_attachment is not None
-        self._accept_btn.setEnabled(has)
-        self._reject_btn.setEnabled(has)
-        self._delete_btn.setEnabled(has)
-        self._info_btn.setEnabled(has)
-        self._open_btn.setEnabled(has)
-        self._location_btn.setEnabled(has)
-        self._update_preview(selected_attachment)
+        att = self._selected_attachment()
+        has = att is not None
+        self._action_box.setVisible(has)
+        set_button_role(self._upload_btn, "secondary" if has else "primary")
+        set_button_role(self._manual_btn, "primary" if has else "secondary")
+        self._accept_btn.setEnabled(has and att.status != "accepted")
+        self._reject_btn.setEnabled(has and att.status != "rejected")
+        for control in (self._manual_btn, self._delete_btn, self._info_btn, self._open_btn, self._location_btn, self._copy_url_action, self._more_btn):
+            control.setEnabled(has)
+        for action in self._file_actions:
+            action.setEnabled(has)
+        self._preview_btn.setEnabled(has or self._review_mode)
+        if not has:
+            self._inspector.clear()
+            self._update_preview(None)
+            return
+        self._inspector.begin_update()
+        self._inspector.set_title(att.original_filename, subtitle=self._owner_labels.get(att.id, "附件歸屬不完整"))
+        self._inspector.add_widget(self._preview_body)
+        self._help_btn.setChecked(False)
+        self._context_warning.hide()
+        status = _STATUS_LABELS.get(att.status, att.status)
+        self._manual_btn.setText("開啟索件核對" if att.engagement_id is not None else "管理此客戶租約")
+        try:
+            if att.engagement_id is None:
+                lease = self._container.client_leases.get_lease(att.lease_id) if att.lease_id is not None else None
+                if lease is None or lease.client_id != att.client_id:
+                    raise ValueError("租約已失效或附件歸屬不一致，請確認資料。")
+                self._association_label.setText("租約附件")
+                lease_state = {"active": "有效", "expired": "已到期", "terminated": "已終止"}.get(lease.status, lease.status)
+                self._facts_label.setText(f"附件：{status} · 租約：{lease_state}\n租約迄日：{lease.end_date or '未設定'}\n下一步：查看租約與附件，不涉及索件清單。")
+            else:
+                request = None
+                if att.request_id is not None:
+                    request = self._container.doc_requests.get_request(att.request_id)
+                    if request is None or request.engagement_id != att.engagement_id:
+                        raise ValueError("原索件批次已失效，未自動改連結。")
+                self._association_label.setText(f"索件批次：{request.request_name}" if request else "尚未指定索件批次")
+                summary = self._container.doc_requests.summary_by_engagement(att.engagement_id)
+                due = request.due_date if request else None
+                self._facts_label.setText(f"{status} · 索件期限 {due or '未設定'}\n全案缺件 {summary.missing} · 不完整 {summary.incomplete} · 待確認 {summary.pending_confirm}")
+        except Exception as exc:
+            self._facts_label.setText(f"附件：{status}")
+            self._context_warning.setText(str(exc) if isinstance(exc, ValueError) else "核對摘要讀取失敗。請重新整理，未顯示舊摘要。")
+            self._context_warning.show()
+            self._manual_btn.setEnabled(False)
+        self._update_preview(att)
 
     def _update_preview(self, att) -> None:
         if att is None:
@@ -450,34 +845,32 @@ class AttachmentsPage(QWidget):
 
     def _on_upload(self) -> None:
         eng_id = self._eng_combo.currentData()
-        if not eng_id or eng_id == _ALL:
-            QMessageBox.warning(self, "提示", "請先選擇案件")
+        selected = self._selected_attachment()
+        lease_target = selected is not None and selected.engagement_id is None and selected.lease_id is not None
+        if not lease_target and (not eng_id or eng_id == _ALL):
+            QMessageBox.warning(self, "選擇附件歸屬", "請先選擇案件，或選取要追加檔案的租約附件。新租約請由「資料與工具 → 客戶管理 → 租約管理」建立。")
             return
-
         path, _ = QFileDialog.getOpenFileName(self, "選擇附件", "", _FILE_FILTER)
         if not path:
             return
-
         try:
-            self._container.attachments.upload_attachment(
-                UploadAttachmentInput(
-                    engagement_id=eng_id,
-                    request_id=None,
-                    source_path=Path(path),
-                )
-            )
+            if lease_target:
+                self._container.attachments.upload_lease_attachment(selected.client_id, selected.lease_id, Path(path))
+            else:
+                self._container.attachments.upload_attachment(UploadAttachmentInput(engagement_id=eng_id, request_id=None, source_path=Path(path)))
         except AttachmentValidationError as err:
             QMessageBox.critical(self, "上傳失敗", error_message(err.code))
             return
         except Exception:
             QMessageBox.critical(self, "上傳失敗", error_message("attachment.upload.failed"))
             return
-
         self._load_attachments()
+        self._feedback.setText("附件已新增。")
+        self._feedback.show()
 
     def _on_accept(self) -> None:
         att = self._selected_attachment()
-        if att is None:
+        if att is None or att.status == "accepted":
             return
         try:
             self._container.attachments.accept_attachment(att.id)
@@ -488,10 +881,12 @@ class AttachmentsPage(QWidget):
             QMessageBox.critical(self, "操作失敗", error_message("attachment.accept.failed"))
             return
         self._load_attachments()
+        self._feedback.setText("附件已驗收；索件項目需另行人工確認。")
+        self._feedback.show()
 
     def _on_reject(self) -> None:
         att = self._selected_attachment()
-        if att is None:
+        if att is None or att.status == "rejected":
             return
         try:
             self._container.attachments.reject_attachment(att.id)
@@ -502,6 +897,8 @@ class AttachmentsPage(QWidget):
             QMessageBox.critical(self, "操作失敗", error_message("attachment.reject.failed"))
             return
         self._load_attachments()
+        self._feedback.setText("附件已退回，可於「已退回」查看。")
+        self._feedback.show()
 
     def _on_delete(self) -> None:
         att = self._selected_attachment()
@@ -553,11 +950,11 @@ class AttachmentsPage(QWidget):
         att = self._selected_attachment()
         if att is None:
             return
-        menu = QMenu(self._location_btn)
+        menu = QMenu(self._more_btn)
         copy_url_action = QAction("複製 file:// URL", menu)
         copy_url_action.triggered.connect(lambda _=False, a=att: self._copy_file_url(a))
         menu.addAction(copy_url_action)
-        menu.exec(self._location_btn.mapToGlobal(pos))
+        menu.exec(self._more_btn.mapToGlobal(pos))
 
     def _copy_file_url(self, att) -> None:
         url = self._att_file_url(att)

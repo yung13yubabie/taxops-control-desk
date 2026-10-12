@@ -1,5 +1,13 @@
 # RESOURCE CLEANUP AUDIT
 
+## 2026-10-12 保留未解的單選清理證據
+
+settings 的 test_import_and_export_bundle_buttons_run_services 在 f02dc5d 與 773efd4 單選 pytest 均斷言 pass 後 GC exit -11；普通程式加明確 DeferredDelete 對照 exit 0，同時更動兩個因素，根因未定。132 檔完整矩陣無 native crash 不等於此限制已修復；詳見 reliability_latest_port。
+
+## 2026-10-12 匯入進度清理與復原保留物
+
+worker.finished 後對 progress.deleteLater，正常、普通 I/O 失敗與檔案選擇取消均以合成資料回歸。測試按檔隔離，未把先前跨檔 native crash 根因當成已確認。備份暫存 cleanup 失敗只警告，不翻轉已提交的業務結果。原資產與失敗還原 namespace 有 restore_history 追蹤，屬復原保留物，可能累積磁碟；未自動刪除，也不稱全部無孤兒。
+
 ## 2026-07-31 - v0.30 Qt cleanup and packaged-process closeout
 
 - Two QObject test doubles emitted `finished` into production

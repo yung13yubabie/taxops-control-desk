@@ -118,26 +118,20 @@ def test_global_stylesheet_has_visible_focus_and_title_tokens():
 
 
 @pytest.mark.usefixtures("qapp")
-def test_attachments_toolbar_wraps_at_compact_width(container):
+def test_attachments_compact_workspace_keeps_navigation_and_reminder_summary(container):
     page = AttachmentsPage(container)
-    page.resize(640, 614)
+    page.resize(900, 540)
     page.show()
     QApplication.processEvents()
-
-    assert isinstance(page._toolbar_layout, FlowLayout)
-    assert page._toolbar_widget.height() > page._upload_btn.height()
-    assert all(
-        not _visible_child_overflows_page(button, page)
-        for button in (
-            page._upload_btn,
-            page._accept_btn,
-            page._reject_btn,
-            page._delete_btn,
-            page._info_btn,
-            page._open_btn,
-            page._location_btn,
-        )
-    )
+    assert page.width() == 900
+    assert page._today_panel.isHidden()
+    assert page._today_btn.isVisible()
+    assert page._today_btn.text()
+    assert page._preview_btn.isVisible()
+    for widget in (page._upload_btn, page._today_btn, page._owner_kind,
+                   page._eng_combo, page._search, page._refresh_btn, page._preview_btn):
+        assert not _visible_child_overflows_page(widget, page)
+    page.close()
 
 
 @pytest.mark.usefixtures("qapp")

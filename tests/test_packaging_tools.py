@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 import sqlite3
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -33,13 +35,22 @@ def test_pyinstaller_spec_embeds_matching_windows_version_resource() -> None:
     spec = (ROOT / "TaxOpsControlDesk.spec").read_text(encoding="utf-8")
     version_file = ROOT / "build_tools" / "windows_version_info.txt"
     version_text = version_file.read_text(encoding="utf-8")
-    major, minor, patch = (int(part) for part in __version__.split("."))
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:rc(\d+))?", __version__)
+    assert match is not None, "Expected a release or release-candidate version"
+    major, minor, patch = (int(value) for value in match.groups()[:3])
+    candidate = match.group(4)
+    build = int(candidate) if candidate else 0
+    display = __version__ if candidate else f"{__version__}.0"
+    metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert metadata["project"]["version"] == __version__
+    expected_flags = "flags=0x2" if candidate else "flags=0x0"
+    assert expected_flags in version_text
 
     assert 'version="build_tools/windows_version_info.txt"' in spec
-    assert f"filevers=({major}, {minor}, {patch}, 0)" in version_text
-    assert f"prodvers=({major}, {minor}, {patch}, 0)" in version_text
-    assert f"u'FileVersion', u'{__version__}.0'" in version_text
-    assert f"u'ProductVersion', u'{__version__}.0'" in version_text
+    assert f"filevers=({major}, {minor}, {patch}, {build})" in version_text
+    assert f"prodvers=({major}, {minor}, {patch}, {build})" in version_text
+    assert f"u'FileVersion', u'{display}'" in version_text
+    assert f"u'ProductVersion', u'{display}'" in version_text
     assert "u'OriginalFilename', u'TaxOpsControlDesk.exe'" in version_text
     assert "u'ProductName', u'TaxOps Control Desk'" in version_text
 

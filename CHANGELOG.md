@@ -1,0 +1,35 @@
+# Changelog
+
+## 0.33.0rc1 — 候選，尚未發布（2026-10-12）
+
+基於 `feature/v030-annual-workbench` 的 `f02dc5d`，保留 v0.31.0 全部既有功能及後續 0.32 owner 測試版的 UI、schema 27/28、客戶/租約/年度資料。維持 Python/PySide6，沒有 Rust 遷移。規劃候選 tag 為 `v0.33.0-rc.1`，目前未建立 tag 或 GitHub Release。
+
+### 工作區
+
+- 預設進入「收件核對」，常用導航為收件、待辦、年度工作、案件、固定開立；其餘頁面在「資料與工具」。全部 12 個原頁面仍有入口。
+- 文件列表、預覽、客戶/案件/租約、索件期限與人工核對動作放在同一工作區。次要說明按需展開。
+- 加入待辦與索件提醒及定位原資料；窄窗可切換列表、預覽與提醒。
+- 保留租約附件的空案件關聯、原有未存編輯/提交後讀回保護。封存的殘留選取不能再啟動案件或租約核對。
+- 附件尚未自動連結個別索件品項；驗收附件不會自動完成索件、案件或年度工作。
+
+### 資料可靠性
+
+- `.taxops.zip` 完整備份 SQLite、附件、流程/畫布圖片，驗證檔案 hash 與引用；包含客戶/租約及全部年度資料。
+- 還原先驗證、遷移與準備資產，再提交 DB。提交後清理失敗回報成功與警告，不刪除成功備份或誤稱未還原。
+- 舊 `.sqlite` 仍支援但僅含 DB；舊版程式沒有完整 ZIP 還原功能。新完整格式不加密也不簽章，需妥善保管。
+- 原資產、還原前 DB 快照及失敗的資產 namespace 保留供復原並有 history；多次還原可能累積磁碟，本輪不自動清理。
+- accepted 與未完成索件混合時不再倒退 requested；下載來源稽核與工商匯入同一交易。
+- 完成匯入後釋放進度框；保留上游批次交易與 guarded-copy 防護。未知 schema 拒絕遷移，啟動建構失敗關閉連線。
+
+### 候選驗證與限制
+
+- 新增固定權限、SHA-pinned actions 的 Windows PR/手動候選 workflow；逐檔測試、實值 coverage 至少 90%、隔離打包、ZIP 解壓後以同一 EXE 自測。沒有自動 Release、merge 或部署。
+- source self-test 使用臨時合成資料，包含 16 項 schema28/客戶/租約/年度交易與完整還原檢查；source 通過不等同 frozen EXE 通過。
+- 最近完整 Linux 結果及最終小修相關結果見 [驗證紀錄](docs/reliability_latest_port.md)。5 個 IPC 環境失敗未被 skip 或隱藏；另有既有設定頁單選測試在斷言通過後 Qt/pytest 清理 exit -11，根因未確認。
+- Windows 乾淨離線、沒有 Python 的核心操作、DPI/IME/Narrator、簽章/SmartScreen 均未驗收；安全對抗覆蓋亦未完成。候選不代表可以穩定發布。
+
+[UI 範圍](docs/ui_v032_receipt_workbench.md) · [12 頁功能保留](docs/ui_v032_function_retention.md) · [Windows 候選 gate](docs/windows_candidate_gate.md)
+
+## 0.31.0 與歷史 0.32 owner 建置
+
+v0.31.0 是已發布版本，含客戶雙地址、多租約/業別、年度工作/交易與第一批 UI 設計系統。後續 0.32 owner ZIP 的紀錄在 [歷史檢查清單](docs/v0.32.0_test_checklist.md)，不是本輪 EXE 或完整驗收證明。

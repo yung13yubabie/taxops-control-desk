@@ -51,7 +51,7 @@ VALID_ITEM_STATUSES = frozenset({
 
 
 _RESOLVED = frozenset({"accepted", "not_applicable", "client_said_none"})
-_RECEIVED = frozenset({"received", "not_applicable", "client_said_none"})
+_RECEIVED = frozenset({"received", "accepted", "not_applicable", "client_said_none"})
 
 MAX_ITEMS_PER_REQUEST = 1_000
 MAX_ITEM_NAMES_TOTAL_LENGTH = 100_000

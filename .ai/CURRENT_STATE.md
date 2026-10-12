@@ -1,5 +1,13 @@
 # CURRENT_STATE
 
+## 2026-10-12 0.33.0rc1 本地整合候選
+
+完整 Linux 矩陣固定 773efd4：132 檔、3219 passed／5 IPC 環境 failed／1 Windows-only skipped，raw branch coverage 90.65248785611134%。最後 87b49ac 加 4 行 layout 及封存 guard（2 新案例），9 檔 251 passed；其後僅文件。沒有把前一 SHA coverage 宣称為最後 tree 的新量測。已整合可靠性、schema/asset/Windows candidate gate、C 收件＋A 提醒；保留 v0.31 功能，版本 0.33.0rc1。README/CHANGELOG 與 `docs/reliability_latest_port.md` 為本輪入口。Windows 同 SHA 全套、乾淨離線 EXE、DPI 仍待驗；設定快取單選測試既有 GC exit -11 未解，勿宣稱全部穩定。未 push/tag/Release/merge。
+
+## 2026-10-12 最新基底可靠性移植（本地候選）
+
+基底改為 f02dc5d，完整保留 v0.31 及其後功能。F1/F3/F4 與 progress 清理最小移植完成，schema 28 合成 roundtrip 已驗；F2 與 guarded-copy 保留上游版本。詳見 `docs/reliability_latest_port.md`。尚待獨立 review、UI/packaging 整合、逐檔全測及實值 90% coverage；Windows 乾淨離線 EXE 未驗。下列日期較早項目是歷史狀態。
+
 ## 2026-08-07 v0.31.0 released — UI redesign stages 1-3
 
 - Worktree: `.worktrees/v030-annual-workbench` on `feature/v030-annual-workbench`,

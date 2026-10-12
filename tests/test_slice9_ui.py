@@ -26,6 +26,8 @@ from taxops.services.attachments import (
     UploadAttachmentInput,
 )
 from taxops.services.audit import AuditService
+from taxops.services.clients import ClientsService
+from taxops.repositories.clients import ClientsRepository
 from taxops.services.engagements import EngagementsService
 from taxops.services.system_log import SystemLogService
 from PySide6.QtCore import Qt, QUrl
@@ -51,6 +53,9 @@ class _FakeContainer:
         self.paths = SimpleNamespace(attachments_dir=attachments_dir)
         audit_repo = AuditLogRepository(conn)
         self._audit = AuditService(audit_repo, actor="ui_test")
+        self.clients = ClientsService(ClientsRepository(conn), self._audit)
+        self.tasks = SimpleNamespace(list_overdue=lambda _: [], list_due_today=lambda _: [])
+        self.doc_requests = SimpleNamespace(count_all=lambda: 0, list_all=lambda **kwargs: [], summary_by_engagement=lambda _: SimpleNamespace(missing=0, incomplete=0, pending_confirm=0))
         self.system_log = SystemLogService(SystemLogRepository(conn))
         self.engagements = EngagementsService(EngagementsRepository(conn), self._audit)
         attachments_repo = AttachmentsRepository(conn)
@@ -542,6 +547,7 @@ def test_attachment_toolbar_click_path_uploads_reviews_opens_and_deletes(
     page._table.selectRow(0)
     assert "附件預覽內容" in page._preview_text.toPlainText()
 
+    page._status_tabs.setCurrentIndex(3)  # Retain row through explicit status changes.
     page._accept_btn.click()
     page._table.selectRow(0)
     assert page._selected_attachment().status == "accepted"
@@ -632,7 +638,8 @@ def test_upload_button_without_engagement_warns_before_opening_picker(
 
     page._upload_btn.click()
 
-    assert warnings == [("提示", "請先選擇案件")]
+    assert warnings and warnings[0][0] == "選擇附件歸屬"
+    assert "請先選擇案件" in warnings[0][1]
     assert conn.execute("SELECT COUNT(*) FROM attachments").fetchone()[0] == 0
     conn.close()
 
@@ -974,7 +981,7 @@ def test_refresh_engagement_failure_is_logged_and_leaves_safe_all_filter(
     monkeypatch.setattr(
         container.engagements,
         "list_all",
-        lambda: (_ for _ in ()).throw(RuntimeError("database locked")),
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("database locked")),
     )
 
     page.refresh_context()
@@ -982,7 +989,7 @@ def test_refresh_engagement_failure_is_logged_and_leaves_safe_all_filter(
     assert page._eng_combo.count() == 1
     assert page._eng_combo.currentData() == -1
     log = conn.execute(
-        "SELECT level, message, detail_json FROM system_logs ORDER BY id DESC LIMIT 1"
+        "SELECT level, message, detail_json FROM system_logs WHERE message LIKE 'attachments:%' ORDER BY id DESC LIMIT 1"
     ).fetchone()
     assert (log["level"], log["message"]) == (
         "WARN",
@@ -1008,7 +1015,7 @@ def test_attachment_list_failure_is_logged_and_clears_stale_rows(
     monkeypatch.setattr(
         container.attachments,
         "list_all",
-        lambda: (_ for _ in ()).throw(RuntimeError("database locked")),
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("database locked")),
     )
 
     page.clear_filter()
@@ -1016,7 +1023,7 @@ def test_attachment_list_failure_is_logged_and_clears_stale_rows(
     assert page._table.rowCount() == 0
     assert page._attachments == []
     log = conn.execute(
-        "SELECT level, message, detail_json FROM system_logs ORDER BY id DESC LIMIT 1"
+        "SELECT level, message, detail_json FROM system_logs WHERE message LIKE 'attachments:%' ORDER BY id DESC LIMIT 1"
     ).fetchone()
     assert (log["level"], log["message"]) == (
         "WARN",

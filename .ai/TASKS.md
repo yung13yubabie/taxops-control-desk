@@ -1,5 +1,20 @@
 # TASKS
 
+## 2026-10-12 候選 gate 狀態
+
+- [x] 最新基底可靠性與 UI 獨立審查、完整矩陣、最後 UI 小修相關回歸。
+- [x] README、CHANGELOG、0.33.0rc1 metadata 同步；歷史資料與本輪證據分開。
+- [ ] 經確認後推專用分支、draft PR 指向 feature/v030-annual-workbench，執行 Windows 同 SHA gate；不 merge/auto-merge。
+- [ ] 乾淨離線 Windows/無 Python、DPI/IME/Narrator 驗收與 Qt 單選清理限制追蹤；未過不 stable release。
+
+## 2026-10-12 最新基底整合
+
+- [x] 從 f02dc5d 建立專用分支，最小移植仍存在的可靠性缺陷。
+- [x] schema 28 客戶/租約/年度資料及資產 roundtrip；真 v0.31 合成 DB 相容開啟。
+- [ ] 獨立 review 第一段修復；整合 C 文件流轉＋A 今日待辦與 packaging。
+- [ ] 全套逐檔 process、合併實值 coverage 至少 90%、版本與 README/Release 候選說明一致。
+- [ ] 乾淨離線 Windows、無預裝 Python 的 EXE 驗收。未通過前不稱可發布。
+
 ## 2026-08-06 UI redesign
 
 Screen register and acceptance table: `.ai/UI_REDESIGN_AUDIT.md`.

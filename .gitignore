@@ -41,3 +41,8 @@ htmlcov/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Isolated candidate environments and generated evidence
+.venv-test/
+.venv-release/
+artifacts/

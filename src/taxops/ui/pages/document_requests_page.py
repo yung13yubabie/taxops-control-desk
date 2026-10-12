@@ -724,9 +724,24 @@ class DocumentRequestsPage(QWidget):
                 else self._engagement_id
             )
             idx = self._engagement_combo.findData(target)
+            if idx < 0 and self._engagement_id is not None:
+                # The choices are bounded; a valid exact target can fall outside
+                # that slice. Resolve it rather than silently showing all cases.
+                engagement = self._container.engagements.get_engagement(self._engagement_id)
+                if engagement is not None:
+                    client = self._container.clients.get_client(engagement.client_id)
+                    self._engagement_combo.addItem(
+                        self._engagement_label(
+                            engagement, client.client_name if client else "(未知客戶)"
+                        ),
+                        userData=engagement.id,
+                    )
+                    idx = self._engagement_combo.count() - 1
             if idx < 0:
-                idx = 0
-                self._engagement_id = None
+                self._engagement_combo.addItem(
+                    "原案件已失效，請返回案件管理確認", userData=target
+                )
+                idx = self._engagement_combo.count() - 1
             self._engagement_combo.setCurrentIndex(idx)
         finally:
             self._engagement_combo.blockSignals(False)
@@ -744,6 +759,10 @@ class DocumentRequestsPage(QWidget):
     # ------------------------------------------------------------------
 
     def _render_current_view(self) -> bool:
+        can_mutate = self._pending_mutation is None
+        self._new_req_btn.setEnabled(can_mutate)
+        if self._req_empty_state.action_button is not None:
+            self._req_empty_state.action_button.setEnabled(can_mutate)
         if self._engagement_id is None:
             return self._render_global_view()
         return self._render_engagement_view()
@@ -763,12 +782,20 @@ class DocumentRequestsPage(QWidget):
             return self._render_global_view()
         eng = self._container.engagements.get_engagement(engagement_id)
         if eng is None:
-            QMessageBox.warning(
-                self, "找不到案件", error_message("engagement.not_found")
+            self._request_total = 0
+            self._item_total = 0
+            self._fill_request_table([], None)
+            self._update_item_pagination()
+            self._context_label.setText("原案件已失效")
+            self._context_banner.setText("原案件已失效，請返回案件管理確認。")
+            self._new_req_btn.setEnabled(False)
+            if self._req_empty_state.action_button is not None:
+                self._req_empty_state.action_button.setEnabled(False)
+            self._no_engagement_label.setText(
+                "案件已刪除或客戶已停用。請返回案件管理，重新選擇有效案件。"
             )
-            self._engagement_id = None
-            self._populate_engagement_combo()
-            self._render_global_view()
+            self._no_engagement_label.setVisible(True)
+            self._splitter.setVisible(False)
             return False
         client = self._container.clients.get_client(eng.client_id)
         client_part = f"【{client.client_name}】" if client else ""
@@ -995,7 +1022,7 @@ class DocumentRequestsPage(QWidget):
         self._loaded_item_request_id = request_id
         # Items_only mode: 「新增文件項目」 is always enabled (request_id
         # already known); per-item buttons enable on item selection.
-        self._add_item_btn.setEnabled(True)
+        self._add_item_btn.setEnabled(self._pending_mutation is None)
         try:
             self._item_total = self._container.doc_requests.count_items(
                 request_id
@@ -1016,6 +1043,9 @@ class DocumentRequestsPage(QWidget):
             self._item_table.setRowCount(0)
             return False
         self._render_items(items)
+        if self._pending_mutation is not None:
+            for button in self._mutation_buttons:
+                button.setEnabled(False)
         return True
 
     def _render_items(self, items) -> None:

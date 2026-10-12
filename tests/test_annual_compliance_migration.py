@@ -778,7 +778,7 @@ def test_failed_annual_migration_rolls_back_schema_task_column_and_version(
     monkeypatch.setattr(
         migrate,
         "MIGRATIONS",
-        (("0028_annual_compliance", failing_sql),),
+        MIGRATIONS[:27] + (("0028_annual_compliance", failing_sql),),
     )
 
     with pytest.raises(sqlite3.OperationalError, match="missing_annual_table"):

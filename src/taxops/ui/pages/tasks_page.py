@@ -76,6 +76,7 @@ class TasksPage(QWidget):
         self._tasks: list = []
         self._task_by_id: dict[int, object] = {}
         self._status_change_in_progress = False
+        self._navigation_task_id: int | None = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 24, 20)
@@ -84,6 +85,21 @@ class TasksPage(QWidget):
         title_label = QLabel("待辦事項")
         title_label.setObjectName("PageTitle")
         outer.addWidget(title_label)
+
+        self._navigation_scope = QWidget()
+        self._navigation_scope.setObjectName("TaskNavigationScope")
+        scope_layout = QHBoxLayout(self._navigation_scope)
+        scope_layout.setContentsMargins(0, 0, 0, 0)
+        self._navigation_label = QLabel("已從收件工作區定位一筆待辦")
+        self._navigation_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._navigation_label.setWordWrap(True)
+        scope_layout.addWidget(self._navigation_label, 1)
+        self._show_all_btn = QPushButton("返回全部待辦")
+        set_button_role(self._show_all_btn, "quiet")
+        self._show_all_btn.clicked.connect(self._clear_navigation_target)
+        scope_layout.addWidget(self._show_all_btn)
+        self._navigation_scope.hide()
+        outer.addWidget(self._navigation_scope)
 
         filter_row = QHBoxLayout()
         filter_row.setSpacing(8)
@@ -208,18 +224,79 @@ class TasksPage(QWidget):
     # ------------------------------------------------------------------
     # Public filter API (called by MainWindow deep links)
 
+    def _clear_navigation_target(self) -> None:
+        self.clear_filter()
+        self._refresh()
+
+    def open_task(self, task_id: int) -> bool:
+        task = self._container.tasks.get_task(task_id)
+        if task is None:
+            raise ValueError("待辦已刪除或所屬資料已停用。")
+        self._navigation_task_id = task_id
+        self._sync_navigation_context()
+        self._filter_key = ""
+        self._refresh()
+        self._select_task_ids([task_id], current_task_id=task_id)
+        self._table.setFocus()
+        return self._selected_task_id() == task_id
+
+    def _sync_navigation_context(self) -> None:
+        """Show the focused task's real scope, including records beyond list limits."""
+        if self._navigation_task_id is None:
+            return
+        task = self._container.tasks.get_task(self._navigation_task_id)
+        if task is None:
+            return
+        self._client_combo.blockSignals(True)
+        try:
+            client_id = task.client_id
+            if client_id is None and task.engagement_id is not None:
+                engagement = self._container.engagements.get_engagement(task.engagement_id)
+                client_id = engagement.client_id if engagement is not None else None
+            client_id = client_id if client_id is not None else _ALL_CLIENTS
+            index = self._client_combo.findData(client_id)
+            if index < 0:
+                client = self._container.clients.get_client(client_id)
+                if client is not None:
+                    self._client_combo.addItem(client.client_name, client_id)
+                    index = self._client_combo.count() - 1
+            if index < 0:
+                raise ValueError("待辦所屬客戶已停用。")
+            self._client_combo.setCurrentIndex(index)
+        finally:
+            self._client_combo.blockSignals(False)
+        self._reload_engagement_combo()
+        self._eng_combo.blockSignals(True)
+        try:
+            engagement_id = task.engagement_id if task.engagement_id is not None else _ALL_ENGAGEMENTS
+            index = self._eng_combo.findData(engagement_id)
+            if index < 0:
+                engagement = self._container.engagements.get_engagement(engagement_id)
+                if engagement is not None:
+                    self._eng_combo.addItem(engagement.engagement_name, engagement_id)
+                    index = self._eng_combo.count() - 1
+            if index < 0:
+                raise ValueError("待辦所屬案件已停用。")
+            self._eng_combo.setCurrentIndex(index)
+        finally:
+            self._eng_combo.blockSignals(False)
+
     def set_filter(self, filter_key: str) -> None:
+        self._navigation_task_id = None
         self._filter_key = filter_key
         self._refresh()
 
     def clear_filter(self) -> None:
+        self._navigation_task_id = None
         self._filter_key = ""
-        self._client_combo.setCurrentIndex(0)  # 重置為「全部客戶」；會觸發 _on_client_changed 連帶更新 _eng_combo
+        self._client_combo.setCurrentIndex(0)  # Explicitly leave the focused scope.
+        self._eng_combo.setCurrentIndex(0)
 
     def refresh_context(self) -> None:
         """Reload client + engagement choices when data changed elsewhere."""
         self._load_clients()
         self._reload_engagement_combo()
+        self._sync_navigation_context()
         self._refresh()
 
     # ------------------------------------------------------------------
@@ -290,7 +367,10 @@ class TasksPage(QWidget):
         selected_task_ids = self._selected_task_ids()
         current_task_id = self._selected_task_id()
         try:
-            if self._filter_key == FilterKey.DUE_TODAY:
+            if self._navigation_task_id is not None:
+                target = self._container.tasks.get_task(self._navigation_task_id)
+                tasks = [target] if target is not None else []
+            elif self._filter_key == FilterKey.DUE_TODAY:
                 tasks = self._container.tasks.list_due_today(today_iso())
             elif self._filter_key == FilterKey.OVERDUE:
                 tasks = self._container.tasks.list_overdue(today_iso())
@@ -344,6 +424,13 @@ class TasksPage(QWidget):
         if sorting_enabled:
             self._table.setSortingEnabled(True)
 
+        self._navigation_scope.setVisible(self._navigation_task_id is not None)
+        self._client_combo.setEnabled(self._navigation_task_id is None)
+        self._eng_combo.setEnabled(self._navigation_task_id is None)
+        if self._navigation_task_id is not None:
+            self._navigation_label.setText(
+                "已定位待辦：" + self._tasks[0].title if self._tasks else "這筆待辦已刪除或不可用，請返回全部待辦。"
+            )
         has_rows = bool(self._tasks) and not load_error
         self._error_label.setVisible(load_error)
         self._table.setVisible(has_rows)

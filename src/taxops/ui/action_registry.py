@@ -1560,6 +1560,73 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
         test_marker="test_open_attachment_location",
         enabled=True,
     ),
+    # Document-led receipt workspace: read-only navigation and local controls.
+    UIActionContract(
+        button_label='待辦與索件提醒', page=PAGE_ATTACHMENTS,
+        handler="AttachmentsPage._show_today_work", service=None, repository=None,
+        success_text="", failure_text="資料不可用時保留原位置並顯示錯誤",
+        audit_action=None, test_marker="test_compact_geometry_keeps_summary_and_actions", enabled=True,
+    ),
+    UIActionContract(
+        button_label='重新整理收件', page=PAGE_ATTACHMENTS,
+        handler="AttachmentsPage.refresh_context", service=None, repository=None,
+        success_text="", failure_text="資料不可用時保留原位置並顯示錯誤",
+        audit_action=None, test_marker="test_read_failure_shows_error_and_clears_old_rows", enabled=True,
+    ),
+    UIActionContract(
+        button_label='查看附件', page=PAGE_ATTACHMENTS,
+        handler="AttachmentsPage._toggle_review", service=None, repository=None,
+        success_text="", failure_text="資料不可用時保留原位置並顯示錯誤",
+        audit_action=None, test_marker="test_compact_geometry_keeps_summary_and_actions", enabled=True,
+    ),
+    UIActionContract(
+        button_label='開啟索件核對', page=PAGE_ATTACHMENTS,
+        handler="AttachmentsPage._on_manual_review", service=None, repository=None,
+        success_text="", failure_text="資料不可用時保留原位置並顯示錯誤",
+        audit_action=None, test_marker="test_manual_reconciliation_exact_request_is_read_only", enabled=True,
+    ),
+    UIActionContract(
+        button_label='管理此客戶租約', page=PAGE_ATTACHMENTS,
+        handler="AttachmentsPage._on_manual_review", service=None, repository=None,
+        success_text="", failure_text="資料不可用時保留原位置並顯示錯誤",
+        audit_action=None, test_marker="test_lease_preview_and_original_editor_keep_owner_and_cancel", enabled=True,
+    ),
+    UIActionContract(
+        button_label='核對說明', page=PAGE_ATTACHMENTS,
+        handler="AttachmentsPage._toggle_help", service=None, repository=None,
+        success_text="", failure_text="資料不可用時保留原位置並顯示錯誤",
+        audit_action=None, test_marker="test_receipt_facts_show_deadline_missing_and_next_step", enabled=True,
+    ),
+    UIActionContract(
+        button_label='收件上一頁／下一頁', page=PAGE_ATTACHMENTS,
+        handler="AttachmentsPage._change_page", service=None, repository=None,
+        success_text="", failure_text="資料不可用時保留原位置並顯示錯誤",
+        audit_action=None, test_marker="test_local_pages_and_exact_attachment_ignore_old_filters", enabled=True,
+    ),
+    UIActionContract(
+        button_label='開啟客戶管理', page=PAGE_ATTACHMENTS,
+        handler="AttachmentsPage._open_clients", service=None, repository=None,
+        success_text="", failure_text="資料不可用時保留原位置並顯示錯誤",
+        audit_action=None, test_marker="test_real_buttons_and_tools_actions_open_all_twelve_real_pages", enabled=True,
+    ),
+    UIActionContract(
+        button_label='檔案資訊', page=PAGE_ATTACHMENTS,
+        handler="AttachmentsPage._on_show_info", service=None, repository=None,
+        success_text="", failure_text="資料不可用時保留原位置並顯示錯誤",
+        audit_action=None, test_marker="test_info_dialog_renders_optional_review_fields_and_real_close_button", enabled=True,
+    ),
+    UIActionContract(
+        button_label='用系統程式開啟', page=PAGE_ATTACHMENTS,
+        handler="AttachmentsPage._on_open_system", service=None, repository=None,
+        success_text="", failure_text="資料不可用時保留原位置並顯示錯誤",
+        audit_action=None, test_marker="test_failed_system_open_is_reported_to_user", enabled=True,
+    ),
+    UIActionContract(
+        button_label='複製 file:// URL', page=PAGE_ATTACHMENTS,
+        handler="AttachmentsPage._on_copy_selected_url", service=None, repository=None,
+        success_text="", failure_text="資料不可用時保留原位置並顯示錯誤",
+        audit_action=None, test_marker="test_location_button_right_click_copies_file_url", enabled=True,
+    ),
     # Settings page — backup/restore (slice 11 — enabled)
     UIActionContract(
         button_label="立即備份",
