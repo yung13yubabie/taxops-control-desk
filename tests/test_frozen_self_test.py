@@ -55,8 +55,25 @@ def test_source_self_test_runs_real_isolated_roundtrip(tmp_path):
     assert payload["frozen"] is False
     assert payload["network_attempts"] == []
     assert gate.EXPECTED_CHECKS.issubset({c["name"] for c in payload["checks"]})
-    assert not (tmp_path / "must_not_touch").exists()
-    assert not (tmp_path / "must_not_touch_profile").exists()
+    untouched = [tmp_path / "must_not_touch", tmp_path / "must_not_touch_profile"]
+    observed = {
+        path.name: [
+            {"path": str(child.relative_to(path)), "is_dir": child.is_dir(),
+             "bytes": child.stat().st_size if child.is_file() else None}
+            for child in path.rglob("*")
+        ]
+        for path in untouched if path.exists()
+    }
+    diagnostics_dir = os.environ.get("TAXOPS_UI_DIAGNOSTICS_DIR")
+    if diagnostics_dir:
+        target = Path(diagnostics_dir)
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "self-test-paths.json").write_text(
+            json.dumps({"unexpected_paths": observed, "report": payload,
+                        "stderr": process.stderr}, ensure_ascii=False, indent=2), encoding="utf-8",
+        )
+    assert not untouched[0].exists(), observed
+    assert not untouched[1].exists(), observed
     from taxops import __version__
     from taxops.db.migrations import MIGRATIONS
     assert payload["app_version"] == __version__

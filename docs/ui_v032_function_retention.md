@@ -1,6 +1,6 @@
 # v0.32 收件工作區：功能保留與入口對照
 
-核對日期：2026-10-12。檔名 v032 指移植來源基底，不是新候選發行版號。這是本機 UI 整合工作樹的保留檢查，不是發行或 Windows 驗收證明。
+核對日期：2026-10-12。檔名 v032 指移植來源基底，不是新候選發行版號。本文記錄功能入口與回歸契約，不是發行或 Windows 驗收證明。
 
 ## 比較基準與判準
 
@@ -205,26 +205,6 @@ v0.31 的真實集合為：
 
 ## 已執行的驗證與未驗證範圍
 
-### 本文件編寫前直接執行的證據
-
-環境：Linux、PySide6、`QT_QPA_PLATFORM=offscreen`，使用專案隔離測試資料庫。以下測試檔各自獨立程序執行；數字是當時通過的案例數，不能替代上面的逐項契約。
-
-| 測試檔 | 通過案例數 |
-|---|---:|
-| `test_workbench_v032_navigation.py` | 44 |
-| `test_ui_design_system.py` | 50 |
-| `test_slice21e_tasks_ui.py` | 36 |
-| `test_slice21b_merged_engagements.py` | 8 |
-| `test_document_requests_real_user_paths.py` | 37 |
-| `test_slice19a_navigation.py` | 14 |
-| `test_annual_collaboration_ui.py` | 14 |
-| `test_annual_request_bidirectional_ui.py` | 29 |
-| `test_tasks.py` | 62 |
-| `test_document_requests.py` | 69 |
-| `test_slice21d_tasks_parent_bulk.py` | 24 |
-
-導航工作的新測試 44 個與相關既有測試 343 個均通過。導航相關的七個修改/新增檔案同時通過 Ruff、compileall 與 `git diff --check`。以上是整合期間的定點結果；其他平行修改及最後凍結版本仍需整合重跑，不能當作完整套件或發行驗證。
-
 ### 中文、尺寸與 Windows 限制
 
 - 新導航使用繁體中文操作標籤，原頁面 `NAV_LABELS` 不變；主入口的短名稱透過 tooltip 對應原完整名稱。完整 12 個目的地名稱有實際斷言。
@@ -232,4 +212,4 @@ v0.31 的真實集合為：
 - 本文件未確認 Windows 100%、125%、150%、200% 實機縮放、真實中文字型、中文輸入法、焦點可見性、滑鼠/鍵盤長流程或螢幕閱讀器。
 - PDF/影像預覽在實際 Windows QtPdf、系統開啟/檔案總管、UNC 路徑、SmartScreen、EXE 打包、安裝和既有使用者資料遷移均未由這份導航證據驗收。
 - 真實 GCIS 補查與快取下載連線不在這次離線導航測試範圍；對應既有測試不能視為正式環境服務可用性證明。
-- 本輪未執行完整 suite 或重新計算全專案 branch coverage；本文件編寫時尚未凍結；最終 UI commit 與補跑結果另見交付記錄。未 push、merge、tag、打包或發布。
+- 功能入口對照不能替代完整逐檔矩陣、90% branch coverage 及 Windows frozen gate。

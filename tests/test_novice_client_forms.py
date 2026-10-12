@@ -373,5 +373,14 @@ def test_collaboration_long_context_and_each_visible_tab_fit(container, qtbot, s
         dialog.tabs.setCurrentIndex(index)
         QApplication.processEvents()
         scroll = dialog.tabs.currentWidget()
-        assert scroll.horizontalScrollBar().maximum() == 0
+        from qt_geometry_diagnostics import dump_qt_geometry
+
+        overflow = scroll.horizontalScrollBar().maximum()
+        dump_qt_geometry(
+            dialog,
+            f"annual-visible-tab-{index}",
+            named_widgets={"active_scroll": scroll},
+            extra={"tab_index": index, "tab_text": dialog.tabs.tabText(index)},
+        )
+        assert overflow == 0, f"visible tab {index}: {dialog.tabs.tabText(index)} overflows by {overflow}px"
         assert dialog.rect().contains(dialog.close_button.mapTo(dialog, dialog.close_button.rect().bottomRight()))

@@ -30,6 +30,8 @@ jobs:
           python-version: '3.11.9'
           architecture: x64
           cache: ''
+      - name: Reject private files and credential markers in the tracked tree
+        run: python -m build_tools.check_repository_hygiene
       - name: Create separate pinned test and release environments
         run: |
           New-Item -ItemType Directory -Force artifacts | Out-Null
@@ -77,6 +79,70 @@ jobs:
         with:
           name: windows-candidate-${{ github.sha }}
           path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  windows-ui-diagnostics:
+    # A parallel, synthetic diagnosis only. This never replaces the complete
+    # source/coverage/build gate above and never creates an application bundle.
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      PYTHONUTF8: '1'
+      PYTHONPATH: src
+      QT_QPA_PLATFORM: offscreen
+      TAXOPS_UI_DIAGNOSTICS_DIR: artifacts/windows-ui-diagnostics
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # pinned v5 revision
+        with:
+          python-version: '3.11.9'
+          architecture: x64
+          cache: ''
+      - name: Reject private files and credential markers in the tracked tree
+        run: python -m build_tools.check_repository_hygiene
+      - name: Install the same pinned test dependencies
+        run: |
+          New-Item -ItemType Directory -Force $env:TAXOPS_UI_DIAGNOSTICS_DIR | Out-Null
+          @{
+            event_head_sha = '${{ github.event.pull_request.head.sha }}'
+            checkout_sha = (git rev-parse HEAD)
+            checkout_tree = (git rev-parse 'HEAD^{tree}')
+            scope = 'Five complete synthetic UI test files; not the release gate'
+          } | ConvertTo-Json | Out-File -Encoding utf8 "$env:TAXOPS_UI_DIAGNOSTICS_DIR/provenance.json"
+          python -m venv .venv-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\.venv-test\Scripts\python.exe -m pip install --only-binary=:all: -r requirements-release.txt -r requirements-ci.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\.venv-test\Scripts\python.exe -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run each complete diagnostic file and retain every failure
+        run: |
+          $files = @('test_deep_chinese_ui', 'test_frozen_self_test', 'test_novice_client_forms', 'test_ui_stage_5_date_field', 'test_v032_receipt_workbench')
+          $results = @()
+          $failed = $false
+          foreach ($file in $files) {
+            .\.venv-test\Scripts\python.exe -m pytest -q "tests/$file.py" "--junitxml=$env:TAXOPS_UI_DIAGNOSTICS_DIR/$file.xml" *> "$env:TAXOPS_UI_DIAGNOSTICS_DIR/$file.log"
+            $code = $LASTEXITCODE
+            $results += @{ file = "tests/$file.py"; exit_code = $code }
+            Get-Content "$env:TAXOPS_UI_DIAGNOSTICS_DIR/$file.log"
+            if ($code -ne 0) { $failed = $true }
+          }
+          $results | ConvertTo-Json | Out-File -Encoding utf8 "$env:TAXOPS_UI_DIAGNOSTICS_DIR/results.json"
+          if ($failed) { exit 1 }
+      - name: Upload synthetic UI diagnostics even when assertions fail
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-ui-diagnostics-${{ github.sha }}
+          path: artifacts/windows-ui-diagnostics/
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

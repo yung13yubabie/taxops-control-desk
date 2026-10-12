@@ -5,7 +5,7 @@ global stylesheet from these values and re-exports the legacy names that pages
 already import, so nothing outside this module hard-codes a hex value or a pixel
 height.
 
-Sizing follows `.ai/DESIGN.md`: 14px minimum for general text, 13px minimum inside
+Sizing follows `docs/design_guidelines.md`: 14px minimum for general text, 13px minimum inside
 tables, and enough height that Traditional Chinese glyphs never clip at 125% or
 150% Windows scaling.
 """

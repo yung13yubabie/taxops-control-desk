@@ -84,7 +84,7 @@ TypeScript 的模式在本專案的對應形式：
 ## 審查進度
 
 由資料來源往外，因為越靠近資料來源，錯誤被轉成空值後越難分辨。批次劃分見
-`.ai/UX_REBUILD_SPEC.md`。
+`docs/desktop_ux_contract.md`。
 
 ### B1 · `repositories/` — 完成，零違規（2026-08-08）
 

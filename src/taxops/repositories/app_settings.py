@@ -7,7 +7,7 @@ import sqlite3
 from ..core.clock import now_iso
 
 # Default settings seeded on first run. Tax cache URLs come from
-# docs/registry_cache_workflow.md and decisions in .ai/DECISIONS.md.
+# docs/registry_cache_workflow.md and decisions in docs/product_object_model.md.
 DEFAULT_SETTINGS: tuple[tuple[str, str], ...] = (
     ("display.local_user_name", "local_user"),
     ("tax_cache.query_mode", "local_only"),

@@ -89,3 +89,29 @@ def test_late_fee_submit_focuses_first_invalid_date_then_next_after_correction(q
     assert page._actual_payment_date._edit.hasFocus()
     assert page._actual_payment_date.raw_text() == "2026-99-99"
     assert page._calc_btn.isEnabled()
+
+
+@pytest.mark.parametrize("hint", ["日期", "西元年-月-日", "請輸入西元日期（年-月-日）"])
+def test_localized_date_hint_never_replaces_space_for_the_numeric_value(qapp, qtbot, monkeypatch, hint):
+    from PySide6.QtGui import QFont
+    from taxops.ui.widgets import date_field
+
+    # Real font metrics with a short/long translated hint, not a fixed pixel guess.
+    original = QFont(qapp.font())
+    enlarged = QFont(original)
+    enlarged.setPointSize(24)
+    monkeypatch.setattr(date_field, "_PLACEHOLDER", hint)
+    qapp.setFont(enlarged)
+    try:
+        field = DateField(required=False)
+        qtbot.addWidget(field)
+        field.set_value("2026-05-21")
+        metrics = field._edit.fontMetrics()
+        icons = field._cal_btn.width() + field._clear_btn.width()
+        assert field.minimumWidth() >= icons + max(
+            metrics.horizontalAdvance(hint), metrics.horizontalAdvance(field.raw_text())
+        )
+        assert field.maximumWidth() >= field.minimumWidth()
+        assert field.value() == "2026-05-21"
+    finally:
+        qapp.setFont(original)

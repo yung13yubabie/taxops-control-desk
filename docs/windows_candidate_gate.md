@@ -14,6 +14,10 @@ Their fixes and the later Chinese UI slice are included in source snapshot
 90.93781920326865%. **A new Windows run of the final integrated
 candidate and frozen EXE verification remain required.**
 
+The second run [38213344318](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38213344318) completed all 137 files at head `821d490` / merge `a931390`: **3325 passed / 8 failed**, no errors or skips, raw branch coverage 91.0367722165475%. It again correctly blocked the EXE. Follow-up fixes address date-width measurement and native path comparison; receipt/collaboration layout and the self-test-created profile directory remain under diagnosis.
+
+A parallel `windows-ui-diagnostics` job runs five complete files, each in a fresh process with the same pinned dependencies. It uploads synthetic PNG/geometry/JSON/JUnit evidence and preserves every failing exit. Its provenance records the head and actual checkout SHA/tree. This smaller job never builds a bundle or substitutes for the full source/90% coverage gate.
+
 `.github/workflows/windows-candidate.yml` runs only for pull requests or an
 explicit manual dispatch. It has `contents: read`, does not request secrets,
 does not persist checkout credentials, and cannot publish a GitHub Release.

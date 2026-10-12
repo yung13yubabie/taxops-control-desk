@@ -6,7 +6,7 @@ the calendar icon opens a 320px popup where one click on a day applies the date
 and closes. There is no confirm step and no year-jump row — the popup shows a
 month at a time, chevrons step the month, and the header spin box moves the year.
 
-`DateField`'s public API is frozen by `.ai/UI_REDESIGN_SPEC.md`: `value_changed`,
+`DateField`'s public API is frozen by `docs/desktop_ux_contract.md`: `value_changed`,
 `value`, `validated_value`, `raw_text`, `set_value`, `set_error`, `clear`, and
 `set_date_range` keep their signatures and semantics. Everything below them is
 internal.
@@ -472,7 +472,14 @@ class DateField(QWidget):
         Both icons are counted even when the clear icon is hidden, so a required
         field and an optional one keep the same footprint.
         """
-        text_room = self._edit.fontMetrics().horizontalAdvance(_PLACEHOLDER)
+        metrics = self._edit.fontMetrics()
+        # A localized hint may be narrower than the ten-character ISO value.
+        widest_digit = max("0123456789", key=metrics.horizontalAdvance)
+        numeric_sample = f"{widest_digit * 4}-{widest_digit * 2}-{widest_digit * 2}"
+        text_room = max(
+            metrics.horizontalAdvance(_PLACEHOLDER),
+            metrics.horizontalAdvance(numeric_sample),
+        )
         icons_room = (
             self._cal_btn.width() + self._clear_btn.width() + _ICON_GAP * 3
         )

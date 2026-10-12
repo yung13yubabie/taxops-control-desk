@@ -1,7 +1,7 @@
 """Stage 6 — annual workbench: actionable KPIs, five core columns, inspector.
 
-Each test states one acceptance condition from the stage's row in
-`.ai/UI_REDESIGN_AUDIT.md`: eight KPI tiles no longer render at zero, the core
+Each test exercises an annual-workbench acceptance condition in
+`docs/desktop_ux_contract.md`: eight KPI tiles no longer render at zero, the core
 table carries five columns so client and title stop being truncated, the four
 detailed statuses move off the row into the inspector, and the selected row is no
 longer repeated as a block of plain text underneath.

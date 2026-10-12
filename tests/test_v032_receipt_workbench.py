@@ -5,6 +5,8 @@ import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QPushButton
 
+from qt_geometry_diagnostics import dump_qt_geometry
+
 from taxops.services.attachments import UploadAttachmentInput
 from taxops.services.client_leases import LeaseInput
 from taxops.services.clients import CreateClientInput
@@ -194,9 +196,17 @@ def test_compact_geometry_keeps_summary_and_actions(qapp, page, records, size):
     try:
         apply_style(qapp)
         _select(page, records[4])
+        before_resize = {"phase": "styled-selected-before-resize",
+                         "size": [page.width(), page.height()],
+                         "minimum_size": [page.minimumWidth(), page.minimumHeight()]}
         page.resize(*size)
         qapp.processEvents()
-        assert page.width() == size[0]
+        actual_width = page.width()
+        if actual_width != size[0]:
+            dump_qt_geometry(page, f"receipt-compact-{size[0]}x{size[1]}",
+                             extra={"expected_width": size[0], "observed_width": actual_width},
+                             checkpoints=[before_resize])
+        assert actual_width == size[0]
         assert page._today_btn.text() == page._today_panel.compact_summary
         assert page._today_btn.isVisible()
         assert page._today_panel.isVisible() == (size[0] >= 1180)
@@ -250,10 +260,18 @@ def test_receipt_filter_row_shrinks_without_clipping_native_controls(qapp, page,
         # single-row minimum on Linux as well so this catches the fixed search.
         page._eng_combo.setMinimumWidth(324)
         qapp.processEvents()
-        for requested_width in (width, 1280, width):
+        for iteration, requested_width in enumerate((width, 1280, width)):
+            before_resize = {"phase": "stress-before-resize",
+                             "size": [page.width(), page.height()],
+                             "minimum_size": [page.minimumWidth(), page.minimumHeight()]}
             page.resize(requested_width, 614)
             qapp.processEvents()
-            assert page.width() == requested_width
+            actual_width = page.width()
+            if actual_width != requested_width:
+                dump_qt_geometry(page, f"receipt-stress-{width}-iteration-{iteration}",
+                                 extra={"expected_width": requested_width, "observed_width": actual_width},
+                                 checkpoints=[before_resize])
+            assert actual_width == requested_width
             assert page._toolbar_widget.minimumSizeHint().width() <= page._toolbar_widget.width()
             controls = (page._owner_kind, page._eng_combo, page._search, page._refresh_btn)
             if requested_width < 1000:

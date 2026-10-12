@@ -1,6 +1,6 @@
 """Synthetic data only: UI language must not depend on the operating system."""
 import ast
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 import re
 
 import pytest
@@ -10,6 +10,47 @@ from PySide6.QtWidgets import QDialogButtonBox, QFileDialog, QLineEdit, QMessage
 
 from taxops.i18n.errors import ERROR_MESSAGES, GENERIC_FALLBACK, error_message
 from taxops.i18n.qt import _StandardButtons, install_chinese
+
+
+def _assert_selected_file(selected: list[str], expected: PurePath) -> None:
+    """Qt uses forward slashes on Windows; compare paths, not serialized spelling."""
+    assert len(selected) == 1
+    actual = type(expected)(selected[0])
+    assert actual.is_absolute() and expected.is_absolute()
+    assert actual == expected
+    # Windows path equality ignores case; the UI must still preserve the filename.
+    assert actual.name == expected.name
+
+
+@pytest.mark.parametrize(("selected", "expected"), [
+    (["C:/Users/Test/中文 空格/Original English 公司.pdf"],
+     PureWindowsPath(r"C:\Users\Test\中文 空格\Original English 公司.pdf")),
+    (["//server/share/中文 空格/Original English 公司.pdf"],
+     PureWindowsPath(r"\\server\share\中文 空格\Original English 公司.pdf")),
+])
+def test_windows_selected_path_separator_equivalence(selected, expected):
+    _assert_selected_file(selected, expected)
+
+
+@pytest.mark.parametrize("selected", [
+    ["D:/Users/Test/中文 空格/Original English 公司.pdf"],
+    ["C:/Users/Other/中文 空格/Original English 公司.pdf"],
+    ["C:/Users/Test/中文 空格/Different 公司.pdf"],
+    ["C:/Users/Test/中文 空格/original English 公司.pdf"],
+    ["Users/Test/中文 空格/Original English 公司.pdf"],
+    [],
+    ["C:/Users/Test/中文 空格/Original English 公司.pdf", "C:/extra.pdf"],
+])
+def test_windows_selected_path_rejects_changed_target_or_filename(selected):
+    expected = PureWindowsPath(r"C:\Users\Test\中文 空格\Original English 公司.pdf")
+    with pytest.raises(AssertionError):
+        _assert_selected_file(selected, expected)
+
+
+def test_windows_selected_path_rejects_changed_network_share():
+    expected = PureWindowsPath(r"\\server\share\中文 空格\Original English 公司.pdf")
+    with pytest.raises(AssertionError):
+        _assert_selected_file(["//server/other-share/中文 空格/Original English 公司.pdf"], expected)
 
 
 @pytest.fixture(autouse=True)
@@ -70,7 +111,7 @@ def test_qt_file_dialog_catalogue_and_paths(qapp, tmp_path):
         if mode == QFileDialog.FileMode.AnyFile:
             dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         dialog.selectFile(str(file))
-        assert dialog.selectedFiles() == [str(file)]
+        _assert_selected_file(dialog.selectedFiles(), file)
         text = ' '.join(b.text() for b in dialog.findChildren(QPushButton))
         assert 'Cancel' not in text and 'Open' not in text and 'Save' not in text
         assert '取消' in text
@@ -121,7 +162,7 @@ def test_file_dialog_accept_and_overwrite_cancel(qapp, tmp_path):
     dialog.selectFile(str(file))
     dialog.accept()
     assert dialog.result() == QFileDialog.DialogCode.Accepted
-    assert dialog.selectedFiles() == [str(file)]
+    _assert_selected_file(dialog.selectedFiles(), file)
     dialog = QFileDialog(None, '儲存檔案', str(tmp_path))
     dialog.setOption(QFileDialog.Option.DontUseNativeDialog)
     dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
@@ -248,8 +289,8 @@ def test_visible_file_model_metadata_chinese_and_paths_unchanged(qapp, tmp_path,
     assert rows[file.name][1] == "9 位元組"
     assert rows[file.name][2] == "可攜式文件（PDF）"
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", rows[file.name][3])
-    assert dialog.selectedFiles() == [str(file)]
+    _assert_selected_file(dialog.selectedFiles(), file)
     dialog.accept()
     assert dialog.result() == QFileDialog.DialogCode.Accepted
-    assert dialog.selectedFiles() == [str(file)]
+    _assert_selected_file(dialog.selectedFiles(), file)
     assert file.read_bytes() == b"synthetic"

@@ -2,7 +2,7 @@
 
 ## 0.33.0rc1 — 候選，尚未發布（2026-10-12）
 
-基於 `feature/v030-annual-workbench` 的 `f02dc5d`，保留 v0.31.0 全部既有功能及後續 0.32 owner 測試版的 UI、schema 27/28、客戶/租約/年度資料。維持 Python/PySide6，沒有 Rust 遷移。規劃候選 tag 為 `v0.33.0-rc.1`，目前未建立 tag 或 GitHub Release。
+基於 `feature/v030-annual-workbench` 的 `f02dc5d`，保留 v0.31.0 全部既有功能及後續 0.32 內部測試版的 UI、schema 27/28、客戶/租約/年度資料。維持 Python/PySide6，沒有 Rust 遷移。規劃候選 tag 為 `v0.33.0-rc.1`，目前未建立 tag 或 GitHub Release。
 
 ### 工作區
 
@@ -19,7 +19,7 @@
 - 待辦的客戶／案件讀取失敗顯示可重試訊息，保留原選取及輸入；失效關聯禁止儲存。
 - 客戶相關表單與待辦未存內容在取消、關閉或 Esc 時先確認；備註的 Tab 可前往底部操作。
 - 長表單、模板展開內容及長查詢結果可捲動，底部操作保留；日期填錯時聚焦原輸入，不抹除文字。
-- 收件搜尋框依可用空間縮放，修正 Windows 900 px 頁面被撐寬；保留既有寬度斷言及完整提示。
+- 收件搜尋框依可用空間縮放；Linux 相關回歸通過，但第二輪 Windows 900 px 仍被撐到 913 px，尚待真實控件幾何定位，原斷言與完整提示保留。
 
 ### 資料可靠性
 
@@ -44,11 +44,13 @@
 - 固定 `247fe2c` 完整 Linux 137 檔：3333 項中 3327 通過、5 失敗、1 略過，實值 branch coverage 90.93781920326865%。沒有未跑檔、timeout 或 native crash；整體矩陣仍標失敗。
 - 最近完整 Linux 結果及最終小修相關結果見 [驗證紀錄](docs/reliability_latest_port.md)。5 個 IPC 環境失敗未被 skip 或隱藏；另有既有設定頁單選測試在斷言通過後 Qt/pytest 清理 exit -11，根因未確認。
 - 首輪 Windows 完整 3227 項中 3223 通過、4 失敗，實值 coverage 90.76079821452015%；失敗正確阻擋 EXE 建置。修正範圍含實際收件版面、測試替身作用範圍與跨平台報告路徑，須以後續同 SHA Windows 重跑確認。
+- 第二輪 Windows 完整 3333 項中 3325 通過、8 失敗，實值 coverage 91.0367722165475%，仍阻擋 EXE。新增平行五檔診斷只為取得真實字型、控件幾何、截圖與自測副作用檔案清單，不代替完整 gate。
+- 日期欄寬同時計入中文提示與十字數字日期，避免翻譯後提示較短而壓縮輸入；選檔測試採平台路徑等價並精確保留檔名。
 - Windows 乾淨離線、沒有 Python 的核心操作、DPI/IME/Narrator、簽章/SmartScreen 均未驗收；安全對抗覆蓋亦未完成。候選不代表可以穩定發布。
 - 320 px 小月曆的第六週文字下緣在 offscreen 測量仍略裁切；繁中文字抽查不等於全站、全部縮放組合皆已驗收。
 
 [UI 範圍](docs/ui_v032_receipt_workbench.md) · [12 頁功能保留](docs/ui_v032_function_retention.md) · [Windows 候選 gate](docs/windows_candidate_gate.md)
 
-## 0.31.0 與歷史 0.32 owner 建置
+## 0.31.0 與歷史 0.32 測試建置
 
-v0.31.0 是已發布版本，含客戶雙地址、多租約/業別、年度工作/交易與第一批 UI 設計系統。後續 0.32 owner ZIP 的紀錄在 [歷史檢查清單](docs/v0.32.0_test_checklist.md)，不是本輪 EXE 或完整驗收證明。
+v0.31.0 是已發布版本，含客戶雙地址、多租約/業別、年度工作/交易與第一批 UI 設計系統。後續 0.32 測試 ZIP 的紀錄在 [歷史檢查清單](docs/v0.32.0_test_checklist.md)，不是本輪 EXE 或完整驗收證明。

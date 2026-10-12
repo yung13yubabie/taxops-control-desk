@@ -120,7 +120,7 @@ These may be shown but never stored as a second copy:
 
 ## Open Questions
 
-Product decisions, not implementation choices. Recorded in `.ai/DECISIONS.md`
+Product decisions, not implementation choices. Recorded in `docs/product_object_model.md`
 (2026-08-06). No new work-record features until they are answered.
 
 1. When an annual work item completes, should its linked tasks complete too? Today

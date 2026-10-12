@@ -44,18 +44,18 @@
 - 長表單與展開說明可捲動，儲存／取消留在可見位置；日期填錯會回到該欄位，空白欄位補上用途提示。
 - 操作提示、錯誤、空畫面與選檔視窗改用白話繁中；保留原本的客戶名稱、檔名與路徑。英文系統語言下的標準按鈕、月曆與選檔文字另有實際視窗檢查。
 
-最新本機完整量測 `247fe2c`：3333 項中 3327 通過、5 個 Linux IPC 環境失敗、1 個 Windows 專用項目略過；branch coverage 實值 90.9378%。另有新手流程與繁中文字獨立抽查。首輪 Windows 檢查有 4 項失敗，尚未產生 EXE；新整合版仍需重新執行 Windows 檢查。
+Windows 完整候選檢查仍有失敗，尚未產生本候選 EXE。來源修正與平行診斷不等於完整發布驗收。
 
 已知限制：小尺寸月曆在本機模擬畫面的第六週文字下緣仍略裁切，Windows 縮放與實機操作尚待驗收。繁中翻譯檔缺失時只提供有限按鈕後備，不能視為完整中文；候選 EXE 檢查會要求完整翻譯檔。
 
-固定提交、獨立複驗與完整限制見 [驗證紀錄](docs/reliability_latest_port.md)。全套逐檔獨立 process，coverage 實值門檻維持 **90%**；最終候選仍需 Windows 同 SHA 全套及乾淨離線驗收。
+可靠性契約與驗證限制見 [驗證紀錄](docs/reliability_latest_port.md)。全套逐檔獨立 process，coverage 實值門檻維持 **90%**；最終候選仍需 Windows 同 SHA 全套及乾淨離線驗收。
 
-已發布版本可在 [GitHub Releases](https://github.com/yung13yubabie/taxops-control-desk/releases) 核對。repo 的 `dist/` 是建置輸出，不是永久下載來源。`docs/v0.32.0_test_checklist.md` 記錄較早 owner 測試建置，並非本輪驗收。
+已發布版本可在 [GitHub Releases](https://github.com/yung13yubabie/taxops-control-desk/releases) 核對。repo 的 `dist/` 是建置輸出，不是永久下載來源。`docs/v0.32.0_test_checklist.md` 記錄較早 內部測試建置，並非本輪驗收。
 
 ## 開發
 
 維持 Python / PySide6 / SQLite。安裝開發依賴後，用 `python -m build_tools.run_test_matrix --help` 查看參數，再執行逐檔測試與合併 coverage；Windows 發行套件使用隔離環境及 `requirements-release.txt` 固定版本。
 
-開始改碼前閱讀 `.ai/spec-kit.md` 與其指定文件。物件責任見 `docs/product_object_model.md`；錯誤必須可見，不能以空資料掩蓋失敗，見 `docs/no_silent_failure.md`。新增測試使用合成資料；既有公開工商 fixture 也保留在完整回歸中。真實會計資料需先去識別化。
+開始改碼前閱讀 [CONTRIBUTING](CONTRIBUTING.md) 與 [安全政策](SECURITY.md)。物件責任見 `docs/product_object_model.md`；錯誤必須可見，不能以空資料掩蓋失敗，見 `docs/no_silent_failure.md`。新增測試使用合成資料；既有公開工商 fixture 也保留在完整回歸中。不得提交真實客戶、會計資料或私人操作紀錄；新測試與截圖使用合成資料。
 
 版本差異見 [CHANGELOG](CHANGELOG.md)；較早的功能與 EXE 證據見 [v0.31 歷史 README](https://github.com/yung13yubabie/taxops-control-desk/blob/v0.31.0/README.md)。UI 文件中的 v032 只表示移植來源基底，不是本候選版號。
