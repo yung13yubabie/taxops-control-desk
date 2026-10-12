@@ -153,6 +153,32 @@ jobs:
         run: |
           .\.venv-test\Scripts\python.exe -m build_tools.native_font_probe --output-dir "$env:TAXOPS_UI_DIAGNOSTICS_DIR/native-font"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Diagnose the same fixed Microsoft signature stage separately
+        if: always()
+        run: |
+          $source = Get-Content build_tools/vc_redist_source.json -Raw | ConvertFrom-Json
+          $payload = $source.package.payloads[0]
+          $directory = "$env:TAXOPS_UI_DIAGNOSTICS_DIR/signature"
+          New-Item -ItemType Directory -Force $directory | Out-Null
+          @{
+            status = 'failed'
+            stage = 'download'
+            package_url = $payload.url
+            expected_sha256 = $payload.sha256
+            expected_bytes = $source.observed_package_bytes
+            scope = 'signature-only diagnostic; not application acceptance'
+          } | ConvertTo-Json | Out-File -Encoding utf8 "$directory/official-vc.json"
+          $vsix = Join-Path $env:RUNNER_TEMP "TaxOps-Microsoft.VC.diagnostic.vsix"
+          try {
+            Invoke-WebRequest -Uri $payload.url -OutFile $vsix
+            python -m build_tools.official_vc_runtime --signature-only --archive "$vsix" --receipt "$directory/official-vc.json" *> "$directory/process.log"
+            $code = $LASTEXITCODE
+            Get-Content "$directory/process.log"
+            if ($code -ne 0) { exit $code }
+          } catch {
+            $_ | Out-File -Append -Encoding utf8 "$directory/process.log"
+            throw
+          }
       - name: Upload synthetic UI diagnostics even when assertions fail
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
