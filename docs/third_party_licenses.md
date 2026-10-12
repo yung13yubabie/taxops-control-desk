@@ -154,8 +154,8 @@ obtained. No new commercial agreement or purchase is identified as required
 by this repair. The following are concrete distribution conditions, not
 missing generic license files:
 
-- Resolve the source/terms questions for the eight Qt-supplied VC files and
-  the unmatched API-set/UCRT group identified below. Microsoft's generic runtime
+- Resolve the exact distribution source/terms questions for the eight
+  Qt-supplied VC files identified below. Microsoft's generic runtime
   redistribution guidance is a reason to check their applicable terms, not a
   basis to discard the explicit downstream route in CPython's own Windows
   license. Neither a new purchase nor universal Visual Studio licensing for
@@ -166,8 +166,9 @@ checks do not authorize publication or guarantee legal compliance.
 
 ## Microsoft file-level provenance boundary
 
-The manifest maps every reviewed Microsoft runtime file by bundle path, PE
-version and SHA-256 to the exact downloaded official distributions:
+The manifest separates the ten retained Microsoft VC files from the 43
+excluded Windows system files. It preserves bundle path, PE version and SHA-256
+for both groups, and maps retained files to exact official distributions:
 
 - Two root VCRUNTIME 14.38.33126.1 files match the official Python 3.11.9
   embedded distribution byte-for-byte. Its full Windows license expressly
@@ -181,13 +182,43 @@ version and SHA-256 to the exact downloaded official distributions:
   No separate Microsoft downstream terms were found in those wheels; their
   Qt commercial-reference file is not such a grant. The CPython notice cannot
   silently be extended to different Qt-supplied binaries.
-- Forty-two `api-ms-win-*` files and `ucrtbase.dll`, version 10.0.26100.1742,
-  have no matching bytes in the reviewed 15 release wheels or Python embedded
-  distribution. Their build source and corresponding SDK/system redistribution
-  terms must be identified before asserting their redistribution clearance.
+- Forty-two reviewed `api-ms-win-*` files and `ucrtbase.dll`, version
+  10.0.26100.1742, are excluded before collection for the Windows 10 1809+ /
+  Windows 11 x64 target. Their original hashes are retained under
+  `excluded_windows_system_binaries`; they are not current distributed files.
+  The OS supplies these API contracts and UCRT. The exact 43-name policy never
+  expands to unreviewed API/ext DLLs, and requires new review if source bytes
+  or staging inventory change.
 
 The byte mapping is a provenance check, not a determination of entitlement or
 noncompliance. These limited questions do not prevent local repair or candidate
 CI. No newly required purchase or agreement has been established, and none is
 accepted here. The ZIP gate detects a changed or additional Microsoft binary
 so its recorded provenance cannot silently become stale.
+
+
+## Windows system-runtime exclusion gate
+
+The pinned [PyInstaller inclusion rationale](https://github.com/pyinstaller/pyinstaller/blob/v6.11.1/PyInstaller/depend/dylib.py#L138-L147)
+and [Microsoft UCRT deployment documentation](https://learn.microsoft.com/en-us/cpp/windows/universal-crt-deployment?view=msvc-170#local-deployment)
+support relying on OS-provided APIs for this
+[Qt Windows target](https://doc.qt.io/qt-6.10/windows.html#supported-configurations).
+This does not remove the ten separately bundled VC files or establish their
+redistribution basis. No application runtime hash lock is introduced.
+
+`windows_system_runtime` filters the exact reviewed 43 destinations and hashes
+after Analysis and before COLLECT. It records the complete before/after binary
+inventory and original source paths under `artifacts/build-staging/`; generated
+build evidence is not committed. Changed/missing/duplicate inputs fail closed.
+The extracted new ZIP is checked against that receipt, all ten VC files and the
+notice manifest before its frozen EXE runs. Normal and delay PE imports, bundled
+export forwarders and imported symbols are checked. PE parser truncation is a
+failure. Native Windows lookup uses system-only loading and records physical
+providers for API contracts and forwarded symbols; it does not require a disk
+DLL bearing an API contract's logical name.
+
+The native loader report describes the verifier's Windows host, not the EXE's
+entire loaded-module set or all supported Windows versions. Clean offline
+Windows, actual GUI/PDF/printing/input and minimum-OS acceptance remain separate.
+The existing one-directory candidate stays a technical control; this change
+alone does not create the final standalone single-EXE deliverable.

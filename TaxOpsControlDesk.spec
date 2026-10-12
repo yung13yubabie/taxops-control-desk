@@ -70,6 +70,11 @@ a = Analysis(
     noarchive=False,
 )
 
+from build_tools.windows_system_runtime import filter_system_runtime
+
+# Windows 10 1809+ supplies these exact system APIs; keep the app-local VC DLLs.
+a.binaries = filter_system_runtime(a.binaries, a.datas)
+
 pyz = PYZ(a.pure, a.zipped_data)
 
 exe = EXE(

@@ -102,6 +102,34 @@ Before a ZIP can be tested/published locally, the host verifies the full notice 
 
 The earlier all-green ZIP is retained as evidence, not rewritten. A new packaging input requires a new actual ZIP hash and the same extracted frozen EXE verification, even when application source is unchanged.
 
+## Exact Windows system-runtime policy
+
+New candidates target x64 Windows 10 1809+ / Windows 11. After Analysis, the spec
+excludes exactly 43 reviewed system DLLs (13 CRT contracts, 29 core contracts and
+ucrtbase), checking both destination and SHA-256. It retains the eight Qt-supplied
+and two CPython-supplied VC files unchanged, as well as PDF, PrintSupport,
+qwindows, image/TLS plugins and the Traditional Chinese catalogue. No wildcard
+API/ext-DLL removal or application behavior change is part of this policy.
+
+The new `artifacts/build-staging/windows-system-runtime.json` records original
+source paths, before/after inventories, exact removals, retained VC hashes,
+source commit/tree and notice-manifest identity. Missing or changed inputs fail
+the build. This file is generated diagnostic evidence, never source material.
+The exact extracted candidate is compared with this staging receipt before its
+frozen checks. `windows-candidate/pe-dependencies.json` includes every native PE
+hash, complete normal/delay imports, bundled export forwarding and required
+OS-symbol resolution. Pinned pefile's conservative default symbol limits are
+raised explicitly; incomplete parsing and unexpected warnings fail the gate.
+Native resolution uses system-only LoadLibraryEx and records actual Windows
+system providers, including forwarded exports. It does not prove every DLL
+loaded by the application's process or clean end-user Windows acceptance.
+
+The existing 17 frozen checks and full raw 90% source gate remain mandatory.
+The earlier ZIP is not modified, and its prior passing result does not qualify
+this new exclusion policy. The one-directory output remains a validation
+control; a standalone single-EXE build requires its own packaging, lifecycle,
+source/rebuild directions and artifact acceptance.
+
 ## Source regression and coverage gate
 
 ```powershell

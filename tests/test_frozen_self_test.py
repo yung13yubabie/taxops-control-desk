@@ -238,6 +238,7 @@ def test_isolated_profile_removes_host_python_and_qt_paths(tmp_path, monkeypatch
 
 
 def test_gate_executes_extracted_artifact_and_preserves_tested_zip(tmp_path, monkeypatch):
+    monkeypatch.setattr(gate, "verify_native_dependencies", lambda bundle, output: {"native_probe": "synthetic"})
     bundle = _fake_bundle(tmp_path / "bundle")
     output = tmp_path / "output"
     launched = []
@@ -275,6 +276,7 @@ def test_gate_executes_extracted_artifact_and_preserves_tested_zip(tmp_path, mon
 
 @pytest.mark.parametrize("failure", ["missing_report", "timeout"])
 def test_gate_failure_never_publishes_candidate(tmp_path, monkeypatch, failure):
+    monkeypatch.setattr(gate, "verify_native_dependencies", lambda bundle, output: {"native_probe": "synthetic"})
     bundle = _fake_bundle(tmp_path / "bundle")
     output = tmp_path / "output"
     monkeypatch.setattr(gate, "sys", SimpleNamespace(platform="win32"))
@@ -363,3 +365,19 @@ def test_profile_setup_failure_restores_environment_before_checks(tmp_path, monk
     assert json.loads(report.read_text())["error"]["message"] == "synthetic profile setup failure"
     assert dict(os.environ) == before
     assert called == []
+
+
+def test_native_dependency_failure_blocks_candidate_and_frozen_execution(tmp_path, monkeypatch):
+    bundle = _fake_bundle(tmp_path / "bundle")
+    output = tmp_path / "output"
+    monkeypatch.setattr(gate, "sys", SimpleNamespace(platform="win32"))
+    def fail_native(extracted, evidence):
+        assert extracted != bundle and (extracted / "TaxOpsControlDesk.exe").is_file()
+        raise gate.BundleVerificationError("synthetic missing OS provider")
+    monkeypatch.setattr(gate, "verify_native_dependencies", fail_native)
+    monkeypatch.setattr(gate, "subprocess", SimpleNamespace(
+        run=lambda *args, **kwargs: pytest.fail("Frozen EXE must not run after failed native gate")))
+    with pytest.raises(gate.BundleVerificationError, match="missing OS provider"):
+        gate.verify_bundle(bundle, output)
+    assert not (output / "TaxOpsControlDesk-windows-candidate.zip").exists()
+    assert json.loads((output / "bundle-provenance.json").read_text())["status"] == "failed"
