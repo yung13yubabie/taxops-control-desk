@@ -6,6 +6,8 @@ import subprocess
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from build_tools import native_font_probe as probe
 
 
@@ -108,3 +110,86 @@ def test_supervisor_rejects_report_claiming_offscreen_success(tmp_path, monkeypa
     report = json.loads((tmp_path / "native-font-probe.json").read_text())
     assert not report["passed"]
     assert "native Windows" in report["error"]
+
+
+@pytest.mark.parametrize("indexes", [[], [0], [23], [0, 23]])
+def test_default_qrawfont_is_recorded_without_metadata_calls(qapp, indexes):
+    from PySide6.QtGui import QGlyphRun, QRawFont
+
+    raw = QRawFont()
+    assert not raw.isValid()
+    run = QGlyphRun()
+    run.setRawFont(raw)
+    run.setGlyphIndexes(indexes)
+    record = probe._glyph_run_record(run, "臺A𠮷")
+    assert record["valid"] is False
+    assert record["family"] is None and record["style"] is None
+    assert record["glyph_indexes"] == indexes
+    assert record["coverage"] == [
+        {"codepoint": "U+0041", "supported": False},
+        {"codepoint": "U+81FA", "supported": False},
+        {"codepoint": "U+20BB7", "supported": False},
+    ]
+
+
+def test_invalid_rawfont_never_calls_metadata_or_character_lookup():
+    def forbidden(*args):
+        raise AssertionError("invalid raw font accessor must not be called")
+    raw = SimpleNamespace(isValid=lambda: False, familyName=forbidden,
+                          styleName=forbidden, supportsCharacter=forbidden)
+    run = SimpleNamespace(rawFont=lambda: raw, glyphIndexes=lambda: [23])
+    record = probe._glyph_run_record(run, "稅")
+    assert record == {"family": None, "style": None, "valid": False,
+                      "glyph_indexes": [23],
+                      "coverage": [{"codepoint": "U+7A05", "supported": False}]}
+
+
+def test_invalid_rawfont_cannot_pass_capture(qapp, tmp_path, monkeypatch):
+    original_stylesheet = qapp.styleSheet()
+    original_icon = qapp.windowIcon()
+    real_record = probe._glyph_run_record
+    def invalid_record(run, text):
+        from PySide6.QtGui import QGlyphRun, QRawFont
+        invalid = QGlyphRun()
+        invalid.setRawFont(QRawFont())
+        invalid.setGlyphIndexes([23])
+        return real_record(invalid, text)
+    monkeypatch.setattr(probe, "_glyph_run_record", invalid_record)
+    try:
+        report = probe.capture_probe(tmp_path)
+        assert not report["passed"]
+        assert all(not r["passed"] and r["missing_codepoints"] for r in report["samples"])
+        assert all(not run["valid"] for sample in report["samples"] for run in sample["glyph_runs"])
+    finally:
+        qapp.setStyleSheet(original_stylesheet)
+        qapp.setWindowIcon(original_icon)
+
+
+@pytest.mark.parametrize("indexes, expected", [([], False), ([0], False), ([23], True)])
+def test_valid_font_still_requires_nonempty_nonzero_glyphs(qapp, tmp_path, monkeypatch, indexes, expected):
+    from PySide6 import QtGui
+
+    # Control layout output as well as the record: an offscreen backend with no
+    # system fonts must exercise these cases too, without installing any fonts.
+    monkeypatch.setattr(QtGui, "QTextLayout", lambda text, font: SimpleNamespace(
+        beginLayout=lambda: None,
+        createLine=lambda: SimpleNamespace(isValid=lambda: False),
+        endLayout=lambda: None,
+        glyphRuns=lambda: [object()],
+    ))
+    def controlled_record(run, text):
+        return {"family": "Synthetic valid font", "style": "Regular", "valid": True,
+                "glyph_indexes": indexes,
+                "coverage": [{"codepoint": f"U+{ord(char):04X}", "supported": True}
+                             for char in sorted(set(text), key=ord)]}
+    monkeypatch.setattr(probe, "_glyph_run_record", controlled_record)
+    original_stylesheet = qapp.styleSheet()
+    original_icon = qapp.windowIcon()
+    try:
+        report = probe.capture_probe(tmp_path)
+        assert all(not r["missing_codepoints"] for r in report["samples"])
+        assert all(r["passed"] is expected for r in report["samples"])
+        assert report["passed"] is (expected and qapp.platformName() == "windows")
+    finally:
+        qapp.setStyleSheet(original_stylesheet)
+        qapp.setWindowIcon(original_icon)

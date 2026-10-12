@@ -115,7 +115,7 @@ jobs:
             event_head_sha = '${{ github.event.pull_request.head.sha }}'
             checkout_sha = (git rev-parse HEAD)
             checkout_tree = (git rev-parse 'HEAD^{tree}')
-            scope = 'Five complete synthetic UI test files and separate native glyph probe; not the release gate'
+            scope = 'Seven complete synthetic UI/diagnostic test files and separate native glyph probe; not the release gate'
           } | ConvertTo-Json | Out-File -Encoding utf8 "$env:TAXOPS_UI_DIAGNOSTICS_DIR/provenance.json"
           python -m venv .venv-test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -125,7 +125,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run each complete diagnostic file and retain every failure
         run: |
-          $files = @('test_deep_chinese_ui', 'test_frozen_self_test', 'test_novice_client_forms', 'test_ui_stage_5_date_field', 'test_v032_receipt_workbench')
+          $files = @('test_native_font_probe', 'test_qt_geometry_diagnostics', 'test_deep_chinese_ui', 'test_frozen_self_test', 'test_novice_client_forms', 'test_ui_stage_5_date_field', 'test_v032_receipt_workbench')
           $results = @()
           $failed = $false
           foreach ($file in $files) {

@@ -30,6 +30,26 @@ def _write(path: Path, report: dict) -> None:
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+
+def _glyph_run_record(run, text: str) -> dict:
+    """Do not query metadata on a raw font without a physical font instance.
+
+    Qt's default QRawFont is invalid. Keep that state as failed evidence rather
+    than invoking backend-dependent metadata accessors or inventing a family.
+    """
+    raw = run.rawFont()
+    valid = raw.isValid()
+    coverage = [
+        {"codepoint": f"U+{ord(char):04X}",
+         "supported": valid and raw.supportsCharacter(ord(char))}
+        for char in sorted(set(text), key=ord)
+    ]
+    return {"family": raw.familyName() if valid else None,
+            "style": raw.styleName() if valid else None,
+            "valid": valid, "glyph_indexes": list(run.glyphIndexes()),
+            "coverage": coverage}
+
+
 def capture_probe(output_dir: Path) -> dict:
     """Inspect styled widgets using the already-selected Qt platform."""
     import PySide6
@@ -93,16 +113,10 @@ def capture_probe(output_dir: Path) -> dict:
         runs = []
         supported: set[int] = set()
         for run in shaped.glyphRuns():
-            raw = run.rawFont()
-            coverage = []
-            for char in sorted(set(text), key=ord):
-                present = raw.isValid() and raw.supportsCharacter(ord(char))
-                coverage.append({"codepoint": f"U+{ord(char):04X}", "supported": present})
-                if present:
-                    supported.add(ord(char))
-            runs.append({"family": raw.familyName(), "style": raw.styleName(),
-                         "valid": raw.isValid(), "glyph_indexes": list(run.glyphIndexes()),
-                         "coverage": coverage})
+            record = _glyph_run_record(run, text)
+            runs.append(record)
+            supported.update(int(c["codepoint"][2:], 16) for c in record["coverage"]
+                             if c["supported"])
         missing = [f"U+{ord(c):04X}" for c in sorted(set(text), key=ord)
                    if not c.isspace() and ord(c) not in supported]
         passed = (bool(runs) and all(r["valid"] and r["glyph_indexes"]

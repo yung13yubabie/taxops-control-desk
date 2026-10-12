@@ -29,6 +29,8 @@
 
 後續來源修正保持原 900 px 與無外部檔案副作用斷言：收件自適應 splitter 不再將寬版最小值鎖死父視窗；年度附件狀態與分頁分列；自測在暫存範圍內設定 profile/cache 環境路徑並於 finally 恢復。三者已有獨立 Linux 重播與功能回驗，仍需新候選的 Windows 完整結果。幾何診斷必須忠實記錄真實 QFontInfo，包括未解析的空名稱，不能偽造字型成功。平行診斷不是完整發布 gate。
 
+[第四輪 Windows](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38224732979) 的五檔診斷 165/165 通過，原生 qwindows 合成中文 glyph/PNG 亦通過；原生字型有 Microsoft JhengHei UI，罕字另使用系統 fallback。這不代表乾淨 client 或全部姓名已驗收。完整矩陣在第 64/140 檔的新增字型診斷測試，於 offscreen 讀 raw-font metadata 時發生 access violation；前 63 檔 1772 項通過，76 檔未跑。68.3824467406557% 是中止子集，不能冒稱最終 coverage；仍未建置 EXE。後續修正必須保留 invalid 字型的失敗判定，並重新通過完整 gate。
+
 ## 可重現驗證
 
 執行 [CONTRIBUTING](../CONTRIBUTING.md) 的逐檔矩陣與 [Windows 候選 gate](windows_candidate_gate.md)。每次使用固定來源、全套檔案、原始 branch coverage 至少 90%；任何失敗維持失敗。聚焦測試或 source self-test 不可替代 Windows frozen 自測。
@@ -38,6 +40,6 @@
 - Linux IPC 受環境限制的五項失敗仍保留；Windows 專用項目按原平台條件執行。
 - 設定頁單選測試曾在斷言通過後於 Qt/pytest 清理階段 exit -11；根因未確認，全檔正常退出不等於已修復。
 - 小月曆第六週文字下緣在 offscreen 測量略裁切。
-- Windows offscreen PNG 出現中文字方框；這不能判定原生 Windows 缺字型。新增獨立 qwindows 字型庫、實际 glyph run 與 PNG 診斷，未完成前不聲稱原生中文字形可讀性已驗收。
+- Windows offscreen PNG 出現中文字方框；這不能判定原生 Windows 缺字型。獨立 qwindows 字型庫、實際 glyph run 與 PNG 診斷已在該 hosted runner 通過；這仍不是乾淨 Windows 與所有字形驗收。
 - 乾淨離線 Windows、無 Python 核心操作、DPI/IME/Narrator、真實資料升級、publisher signing/SmartScreen 與完整安全對抗尚未驗收。
 - 所有測試數字只代表其來源版本與平台，不可移用為後續來源或完整發布驗收。

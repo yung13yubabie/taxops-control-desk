@@ -30,7 +30,7 @@ Activate `.venv` before the install and test commands using your shell's normal
 activation command. The matrix starts each test file in a separate process and
 combines raw branch coverage. All test files run; failures remain failures, and
 the unrounded branch coverage gate stays at 90%. Do not replace this gate with a
-focused suite, the hygiene-only workflow, or the five-file Windows diagnostic job.
+focused suite, the hygiene-only workflow, or the focused Windows diagnostic job.
 
 Windows packaging and frozen verification use a separate release-only environment;
 follow [the Windows candidate gate](docs/windows_candidate_gate.md). A source or
