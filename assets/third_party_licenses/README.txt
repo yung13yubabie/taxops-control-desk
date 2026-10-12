@@ -69,12 +69,19 @@ VCRUNTIME DLLs match that official Python distribution. This does not mean
 Python users must purchase Visual Studio.
 
 The separate Qt/PySide/Shiboken VC DLLs match their official wheels, but those
-wheels do not supply separate Microsoft redistribution terms. The API-set and
-UCRT files do not match the reviewed wheels or Python embedded distribution.
-The manifest identifies every file, version, hash, match and remaining source/
-terms question. Those questions concern final redistribution, not permission
-to perform this local packaging repair or CI. Qt LGPL does not license these
-Microsoft components.
+wheels do not supply separate Microsoft redistribution terms. Their exact
+applicable distribution basis remains under review; approval to use a build
+product does not itself establish the source of these particular bytes.
+The manifest retains ten bundled VC file identities and separately records
+43 excluded system files: 13 CRT API contracts, 29 core API contracts and
+ucrtbase.dll. For this Windows 10 1809+/Windows 11 x64 target, the OS supplies
+these APIs. Exclusion uses exact names and reviewed hashes before packaging,
+not a blanket removal of API DLLs. The old system-file hashes describe excluded
+build inputs, not files distributed in the new bundle. A rebuilt artifact must
+pass normal/delay import and native OS-provider checks plus the full frozen
+gate. Hosted CI is not clean-offline or native IME/printing acceptance.
+The remaining questions concern final VC redistribution, not permission for
+local repair or candidate CI. Qt LGPL does not license Microsoft components.
 This bundle does not accept terms or assert a commercial entitlement for you.
 
 Maintenance

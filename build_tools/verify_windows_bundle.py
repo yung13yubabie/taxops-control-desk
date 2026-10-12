@@ -1,7 +1,7 @@
 """Verify the exact zipped Windows bundle by running its extracted EXE.
 
 This gate needs Windows. It is not clean-machine or manually tested UI evidence.
-Uses only the host standard library; application checks run inside the EXE.
+Uses pinned pefile for static imports; application checks run inside the EXE.
 """
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ import zipfile
 from pathlib import Path
 
 from build_tools.dependency_licenses import LicenseAssetError, validate_bundle_licenses
+from build_tools.windows_system_runtime import validate_system_runtime_bundle, validate_staging_report
+from build_tools.windows_pe_dependencies import verify_pe_dependencies
 
 EXPECTED_CHECKS = frozenset({
     "qt_traditional_chinese_widgets_and_fallback",
@@ -31,7 +33,8 @@ EXPECTED_CHECKS = frozenset({
 _REQUIRED_FILES = frozenset({
     "taxopscontroldesk.exe", "python311.dll", "_ssl.pyd", "sqlite3.dll",
     "qwindows.dll", "qjpeg.dll", "qico.dll", "qtpdf.pyd", "qtpdfwidgets.pyd", "app_icon.ico",
-    "qtbase_zh_tw.qm",
+    "qtbase_zh_tw.qm", "qt6core.dll", "qt6gui.dll", "qt6widgets.dll",
+    "qt6pdf.dll", "qt6pdfwidgets.dll", "qt6printsupport.dll", "qtprintsupport.pyd",
 })
 _FORBIDDEN_DIRS = frozenset({".git", ".ai", "tests", "__pycache__", "attachments", "taxopsbackups"})
 
@@ -118,6 +121,13 @@ def isolated_environment(root: Path) -> dict[str, str]:
     return env
 
 
+def verify_native_dependencies(bundle: Path, output: Path) -> dict:
+    """Check the extracted ZIP against staging and this host's OS providers."""
+    files = [p for p in bundle.rglob("*") if p.is_file()]
+    return {**validate_system_runtime_bundle(bundle, files), **validate_staging_report(bundle),
+            **verify_pe_dependencies(bundle, output / "pe-dependencies.json")}
+
+
 def verify_bundle(bundle: Path, output: Path, *, timeout: int = 120) -> dict:
     if sys.platform != "win32":
         raise BundleVerificationError("Windows bundle execution must be verified on Windows")
@@ -140,6 +150,7 @@ def verify_bundle(bundle: Path, output: Path, *, timeout: int = 120) -> dict:
             with zipfile.ZipFile(archive) as zipped:
                 zipped.extractall(extract)
             exe = extract / "TaxOpsControlDesk" / "TaxOpsControlDesk.exe"
+            provenance.update(verify_native_dependencies(exe.parent, output))
             report_path = root / "self-test.json"
             env = isolated_environment(root / "isolated_profile")
             process = subprocess.run(

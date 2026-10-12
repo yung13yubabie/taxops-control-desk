@@ -1027,9 +1027,9 @@
   "qt_pdf_source_revision": "c971c6841dd6beab9f54aeaf9a53be413273039e",
   "unresolved_release_review": [
     {
-      "component": "Microsoft VC/UCRT redistribution basis",
-      "status": "Limited provenance/terms questions for the eight Qt-supplied VC DLLs and 43 unmatched API-set/UCRT files; CPython downstream route preserved",
-      "detail": "Two root VCRUNTIME DLLs match CPython 3.11.9, whose Windows LICENSE explicitly provides a downstream route with four restrictions. Eight Qt/PySide/Shiboken VC DLLs match their official wheels but those wheels contain no separate Microsoft redistribution terms. Forty-two API-set DLLs and ucrtbase.dll do not match the reviewed wheels/embed. Their precise distribution source and applicable terms remain to be established. This does not imply every Python end user must buy Visual Studio, and does not block local build/CI.",
+      "component": "Microsoft VC redistribution basis",
+      "status": "Distribution basis for the eight Qt-supplied VC DLLs remains under review; CPython downstream route preserved",
+      "detail": "Two root VCRUNTIME DLLs match CPython 3.11.9, whose Windows LICENSE provides a downstream route with four restrictions. Eight Qt/PySide/Shiboken VC DLLs match official wheels; the exact applicable distribution source and terms still require verification. Forty-three reviewed API-set/UCRT files are excluded from this Windows 10 1809+/11 package and supplied by the OS. Their old hashes remain as exclusion evidence, not as current bundled files. Permission to use a development tool does not by itself prove the identity or distribution basis of these Qt-supplied files. Local repair and candidate CI remain permitted.",
       "source_url": "https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files"
     }
   ],
@@ -1053,7 +1053,7 @@
     },
     {
       "path": "README.txt",
-      "sha256": "0720899255c4887f6e76a45f27a341feaa0bff123c316e588937775fcbf76e81",
+      "sha256": "4626d8959fb3344deb7edc1470a6e73ea58f74fe4e80eb86d259dd96be624bc6",
       "origin": "Project-authored component and notice index"
     },
     {
@@ -3117,20 +3117,26 @@
       "source_url": "https://releases.llvm.org/3.6.2/llvm-3.6.2.src.tar.xz"
     },
     {
-      "name": "Microsoft VC/UCRT",
+      "name": "Microsoft VC runtime",
       "version": "Supplier-specific versions; inspect final bundle PE version resources",
       "bundle_files": [
-        "VCRUNTIME140*.dll",
-        "PySide6/MSVCP140*.dll",
-        "ucrtbase.dll",
-        "api-ms-win-*.dll"
+        "PySide6/MSVCP140.dll",
+        "PySide6/MSVCP140_1.dll",
+        "PySide6/MSVCP140_2.dll",
+        "PySide6/VCRUNTIME140.dll",
+        "PySide6/VCRUNTIME140_1.dll",
+        "shiboken6/MSVCP140.dll",
+        "shiboken6/VCRUNTIME140.dll",
+        "shiboken6/VCRUNTIME140_1.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll"
       ],
       "license": "Microsoft redistribution terms; not covered by the included open-source licenses",
       "notices": [
         "CPython-3.11.9/LICENSE.txt"
       ],
       "source_url": "https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files",
-      "review_status": "Distributor must verify applicable terms and end-user conditions"
+      "review_status": "Ten exact app-local VC files retained; Qt-supplied distribution basis remains under review. The 43 API-set/UCRT exclusions use Windows OS providers."
     }
   ],
   "qt_pdf_source_mapping_url": "https://github.com/qt/qtwebengine/tree/v6.10.2/src/3rdparty",
@@ -3178,6 +3184,233 @@
     }
   ],
   "reviewed_microsoft_binaries": [
+    {
+      "bundle_path": "_internal/PySide6/MSVCP140.dll",
+      "sha256": "9a6cf6095a24dfaca230409fc795d688619dc5663200ae59213eeaaa02d030b3",
+      "pe_file_version": [
+        14,
+        44,
+        35211,
+        0
+      ],
+      "matches": [
+        {
+          "distribution": "pyside6_essentials-6.10.2-cp39-abi3-win_amd64.whl",
+          "source_path": "PySide6/msvcp140.dll"
+        }
+      ],
+      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+    },
+    {
+      "bundle_path": "_internal/PySide6/MSVCP140_1.dll",
+      "sha256": "8ce6980144fadfea52b6f14f7799e05e3232c28414fb5e617968a814be33fc1a",
+      "pe_file_version": [
+        14,
+        44,
+        35211,
+        0
+      ],
+      "matches": [
+        {
+          "distribution": "pyside6_essentials-6.10.2-cp39-abi3-win_amd64.whl",
+          "source_path": "PySide6/msvcp140_1.dll"
+        }
+      ],
+      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+    },
+    {
+      "bundle_path": "_internal/PySide6/MSVCP140_2.dll",
+      "sha256": "14301dc6a6021b6e70d102535d9b9a7ad1a40cfc61e88b601a9af8b84e0096b2",
+      "pe_file_version": [
+        14,
+        44,
+        35211,
+        0
+      ],
+      "matches": [
+        {
+          "distribution": "pyside6_essentials-6.10.2-cp39-abi3-win_amd64.whl",
+          "source_path": "PySide6/msvcp140_2.dll"
+        }
+      ],
+      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+    },
+    {
+      "bundle_path": "_internal/PySide6/VCRUNTIME140.dll",
+      "sha256": "21a16fc13606d5d6091bca7e110d051bc0b247852c468565ac2f11b26cde9db8",
+      "pe_file_version": [
+        14,
+        44,
+        35211,
+        0
+      ],
+      "matches": [
+        {
+          "distribution": "pyside6_essentials-6.10.2-cp39-abi3-win_amd64.whl",
+          "source_path": "PySide6/vcruntime140.dll"
+        }
+      ],
+      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+    },
+    {
+      "bundle_path": "_internal/PySide6/VCRUNTIME140_1.dll",
+      "sha256": "e1c403e00debd7ab4481f142f22b01cad03472b26a93c7e95cd3f66897156b34",
+      "pe_file_version": [
+        14,
+        44,
+        35211,
+        0
+      ],
+      "matches": [
+        {
+          "distribution": "pyside6_essentials-6.10.2-cp39-abi3-win_amd64.whl",
+          "source_path": "PySide6/vcruntime140_1.dll"
+        }
+      ],
+      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+    },
+    {
+      "bundle_path": "_internal/shiboken6/MSVCP140.dll",
+      "sha256": "d8fcd3b7619e7aa5623653afecbec42751358e56ac04aed7cc679cc494376ef1",
+      "pe_file_version": [
+        14,
+        44,
+        35211,
+        0
+      ],
+      "matches": [
+        {
+          "distribution": "shiboken6-6.10.2-cp39-abi3-win_amd64.whl",
+          "source_path": "shiboken6/msvcp140.dll"
+        }
+      ],
+      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+    },
+    {
+      "bundle_path": "_internal/shiboken6/VCRUNTIME140.dll",
+      "sha256": "bd2cce9499558b77b919c6cc70db52e7c697b76f2f53376ec9eab79e0c292a4d",
+      "pe_file_version": [
+        14,
+        44,
+        35211,
+        0
+      ],
+      "matches": [
+        {
+          "distribution": "shiboken6-6.10.2-cp39-abi3-win_amd64.whl",
+          "source_path": "shiboken6/vcruntime140.dll"
+        }
+      ],
+      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+    },
+    {
+      "bundle_path": "_internal/shiboken6/VCRUNTIME140_1.dll",
+      "sha256": "813c8808223f29b7d68589f62f2812d87e5e43b5d50ce7f351942a5c92cde5a6",
+      "pe_file_version": [
+        14,
+        44,
+        35211,
+        0
+      ],
+      "matches": [
+        {
+          "distribution": "shiboken6-6.10.2-cp39-abi3-win_amd64.whl",
+          "source_path": "shiboken6/vcruntime140_1.dll"
+        }
+      ],
+      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+    },
+    {
+      "bundle_path": "_internal/VCRUNTIME140.dll",
+      "sha256": "4d292623516f65c80482081e62d5dadb759dc16e851de5db24c3cbb57b87db83",
+      "pe_file_version": [
+        14,
+        38,
+        33126,
+        1
+      ],
+      "matches": [
+        {
+          "distribution": "python-3.11.9-embed-amd64.zip",
+          "source_path": "vcruntime140.dll"
+        }
+      ],
+      "notice_basis": "The exact official CPython Windows build LICENSE states its downstream distribution route and four restrictions; reproduced in CPython-3.11.9/LICENSE.txt."
+    },
+    {
+      "bundle_path": "_internal/VCRUNTIME140_1.dll",
+      "sha256": "a113f192195f245f17389e6ecbed8005990bcb2476ddad33f7c4c6c86327afe5",
+      "pe_file_version": [
+        14,
+        38,
+        33126,
+        1
+      ],
+      "matches": [
+        {
+          "distribution": "python-3.11.9-embed-amd64.zip",
+          "source_path": "vcruntime140_1.dll"
+        }
+      ],
+      "notice_basis": "The exact official CPython Windows build LICENSE states its downstream distribution route and four restrictions; reproduced in CPython-3.11.9/LICENSE.txt."
+    }
+  ],
+  "source_delivery": {
+    "notice_file": "SOURCE_ACCESS.txt",
+    "combined_work_mechanism": "LGPLv3 section 4(d)(1), separate replaceable shared libraries",
+    "network_source_method": "GPLv3 section 6(d), source directions beside binary with equivalent no-additional-charge copying access",
+    "source_url_check_date": "2026-10-12",
+    "source_archive_checks": [
+      {
+        "url": "https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qtbase-everywhere-src-6.10.2.tar.xz",
+        "http_status": 206,
+        "verification": "archive prefix returned by HTTP GET; range retrieval for Qt tar.xz; PySide tar.gz also fully downloaded and hashed in distribution_sources"
+      },
+      {
+        "url": "https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qtsvg-everywhere-src-6.10.2.tar.xz",
+        "http_status": 206,
+        "verification": "archive prefix returned by HTTP GET; range retrieval for Qt tar.xz; PySide tar.gz also fully downloaded and hashed in distribution_sources"
+      },
+      {
+        "url": "https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qtimageformats-everywhere-src-6.10.2.tar.xz",
+        "http_status": 206,
+        "verification": "archive prefix returned by HTTP GET; range retrieval for Qt tar.xz; PySide tar.gz also fully downloaded and hashed in distribution_sources"
+      },
+      {
+        "url": "https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qtwebengine-everywhere-src-6.10.2.tar.xz",
+        "http_status": 206,
+        "verification": "archive prefix returned by HTTP GET; range retrieval for Qt tar.xz; PySide tar.gz also fully downloaded and hashed in distribution_sources"
+      },
+      {
+        "url": "https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qttranslations-everywhere-src-6.10.2.tar.xz",
+        "http_status": 206,
+        "verification": "archive prefix returned by HTTP GET; range retrieval for Qt tar.xz; PySide tar.gz also fully downloaded and hashed in distribution_sources"
+      },
+      {
+        "url": "https://codeload.github.com/pyside/pyside-setup/tar.gz/refs/tags/v6.10.2",
+        "http_status": 200,
+        "verification": "archive prefix returned by HTTP GET; range retrieval for Qt tar.xz; PySide tar.gz also fully downloaded and hashed in distribution_sources"
+      },
+      {
+        "url": "https://download.qt.io/archive/qt/6.10/6.10.2/single/qt-everywhere-src-6.10.2.tar.xz",
+        "http_status": 206,
+        "verification": "archive prefix returned by HTTP GET; range retrieval for Qt tar.xz; PySide tar.gz also fully downloaded and hashed in distribution_sources"
+      }
+    ],
+    "taxops_library_source_patches": [],
+    "build_inputs": "Pinned upstream CMake/setup.py/COIN scripts and Windows build instructions linked in SOURCE_ACCESS.txt",
+    "verification_limits": [
+      "Vendor-generated CMake cache, full GN arguments and actual wheel build log not recovered; source-level build configuration is available.",
+      "No independent compatible modified-library build or bit-for-bit reproduction performed. No specific additional source patch is identified as missing."
+    ],
+    "publisher_requirements": [
+      "Link SOURCE_ACCESS.txt at the matching TaxOps revision beside the binary download.",
+      "Recheck equivalent no-additional-charge source access at distribution and maintain required availability, including third-party hosting.",
+      "Provide any subsequently discovered necessary patch or different matching source revision before claiming corresponding-source completeness."
+    ],
+    "written_source_offer": false
+  },
+  "excluded_windows_system_binaries": [
     {
       "bundle_path": "_internal/api-ms-win-core-console-l1-1-0.dll",
       "sha256": "88ace577a9c51061cb7d1a36babbbefa48212fadc838ffde98fdfff60de18386",
@@ -3683,142 +3916,6 @@
       "notice_basis": "No byte-identical match in the pinned release wheels or official Python embedded distribution; determine the actual Windows SDK/system redistribution source and applicable terms from the build provenance."
     },
     {
-      "bundle_path": "_internal/PySide6/MSVCP140.dll",
-      "sha256": "9a6cf6095a24dfaca230409fc795d688619dc5663200ae59213eeaaa02d030b3",
-      "pe_file_version": [
-        14,
-        44,
-        35211,
-        0
-      ],
-      "matches": [
-        {
-          "distribution": "pyside6_essentials-6.10.2-cp39-abi3-win_amd64.whl",
-          "source_path": "PySide6/msvcp140.dll"
-        }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
-    },
-    {
-      "bundle_path": "_internal/PySide6/MSVCP140_1.dll",
-      "sha256": "8ce6980144fadfea52b6f14f7799e05e3232c28414fb5e617968a814be33fc1a",
-      "pe_file_version": [
-        14,
-        44,
-        35211,
-        0
-      ],
-      "matches": [
-        {
-          "distribution": "pyside6_essentials-6.10.2-cp39-abi3-win_amd64.whl",
-          "source_path": "PySide6/msvcp140_1.dll"
-        }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
-    },
-    {
-      "bundle_path": "_internal/PySide6/MSVCP140_2.dll",
-      "sha256": "14301dc6a6021b6e70d102535d9b9a7ad1a40cfc61e88b601a9af8b84e0096b2",
-      "pe_file_version": [
-        14,
-        44,
-        35211,
-        0
-      ],
-      "matches": [
-        {
-          "distribution": "pyside6_essentials-6.10.2-cp39-abi3-win_amd64.whl",
-          "source_path": "PySide6/msvcp140_2.dll"
-        }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
-    },
-    {
-      "bundle_path": "_internal/PySide6/VCRUNTIME140.dll",
-      "sha256": "21a16fc13606d5d6091bca7e110d051bc0b247852c468565ac2f11b26cde9db8",
-      "pe_file_version": [
-        14,
-        44,
-        35211,
-        0
-      ],
-      "matches": [
-        {
-          "distribution": "pyside6_essentials-6.10.2-cp39-abi3-win_amd64.whl",
-          "source_path": "PySide6/vcruntime140.dll"
-        }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
-    },
-    {
-      "bundle_path": "_internal/PySide6/VCRUNTIME140_1.dll",
-      "sha256": "e1c403e00debd7ab4481f142f22b01cad03472b26a93c7e95cd3f66897156b34",
-      "pe_file_version": [
-        14,
-        44,
-        35211,
-        0
-      ],
-      "matches": [
-        {
-          "distribution": "pyside6_essentials-6.10.2-cp39-abi3-win_amd64.whl",
-          "source_path": "PySide6/vcruntime140_1.dll"
-        }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
-    },
-    {
-      "bundle_path": "_internal/shiboken6/MSVCP140.dll",
-      "sha256": "d8fcd3b7619e7aa5623653afecbec42751358e56ac04aed7cc679cc494376ef1",
-      "pe_file_version": [
-        14,
-        44,
-        35211,
-        0
-      ],
-      "matches": [
-        {
-          "distribution": "shiboken6-6.10.2-cp39-abi3-win_amd64.whl",
-          "source_path": "shiboken6/msvcp140.dll"
-        }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
-    },
-    {
-      "bundle_path": "_internal/shiboken6/VCRUNTIME140.dll",
-      "sha256": "bd2cce9499558b77b919c6cc70db52e7c697b76f2f53376ec9eab79e0c292a4d",
-      "pe_file_version": [
-        14,
-        44,
-        35211,
-        0
-      ],
-      "matches": [
-        {
-          "distribution": "shiboken6-6.10.2-cp39-abi3-win_amd64.whl",
-          "source_path": "shiboken6/vcruntime140.dll"
-        }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
-    },
-    {
-      "bundle_path": "_internal/shiboken6/VCRUNTIME140_1.dll",
-      "sha256": "813c8808223f29b7d68589f62f2812d87e5e43b5d50ce7f351942a5c92cde5a6",
-      "pe_file_version": [
-        14,
-        44,
-        35211,
-        0
-      ],
-      "matches": [
-        {
-          "distribution": "shiboken6-6.10.2-cp39-abi3-win_amd64.whl",
-          "source_path": "shiboken6/vcruntime140_1.dll"
-        }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
-    },
-    {
       "bundle_path": "_internal/ucrtbase.dll",
       "sha256": "2e5fb14b7bf8540278f3614a12f0226e56a7cc9e64b81cbd976c6fcf2f71cbfb",
       "pe_file_version": [
@@ -3829,95 +3926,17 @@
       ],
       "matches": [],
       "notice_basis": "No byte-identical match in the pinned release wheels or official Python embedded distribution; determine the actual Windows SDK/system redistribution source and applicable terms from the build provenance."
-    },
-    {
-      "bundle_path": "_internal/VCRUNTIME140.dll",
-      "sha256": "4d292623516f65c80482081e62d5dadb759dc16e851de5db24c3cbb57b87db83",
-      "pe_file_version": [
-        14,
-        38,
-        33126,
-        1
-      ],
-      "matches": [
-        {
-          "distribution": "python-3.11.9-embed-amd64.zip",
-          "source_path": "vcruntime140.dll"
-        }
-      ],
-      "notice_basis": "The exact official CPython Windows build LICENSE states its downstream distribution route and four restrictions; reproduced in CPython-3.11.9/LICENSE.txt."
-    },
-    {
-      "bundle_path": "_internal/VCRUNTIME140_1.dll",
-      "sha256": "a113f192195f245f17389e6ecbed8005990bcb2476ddad33f7c4c6c86327afe5",
-      "pe_file_version": [
-        14,
-        38,
-        33126,
-        1
-      ],
-      "matches": [
-        {
-          "distribution": "python-3.11.9-embed-amd64.zip",
-          "source_path": "vcruntime140_1.dll"
-        }
-      ],
-      "notice_basis": "The exact official CPython Windows build LICENSE states its downstream distribution route and four restrictions; reproduced in CPython-3.11.9/LICENSE.txt."
     }
   ],
-  "source_delivery": {
-    "notice_file": "SOURCE_ACCESS.txt",
-    "combined_work_mechanism": "LGPLv3 section 4(d)(1), separate replaceable shared libraries",
-    "network_source_method": "GPLv3 section 6(d), source directions beside binary with equivalent no-additional-charge copying access",
-    "source_url_check_date": "2026-10-12",
-    "source_archive_checks": [
-      {
-        "url": "https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qtbase-everywhere-src-6.10.2.tar.xz",
-        "http_status": 206,
-        "verification": "archive prefix returned by HTTP GET; range retrieval for Qt tar.xz; PySide tar.gz also fully downloaded and hashed in distribution_sources"
-      },
-      {
-        "url": "https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qtsvg-everywhere-src-6.10.2.tar.xz",
-        "http_status": 206,
-        "verification": "archive prefix returned by HTTP GET; range retrieval for Qt tar.xz; PySide tar.gz also fully downloaded and hashed in distribution_sources"
-      },
-      {
-        "url": "https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qtimageformats-everywhere-src-6.10.2.tar.xz",
-        "http_status": 206,
-        "verification": "archive prefix returned by HTTP GET; range retrieval for Qt tar.xz; PySide tar.gz also fully downloaded and hashed in distribution_sources"
-      },
-      {
-        "url": "https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qtwebengine-everywhere-src-6.10.2.tar.xz",
-        "http_status": 206,
-        "verification": "archive prefix returned by HTTP GET; range retrieval for Qt tar.xz; PySide tar.gz also fully downloaded and hashed in distribution_sources"
-      },
-      {
-        "url": "https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qttranslations-everywhere-src-6.10.2.tar.xz",
-        "http_status": 206,
-        "verification": "archive prefix returned by HTTP GET; range retrieval for Qt tar.xz; PySide tar.gz also fully downloaded and hashed in distribution_sources"
-      },
-      {
-        "url": "https://codeload.github.com/pyside/pyside-setup/tar.gz/refs/tags/v6.10.2",
-        "http_status": 200,
-        "verification": "archive prefix returned by HTTP GET; range retrieval for Qt tar.xz; PySide tar.gz also fully downloaded and hashed in distribution_sources"
-      },
-      {
-        "url": "https://download.qt.io/archive/qt/6.10/6.10.2/single/qt-everywhere-src-6.10.2.tar.xz",
-        "http_status": 206,
-        "verification": "archive prefix returned by HTTP GET; range retrieval for Qt tar.xz; PySide tar.gz also fully downloaded and hashed in distribution_sources"
-      }
+  "windows_system_runtime_policy": {
+    "supported_target": "Windows 10 1809+ / Windows 11 x64",
+    "excluded_count": 43,
+    "scope": "Exact reviewed build-time exclusions. OS runtime dependencies remain required; no blanket api/ext exclusion.",
+    "sources": [
+      "https://github.com/pyinstaller/pyinstaller/blob/v6.11.1/PyInstaller/depend/dylib.py#L138-L147",
+      "https://doc.qt.io/qt-6.10/windows.html#supported-configurations",
+      "https://learn.microsoft.com/en-us/cpp/windows/universal-crt-deployment?view=msvc-170#local-deployment"
     ],
-    "taxops_library_source_patches": [],
-    "build_inputs": "Pinned upstream CMake/setup.py/COIN scripts and Windows build instructions linked in SOURCE_ACCESS.txt",
-    "verification_limits": [
-      "Vendor-generated CMake cache, full GN arguments and actual wheel build log not recovered; source-level build configuration is available.",
-      "No independent compatible modified-library build or bit-for-bit reproduction performed. No specific additional source patch is identified as missing."
-    ],
-    "publisher_requirements": [
-      "Link SOURCE_ACCESS.txt at the matching TaxOps revision beside the binary download.",
-      "Recheck equivalent no-additional-charge source access at distribution and maintain required availability, including third-party hosting.",
-      "Provide any subsequently discovered necessary patch or different matching source revision before claiming corresponding-source completeness."
-    ],
-    "written_source_offer": false
+    "validation": "Requires a rebuilt artifact, native OS dependency resolution and the unchanged full source/frozen gates. Hosted CI is not clean offline end-user Windows acceptance."
   }
 }
