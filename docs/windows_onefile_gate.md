@@ -45,3 +45,55 @@ The build remains a candidate until its exact final tree passes all gates.
 Use [BUILD_RECOMBINE](../BUILD_RECOMBINE.txt) for exact commands. Failed gates
 retain evidence and remain failures. A source commit, test count or hash receipt
 is never a substitute for executing the matching final artifact.
+
+## Actual loaded-module origins
+
+The isolated onefile GUI probe now samples its own process after the real main
+window is shown, and frozen diagnostics sample after all 18 existing checks.
+The ordinary application entry does not collect or upload this information.
+`native_files` remains an extracted-file inventory; it is not loader evidence.
+The host's logical inspection/native-import resolver is also kept separate.
+
+The diagnostic helper uses `GetCurrentProcess`, `K32EnumProcessModulesEx` and
+`GetModuleFileNameW`, with explicit ctypes signatures and bounded buffers. It
+opens no other process, changes no DLL/Qt search path, and does not preload Qt,
+plugins or VC libraries to satisfy the gate. It hashes files reached from the
+observed module handles. A changing module list, unreadable file or truncated
+path fails the sample. This records on-disk file identity, not mapped-memory
+integrity. The collector's own standard-library dependencies are included.
+
+The external onefile gate checks each observed path and SHA-256 against the
+actual EXE and embedded inventory. The main EXE is the sole exact executable
+exception outside `_MEIPASS`. Python, Qt, PySide, Shiboken and loaded VC modules
+must be inside `_MEIPASS`. The pinned Python/Qt/binding core and basic VC imports
+must actually appear. Distinct VC destinations sharing a basename retain their
+individual path/hash evidence; duplicate exact paths are rejected. Missing
+fields, missing core modules, unknown embedded files, changed hashes and foreign
+paths fail acceptance.
+
+OS-location classification uses independently queried Windows API roots and the
+same narrow locations as the existing native resolver: directly in System32 or
+beneath WinSxS. Other locations, including unreviewed system subdirectories or
+third-party injected libraries, are reported and fail this gate; there is no
+silent allowlist expansion. This is not an OS-signature or clean-machine claim.
+
+`loaded_embedded` and `not_observed_embedded` are reported separately for each
+sample. A plugin not loaded at that instant, an untriggered delay import, or a
+`LOAD_LIBRARY_AS_DATAFILE` mapping is outside this evidence. File existence is
+never substituted for actual loading. Linux/source runs explicitly report this
+native evidence as unsupported, without adding test skips or changing the 18
+checks or raw 90% coverage gate. Synthetic contract tests are not Windows EXE
+acceptance. The next rebuilt Windows artifact must supply these snapshots;
+previous artifact evidence does not retroactively satisfy the new requirement.
+
+Microsoft API references:
+- [EnumProcessModulesEx](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-enumprocessmodulesex)
+- [GetModuleFileNameW](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulefilenamew)
+- [GetSystemDirectoryW](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-getsystemdirectoryw)
+
+The modified-plugin probe additionally reads `PySide6.__version__` and the real
+Qt `qVersion()` independently. Both must be the pinned 6.10.2 and appear in the
+report; plugin metadata does not stand in for runtime version evidence. The
+existing compiled-metadata marker, red GIF decode and modified Python package
+checks remain required. Reused compiled DLL hashes remain caller-supplied; the
+generic recipe does not embed a particular local compilation's hash.

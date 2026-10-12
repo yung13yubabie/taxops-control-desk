@@ -1,22 +1,26 @@
 """Failure-only ownership checks; not actual Windows process termination evidence."""
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import SimpleNamespace
 import pytest
 from build_tools import owned_process_cleanup as cleanup
 
 
-def test_only_exact_owned_pid_is_targeted_without_shell_or_image_scan(tmp_path, monkeypatch):
+@pytest.mark.parametrize("path_type", [Path, PureWindowsPath, PurePosixPath])
+def test_only_exact_owned_pid_is_targeted_without_shell_or_image_scan(tmp_path, monkeypatch, path_type):
     calls = []
     process = SimpleNamespace(pid=1234, _handle=object(), poll=lambda: None, wait=lambda timeout: 77)
-    monkeypatch.setattr(cleanup, "system_taskkill", lambda: Path("C:/Windows/System32/taskkill.exe"))
+    taskkill_path = path_type("C:/Windows/System32/taskkill.exe")
+    monkeypatch.setattr(cleanup, "system_taskkill", lambda: taskkill_path)
     def run(command, **kwargs):
         calls.append((command, kwargs))
         return SimpleNamespace(returncode=0, stdout="synthetic", stderr="")
     monkeypatch.setattr(cleanup, "subprocess", SimpleNamespace(run=run, TimeoutExpired=TimeoutError))
     evidence = tmp_path / "cleanup.json"
     result = cleanup.terminate_owned_tree(process, evidence)
-    assert calls[0][0] == ["C:/Windows/System32/taskkill.exe", "/PID", "1234", "/T", "/F"]
+    assert len(calls) == 1
+    assert calls[0][0] == [str(taskkill_path), "/PID", "1234", "/T", "/F"]
+    assert PureWindowsPath(calls[0][0][0]) == PureWindowsPath("C:/Windows/System32/taskkill.exe")
     assert "shell" not in calls[0][1]
     assert result["normal_cleanup"] is False and result["descendant_cleanup_verified"] is False
     assert json.loads(evidence.read_text())[0]["pid"] == 1234

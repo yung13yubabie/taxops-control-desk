@@ -336,6 +336,13 @@ def run_self_test(report_path: Path, *, require_frozen: bool = False) -> int:
                     _run_checks(Path(temp), report)
             _require(not report["network_attempts"], "Self-test attempted network access")
         report["checks"].append({"name": "temporary_data_cleanup", "status": "passed"})
+        if report["frozen"]:
+            from build_tools.windows_loaded_modules import capture_loaded_modules
+            report["loaded_modules"] = capture_loaded_modules("after_18_checks")
+            _require(report["loaded_modules"]["status"] == "observed",
+                     "Frozen diagnostics require actual Windows loaded-module evidence")
+        else:
+            report["loaded_modules"] = {"status": "unsupported", "reason": "Source execution is not frozen Windows module evidence"}
         report["status"] = "passed"
     except Exception as exc:
         report["error"] = {"type": type(exc).__name__, "message": str(exc)}

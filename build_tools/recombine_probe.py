@@ -12,7 +12,16 @@ QGIF_MARKER = "taxops-qgif-recombine-6.10.2-v1"
 GIF = bytes.fromhex("47494638396101000100800000ff00000000002c00000000010001000002024401003b")
 
 
+def verify_runtime_versions(pyside: str, qt: str) -> dict:
+    if pyside != "6.10.2" or qt != "6.10.2":
+        raise ValueError(f"Recombination proof requires PySide6/Qt 6.10.2; observed PySide6={pyside!r}, Qt={qt!r}")
+    return {"pyside_runtime_version": pyside, "qt_runtime_version": qt}
+
+
 def probe(plugin: Path, *, require_support: bool) -> dict:
+    from PySide6 import __version__ as pyside_version
+    from PySide6.QtCore import qVersion
+    versions = verify_runtime_versions(pyside_version, qVersion())
     from PySide6.QtCore import QCoreApplication, QPluginLoader, QBuffer, QByteArray, QIODevice
     from PySide6.QtGui import QImageReader
     app = QCoreApplication.instance() or QCoreApplication([])
@@ -44,7 +53,7 @@ def probe(plugin: Path, *, require_support: bool) -> dict:
         support_marker = getattr(PySide6.support, "TAXOPS_RECOMBINE_MARKER", None)
         if support_marker != SUPPORT_MARKER:
             raise ValueError("Executed PySide6.support lacks its source modification")
-    return {"status": "passed", "frozen": bool(getattr(sys, "frozen", False)),
+    return {**versions, "status": "passed", "frozen": bool(getattr(sys, "frozen", False)),
             "plugin": str(plugin.resolve()), "plugin_sha256": hashlib.sha256(plugin.read_bytes()).hexdigest(),
             "plugin_metadata": metadata, "gif_pixel_rgba": [255, 0, 0, 255],
             "support_marker": support_marker, "support_package_and_submodule_verified": require_support,

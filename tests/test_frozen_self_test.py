@@ -63,6 +63,8 @@ def test_source_self_test_runs_real_isolated_roundtrip(tmp_path):
     assert process.returncode == 0, (payload, process.stderr)
     assert payload["status"] == "passed"
     assert payload["frozen"] is False
+    assert payload["loaded_modules"]["status"] == "unsupported"
+    assert "modules" not in payload["loaded_modules"]
     assert payload["network_attempts"] == []
     notices = next(c for c in payload["checks"] if c["name"] == "offline_third_party_notices_view_and_export")
     assert notices["displayed_text_verified"] is True and notices["export_bytes_verified"] is True

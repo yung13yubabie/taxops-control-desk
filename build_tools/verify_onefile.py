@@ -17,6 +17,8 @@ from pathlib import Path, PurePosixPath
 from build_tools.dependency_licenses import sha256, validate_bundle_licenses
 from build_tools.source_materials import source_identity
 from build_tools.owned_process_cleanup import terminate_owned_tree
+from build_tools.windows_loaded_modules import validate_loaded_modules, windows_system_roots
+from build_tools.recombine_probe import verify_runtime_versions
 from build_tools.verify_windows_bundle import (
     BundleVerificationError, _REQUIRED_FILES, isolated_environment,
     validate_report, verify_native_dependencies,
@@ -96,6 +98,20 @@ def check_lifecycle_report(report: dict, *, temp: Path, database: Path,
           or report.get("window_shown") is not False):
         raise BundleVerificationError("Duplicate instance opened the database or a second main window")
     return mei
+
+
+def check_module_report(report: dict, *, inventory: dict, exe: Path, temp: Path, phase: str) -> dict:
+    snapshot = report.get("loaded_modules", {})
+    mei = Path(snapshot.get("meipass", "")).resolve()
+    if mei.parent != temp.resolve() or not mei.name.startswith("_MEI"):
+        raise BundleVerificationError("Actual loaded-module evidence is outside the owned extraction TEMP")
+    if phase == "gui_ready" and str(mei) != report.get("meipass"):
+        raise BundleVerificationError("GUI and loaded-module extraction identity differ")
+    native = {key: row["sha256"] for key, row in inventory.items()
+              if PurePosixPath(key).suffix in {".dll", ".pyd", ".exe"}}
+    return validate_loaded_modules(snapshot, expected_native=native, meipass=str(mei),
+                                   executable=str(exe.resolve()), executable_sha256=sha256(exe),
+                                   os_roots=windows_system_roots(), phase=phase)
 
 
 def wait_ready(process: subprocess.Popen, ready: Path, timeout: int) -> None:
@@ -204,7 +220,8 @@ def verify_unusable_profile(exe: Path, output: Path, inventory: dict, *, timeout
     finally:
         if process.poll() is None:
             terminate_owned_tree(process, output / "forced-process-cleanup.json")
-    return {"blocked_data_path_visible_chinese_error": True, "blocked_data_path_no_bootstrap": True,
+    loaded = check_module_report(report, inventory=inventory, exe=exe, temp=Path(env["TEMP"]), phase="gui_ready")
+    return {"storage_recovery_loaded_modules": loaded, "blocked_data_path_visible_chinese_error": True, "blocked_data_path_no_bootstrap": True,
             "same_profile_recovered_after_storage_error": True}
 
 
@@ -326,6 +343,8 @@ def verify_lifecycle(exe: Path, output: Path, inventory: dict, *, timeout: int) 
     leftovers = {p.resolve() for p in temp.glob("_MEI*")}
     if leftovers - {crash_mei}:
         raise BundleVerificationError("Unaccounted extraction directory remains in the dedicated test TEMP")
+    loaded = [check_module_report(report, inventory=inventory, exe=exe, temp=temp, phase="gui_ready")
+              for report in reports + [crash_report] if report.get("window_shown")]
     expected_client = json.loads(persistent_record.read_text(encoding="utf-8"))
     for report in reports + [crash_report]:
         if report.get("window_shown") and report.get("persistent_client") != expected_client:
@@ -337,7 +356,7 @@ def verify_lifecycle(exe: Path, output: Path, inventory: dict, *, timeout: int) 
     paths = [r["meipass"] for r in reports] + [str(crash_mei)]
     if len(paths) != len(set(paths)):
         raise BundleVerificationError("Distinct process evidence reused an extraction path")
-    return {"normal_gui_launches": 4, "duplicate_launches": 2,
+    return {"lifecycle_loaded_modules": loaded, "normal_gui_launches": 4, "duplicate_launches": 2,
             "simultaneous_start_one_winner": True, "owned_child_crash_exit_code": 77,
             "normal_start_after_crash": True, "recorded_crash_extraction_remaining": crash_mei.exists(),
             "persistent_client_id": expected_client["id"], "persistent_business_record_verified": True,
@@ -391,14 +410,19 @@ def verify(exe: Path, output: Path, *, timeout: int = 180, recombined: bool = Fa
                                  cwd=actual.parent, env=environment, timeout=timeout, check=False)
         if process.returncode:
             raise BundleVerificationError("Full frozen self-test failed")
-        validate_report(read_report(report))
+        frozen_report = read_report(report)
+        validate_report(frozen_report)
+        result["selftest_loaded_modules"] = check_module_report(
+            frozen_report, inventory=payload["entries"], exe=actual,
+            temp=Path(environment["TEMP"]), phase="after_18_checks")
         if recombined:
             report = output / "frozen-recombine.json"
             process = subprocess.run([str(actual), "--recombine-probe", "--require-frozen", "--require-support", "--report", str(report)],
                                      cwd=actual.parent, env=environment, timeout=timeout, check=False)
             if process.returncode:
                 raise BundleVerificationError("Real LGPL recombination probe failed")
-            read_report(report)
+            recombined_report = read_report(report)
+            verify_runtime_versions(recombined_report.get("pyside_runtime_version"), recombined_report.get("qt_runtime_version"))
         if list(Path(environment["TEMP"]).glob("_MEI*")):
             raise BundleVerificationError("Self-test extraction survived a normal exit")
         if [p.name for p in actual.parent.iterdir()] != ["TaxOpsControlDesk.exe"]:

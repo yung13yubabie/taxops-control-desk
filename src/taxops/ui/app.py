@@ -8,11 +8,12 @@ logic itself.
 from __future__ import annotations
 
 import os
+import sqlite3
 import sys
 
 from ..core.paths import AppPaths, ensure_paths, resolve_paths
 from ..core.resources import asset_path
-from ..db.connection import open_connection
+from ..db.connection import close_after_failed_setup, open_connection
 from ..db.migrate import UnsupportedSchemaError, apply_migrations
 from ..services.container import ServiceContainer, build_container
 
@@ -51,8 +52,8 @@ def bootstrap(paths: AppPaths | None = None) -> ServiceContainer:
     try:
         apply_migrations(conn)
         return build_container(paths, conn)
-    except Exception:
-        conn.close()
+    except Exception as exc:
+        close_after_failed_setup(conn, exc)
         raise
 
 
@@ -107,6 +108,11 @@ def run() -> int:
             container = bootstrap()
         except UnsupportedSchemaError:
             QMessageBox.critical(None, "資料版本不相容", "這份資料由較新版本的程式建立，為保護資料已停止開啟。請改用最新版本；不要刪除或覆蓋原本資料。")
+            return 1
+        except (sqlite3.Error, OSError) as exc:
+            from .startup_errors import startup_error_message
+
+            QMessageBox.critical(None, "無法開啟資料", startup_error_message(exc))
             return 1
 
         from .main_window import MainWindow

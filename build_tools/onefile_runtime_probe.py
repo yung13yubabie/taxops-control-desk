@@ -128,6 +128,8 @@ def main(argv=None) -> int:
             report["db_path"] = str(window._container.paths.db_path.resolve())
             report["migration_count"] = window._container.conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
             report["persistent_client"] = persistent_client(window._container, args.persistent_record, initialize=args.initialize_persistence)
+            from build_tools.windows_loaded_modules import capture_loaded_modules
+            report["loaded_modules"] = capture_loaded_modules("gui_ready")
             write_report(args.ready, report)
             if args.crash_after_ready:
                 os._exit(77)  # Only the isolated gate's explicitly requested owned child.

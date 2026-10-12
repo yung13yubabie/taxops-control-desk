@@ -72,3 +72,16 @@ def test_support_replacement_cannot_silently_become_a_plain_module(tmp_path, mon
     monkeypatch.setenv("TAXOPS_RECOMBINE_INPUT", str(specification))
     with pytest.raises(ValueError, match="package semantics"):
         inputs.apply_recombination([], [])
+
+
+@pytest.mark.parametrize("pyside,qt", [("6.10.1", "6.10.2"), ("6.10.2", "6.10.1"), (None, "6.10.2"), ("6.10.2", None)])
+def test_recombine_rejects_missing_or_wrong_observed_runtime_versions(pyside, qt):
+    with pytest.raises(ValueError, match="observed PySide6"):
+        recombine_probe.verify_runtime_versions(pyside, qt)
+
+
+def test_actual_source_qt_and_binding_versions_are_reported_separately():
+    import PySide6
+    from PySide6.QtCore import qVersion
+    result = recombine_probe.verify_runtime_versions(PySide6.__version__, qVersion())
+    assert result == {"pyside_runtime_version": "6.10.2", "qt_runtime_version": "6.10.2"}
