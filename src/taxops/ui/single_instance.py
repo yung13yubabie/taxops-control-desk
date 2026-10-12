@@ -2,10 +2,10 @@
 
 Pattern:
     guard = SingleInstanceGuard("TaxOpsControlDesk.SingleInstance")
+    guard.activation_requested.connect(startup_aware_activator)
     if not guard.acquire():
         guard.notify_existing()
         return 0
-    guard.activation_requested.connect(window_activator)
 
 The guard owns a ``QLocalServer`` on first instance; subsequent processes
 connect to the named pipe, send an ``activate`` message, and exit.  The
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QLockFile, QObject, Signal
@@ -52,6 +53,7 @@ class SingleInstanceGuard(QObject):
         super().__init__()
         self._server_name = server_name
         self._server: QLocalServer | None = None
+        self._activation_buffers: dict[QLocalSocket, bytes] = {}
         directory = lock_directory if lock_directory is not None else resolve_paths().data_root / ".instance-locks"
         self._lock_path = directory.absolute() / (hashlib.sha256(server_name.encode("utf-8")).hexdigest() + ".lock")
         self._file_lock: QLockFile | None = None
@@ -117,18 +119,48 @@ class SingleInstanceGuard(QObject):
     def notify_existing(self) -> bool:
         """Send the activate payload to the running instance."""
         sock = QLocalSocket()
-        sock.connectToServer(self._server_name)
-        if not sock.waitForConnected(_CONNECT_TIMEOUT_MS):
-            return False
-        sock.write(_ACTIVATE_PAYLOAD)
-        sock.flush()
-        sock.waitForBytesWritten(_WRITE_TIMEOUT_MS)
-        sock.disconnectFromServer()
-        return True
+        write_error = False
+
+        def record_error(_error) -> None:
+            nonlocal write_error
+            write_error = True
+
+        def connected_without_error() -> bool:
+            return (
+                not write_error
+                and sock.state() == QLocalSocket.LocalSocketState.ConnectedState
+                and sock.isValid()
+            )
+
+        sock.errorOccurred.connect(record_error)
+        try:
+            sock.connectToServer(self._server_name)
+            if not sock.waitForConnected(_CONNECT_TIMEOUT_MS):
+                return False
+            if sock.write(_ACTIVATE_PAYLOAD) != len(_ACTIVATE_PAYLOAD):
+                return False
+            sock.flush()
+            deadline = time.monotonic() + _WRITE_TIMEOUT_MS / 1000
+            # flush() may already have drained everything. A successful wait
+            # reports progress, not necessarily completion of the full frame.
+            while sock.bytesToWrite() > 0:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                if not sock.waitForBytesWritten(max(1, int(remaining * 1000))):
+                    # Completion may have preceded the wait, so its signal
+                    # is no longer observable. Pending bytes still mean failure.
+                    return sock.bytesToWrite() == 0 and connected_without_error()
+            # Windows may clear its write queue by deleting a failed pipe
+            # writer. An empty queue alone cannot establish successful submission.
+            return connected_without_error()
+        finally:
+            sock.disconnectFromServer()
 
     def release(self) -> None:
         server = self._server
         self._server = None
+        self._activation_buffers.clear()
         try:
             if server is not None:
                 server.close()
@@ -146,26 +178,34 @@ class SingleInstanceGuard(QObject):
             sock = self._server.nextPendingConnection()
             if sock is None:
                 continue
+            self._activation_buffers[sock] = b""
+            sock.readyRead.connect(lambda s=sock: self._drain_socket(s))
+            sock.disconnected.connect(lambda s=sock: self._forget_socket(s))
             if sock.bytesAvailable() > 0:
                 self._drain_socket(sock)
-            else:
-                sock.readyRead.connect(lambda s=sock: self._drain_socket(s))
-            sock.disconnected.connect(sock.deleteLater)
+
+    def _forget_socket(self, sock) -> None:
+        # A peer may close immediately after sending its final bytes.
+        self._drain_socket(sock)
+        self._activation_buffers.pop(sock, None)
+        sock.deleteLater()
 
     def _drain_socket(self, sock) -> None:
+        if sock not in self._activation_buffers:
+            return  # This connection already delivered or rejected its frame.
         try:
-            data = bytes(sock.readAll())
+            data = bytes(sock.read(len(_ACTIVATE_PAYLOAD) + 1))
         except RuntimeError:
+            self._activation_buffers.pop(sock, None)
             return
         if not data:
             return
-        # readyRead can fire multiple times if the client sends in chunks; the
-        # activate payload is small (~10B) so the first fire usually carries
-        # everything, but disconnect the slot after we have read it once to
-        # avoid emitting activation_requested twice for the same socket.
-        try:
-            sock.readyRead.disconnect()
-        except (RuntimeError, TypeError):
-            pass
-        if _ACTIVATE_PAYLOAD.strip() in data:
+        frame = self._activation_buffers[sock] + data
+        if not _ACTIVATE_PAYLOAD.startswith(frame):
+            self._activation_buffers.pop(sock, None)
+            sock.disconnectFromServer()
+        elif frame == _ACTIVATE_PAYLOAD:
+            self._activation_buffers.pop(sock, None)
             self.activation_requested.emit()
+        else:
+            self._activation_buffers[sock] = frame

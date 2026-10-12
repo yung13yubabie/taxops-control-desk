@@ -88,6 +88,20 @@ def run() -> int:
 
     guard = SingleInstanceGuard(_SINGLE_INSTANCE_NAME)
     container = None
+    window = None
+    activation_ready = False
+    activation_pending = False
+
+    def request_activation():
+        nonlocal activation_pending
+        # Page constructors and show() may dispatch Qt events. Do not lose an
+        # early request or activate a half-constructed window.
+        if not activation_ready:
+            activation_pending = True
+        else:
+            _activate_window(window)
+
+    guard.activation_requested.connect(request_activation)
     try:
         try:
             acquired = guard.acquire()
@@ -118,9 +132,13 @@ def run() -> int:
         from .main_window import MainWindow
         window = MainWindow(container)
         window.show()
-        guard.activation_requested.connect(lambda w=window: _activate_window(w))
+        activation_ready = True
+        if activation_pending:
+            activation_pending = False
+            _activate_window(window)
         return int(app.exec())
     finally:
+        activation_ready = False
         try:
             if container is not None:
                 container.close()

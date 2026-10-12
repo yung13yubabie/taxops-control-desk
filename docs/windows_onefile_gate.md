@@ -133,3 +133,50 @@ claim to have repaired PySide6. CRT `_exit` can still invoke native DLL
 termination routines through `ExitProcess`; it was therefore not a clean
 model of bypassing all such routines. No passing result for this corrected
 injection retroactively changes the earlier evidence.
+
+
+## Adjacent cache verification recovery
+
+`verify_cache` owns a `BEGIN IMMEDIATE` transaction when its shared container
+connection is idle, covering metadata/count reads and the audit row. Success
+commits and releases the writer; failure rolls back. An existing caller
+transaction is protected by an inner SQLite savepoint, without committing or
+rolling back the caller's other changes. Fresh-connection persistence, a
+second writer, nested success/failure and cleanup-error cases are synthetic
+regression contracts. The prior missing commit could lose the verification
+audit on close and hold a write lock; it is separate from test import cost.
+
+The settings smoke tests previously parsed the complete tracked government
+ZIP twice. The measured Windows run completed the first import check after
+482.015 seconds, then timed out during the second parse at the unchanged
+900-second file limit. Its result remains failed. The replacement prepares
+that full import once, records the original live page transition, and gives
+each test its own database through SQLite backup. The original case names,
+assertions and full 1,705,060-row input remain. Linux success, including
+reversed and individually selected cases, does not establish the final
+Windows elapsed time; that must be measured again on the fixed candidate.
+
+
+## Observed simultaneous-start failure
+
+[Run 38293931640](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38293931640)
+passed all 153 source files / 3838 tests, with raw branch coverage
+91.05698731866956%, and built a fresh onefile EXE. Its exact source tree was
+`44f0214d10754dcd598a9a2b76eeddbfb8170489`. During the actual two-process
+start barrier, exactly one process acquired ownership and opened schema 28;
+the other process did not bootstrap and exited normally after reporting that
+it sent an activation notification. Both exited with zero, but the winning
+window recorded no activation. The strict gate failed. No owned-crash report
+was produced, so this run supplies no result for the corrected termination
+control, crash recovery, or the final 18-check frozen suite.
+
+The reports identify a startup-notification failure, not a double database
+owner. Notification timing, transport delivery and readiness must be checked
+without weakening the activation requirement or treating a sender's success
+message as proof that the winning window was activated.
+
+The candidate now retains early activation requests until the real window is
+fully shown and checks complete local-socket submission. See the
+[startup activation contract](instance_activation.md). The constructor-event
+regression fails on the earlier source and passes on the corrected source;
+only a fresh Windows EXE run can close the observed frozen race failure.
