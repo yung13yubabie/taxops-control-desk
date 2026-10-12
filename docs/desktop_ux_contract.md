@@ -3,10 +3,6 @@
 資訊架構、操作層級、空狀態與資料密度的重建。不是配色調整——判準是：改完之後使用者一天
 重複操作數百次是否更快，而不是畫面是否更好看。
 
-Baseline: `feature/v030-annual-workbench`, v0.32.0 test build, commit `1a0d0a0`.
-前置規範：`docs/no_silent_failure.md`（狀態模型的權威定義）、
-`docs/product_object_model.md`（物件責任）、`.ai/UI_REDESIGN_AUDIT.md`（畫面盤點）。
-
 ## 頁面母版：三個，不是四個
 
 母版是 deep module——小介面（頁面宣告資料與動作），大實作（版面、狀態、空狀態、contextual
@@ -116,7 +112,7 @@ View mode 顯示文字，不用 disabled input 模擬。只有進入 Edit mode �
 contextual actions：開啟、編輯、複製下一年度、取消／封存。刪除進 overflow menu 並顯示
 影響範圍（會連帶影響幾筆交易、幾個案件）。
 
-`逾期` 的定義仍待確認（`.ai/DECISIONS.md` 2026-08-08）。在答案出現前，summary strip 顯示
+`逾期` 的定義仍待確認。在答案出現前，summary strip 顯示
 可算的項目，不顯示逾期。
 
 ### 3. 年度工作明細
@@ -152,36 +148,51 @@ contextual actions：開啟、編輯、複製下一年度、取消／封存。�
 
 第 7 題答「有」時，重新設計 context，不調樣式。
 
-## No Silent Failure 分批計畫
 
-246 處 `except Exception`，59 個檔案。由資料來源往外分批，每批附測試，每批獨立 commit。
+## Contracts
 
-| 批次 | 範圍 | 數量 |
-| --- | --- | --- |
-| B1 | `repositories/` 全部 | ~3 |
-| B2 | `services/annual_work.py` | 21 |
-| B3 | `services/work_records.py`（已修 1 處）、`annual_transactions.py` | 13 |
-| B4 | `services/backup.py`、`export.py`、`attachments.py` | 11 |
-| B5 | `services/` 其餘 | ~12 |
-| B6 | `ui/workers/` | ~2 |
-| B7 | `ui/` 顯示層 | 其餘 |
+These hold across every stage.
 
-每批的流程：
+**Attribute names survive.** Existing tests drive real user paths through named
+attributes. `clients_page.py` keeps `_delete_btn`, `_restore_btn`, and `_purge_btn`
+even though users now reach them through a menu — the menu entry clicks the button, so
+one path carries both. Follow that pattern when you move an action into a menu.
 
-1. 逐處套用 `docs/no_silent_failure.md` 的三題判準。
-2. 合法的 optional value 加一行註解說明為何合法，不改行為。
-3. 不合法的轉為 typed error，並在 `i18n/errors.py` 補人類可讀訊息。
-4. 為每個轉換寫測試，斷言**後果**而非回傳值形狀。
-5. 跑該批觸及的既有套件。
+**`DateField`'s public API is frozen.** Six screens depend on it. Keep
+`value_changed`, `value()`, `validated_value()`, `raw_text()`, `set_value()`,
+`set_error()`, `clear()`, and `set_date_range()` with their current signatures and
+semantics. Its internals and appearance are open.
 
-B7 是顯示層，多數 `except Exception: pass` 是 Qt 物件生命週期防護（widget 已銷毀時忽略
-signal），屬合法；該批的產出主要是註解而非行為變更。
+**Shared widgets grow, they do not change.** `page_shell.py`, `inspector.py`,
+`buttons.py`, `tokens.py`, `icons.py`, `empty_state.py`, and `table_builder.py` are
+shared across pages. Add a method or a token; leave existing signatures and values
+alone. If your stage needs an existing one changed, report it instead.
 
-## 不變更
+**One primary per page.** `PageHeader.add_action` raises on a second primary and
+`ActionBar` raises on a sixth visible action. Those exceptions are the design working.
+Move the surplus into the overflow menu.
 
-業務邏輯、資料庫語意、稽核流程、權限規則、法定計算。這是介面與錯誤處理工作。任何觸及
-上述的需求，記錄為待確認而不自行決定。
+**Type floor.** Body text 14px, table headers 13px, error text 14px. Values live in
+`tokens.py`; read them from there.
 
-## 測試執行
+**Sizing.** Inputs and buttons 36px, compact 32px, icon buttons 32px, text rows 36px,
+editor rows 42px. Qt applies `min-height` to the content rect, so subtract padding and
+border — `style.py` shows the arithmetic.
 
-本機記憶體不足以單一程序跑完整套件，必須 per-file 程序隔離——見 `.ai/HANDOFF.md`。
+**Colour carries no state alone.** Every status badge contains words. Colour is the
+second cue.
+
+**Selection reveals actions.** Actions needing a selected row live in the inspector
+and appear when a row is selected. An empty selection shows the empty state's single
+next step.
+
+**Modal depth one.** A dialog opens from a page. Content that would open a second
+dialog becomes a tab or an inline sub-page in the first.
+
+**Business logic, database semantics, audit flow, and permission rules stay as they
+are.** This is interface work. A change to any of them is semantic fog: report it.
+
+
+## Verification
+
+Use CONTRIBUTING.md and the existing test suite. These design targets are not proof of completed Windows/DPI acceptance. Density targets above and existing shared-widget constraints require caller/test review before changes.
