@@ -151,7 +151,8 @@ def test_signature_success_records_exact_command_and_process_bytes(tmp_path, mon
     command, options = calls[0]
     assert command == ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-File",
                        str(vc.ROOT / "build_tools/verify_microsoft_signature.ps1"), "-LiteralPath", str(path.resolve())]
-    assert options == {"check": False, "capture_output": True, "timeout": 60}
+    assert options == {"check": False, "capture_output": True, "timeout": 60,
+                       "env": vc.windows_powershell_environment()}
     assert len(calls) == 1 and report["status"] == "Valid"
     assert report["process"]["returncode"] == 0
     assert base64.b64decode(report["process"]["stderr_base64"]) == b"synthetic warning"
@@ -237,3 +238,42 @@ def test_quick_signature_diagnostic_preserves_failure_and_only_uploads_evidence(
     assert "throw" in diagnostic and "continue-on-error" not in diagnostic
     assert "ExecutionPolicy" not in diagnostic and "Bypass" not in diagnostic and "Unrestricted" not in diagnostic
     assert "path: artifacts/windows-ui-diagnostics/" in quick
+
+
+@pytest.mark.parametrize("keys", [[], ["PSModulePath"], ["PSMODULEPATH"], ["psmodulepath"], ["PsMoDuLePaTh"], ["PSModulePath", "PSMODULEPATH"]])
+def test_powershell_child_environment_only_removes_module_path_without_mutating_parent(monkeypatch, keys):
+    original = {"PATH": "synthetic executable search", "SystemRoot": "synthetic windows", "PSModulePathExtra": "preserve", "UNRELATED": "preserve", "PSExecutionPolicyPreference": "AllSigned"}
+    original.update({key: "synthetic PS7 module path" for key in keys})
+    before = dict(original)
+    monkeypatch.setattr(vc, "os", SimpleNamespace(environ=original))
+    child = vc.windows_powershell_environment()
+    assert child == {key: value for key, value in before.items() if key.upper() != "PSMODULEPATH"}
+    assert original == before and child is not original
+    child["PATH"] = "test changes to child copy cannot affect parent"
+    assert original == before
+
+
+def test_signature_failure_keeps_same_argv_and_uses_isolated_child_copy(tmp_path, monkeypatch):
+    original = {"PsModulePath": "synthetic incompatible PS7 modules", "PATH": "unchanged", "OTHER": "unchanged"}
+    monkeypatch.setattr(vc, "os", SimpleNamespace(environ=original))
+    calls = signature_process(monkeypatch, code=1, stderr=b"synthetic remaining failure")
+    path = tmp_path / "synthetic.dll"
+    with pytest.raises(vc.SignatureValidationError) as failure:
+        vc.microsoft_signature(path)
+    assert calls[0][0] == ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-File",
+                           str(vc.ROOT / "build_tools/verify_microsoft_signature.ps1"), "-LiteralPath", str(path.resolve())]
+    assert calls[0][1]["env"] == {"PATH": "unchanged", "OTHER": "unchanged"}
+    assert original["PsModulePath"] == "synthetic incompatible PS7 modules"
+    assert failure.value.diagnostics["returncode"] == 1
+    assert failure.value.diagnostics["stderr"] == "synthetic remaining failure"
+    assert "only case-insensitive PSModulePath removed" in failure.value.diagnostics["child_environment"]
+
+
+def test_signature_metadata_is_read_only_and_does_not_replace_authenticode():
+    script = (vc.ROOT / "build_tools/verify_microsoft_signature.ps1").read_text()
+    assert "$signature = Get-AuthenticodeSignature -LiteralPath $LiteralPath" in script
+    assert "Get-Command -Name Get-AuthenticodeSignature -CommandType Cmdlet -ListImported" in script
+    assert "$PSVersionTable.PSVersion.ToString()" in script and "home = $PSHOME" in script
+    assert "signature_cmdlet_module_path = $signatureCommand.Module.Path" in script
+    assert "Set-ExecutionPolicy" not in script and "Import-Module" not in script
+    assert "Bypass" not in script and "Unrestricted" not in script

@@ -29,7 +29,8 @@ class SignatureValidationError(RuntimeError):
 def _process_diagnostics(command: list[str], returncode: int | None, stdout: bytes | None,
                          stderr: bytes | None, *, timed_out: bool = False) -> dict:
     report = {"command": command, "returncode": returncode, "timed_out": timed_out,
-              "display_encoding": "utf-8 with replacement; base64 fields retain exact process bytes"}
+              "display_encoding": "utf-8 with replacement; base64 fields retain exact process bytes",
+              "child_environment": "parent copy with only case-insensitive PSModulePath removed"}
     for name, content in (("stdout", stdout), ("stderr", stderr)):
         content = content or b""
         report[name] = content.decode("utf-8", errors="replace")
@@ -44,6 +45,14 @@ def _error_record(exc: Exception) -> dict:
     return record
 
 
+def windows_powershell_environment() -> dict[str, str]:
+    # Microsoft's documented PS7 -> Python -> Windows PowerShell isolation:
+    # https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_psmodulepath
+    # PS5 reconstructs its own default module search path. No parent/global
+    # environment, PATH, registry, execution policy or trust setting is edited.
+    return {key: value for key, value in os.environ.items() if key.upper() != "PSMODULEPATH"}
+
+
 def microsoft_signature(path: Path) -> dict:
     if sys.platform != "win32":
         raise RuntimeError("Microsoft Authenticode validation requires Windows")
@@ -51,7 +60,8 @@ def microsoft_signature(path: Path) -> dict:
     command = ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-File",
                str(script), "-LiteralPath", str(path.resolve())]
     try:
-        result = subprocess.run(command, check=False, capture_output=True, timeout=60)
+        result = subprocess.run(command, check=False, capture_output=True, timeout=60,
+                                env=windows_powershell_environment())
     except subprocess.TimeoutExpired as exc:
         raise SignatureValidationError("Microsoft Authenticode process timed out",
             _process_diagnostics(command, None, exc.stdout, exc.stderr, timed_out=True)) from exc
