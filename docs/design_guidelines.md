@@ -1,23 +1,8 @@
-# DESIGN
+# Design guidelines
 
 ## Direction
 
 TaxOps Control Desk uses a premium, simple, and highly legible desktop operations style.
-
-Reference library:
-
-```text
-開發環境提供的 `awesome-design-md/design-md` 參考資料
-```
-
-Primary references:
-
-- `apple`: calm premium spacing, restraint, clarity.
-- `tesla`: high-contrast luxury, minimal visual noise.
-- `linear.app`: dense but readable operational interface.
-- `stripe`: clear form hierarchy, data-entry trust, polished details.
-
-These are references only. Do not copy brand names, logos, trademarked assets, or proprietary identity.
 
 ## Product Fit
 

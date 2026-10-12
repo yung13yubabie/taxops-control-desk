@@ -28,11 +28,7 @@ The product is not:
 
 Primary source specification:
 
-```text
-專案擁有者提供的外部 compact specification（不納入 repo）
-```
-
-This file consolidates implementation decisions confirmed on 2026-05-08. If this file conflicts with the source specification, follow the newer confirmed decision recorded in `.ai/DECISIONS.md`.
+This document describes the public architecture. Preserve current source and regression contracts; material behavior changes require review.
 
 ## Tech Stack
 
@@ -65,7 +61,6 @@ Packaging commands must be made real before MVP can be marked complete.
 
 ```text
 taxops-control-desk/
-  .ai/
   docs/
     implementation_spec.md
     registry_cache_workflow.md
@@ -146,7 +141,7 @@ Implementation may be phased internally, but MVP is not complete until every ite
 
 Design direction:
 
-- Follow `.ai/DESIGN.md`.
+- Follow `docs/design_guidelines.md`.
 - Use a premium, simple, and clearly legible desktop workbench style.
 - Prioritize Apple/Tesla-like restraint, Linear-like operational clarity, and Stripe-like form hierarchy.
 - Do not copy brand identity, logos, or trademarked visual assets.
