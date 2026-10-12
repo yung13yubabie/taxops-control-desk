@@ -1,8 +1,10 @@
 """The opt-in artifact hook must not hide the original geometry failure."""
 import json
 
+from PySide6.QtGui import QFontInfo
 from PySide6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 
+import qt_geometry_diagnostics
 from qt_geometry_diagnostics import capture_qt_geometry, dump_qt_geometry
 
 
@@ -47,8 +49,39 @@ def test_diagnostic_records_named_geometry_font_layout_scroll_and_png(qtbot, qap
     assert row["visible"] is True
     assert row["viewport"] and row["horizontal_scroll"]["maximum"] > 0
     assert row["minimum_size"] and row["minimum_size_hint"]
-    assert row["font"]["resolved_family"] and row["dpi"]
+    info = QFontInfo(scroll.font())
+    # An offscreen backend may have no resolved font. Record that fact exactly.
+    assert row["font"]["resolved_family"] == info.family()
+    assert row["font"]["resolved_point_size"] == info.pointSizeF()
+    assert row["font"]["resolved_pixel_size"] == info.pixelSize()
+    assert row["font"]["exact_match"] == info.exactMatch()
+    assert row["dpi"] == [scroll.logicalDpiX(), scroll.logicalDpiY()]
+    assert all(value > 0 for value in row["dpi"])
     assert document["after_grab_size"] == [size_before.width(), size_before.height()]
+
+
+def test_empty_resolved_font_family_is_preserved(qtbot, monkeypatch):
+    root = QWidget()
+    qtbot.addWidget(root)
+    font = root.font()
+    font.setFamily("Synthetic requested family")
+    root.setFont(font)
+
+    class EmptyResolvedFamily(QFontInfo):
+        def family(self):
+            return ""
+
+    # Reproduce the Windows offscreen capability even on hosts with fonts.
+    monkeypatch.setattr(qt_geometry_diagnostics, "QFontInfo", EmptyResolvedFamily)
+    document = capture_qt_geometry(root)
+    row = document["widgets"][0]
+    assert row["font"]["family"] == "Synthetic requested family"
+    assert row["font"]["resolved_family"] == ""
+    info = QFontInfo(root.font())
+    assert row["font"]["resolved_point_size"] == info.pointSizeF()
+    assert row["font"]["resolved_pixel_size"] == info.pixelSize()
+    assert row["font"]["exact_match"] == info.exactMatch()
+    assert row["dpi"] == [root.logicalDpiX(), root.logicalDpiY()]
 
 
 def test_unwritable_diagnostics_reports_error_without_masking_assert(qtbot, monkeypatch, tmp_path):

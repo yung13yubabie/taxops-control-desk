@@ -16,7 +16,13 @@ candidate and frozen EXE verification remain required.**
 
 The second run [38213344318](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38213344318) completed all 137 files at head `821d490` / merge `a931390`: **3325 passed / 8 failed**, no errors or skips, raw branch coverage 91.0367722165475%. It again correctly blocked the EXE. Follow-up fixes address date-width measurement and native path comparison; receipt/collaboration layout and the self-test-created profile directory remain under diagnosis.
 
-A parallel `windows-ui-diagnostics` job runs five complete files, each in a fresh process with the same pinned dependencies. It uploads synthetic PNG/geometry/JSON/JUnit evidence and preserves every failing exit. Its provenance records the head and actual checkout SHA/tree. This smaller job never builds a bundle or substitutes for the full source/90% coverage gate.
+The third run [38221303640](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38221303640) completed all 139 files at head `16865f0` / checkout `a6d0bd4`, exactly the `db27edc` tree: **3392 passed / 5 failed** (3397 total), no errors/skips/unrun files, raw branch coverage 91.03763046184291%. Date width and platform path assertions passed. The remaining failures covered two receipt widths, annual attachment pagination overflow, an external empty profile/cache directory from self-test, and a diagnostic assertion that incorrectly required a nonempty resolved font family. All retained failures blocked the EXE. This run predates integration of the new cleaned feature base and the subsequent fixes.
+
+A parallel `windows-ui-diagnostics` job runs five complete files, each in a fresh process with the same pinned dependencies. It uploads synthetic PNG/geometry/JSON/JUnit evidence and preserves every failing exit. Its provenance records the head and actual checkout SHA/tree. Each completed file persists its exit code immediately. This smaller job never builds a bundle or substitutes for the full source/90% coverage gate.
+
+A separate always-run process invokes `python -m build_tools.native_font_probe --output-dir <artifact-dir>/native-font`. Its child explicitly selects the Windows Qt plugin, records the actual platform, installed font families, QFontInfo, shaped glyph indexes and raw-font character coverage, and captures styled synthetic widgets. An unavailable native plugin, missing required glyph, or failed screenshot remains nonzero; there is no offscreen fallback. Rare-character samples are reported separately and do not establish universal CJK coverage. The child uses an ephemeral profile and does not open business data. No fonts are installed or downloaded by this diagnostic. The original offscreen test environment and full source/build gate remain unchanged.
+
+The prior Windows offscreen screenshots contained square glyphs and empty resolved font names. They are evidence about that Qt backend, not proof that the Windows OS has no Chinese fonts. Native source diagnostics still do not replace frozen artifact or clean offline Windows visual acceptance.
 
 `.github/workflows/windows-candidate.yml` runs only for pull requests or an
 explicit manual dispatch. It has `contents: read`, does not request secrets,
@@ -125,6 +131,14 @@ caught/swallowed attempt still makes the final result fail. This guard does not
 control native-library networking or replace an OS network boundary. These
 flows do not invoke live registry downloads, GCIS, external file opening, or
 an application updater. No customer data is used.
+
+The self-test temporarily redirects LOCALAPPDATA, APPDATA, USERPROFILE, HOME,
+XDG_CACHE_HOME, XDG_CONFIG_HOME and XDG_DATA_HOME into its own temporary root
+before importing/creating the tested Qt objects. It restores prior values
+(including absent keys) in finally and cleans the synthetic root. This prevents
+environment-based shell cache creation from using the caller's profile paths;
+it is not a native-registry or OS-wide sandbox. The machine report states this
+boundary. No existing user directory is deleted to satisfy the test.
 
 Missing QtPdf is a failure, not a skipped check or silent preview fallback.
 Each report identifies source versus frozen execution, OS, Qt platform, Python

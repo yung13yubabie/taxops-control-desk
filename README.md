@@ -46,7 +46,7 @@
 
 Windows 完整候選檢查仍有失敗，尚未產生本候選 EXE。來源修正與平行診斷不等於完整發布驗收。
 
-已知限制：小尺寸月曆在本機模擬畫面的第六週文字下緣仍略裁切，Windows 縮放與實機操作尚待驗收。繁中翻譯檔缺失時只提供有限按鈕後備，不能視為完整中文；候選 EXE 檢查會要求完整翻譯檔。
+已知限制：Windows 模擬畫面曾出現中文字方框，仍待原生 Windows 字形與實機核對；不能據此判定系統缺少字型。小尺寸月曆在本機模擬畫面的第六週文字下緣仍略裁切，Windows 縮放與實機操作尚待驗收。繁中翻譯檔缺失時只提供有限按鈕後備，不能視為完整中文；候選 EXE 檢查會要求完整翻譯檔。
 
 可靠性契約與驗證限制見 [驗證紀錄](docs/reliability_latest_port.md)。全套逐檔獨立 process，coverage 實值門檻維持 **90%**；最終候選仍需 Windows 同 SHA 全套及乾淨離線驗收。
 
@@ -56,6 +56,6 @@ Windows 完整候選檢查仍有失敗，尚未產生本候選 EXE。來源修�
 
 維持 Python / PySide6 / SQLite。安裝開發依賴後，用 `python -m build_tools.run_test_matrix --help` 查看參數，再執行逐檔測試與合併 coverage；Windows 發行套件使用隔離環境及 `requirements-release.txt` 固定版本。
 
-開始改碼前閱讀 [CONTRIBUTING](CONTRIBUTING.md) 與 [安全政策](SECURITY.md)。物件責任見 `docs/product_object_model.md`；錯誤必須可見，不能以空資料掩蓋失敗，見 `docs/no_silent_failure.md`。新增測試使用合成資料；既有公開工商 fixture 也保留在完整回歸中。不得提交真實客戶、會計資料或私人操作紀錄；新測試與截圖使用合成資料。
+開始改碼前閱讀 [CONTRIBUTING](CONTRIBUTING.md)、[安全政策](SECURITY.md) 與 [公開開發契約](docs/development_contract.md)。物件責任見 `docs/product_object_model.md`；錯誤必須可見，不能以空資料掩蓋失敗，見 `docs/no_silent_failure.md`。新增測試使用合成資料；既有公開工商 fixture 也保留在完整回歸中。不得提交真實客戶、會計資料或私人操作紀錄；新測試與截圖使用合成資料。
 
 版本差異見 [CHANGELOG](CHANGELOG.md)；較早的功能與 EXE 證據見 [v0.31 歷史 README](https://github.com/yung13yubabie/taxops-control-desk/blob/v0.31.0/README.md)。UI 文件中的 v032 只表示移植來源基底，不是本候選版號。

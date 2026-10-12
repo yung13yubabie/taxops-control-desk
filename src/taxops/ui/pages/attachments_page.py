@@ -217,6 +217,10 @@ class AttachmentsPage(QWidget):
             self._status_tabs.setTabData(index, key)
         outer.addWidget(self._status_tabs)
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        # Pane visibility adapts in resizeEvent. Do not let the wide pane sum
+        # clamp the parent window before that compact-mode event can run.
+        # Keep pane minimums and the splitter's vertical sizing unchanged.
+        self._splitter.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self._splitter.setChildrenCollapsible(False)
         self._today_panel = TodayWorkPanel(container)
         self._today_panel.setMinimumWidth(190)

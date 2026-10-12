@@ -8,7 +8,8 @@ local task lists, raw audit logs, screenshots of real records, credentials,
 databases, backups, and exports outside the repository. Local ignored files are
 not a secure storage mechanism. Do not attach real customer data to issues or CI.
 
-Read [the object model](docs/product_object_model.md),
+Read [development contracts](docs/development_contract.md),
+[the object model](docs/product_object_model.md),
 [error handling](docs/no_silent_failure.md), [design guidelines](docs/design_guidelines.md),
 and [desktop UI contracts](docs/desktop_ux_contract.md). Product contracts belong
 in public documentation; execution history and private instructions do not.
@@ -29,7 +30,7 @@ Activate `.venv` before the install and test commands using your shell's normal
 activation command. The matrix starts each test file in a separate process and
 combines raw branch coverage. All test files run; failures remain failures, and
 the unrounded branch coverage gate stays at 90%. Do not replace this gate with a
-focused suite or the five-file Windows diagnostic job.
+focused suite, the hygiene-only workflow, or the five-file Windows diagnostic job.
 
 Windows packaging and frozen verification use a separate release-only environment;
 follow [the Windows candidate gate](docs/windows_candidate_gate.md). A source or

@@ -112,13 +112,19 @@ class AnnualAttachmentPanel(QWidget):
         action_row.addWidget(self.reject_button)
         action_row.addWidget(self.archive_button)
         action_row.addStretch(1)
+        layout.addLayout(action_row)
+
+        # Keep record actions separate from option pagination. Combining them
+        # exceeds a 900px dialog when native label/font metrics are wider.
+        option_page_row = QHBoxLayout()
         self.request_option_page_label = QLabel("索件選項第 1 / 1 頁，共 0 筆")
         self.request_option_previous_button = QPushButton("索件選項上一頁")
         self.request_option_next_button = QPushButton("索件選項下一頁")
-        action_row.addWidget(self.request_option_page_label)
-        action_row.addWidget(self.request_option_previous_button)
-        action_row.addWidget(self.request_option_next_button)
-        layout.addLayout(action_row)
+        option_page_row.addWidget(self.request_option_page_label)
+        option_page_row.addStretch(1)
+        option_page_row.addWidget(self.request_option_previous_button)
+        option_page_row.addWidget(self.request_option_next_button)
+        layout.addLayout(option_page_row)
 
         self.feedback_label = QLabel()
         self.feedback_label.setWordWrap(True)

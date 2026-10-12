@@ -384,3 +384,43 @@ def test_collaboration_long_context_and_each_visible_tab_fit(container, qtbot, s
         )
         assert overflow == 0, f"visible tab {index}: {dialog.tabs.tabText(index)} overflows by {overflow}px"
         assert dialog.rect().contains(dialog.close_button.mapTo(dialog, dialog.close_button.rect().bottomRight()))
+
+
+@pytest.mark.parametrize("body_pixels", [14, 16])
+def test_annual_attachment_actions_fit_with_wide_native_pagination_label(
+    container, qtbot, styled, body_pixels
+):
+    """Replay the observed 266px native label minimum without changing font assets."""
+    from taxops.ui.dialogs.annual_workflow_dialog import AnnualWorkflowDialog
+
+    styled.setStyleSheet(APP_STYLESHEET.replace("font-size: 14px", f"font-size: {body_pixels}px"))
+    customer = client(container)
+    container.compliance_profiles.upsert_profile(
+        customer.id, 1, [ComplianceProfileItemInput("vat", "monthly")]
+    )
+    result = container.annual_work.confirm_preview(
+        customer.id, 2026, container.annual_work.preview(customer.id, 2026)
+    )
+    dialog = AnnualWorkflowDialog(container, result.items[0].id)
+    qtbot.addWidget(dialog)
+    dialog.resize(900, 540)
+    panel = dialog.attachment_panel
+    panel.request_option_page_label.setMinimumWidth(266)
+    dialog.tabs.setCurrentWidget(dialog.attachment_scroll)
+    dialog.show()
+    QApplication.processEvents()
+
+    scroll = dialog.attachment_scroll
+    assert dialog.size().width() == 900
+    assert scroll.isVisible()
+    assert scroll.horizontalScrollBar().maximum() == 0
+    for control in (
+        panel.accept_button, panel.reject_button, panel.archive_button,
+        panel.request_option_page_label,
+        panel.request_option_previous_button, panel.request_option_next_button,
+    ):
+        assert control.isVisibleTo(panel)
+        assert control.x() >= 0
+        assert control.x() + control.width() <= scroll.viewport().width()
+    assert panel.archive_button.geometry().bottom() < panel.request_option_page_label.geometry().top()
+    assert dialog.rect().contains(dialog.close_button.mapTo(dialog, dialog.close_button.rect().bottomRight()))

@@ -115,7 +115,7 @@ jobs:
             event_head_sha = '${{ github.event.pull_request.head.sha }}'
             checkout_sha = (git rev-parse HEAD)
             checkout_tree = (git rev-parse 'HEAD^{tree}')
-            scope = 'Five complete synthetic UI test files; not the release gate'
+            scope = 'Five complete synthetic UI test files and separate native glyph probe; not the release gate'
           } | ConvertTo-Json | Out-File -Encoding utf8 "$env:TAXOPS_UI_DIAGNOSTICS_DIR/provenance.json"
           python -m venv .venv-test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -132,11 +132,17 @@ jobs:
             .\.venv-test\Scripts\python.exe -m pytest -q "tests/$file.py" "--junitxml=$env:TAXOPS_UI_DIAGNOSTICS_DIR/$file.xml" *> "$env:TAXOPS_UI_DIAGNOSTICS_DIR/$file.log"
             $code = $LASTEXITCODE
             $results += @{ file = "tests/$file.py"; exit_code = $code }
+            $results | ConvertTo-Json | Out-File -Encoding utf8 "$env:TAXOPS_UI_DIAGNOSTICS_DIR/results.json"
             Get-Content "$env:TAXOPS_UI_DIAGNOSTICS_DIR/$file.log"
             if ($code -ne 0) { $failed = $true }
           }
           $results | ConvertTo-Json | Out-File -Encoding utf8 "$env:TAXOPS_UI_DIAGNOSTICS_DIR/results.json"
           if ($failed) { exit 1 }
+      - name: Inspect native Windows font rendering separately
+        if: always()
+        run: |
+          .\.venv-test\Scripts\python.exe -m build_tools.native_font_probe --output-dir "$env:TAXOPS_UI_DIAGNOSTICS_DIR/native-font"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload synthetic UI diagnostics even when assertions fail
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -3,6 +3,7 @@ from dataclasses import replace
 
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QPushButton
 
 from qt_geometry_diagnostics import dump_qt_geometry
@@ -294,5 +295,78 @@ def test_receipt_filter_row_shrinks_without_clipping_native_controls(qapp, page,
                 page._preview_btn.click()
                 qapp.processEvents()
                 assert page.width() == requested_width
+    finally:
+        qapp.setStyleSheet(old)
+
+
+@pytest.mark.parametrize("record_index", [4, 5])
+def test_adaptive_panes_do_not_pin_the_expanded_window_minimum(qapp, page, records, record_index):
+    """Replay native pane minima without shrinking any pane or font to fit.
+
+    The full three-column minimum is wider than 900, while each compact mode
+    fits. A resize must reach that compact mode before expanded pane minima can
+    clamp the page. This also covers switching to the longer preview-back label.
+    """
+    old = qapp.styleSheet()
+    try:
+        apply_style(qapp)
+        _select(page, records[record_index])
+        page._today_panel.setMinimumWidth(190)
+        page._table_panel.setMinimumWidth(381)
+        page._review_panel.setMinimumWidth(295)
+        margins = page.layout().contentsMargins()
+        expanded_minimum = (190 + 381 + 295 + 2 * page._splitter.handleWidth()
+                            + margins.left() + margins.right())
+        assert expanded_minimum > 900
+        page.resize(1280, 614)
+        qapp.processEvents()
+        for iteration, width in enumerate((900, 1093, 1280, 900)):
+            page.resize(width, 614)
+            qapp.processEvents()
+            actual_width = page.width()
+            if actual_width != width:
+                dump_qt_geometry(page, f"receipt-pane-min-{record_index}-{iteration}",
+                                 extra={"expected_width": width, "observed_width": actual_width,
+                                        "expanded_pane_minimum": expanded_minimum})
+            assert actual_width == width
+            assert page._table_panel.isVisible()
+            assert page._today_panel.isVisible() == (width >= 1180)
+            assert page._review_panel.isVisible() == (width >= 1000)
+            if width < 1000:
+                page._preview_btn.click()
+                qapp.processEvents()
+                assert page.width() == width
+                assert page._manual_btn.isVisible()
+                assert page._review_panel.isVisible() and not page._table_panel.isVisible()
+                for control in (page._preview_btn, page._manual_btn, page._accept_btn,
+                                page._reject_btn, page._more_btn, page._facts_label):
+                    assert page.rect().contains(control.mapTo(page, control.rect().topLeft()))
+                    assert page.rect().contains(control.mapTo(page, control.rect().bottomRight()))
+                # The actual preview viewport remains usable, not compressed
+                # to an offscreen child just to make the outer width assertion pass.
+                viewport = page._inspector._scroll.viewport()
+                assert viewport.width() >= 285 and viewport.height() > 100
+                assert page.rect().contains(viewport.mapTo(page, viewport.rect().topLeft()))
+                assert page.rect().contains(viewport.mapTo(page, viewport.rect().bottomRight()))
+                targets = {page._today_btn, page._upload_btn, page._refresh_btn,
+                           page._preview_btn, page._manual_btn, page._accept_btn,
+                           page._reject_btn, page._more_btn, page._help_btn}
+                assert all(button.isVisible() and button.isEnabled() for button in targets)
+                page._today_btn.setFocus()
+                seen = set()
+                for _ in range(100):
+                    focused = qapp.focusWidget()
+                    seen.add(focused)
+                    if targets <= seen:
+                        break
+                    QTest.keyClick(focused or page, Qt.Key.Key_Tab)
+                    qapp.processEvents()
+                assert targets <= seen, [button.text() for button in targets - seen]
+                page._preview_btn.click()
+                qapp.processEvents()
+                assert page.width() == width
+        assert page._selected_attachment().id == records[record_index].id
+        assert page._table_panel.minimumWidth() == 381
+        assert page._review_panel.minimumWidth() == 295
     finally:
         qapp.setStyleSheet(old)

@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import platform
 import sqlite3
 import sys
@@ -25,6 +26,36 @@ class SelfTestFailure(RuntimeError):
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise SelfTestFailure(message)
+
+
+@contextmanager
+def _temporary_profile_paths(root: Path):
+    """Keep environment-based runtime caches inside the synthetic data root.
+
+    This is a scoped path redirect, not an OS sandbox. Native registry settings
+    or APIs that ignore these environment variables are outside this boundary.
+    """
+    paths = {
+        "LOCALAPPDATA": root / "profile" / "local",
+        "APPDATA": root / "profile" / "roaming",
+        "USERPROFILE": root / "profile" / "home",
+        "HOME": root / "profile" / "home",
+        "XDG_CACHE_HOME": root / "profile" / "cache",
+        "XDG_CONFIG_HOME": root / "profile" / "config",
+        "XDG_DATA_HOME": root / "profile" / "data",
+    }
+    previous = {key: os.environ.get(key) for key in paths}
+    try:
+        for key, path in paths.items():
+            path.mkdir(parents=True, exist_ok=True)
+            os.environ[key] = str(path)
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 @contextmanager
@@ -292,12 +323,14 @@ def run_self_test(report_path: Path, *, require_frozen: bool = False) -> int:
               "frozen": bool(getattr(sys, "frozen", False)), "platform": sys.platform,
               "python": platform.python_version(), "checks": [], "network_attempts": [],
               "network_guard": "CPython socket audit events only; not an OS firewall",
+              "profile_isolation": "Temporary environment paths only; not a native registry or OS sandbox",
               "clean_os_verified": False, "manual_gui_verified": False}
     try:
         _require(not require_frozen or report["frozen"], "This check requires the frozen EXE")
         with tempfile.TemporaryDirectory(prefix="taxops_self_test_") as temp:
-            with _deny_python_network(report["network_attempts"]):
-                _run_checks(Path(temp), report)
+            with _temporary_profile_paths(Path(temp)):
+                with _deny_python_network(report["network_attempts"]):
+                    _run_checks(Path(temp), report)
             _require(not report["network_attempts"], "Self-test attempted network access")
         report["checks"].append({"name": "temporary_data_cleanup", "status": "passed"})
         report["status"] = "passed"

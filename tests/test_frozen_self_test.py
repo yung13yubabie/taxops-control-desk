@@ -299,3 +299,63 @@ def test_windows_workflow_is_nonpublishing_and_pinned():
         if "uses:" in line:
             pin = line.split("@", 1)[1].split()[0]
             assert len(pin) == 40 and all(c in "0123456789abcdef" for c in pin)
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_self_test_scopes_profile_paths_and_restores_environment(tmp_path, monkeypatch, fail):
+    keys = ("LOCALAPPDATA", "APPDATA", "USERPROFILE", "HOME", "XDG_CACHE_HOME",
+            "XDG_CONFIG_HOME", "XDG_DATA_HOME")
+    previous = {}
+    for index, key in enumerate(keys):
+        if index % 2:
+            monkeypatch.delenv(key, raising=False)
+            previous[key] = None
+        else:
+            prior = tmp_path / f"original-{key}"
+            prior.mkdir()
+            (prior / "preserved.txt").write_text("original synthetic state")
+            monkeypatch.setenv(key, str(prior))
+            previous[key] = str(prior)
+    observed = {}
+
+    def synthetic_native_write(root, report):
+        observed.update({key: Path(os.environ.get(key, "")) for key in keys})
+        assert all(path.is_relative_to(root) for path in observed.values())
+        cache = observed["LOCALAPPDATA"] / "Microsoft" / "Windows" / "Caches"
+        cache.mkdir(parents=True)
+        (cache / "synthetic-cache.bin").write_bytes(b"synthetic")
+        if fail:
+            raise OSError("ordinary synthetic check failure")
+
+    monkeypatch.setattr(diagnostics, "_run_checks", synthetic_native_write)
+    report = tmp_path / "profile-scope.json"
+    assert diagnostics.run_self_test(report) == int(fail)
+    payload = json.loads(report.read_text())
+    assert payload["status"] == ("failed" if fail else "passed")
+    if fail:
+        assert payload["error"]["message"] == "ordinary synthetic check failure"
+    assert {key: os.environ.get(key) for key in keys} == previous
+    assert observed and all(not path.exists() for path in observed.values())
+    for value in previous.values():
+        if value is not None:
+            assert sorted(p.name for p in Path(value).iterdir()) == ["preserved.txt"]
+            assert (Path(value) / "preserved.txt").read_text() == "original synthetic state"
+
+
+def test_profile_setup_failure_restores_environment_before_checks(tmp_path, monkeypatch):
+    before = dict(os.environ)
+    original_mkdir = Path.mkdir
+    called = []
+
+    def fail_profile_roaming(path, *args, **kwargs):
+        if path.name == "roaming" and path.parent.name == "profile":
+            raise OSError("synthetic profile setup failure")
+        return original_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", fail_profile_roaming)
+    monkeypatch.setattr(diagnostics, "_run_checks", lambda root, report: called.append(root))
+    report = tmp_path / "setup-failure.json"
+    assert diagnostics.run_self_test(report) == 1
+    assert json.loads(report.read_text())["error"]["message"] == "synthetic profile setup failure"
+    assert dict(os.environ) == before
+    assert called == []
