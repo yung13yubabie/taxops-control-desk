@@ -32,6 +32,36 @@ def require_isolated_profile(root: Path, token: str) -> None:
         raise ValueError("Lifecycle probe must exercise the production path policy in an isolated profile")
 
 
+def _termination_api():
+    import ctypes
+    from ctypes import wintypes
+    return ctypes, wintypes, ctypes.WinDLL("kernel32", use_last_error=True)
+
+
+def terminate_isolated_current_process(profile_root: Path, profile_token: str) -> None:
+    """Inject an abrupt self-only exit, after checking the diagnostic boundary.
+
+    This models unexpected termination without CRT/DLL-detach cleanup. It is
+    not a fix for, or explanation of, any earlier os._exit native fault.
+    """
+    require_isolated_profile(profile_root, profile_token)
+    if not getattr(sys, "frozen", False) or sys.platform != "win32":
+        raise ValueError("Self-termination injection requires the Windows frozen probe")
+    ctypes, wintypes, kernel = _termination_api()
+    kernel.GetCurrentProcess.argtypes = []
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    kernel.TerminateProcess.restype = wintypes.BOOL
+    own_handle = kernel.GetCurrentProcess()
+    if not own_handle:
+        raise RuntimeError("GetCurrentProcess did not provide its pseudo-handle")
+    if not kernel.TerminateProcess(own_handle, 77):
+        error = ctypes.get_last_error()
+        raise ctypes.WinError(error)
+    # Microsoft specifies that successful self-termination never returns.
+    raise RuntimeError("Self TerminateProcess unexpectedly returned")
+
+
 def persistent_client(container, record: Path, *, initialize: bool) -> dict:
     from taxops.services.clients import CreateClientInput
     if initialize:
@@ -130,9 +160,11 @@ def main(argv=None) -> int:
             report["persistent_client"] = persistent_client(window._container, args.persistent_record, initialize=args.initialize_persistence)
             from build_tools.windows_loaded_modules import capture_loaded_modules
             report["loaded_modules"] = capture_loaded_modules("gui_ready")
+            if args.crash_after_ready:
+                report["crash_injection"] = {"api": "TerminateProcess", "target": "current_process_pseudo_handle", "requested_exit_code": 77}
             write_report(args.ready, report)
             if args.crash_after_ready:
-                os._exit(77)  # Only the isolated gate's explicitly requested owned child.
+                terminate_isolated_current_process(args.profile_root, args.profile_token)
             timer = QTimer(window)
             timer.setInterval(100)
             timer.timeout.connect(lambda: window.close() if args.release.is_file() else None)

@@ -73,13 +73,13 @@ def test_notice_manifest_rejects_unsafe_and_duplicate_paths(tmp_path, name):
     expected = tmp_path / "expected"
     expected.mkdir()
     payload = {"schema": 1, "files": [{"path": name, "sha256": "0" * 64}]}
-    (expected / "manifest.json").write_text(json.dumps(payload))
+    (expected / "manifest.json").write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(licenses.LicenseAssetError, match="Unsafe or duplicate"):
         licenses.validate_notice_tree(expected, expected=expected)
 
 
 def test_version_gate_accepts_only_the_reviewed_release_environment(monkeypatch):
-    manifest = json.loads((licenses.NOTICE_SOURCE / "manifest.json").read_text())
+    manifest = json.loads((licenses.NOTICE_SOURCE / "manifest.json").read_text(encoding="utf-8"))
     monkeypatch.setattr(licenses.platform, "python_version", lambda: "3.11.9")
     monkeypatch.setattr(licenses.importlib.metadata, "version", manifest["release_packages"].__getitem__)
     licenses.validate_build_environment()
@@ -89,7 +89,7 @@ def test_version_gate_accepts_only_the_reviewed_release_environment(monkeypatch)
 
 
 def test_version_gate_rejects_changed_installed_package(monkeypatch):
-    manifest = json.loads((licenses.NOTICE_SOURCE / "manifest.json").read_text())
+    manifest = json.loads((licenses.NOTICE_SOURCE / "manifest.json").read_text(encoding="utf-8"))
     monkeypatch.setattr(licenses.platform, "python_version", lambda: "3.11.9")
     monkeypatch.setattr(licenses.importlib.metadata, "version", lambda name:
                         "6.10.3" if name == "PySide6" else manifest["release_packages"][name])
@@ -99,7 +99,7 @@ def test_version_gate_rejects_changed_installed_package(monkeypatch):
 
 def test_version_gate_rejects_changed_requirements(tmp_path, monkeypatch):
     monkeypatch.setattr(licenses, "ROOT", tmp_path)
-    (tmp_path / "requirements-release.txt").write_text("PySide6==6.10.3\n")
+    (tmp_path / "requirements-release.txt").write_text("PySide6==6.10.3\n", encoding="utf-8")
     with pytest.raises(licenses.LicenseAssetError, match="Release pins changed"):
         licenses.validate_build_environment()
 
@@ -149,14 +149,14 @@ def test_qtgui_hook_only_filters_virtual_keyboard_plugin(monkeypatch):
 
 
 def test_spec_and_package_entrypoint_require_notices():
-    spec = (ROOT / "TaxOpsControlDesk.spec").read_text()
-    package = (ROOT / "build_tools/package_windows.py").read_text()
+    spec = (ROOT / "TaxOpsControlDesk.spec").read_text(encoding="utf-8")
+    package = (ROOT / "build_tools/package_windows.py").read_text(encoding="utf-8")
     assert "validate_build_environment()" in spec and "validate_build_environment()" in package
     assert '(str(NOTICE_SOURCE), "third_party_licenses")' in spec
     assert 'hookspath=["build_tools/pyinstaller_hooks"]' in spec
     assert "COLLECT(" not in spec and "exclude_binaries=False" in spec
-    assert "third_party_licenses" in (ROOT / "src/taxops/core/third_party_notices.py").read_text()
-    assert "assets/third_party_licenses/** -text" in (ROOT / ".gitattributes").read_text()
+    assert "third_party_licenses" in (ROOT / "src/taxops/core/third_party_notices.py").read_text(encoding="utf-8")
+    assert "assets/third_party_licenses/** -text" in (ROOT / ".gitattributes").read_text(encoding="utf-8")
 
 
 def _fake_bundle(root):
@@ -197,7 +197,7 @@ def test_zip_gate_refuses_virtual_keyboard_before_archive_creation(tmp_path):
 
 
 def test_direct_spec_gate_imports_from_spec_directory_outside_repo(tmp_path):
-    spec = ast.parse((ROOT / "TaxOpsControlDesk.spec").read_text())
+    spec = ast.parse((ROOT / "TaxOpsControlDesk.spec").read_text(encoding="utf-8"))
     prefix = []
     for node in spec.body:
         prefix.append(node)
@@ -208,9 +208,9 @@ def test_direct_spec_gate_imports_from_spec_directory_outside_repo(tmp_path):
     prefix_source = ast.unparse(ast.Module(body=prefix, type_ignores=[]))
     package = tmp_path / "build_tools"
     package.mkdir()
-    (package / "__init__.py").write_text("")
+    (package / "__init__.py").write_text("", encoding="utf-8")
     (package / "dependency_licenses.py").write_text(
-        "NOTICE_SOURCE = None\ndef validate_build_environment():\n    print('spec-gate-ran')\n")
+        "NOTICE_SOURCE = None\ndef validate_build_environment():\n    print('spec-gate-ran')\n", encoding="utf-8")
     harness = """
 import sys, types
 sys.path = [p for p in sys.path if p and 'taxops' not in p.lower()]

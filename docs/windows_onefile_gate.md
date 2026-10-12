@@ -97,3 +97,39 @@ report; plugin metadata does not stand in for runtime version evidence. The
 existing compiled-metadata marker, red GIF decode and modified Python package
 checks remain required. Reused compiled DLL hashes remain caller-supplied; the
 generic recipe does not embed a particular local compilation's hash.
+
+## Explicit abrupt-termination model
+
+The isolated frozen `--onefile-probe --crash-after-ready` control uses
+`TerminateProcess(GetCurrentProcess(), 77)` after the real GUI-ready report,
+loaded-module snapshot and synthetic persistent record have been written.
+It rechecks the owned profile token and isolation environment before loading
+the native API. The helper accepts neither a PID nor a process handle, opens
+no other process and uses no alternative exit fallback. A failed call or an
+unexpected return is a failed injection. Normal application startup and
+shutdown do not call this helper.
+
+This deliberately models an unexpected stop without application/CRT cleanup.
+[GetCurrentProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getcurrentprocess)
+provides the current-process pseudo-handle;
+[TerminateProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-terminateprocess)
+does not return when successfully terminating the caller. The external gate
+still requires the observed outer bootloader exit value to be exactly 77,
+records the inner exit as unobserved, validates the injection marker, and
+requires the subsequent normal launch, lock recovery and synthetic record
+survival. Normal repeated launches, simultaneous startup, extraction cleanup
+and all 18 frozen self-tests remain required.
+
+The prior control was `os._exit(77)` in
+`build_tools/onefile_runtime_probe.py`, immediately after writing the ready
+report in the `MainWindow.show` wrapper, before `app.exec()`.
+EXE SHA-256
+`38f65d389373fabd458625e27503c8e28851b867d338fdfed427c47b6f0d7214`
+returned outer `0xc0000005` instead of 77; a corresponding Windows application
+error identified the inner process and `pyside6.abi3.dll`. That counterexample
+remains a failure of the old control. The fault module alone does not prove a
+particular DLL-detach mechanism, and this test-model correction is not a
+claim to have repaired PySide6. CRT `_exit` can still invoke native DLL
+termination routines through `ExitProcess`; it was therefore not a clean
+model of bypassing all such routines. No passing result for this corrected
+injection retroactively changes the earlier evidence.
