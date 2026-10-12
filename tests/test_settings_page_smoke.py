@@ -8,7 +8,7 @@ Covers everything verifiable without a real display or human interaction:
 - Cache status label updates after import
 
 QFileDialog / QProgressDialog / QThread visual interaction requires a real
-desktop and is explicitly left as [待驗收] in .ai/HANDOFF.md.
+desktop and is explicitly left as [待驗收] in docs/packaging_checklist.md.
 """
 
 from __future__ import annotations

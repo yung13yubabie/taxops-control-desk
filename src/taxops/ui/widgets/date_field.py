@@ -6,7 +6,7 @@ the calendar icon opens a 320px popup where one click on a day applies the date
 and closes. There is no confirm step and no year-jump row — the popup shows a
 month at a time, chevrons step the month, and the header spin box moves the year.
 
-`DateField`'s public API is frozen by `.ai/UI_REDESIGN_SPEC.md`: `value_changed`,
+`DateField`'s public API is frozen by `docs/desktop_ux_contract.md`: `value_changed`,
 `value`, `validated_value`, `raw_text`, `set_value`, `set_error`, `clear`, and
 `set_date_range` keep their signatures and semantics. Everything below them is
 internal.

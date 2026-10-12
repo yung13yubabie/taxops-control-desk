@@ -1,7 +1,7 @@
 """Stage 5 — DateField rebuild.
 
 Each assertion states a condition from the acceptance column of defect G14 in
-`.ai/UI_REDESIGN_AUDIT.md`: click-to-select, a 300–340px popup, an in-field quiet
+`docs/desktop_ux_contract.md`: click-to-select, a 300–340px popup, an in-field quiet
 clear icon, month stepping separated from year adjustment, and no confirm step.
 
 Visual and DPI acceptance are not covered here and cannot be: 100/125/150%
@@ -461,7 +461,7 @@ def test_show_near_lands_inside_the_real_available_geometry(
 # ---------------------------------------------------------------------------
 
 def test_public_api_signatures_are_frozen(qapp: QApplication) -> None:
-    """Six screens call these. `.ai/UI_REDESIGN_SPEC.md` freezes them."""
+    """Six screens call these. `docs/desktop_ux_contract.md` freezes them."""
     expected = {
         "value": "(self)",
         "validated_value": "(self)",

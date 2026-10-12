@@ -50,7 +50,7 @@ TaxOps Control Desk  。資料預設保存在本機 SQLite，不需登入雲端�
 - 雙重垂直捲動與 modal 深度問題未處理。
 - 年度工作台、年度法遵設定、建立年度工作、年度工作明細、案件與協作管理、待辦、工作流程、訊息模板、滯納金試算、固定開立均未重構。
 
-完整盤點、逐畫面策略與驗收條件見 `.ai/UI_REDESIGN_AUDIT.md`。
+公開介面目標與相容性契約見 `docs/desktop_ux_contract.md`；目標不代表所有畫面已完成。
 
 ## v0.30.0 重點
 
@@ -81,14 +81,7 @@ TaxOps Control Desk  。資料預設保存在本機 SQLite，不需登入雲端�
 
 ## 開發與驗證
 
-開始工作前依序閱讀：
-
-1. `.ai/spec-kit.md`
-2. `.ai/CURRENT_STATE.md`
-3. `.ai/TASKS.md`
-4. `.ai/DECISIONS.md`
-5. UI 工作再讀 `.ai/DESIGN.md` 與 `.ai/UI_REDESIGN_AUDIT.md`
-6. 涉及年度工作、案件、待辦或流程時讀 `docs/product_object_model.md`
+開始工作前閱讀 [CONTRIBUTING](CONTRIBUTING.md)、[安全政策](SECURITY.md) 與 [公開開發契約](docs/development_contract.md)。
 
 常用命令：
 
