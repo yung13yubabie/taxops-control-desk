@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.33.0rc1 — 候選，尚未發布（2026-10-12）
+## 0.33.0rc1 — 已發布候選（2026-10-13）
 
-基於 `feature/v030-annual-workbench` 的 `f02dc5d`，保留 v0.31.0 全部既有功能及後續 0.32 內部測試版的 UI、schema 27/28、客戶/租約/年度資料。維持 Python/PySide6，沒有 Rust 遷移。規劃候選 tag 為 `v0.33.0-rc.1`，目前未建立 tag 或 GitHub Release。
+基於 `feature/v030-annual-workbench` 的 `f02dc5d`，保留 v0.31.0 全部既有功能及後續 0.32 內部測試版的 UI、schema 27/28、客戶/租約/年度資料。維持 Python/PySide6，沒有 Rust 遷移。[候選 Release `v0.33.0-rc.1`](https://github.com/yung13yubabie/taxops-control-desk/releases/tag/v0.33.0-rc.1) 已發布；穩定版仍為 v0.31.0。
 
 ### 工作區
 
@@ -41,15 +41,19 @@
 
 ### 候選驗證與限制
 
-- 一般候選 run 38343015308 的完整 Windows 164 檔、4421 項與 18 項真正單檔 EXE 檢查均通過，實值 coverage（含分支收集） 91.17176972014165%；同次獨立 Shell／系統元件分類、核心實載來源、七個帳冊圖示資源及精確來源重組材料另有獨立覆核。仍未發布 Release。
-- 從該匯出材料真正重組的 run 38348191958 再次通過完整來源回歸，但在 qgif CMake 配置時發現 Windows 反斜線路徑被解析為非法跳脫字元；未產生修改元件 EXE。保留原失敗，修正後須以新的候選與材料身分重新驗證，不覆寫原 kit 或放寬來源一致性。
+- 一般候選 [run 38352573945](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38352573945) 的兩個 Windows 工作通過：完整 164 檔、4474 項全部通過，零失敗／錯誤／略過／未跑檔，原始合併行／分支覆蓋率 91.17176972014165%。同一單檔 EXE 的 18 項 frozen 檢查、一次雙開啟用、受控退出碼 77 與資料恢復、實載來源／同次 Shell 分類、七尺寸圖示及精確 kit 均經獨立覆核。
+- [固定材料重組 run 38355622300](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38355622300) 重新通過全部 164 檔、4474 項及原覆蓋率門檻，再以真正編譯的修改後 qgif 及修改後 PySide6.support 建出新 EXE 並通過完整 gate；獨立成品覆核也已通過。此 EXE 僅是重組工程證據，日常試用仍採一般候選。CMake 的路徑修正沒有遷移 Python／PySide6／PyInstaller 架構，也不要求一般使用者安裝開發工具。
+- [精確成品與來源紀錄](docs/windows_onefile_gate.md#latest-normal-candidate-and-modified-component-proof) 保留兩種 EXE 的不同雜湊。後續文件 commit/tree 不是已測二進位的建置來源。前次 run 38348191958 的 CMake 路徑失敗保留為歷史，不改寫舊 kit 或失敗結果。
 - 封裝子程序使用明確的 Python／Windows／Git 搜尋路徑，不繼承其他軟體的 DLL 目錄；保留父程序及編譯工具環境。系統 API 合約不再要求 43 個歷史實體檔案全部存在；已收集的同名檔仍須符合原核對值，且完整原生相依、符號及 Windows 提供者驗證不可省略。
 - 較早 run 38336220402 的 Windows 完整 159 檔、4148 項通過；該 EXE 的同步雙開、退出碼 77、資料恢復與 18 項自測通過，完整 gate 仍因末端實載模組分類失敗。通知沿用原 3000 ms 單一總預算，不再被額外 500 ms 寫入子期限提前中止；單次傳送與失敗判定保留。歷史失敗不改判。
 - 跨主機驗收先一次檢查 EXE、完整来源矩陣及五份同批建置收據；核對實際封裝 bytes，並在目前主機重新檢查官方 VC 簽章。缺件或資料不一致時保存失敗結果，不啟動 EXE；新主機證據另存新目錄，原產物材料保持不變。
-- 此固定 Hosted Windows 已驗隔離建置、材料預檢及實際 EXE 的相依／核心實載來源；末端宿主 Shell 與 msvcp110_win.dll 分類要求同次來源證據，不使用檔名白名單，不豁免核心、VC 或實際 PE 依賴。不同合法 SDK bytes 仍可能被保守門檻拒絕，修改元件重組成品與乾淨離線驗收尚未完成。
+- 此固定 Hosted Windows 已驗隔離建置、材料預檢及實際 EXE 的相依／核心實載來源；末端宿主 Shell 與 msvcp110_win.dll 分類要求同次來源證據，不使用檔名白名單，不豁免核心、VC 或實際 PE 依賴。不同合法 SDK bytes 仍可能被保守門檻拒絕，修改元件重組也已通過上述獨立覆核；乾淨離線驗收尚未完成。
 - 單一 EXE 方案保留實際載入模組來源、正常開關、同步啟動、本人突然中止後恢復及 18 項 frozen 檢查；原 CRT 強制退出引起的異常另列未解診斷，不以改測試模型冒稱修復 PySide。
 - UTF-8 測試來源與 JSON 明確指定解碼，不依賴使用者預設碼頁；完整公開工商 fixture 只準備一次，再以 SQLite backup 提供互相獨立的 UI 測試資料，保留原斷言、資料量與 900 秒限制。
-- 以下歷次數字均限當時固定來源／產物；單檔 EXE 與最後交易修正須重新取得完整 Windows 結果，不能沿用歷史綠燈。
+
+### 歷史驗證紀錄
+
+以下數字只適用於當時固定來源／產物；最新一般候選與重組結果以上段為準，歷史失敗不改判，也不能沿用歷史綠燈驗收新產物。
 
 - 新增固定權限、SHA-pinned actions 的 Windows PR/手動候選 workflow；逐檔測試、實值 coverage 至少 90%、隔離打包、ZIP 解壓後以同一 EXE 自測。沒有自動 Release、merge 或部署。
 - source self-test 使用臨時合成資料，包含 17 項 Qt 翻譯/schema28/客戶/租約/年度交易與完整還原檢查；source 通過不等同 frozen EXE 通過。
