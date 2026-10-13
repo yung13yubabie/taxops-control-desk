@@ -44,6 +44,8 @@ def test_quick_startup_diagnostics_preserve_complete_files_and_failure_exit() ->
     workflow = Path(".github/workflows/windows-candidate.yml").read_text(encoding="utf-8")
     main, quick = workflow.split("  windows-ui-diagnostics:", 1)
     expected = (
+        "test_shell_icon_probe", "test_shell_module_baseline",
+        "test_shell_loaded_classification", "test_windows_inbox_runtime",
         "test_notification_readiness", "test_activation_delivery",
         "test_atomic_instance_lock", "test_single_instance", "test_onefile_gate",
         "test_native_font_probe", "test_qt_geometry_diagnostics",
@@ -52,7 +54,7 @@ def test_quick_startup_diagnostics_preserve_complete_files_and_failure_exit() ->
     )
     declared = quick.split("$files = @(", 1)[1].split(")", 1)[0]
     assert tuple(item.strip().strip("'") for item in declared.split(",")) == expected
-    assert "Twelve complete synthetic startup/UI/diagnostic test files" in quick
+    assert "Sixteen complete synthetic packaging/startup/UI/diagnostic test files" in quick
     assert '\"tests/$file.py\"' in quick
     assert "if ($code -ne 0) { $failed = $true }" in quick
     assert "if ($failed) { exit 1 }" in quick

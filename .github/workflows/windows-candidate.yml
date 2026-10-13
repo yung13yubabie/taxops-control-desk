@@ -125,7 +125,7 @@ jobs:
             event_head_sha = '${{ github.event.pull_request.head.sha }}'
             checkout_sha = (git rev-parse HEAD)
             checkout_tree = (git rev-parse 'HEAD^{tree}')
-            scope = 'Twelve complete synthetic startup/UI/diagnostic test files and separate native glyph probe; not the release gate'
+            scope = 'Sixteen complete synthetic packaging/startup/UI/diagnostic test files and separate native glyph probe; not the release gate'
           } | ConvertTo-Json | Out-File -Encoding utf8 "$env:TAXOPS_UI_DIAGNOSTICS_DIR/provenance.json"
           python -m venv .venv-test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -146,7 +146,7 @@ jobs:
           if ($code -ne 0) { exit $code }
       - name: Run each complete diagnostic file and retain every failure
         run: |
-          $files = @('test_notification_readiness', 'test_activation_delivery', 'test_atomic_instance_lock', 'test_single_instance', 'test_onefile_gate', 'test_native_font_probe', 'test_qt_geometry_diagnostics', 'test_deep_chinese_ui', 'test_frozen_self_test', 'test_novice_client_forms', 'test_ui_stage_5_date_field', 'test_v032_receipt_workbench')
+          $files = @('test_shell_icon_probe', 'test_shell_module_baseline', 'test_shell_loaded_classification', 'test_windows_inbox_runtime', 'test_notification_readiness', 'test_activation_delivery', 'test_atomic_instance_lock', 'test_single_instance', 'test_onefile_gate', 'test_native_font_probe', 'test_qt_geometry_diagnostics', 'test_deep_chinese_ui', 'test_frozen_self_test', 'test_novice_client_forms', 'test_ui_stage_5_date_field', 'test_v032_receipt_workbench')
           $results = @()
           $failed = $false
           foreach ($file in $files) {

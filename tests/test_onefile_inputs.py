@@ -228,8 +228,19 @@ def test_complete_static_preflight_finishes_before_any_exe_boundary(tmp_path, mo
     def native(_bundle, _output, *, staging_report):
         assert staging_report == staging / "windows-system-runtime.json"
         events.append("native")
-        return {"build_staging_sha256": inputs.sha256(staging_report)}
+        pe = _output / "pe-dependencies.json"
+        write_json(pe, {"status": "passed", "inventory": [{"path": "synthetic.dll", "imports": [], "exports": []}],
+            "dependencies": [{"kind": "normal", "resolution": {"kind": "windows_system",
+                "module_path": r"C:\Windows\System32\kernel32.dll", "symbols": []}}]})
+        return {"build_staging_sha256": inputs.sha256(staging_report), "pe_dependency_report_sha256": inputs.sha256(pe)}
     monkeypatch.setattr(gate, "verify_native_dependencies", native)
+    from build_tools import shell_module_baseline
+    def collect(observation, *, run_id, protected_names):
+        events.append("shell_baseline")
+        assert observation == tmp_path / "gate-output/shell-baseline"
+        assert len(run_id) == 32 and {"synthetic.dll", "kernel32.dll"}.issubset(protected_names)
+        return SimpleNamespace(report_hash="f" * 64, classification={"eligible": [], "excluded": []})
+    monkeypatch.setattr(shell_module_baseline, "collect", collect)
     def boundary(*_args, **_kwargs):
         events.append("exe_boundary")
         raise RuntimeError("synthetic stop before EXE launch")
@@ -250,10 +261,10 @@ def test_complete_static_preflight_finishes_before_any_exe_boundary(tmp_path, mo
     assert saved["status"] == "failed"
     assert saved["acceptance_inputs"]["official_vc_receipt"]["path"] == str((staging / "official-vc.json").resolve())
     if fault is None:
-        assert events == ["matrix", "extract", "native", "exe_boundary"]
+        assert events == ["matrix", "extract", "native", "shell_baseline", "exe_boundary"]
         assert len(saved["official_vc_current_host_signatures"]) == 5
     else:
-        assert "exe_boundary" not in events and "native" not in events
+        assert "exe_boundary" not in events and "native" not in events and "shell_baseline" not in events
 
 
 @pytest.mark.parametrize('missing', list(inputs.STAGING_INPUT_FILES.values()))

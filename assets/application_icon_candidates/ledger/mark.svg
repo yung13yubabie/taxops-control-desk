@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>TaxOps ledger candidate</title>
+  <rect x="8" y="8" width="240" height="240" rx="40" fill="#1E293B"/>
+  <rect x="58" y="48" width="144" height="164" rx="16" fill="#FFFFFF"/>
+  <rect x="82" y="68" width="14" height="124" rx="3" fill="#2563EB"/>
+  <rect x="116" y="76" width="60" height="14" rx="3" fill="#1E293B"/>
+  <rect x="116" y="108" width="60" height="14" rx="3" fill="#1E293B"/>
+  <rect x="116" y="140" width="60" height="14" rx="3" fill="#1E293B"/>
+  <rect x="116" y="172" width="40" height="14" rx="3" fill="#2563EB"/>
+</svg>

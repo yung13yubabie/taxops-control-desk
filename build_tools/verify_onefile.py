@@ -102,7 +102,8 @@ def check_lifecycle_report(report: dict, *, temp: Path, database: Path,
     return mei
 
 
-def check_module_report(report: dict, *, inventory: dict, exe: Path, temp: Path, phase: str) -> dict:
+def check_module_report(report: dict, *, inventory: dict, exe: Path, temp: Path, phase: str,
+                        shell_baseline=None, acceptance_run_id: str | None = None) -> dict:
     snapshot = report.get("loaded_modules", {})
     mei = Path(snapshot.get("meipass", "")).resolve()
     if mei.parent != temp.resolve() or not mei.name.startswith("_MEI"):
@@ -111,9 +112,20 @@ def check_module_report(report: dict, *, inventory: dict, exe: Path, temp: Path,
         raise BundleVerificationError("GUI and loaded-module extraction identity differ")
     native = {key: row["sha256"] for key, row in inventory.items()
               if PurePosixPath(key).suffix in {".dll", ".pyd", ".exe"}}
+    roots = windows_system_roots()
+    # No persisted signature receipt grants a runtime exception: verify the
+    # narrowly documented inbox provider live for this phase on this host.
+    inbox_verifier = None
+    if shell_baseline is not None:
+        from functools import partial
+        from build_tools.windows_inbox_runtime import verify_inbox_runtime
+        inbox_verifier = partial(verify_inbox_runtime, roots=roots,
+            protected_names=set(shell_baseline.protected_names) | {PurePosixPath(name).name for name in inventory})
     return validate_loaded_modules(snapshot, expected_native=native, meipass=str(mei),
                                    executable=str(exe.resolve()), executable_sha256=sha256(exe),
-                                   os_roots=windows_system_roots(), phase=phase)
+                                   os_roots=roots, phase=phase,
+                                   shell_baseline=shell_baseline, acceptance_run_id=acceptance_run_id,
+                                   inbox_runtime_verifier=inbox_verifier)
 
 
 def wait_ready(process: subprocess.Popen, ready: Path, timeout: int) -> None:
@@ -175,7 +187,8 @@ def verify_unusable_temp(exe: Path, output: Path, *, timeout: int) -> dict:
             terminate_owned_tree(process, output / "forced-process-cleanup.json")
 
 
-def verify_unusable_profile(exe: Path, output: Path, inventory: dict, *, timeout: int) -> dict:
+def verify_unusable_profile(exe: Path, output: Path, inventory: dict, *, timeout: int,
+                            shell_baseline=None, acceptance_run_id: str | None = None) -> dict:
     profile = output / "unusable-data-profile"
     env = isolated_environment(profile)
     token = uuid.uuid4().hex
@@ -222,7 +235,8 @@ def verify_unusable_profile(exe: Path, output: Path, inventory: dict, *, timeout
     finally:
         if process.poll() is None:
             terminate_owned_tree(process, output / "forced-process-cleanup.json")
-    loaded = check_module_report(report, inventory=inventory, exe=exe, temp=Path(env["TEMP"]), phase="gui_ready")
+    loaded = check_module_report(report, inventory=inventory, exe=exe, temp=Path(env["TEMP"]), phase="gui_ready",
+                                 shell_baseline=shell_baseline, acceptance_run_id=acceptance_run_id)
     return {"storage_recovery_loaded_modules": loaded, "blocked_data_path_visible_chinese_error": True, "blocked_data_path_no_bootstrap": True,
             "same_profile_recovered_after_storage_error": True}
 
@@ -257,7 +271,8 @@ def check_race_duplicate_exit(code: int, pid: int, provenance: dict) -> None:
         raise BundleVerificationError("Simultaneous duplicate launch did not exit successfully")
 
 
-def verify_lifecycle(exe: Path, output: Path, inventory: dict, *, timeout: int, provenance: dict) -> dict:
+def verify_lifecycle(exe: Path, output: Path, inventory: dict, *, timeout: int, provenance: dict,
+                     shell_baseline=None, acceptance_run_id: str | None = None) -> dict:
     profile = output / "隔離使用者 空白"
     env = isolated_environment(profile)
     profile_token = uuid.uuid4().hex
@@ -375,7 +390,8 @@ def verify_lifecycle(exe: Path, output: Path, inventory: dict, *, timeout: int, 
     leftovers = {p.resolve() for p in temp.glob("_MEI*")}
     if leftovers - {crash_mei}:
         raise BundleVerificationError("Unaccounted extraction directory remains in the dedicated test TEMP")
-    loaded = [check_module_report(report, inventory=inventory, exe=exe, temp=temp, phase="gui_ready")
+    loaded = [check_module_report(report, inventory=inventory, exe=exe, temp=temp, phase="gui_ready",
+                                 shell_baseline=shell_baseline, acceptance_run_id=acceptance_run_id)
               for report in reports + [crash_report] if report.get("window_shown")]
     expected_client = json.loads(persistent_record.read_text(encoding="utf-8"))
     for report in reports + [crash_report]:
@@ -420,7 +436,9 @@ def verify(exe: Path, output: Path, *, timeout: int = 180, recombined: bool = Fa
     if sys.platform != "win32":
         raise BundleVerificationError("Onefile acceptance requires Windows")
     output.mkdir(parents=True, exist_ok=False)
+    acceptance_run_id = uuid.uuid4().hex
     result = {"schema": 1, "status": "failed", "single_file": True,
+              "acceptance_run_id": acceptance_run_id,
               "clean_os_verified": False, "manual_gui_verified": False,
               "source_exe_sha256": None, "recombined": recombined}
     try:
@@ -442,10 +460,21 @@ def verify(exe: Path, output: Path, *, timeout: int = 180, recombined: bool = Fa
         result.update(verify_native_dependencies(inspected, output,
                                                staging_report=staging / "windows-system-runtime.json"))
         (output / "embedded-inventory.json").write_text(json.dumps(payload["entries"], indent=2) + "\n", encoding="utf-8")
+        from build_tools.shell_module_baseline import collect, required_dependency_names
+        pe_report = json.loads((output / "pe-dependencies.json").read_text(encoding="utf-8"))
+        if sha256(output / "pe-dependencies.json") != result["pe_dependency_report_sha256"]:
+            raise BundleVerificationError("Passed PE dependency report changed")
+        shell_baseline = collect(output / "shell-baseline", run_id=acceptance_run_id,
+            protected_names=required_dependency_names(pe_report) | {
+                PurePosixPath(name).name for name in payload["entries"]})
+        result["shell_baseline"] = {"report_sha256": shell_baseline.report_hash,
+                                    **shell_baseline.classification}
         assert_inputs_unchanged(result["acceptance_inputs"])
         result.update(verify_unusable_temp(actual, output, timeout=timeout))
-        result.update(verify_unusable_profile(actual, output, payload["entries"], timeout=timeout))
-        result.update(verify_lifecycle(actual, output, payload["entries"], timeout=timeout, provenance=result))
+        result.update(verify_unusable_profile(actual, output, payload["entries"], timeout=timeout,
+            shell_baseline=shell_baseline, acceptance_run_id=acceptance_run_id))
+        result.update(verify_lifecycle(actual, output, payload["entries"], timeout=timeout, provenance=result,
+            shell_baseline=shell_baseline, acceptance_run_id=acceptance_run_id))
         result["normal_temp_retry_after_failure"] = True
         environment = isolated_environment(output / "selftest-profile")
         report = output / "frozen-self-test.json"
@@ -457,7 +486,8 @@ def verify(exe: Path, output: Path, *, timeout: int = 180, recombined: bool = Fa
         validate_report(frozen_report)
         result["selftest_loaded_modules"] = check_module_report(
             frozen_report, inventory=payload["entries"], exe=actual,
-            temp=Path(environment["TEMP"]), phase="after_18_checks")
+            temp=Path(environment["TEMP"]), phase="after_18_checks",
+            shell_baseline=shell_baseline, acceptance_run_id=acceptance_run_id)
         if recombined:
             report = output / "frozen-recombine.json"
             process = subprocess.run([str(actual), "--recombine-probe", "--require-frozen", "--require-support", "--report", str(report)],
@@ -476,6 +506,10 @@ def verify(exe: Path, output: Path, *, timeout: int = 180, recombined: bool = Fa
         shutil.copyfile(actual, output / "TaxOpsControlDesk.exe")
     except Exception as exc:
         result["error"] = {"type": type(exc).__name__, "message": str(exc)}
+        if getattr(exc, "violations", None):
+            result["error"]["violations"] = exc.violations
+        if getattr(exc, "module_report", None):
+            result["loaded_module_failure"] = exc.module_report
         raise
     finally:
         (output / "onefile-provenance.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

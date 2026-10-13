@@ -17,7 +17,28 @@ from pathlib import Path
 
 
 class LoadedModuleError(RuntimeError):
-    pass
+    def __init__(self, message, *, violations=None, module_report=None, diagnostics=None):
+        super().__init__(message)
+        self.violations = violations or []
+        self.module_report = module_report
+        self.diagnostics = diagnostics
+
+
+class _LiveShellEvidence:
+    """Host-validator interface marker, not a security capability or attestation.
+
+    Keeping this dependency-free avoids pulling host packaging/PE tools into
+    the frozen collector's static import graph. The live observer subclass
+    still owns creation and all current-run/source/file checks.
+    """
+
+    __slots__ = ()
+
+    def current(self, run_id):
+        raise LoadedModuleError("Bare Shell interface is not live observation")
+
+    def match(self, row):
+        raise LoadedModuleError("Bare Shell interface is not live observation")
 
 
 # Names are from the reviewed x64 CPython 3.11/PySide6 6.10.2 PE inventory.
@@ -199,7 +220,9 @@ def capture_loaded_modules(phase: str) -> dict:
                     ),
                 }
             )
-        if set(before) == set(api.handles()):
+        if (set(before) == set(api.handles())
+                and all(_path(api.path(handle)) == _path(row["loader_path"])
+                        for handle, row in zip(before, rows, strict=True))):
             report.update(
                 status="observed",
                 process_id=os.getpid(),
@@ -214,6 +237,12 @@ def capture_loaded_modules(phase: str) -> dict:
     )
 
 
+def protected_module_name(name: str, required_names) -> bool:
+    """Protection always precedes any independently observed Shell classification."""
+    return bool(name in required_names or name.endswith(".pyd") or re.match(
+        r"(?:python|qt\d|pyside|shiboken|vcruntime|msvcp|concrt|vcamp|vcomp|taxops)", name))
+
+
 def validate_loaded_modules(
     snapshot: dict,
     *,
@@ -223,6 +252,9 @@ def validate_loaded_modules(
     executable_sha256: str,
     os_roots: dict,
     phase: str,
+    shell_baseline=None,
+    acceptance_run_id: str | None = None,
+    inbox_runtime_verifier=None,
 ) -> dict:
     """Pure fail-closed comparison; fixtures test policy, never native execution."""
     if (
@@ -263,63 +295,89 @@ def validate_loaded_modules(
         raise LoadedModuleError("No actual loaded modules")
     seen, loaded, main_count, os_count = set(), set(), 0, 0
     bundled_names = {ntpath.basename(name) for name in expected_native}
+    shell_matches, inbox_matches = [], []
+    if shell_baseline is not None:
+        if not isinstance(shell_baseline, _LiveShellEvidence):
+            raise LoadedModuleError("Persisted Shell receipts are not live classification authority")
+        shell_baseline.current(acceptance_run_id)
+    violations = []
     for row in rows:
-        if (
-            not isinstance(row, dict)
-            or not re.fullmatch(r"[0-9a-f]{64}", row.get("sha256", ""))
-            or type(row.get("bytes")) is not int
-            or row["bytes"] <= 0
-        ):
-            raise LoadedModuleError("Missing loaded-module path/hash/size")
-        path = _path(row.get("path"))
-        _path(row.get("loader_path"))
-        if path in seen:
-            raise LoadedModuleError("Duplicate exact loaded-module path")
-        seen.add(path)
-        location = _location(path, mei, executable, roots)
-        if row.get("location") != location:
-            raise LoadedModuleError("Loaded-module location classification mismatch")
-        name = ntpath.basename(path)
-        if location == "executable":
-            main_count += 1
-            if row["sha256"] != executable_sha256:
-                raise LoadedModuleError("Loaded main EXE hash mismatch")
-        elif location == "extraction":
-            relative = path[len(mei) + 1 :].replace("\\", "/")
-            if expected_native.get(relative) != row["sha256"]:
-                raise LoadedModuleError(
-                    "Loaded extraction path/hash differs from embedded inventory"
-                )
-            loaded.add(relative)
-        else:
-            required_local = (
-                name in bundled_names
-                or name.endswith(".pyd")
-                or re.match(
-                    r"(?:python\d|qt6|pyside6|shiboken6|vcruntime\d|msvcp\d|concrt\d|vcamp\d|vcomp\d)",
-                    name,
-                )
-            )
-            if required_local or location == "external":
-                raise LoadedModuleError(
-                    f"Loaded module outside the accepted EXE/extraction/OS scope: {row['path']}"
-                )
-            os_count += 1
-    if (
-        main_count != 1
-        or not CORE_PATHS.issubset(loaded)
-        or not CORE_VC_NAMES.issubset({ntpath.basename(name) for name in loaded})
-        or not os_count
-    ):
-        raise LoadedModuleError(
-            "Missing actual EXE/Python/Qt/binding/VC/OS core module"
-        )
-    return {
+        try:
+            if (not isinstance(row, dict) or not isinstance(row.get("sha256"), str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", row["sha256"])
+                    or type(row.get("bytes")) is not int or row["bytes"] <= 0):
+                raise LoadedModuleError("Missing loaded-module path/hash/size")
+            path = _path(row.get("path"))
+            _path(row.get("loader_path"))
+            if path in seen:
+                raise LoadedModuleError("Duplicate exact loaded-module path")
+            seen.add(path)
+            location = _location(path, mei, executable, roots)
+            if row.get("location") != location:
+                raise LoadedModuleError("Loaded-module location classification mismatch")
+            name = ntpath.basename(path)
+            if location == "executable":
+                main_count += 1
+                if row["sha256"] != executable_sha256:
+                    raise LoadedModuleError("Loaded main EXE hash mismatch")
+            elif location == "extraction":
+                relative = path[len(mei) + 1 :].replace("\\", "/")
+                if expected_native.get(relative) != row["sha256"]:
+                    raise LoadedModuleError("Loaded extraction path/hash differs from embedded inventory")
+                loaded.add(relative)
+            else:
+                if (name == "msvcp110_win.dll" and name not in bundled_names
+                        and location == "windows_system32" and inbox_runtime_verifier is not None):
+                    inbox_matches.append(inbox_runtime_verifier(row))
+                    os_count += 1
+                    continue
+                # Preserve the existing OS rule: msvcp_win.dll is an inbox
+                # component, unlike numbered redistributable msvcp DLLs.
+                required_local = (protected_module_name(name, bundled_names) if location == "external"
+                    else name in bundled_names or name.endswith(".pyd") or re.match(
+                        r"(?:python|qt\d|pyside|shiboken|vcruntime\d|msvcp\d|concrt\d|vcamp\d|vcomp\d|taxops)", name))
+                if required_local:
+                    raise LoadedModuleError(
+                        f"Loaded module outside the accepted EXE/extraction/OS scope: {row['path']}"
+                    )
+                if location == "external":
+                    if shell_baseline is None or name in shell_baseline.protected_names:
+                        raise LoadedModuleError(
+                            f"Loaded module outside the accepted EXE/extraction/OS scope: {row['path']}"
+                        )
+                    if _path(row["loader_path"]) != path:
+                        raise LoadedModuleError("External loader path differs from canonical observed path")
+                    shell_matches.append(shell_baseline.match(row))
+                else:
+                    os_count += 1
+        except (LoadedModuleError, OSError, RuntimeError) as exc:
+            violation = {"path": row.get("path") if isinstance(row, dict) else None,
+                         "type": type(exc).__name__, "message": str(exc)}
+            if getattr(exc, "diagnostics", None):
+                violation["signature_process"] = exc.diagnostics
+            violations.append(violation)
+    if (main_count != 1 or not CORE_PATHS.issubset(loaded)
+            or not CORE_VC_NAMES.issubset({ntpath.basename(name) for name in loaded}) or not os_count):
+        violations.append({"path": None, "type": "LoadedModuleError",
+                           "message": "Missing actual EXE/Python/Qt/binding/VC/OS core module"})
+    if shell_baseline is not None:
+        shell_baseline.current(acceptance_run_id)
+    module_report = {
         "phase": phase,
         "process_id": snapshot["process_id"],
         "loaded_embedded": sorted(loaded),
         "not_observed_embedded": sorted(set(expected_native) - loaded),
         "os_location_module_count": os_count,
+        "independently_shell_observed_external": shell_matches,
+        "verified_windows_integrated_runtime": inbox_matches,
+        "shell_eligible_not_observed": ([] if shell_baseline is None else sorted(
+            set(shell_baseline._eligible) - {_path(row["path"]) for row in shell_matches})),
         "clean_os_verified": False,
         "scope": LIMITATION,
     }
+    if violations:
+        module_report.update(status="failed", violations=violations)
+        raise LoadedModuleError(
+            "Loaded-module validation failed: " + "; ".join(item["message"] for item in violations),
+            violations=violations, module_report=module_report)
+    return module_report

@@ -37,6 +37,7 @@
 
 ## 本輪修正與驗證
 
+- 採用選定的「帳冊」應用程式圖示，提供 16–256 px 七種尺寸，沿用現有視窗／EXE 圖示路徑；[圖示與識別契約](docs/application_icon_contract.md) 已有真 Qt 抽查，新 EXE 內嵌及實機釘選仍待驗。
 - 完整備份與乾淨目錄還原；提交後暫存清理失敗顯示成功與警告。
 - 混合索件狀態不再因「已接收 → 已確認」倒退。
 - 工商匯入與下載來源稽核同一交易；完成後釋放進度對話框。
@@ -60,9 +61,11 @@
 
 本機重組後續回報完整來源測試及修改後 qgif 小型探針通過，設定頁 8 項回歸在原 900 秒內結束；但封裝被不同來源的系統 DLL 擋下，沒有產出合格重組 EXE。目前修正建置工具繼承的 DLL 搜尋路徑，以及驗收材料缺件的預檢。這些新修正仍須固定來源的完整回歸和新 Windows 建置；尚未完成的重組／乾淨離線驗收保留。
 
-最新 [run 38330485769](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38330485769) 已通過 Windows 全部 159 檔、4136 項，實值 branch coverage 91.17232302340885%，並成功建出新的單一 EXE。完整驗收仍失敗：同步雙開時，第二個程序的通知雖交給 Qt，卻未在寫入等待期限內送完，因此顯示「程式尚未就緒」並返回 1；第一個程序已開啟視窗但沒有收到啟用通知。本輪未執行後續中止、18 項自測及重組套件匯出。
+前一輪 [run 38330485769](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38330485769) 已通過 Windows 全部 159 檔、4136 項，實值 branch coverage 91.17232302340885%，並成功建出新的單一 EXE。完整驗收仍失敗：同步雙開時，第二個程序的通知雖交給 Qt，卻未在寫入等待期限內送完，因此顯示「程式尚未就緒」並返回 1；第一個程序已開啟視窗但沒有收到啟用通知。本輪未執行後續中止、18 項自測及重組套件匯出。
 
-[獨立 Windows 傳送診斷](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38334298605) 確認：接收端尚未接受連線時，額外的 500 ms 寫入期限會提前結束通知；接受連線後，即使接收端事件迴圈暫停，資料仍能送完。候選修補改用原本單一 3000 ms 總預算，不重送通知，也不把送出當作視窗已顯示。[修後 Windows 對照](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38335606087) 已確認延後接受連線的通知能完整送達且只觸發一次；一直未接受連線及提前關閉的情境仍正確失敗。這項來源修效不能代替新 EXE 的雙開、資料安全及完整自測，仍須固定版本重新驗收。
+[獨立 Windows 傳送診斷](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38334298605) 確認：接收端尚未接受連線時，額外的 500 ms 寫入期限會提前結束通知；接受連線後，即使接收端事件迴圈暫停，資料仍能送完。候選修補改用原本單一 3000 ms 總預算，不重送通知，也不把送出當作視窗已顯示。[修後 Windows 對照](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38335606087) 已確認延後接受連線的通知能完整送達且只觸發一次；一直未接受連線及提前關閉的情境仍正確失敗。這項來源修效另由下述新 EXE 回驗，歷史失敗不改判。
+
+最新 [run 38336220402](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38336220402) 已通過全部 159 檔、4148 項 Windows 來源回歸，原始分支覆蓋率 91.17176972014165%。新單一 EXE 的同步雙開兩方正常退出，第一個視窗收到一次啟用；本人中止碼 77、重啟後原合成資料保留及 18 項 frozen 自測也通過，未記錄網路嘗試。完整驗收仍失敗：末端實載快照出現 8 個宿主 Tortoise 元件，逐條覆核另發現 Windows 系統元件 msvcp110_win.dll 被現有 VC 名稱規則拒絕。新的候選驗收分類要求同次、同主機的獨立 Shell 觀察及嚴格來源核對，系統元件另需即時簽章與身分證據；此規則仍待新 Windows 實測，未知外部模組與核心元件來源檢查持續保留。沒有匯出合格重組套件或發布此 EXE，精確來源及雜湊見 [單檔驗收紀錄](docs/windows_onefile_gate.md#latest-notification-repair-and-remaining-module-classification-failure)。
 
 **候選尚未發布。** 最終 Release 必須附重新驗證的單一 EXE，以及必要的第三方授權通知與原始碼／重組材料；不以舊 ZIP 或只有原始碼代替 EXE。原始碼重組材料供有需要的接收者使用，不是一般使用者的安裝前提。具體方案見 [單檔 EXE 與重組驗收](docs/windows_onefile_gate.md) 和 [第三方元件說明](docs/third_party_licenses.md)。
 

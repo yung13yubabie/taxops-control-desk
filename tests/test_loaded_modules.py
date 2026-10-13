@@ -395,3 +395,50 @@ def test_capture_hashes_observed_files_only_and_rejects_changing_list(
     with pytest.raises(modules.LoadedModuleError, match="changed"):
         modules.capture_loaded_modules("gui_ready")
     assert len(calls) == 8
+
+
+def test_capture_rejects_handle_reused_with_different_module_path(
+    tmp_path, monkeypatch
+):
+    first, second = tmp_path / "first.dll", tmp_path / "second.dll"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+    paths = []
+
+    class API:
+        def roots(self):
+            return ROOTS
+
+        def handles(self):
+            return (1,)
+
+        def path(self, _handle):
+            paths.append(1)
+            return str(first if len(paths) % 2 else second)
+
+    monkeypatch.setattr(modules, "_WindowsModuleAPI", API)
+    monkeypatch.setattr(
+        modules,
+        "sys",
+        SimpleNamespace(
+            platform="win32", frozen=True, _MEIPASS=str(tmp_path), executable=str(first)
+        ),
+    )
+    monkeypatch.setattr(modules, "_path", lambda value: value)
+    with pytest.raises(modules.LoadedModuleError, match="changed"):
+        modules.capture_loaded_modules("gui_ready")
+    assert len(paths) == 6
+
+
+def test_ordinary_windows_msvcp_win_keeps_existing_os_rule():
+    report, inventory = fixture()
+    report["modules"].append(
+        {
+            "path": ROOTS["system32"] + r"\msvcp_win.dll",
+            "loader_path": ROOTS["system32"] + r"\msvcp_win.dll",
+            "sha256": HASH,
+            "bytes": 123,
+            "location": "windows_system32",
+        }
+    )
+    assert validate(report, inventory)["os_location_module_count"] == 2

@@ -63,8 +63,8 @@ path fails the sample. This records on-disk file identity, not mapped-memory
 integrity. The collector's own standard-library dependencies are included.
 
 The external onefile gate checks each observed path and SHA-256 against the
-actual EXE and embedded inventory. The main EXE is the sole exact executable
-exception outside `_MEIPASS`. Python, Qt, PySide, Shiboken and loaded VC modules
+actual EXE and embedded inventory. The main EXE is its own exact executable
+identity outside `_MEIPASS`. Python, Qt, PySide, Shiboken and required VC modules
 must be inside `_MEIPASS`. The pinned Python/Qt/binding core and basic VC imports
 must actually appear. Distinct VC destinations sharing a basename retain their
 individual path/hash evidence; duplicate exact paths are rejected. Missing
@@ -73,9 +73,16 @@ paths fail acceptance.
 
 OS-location classification uses independently queried Windows API roots and the
 same narrow locations as the existing native resolver: directly in System32 or
-beneath WinSxS. Other locations, including unreviewed system subdirectories or
-third-party injected libraries, are reported and fail this gate; there is no
-silent allowlist expansion. This is not an OS-signature or clean-machine claim.
+beneath WinSxS. Unknown locations still fail. The candidate now adds a separate
+[same-run Shell observation contract](windows_shell_module_classification.md):
+a fresh isolated stdlib child must independently add each exact external file,
+with live source/run/path/hash/size bindings. Protected payload, core and PE
+dependency names cannot qualify. This is an observation classification, not a
+trusted-extension designation or a claim that no dynamic dependency exists.
+A separate exact `System32/msvcp110_win.dll` rule requires fresh Microsoft
+signature and matching OriginalFilename evidence; generic VC families are not
+exempted. These candidate rules require fresh Windows acceptance. The original
+OS-location rule alone remains neither a signature nor a clean-machine claim.
 
 `loaded_embedded` and `not_observed_embedded` are reported separately for each
 sample. A plugin not loaded at that instant, an untriggered delay import, or a
@@ -275,3 +282,46 @@ Windows-shell case skipped; no errors or unrun files. Raw branch coverage was
 91.1310288633301% and the source remained unchanged. Its overall result is failed.
 Later documentation-only changes are not represented as that matrix's source tree;
 the next Windows run must test and package its own exact checkout anew.
+
+
+## Latest notification repair and remaining module-classification failure
+
+[Run 38336220402](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38336220402)
+checked out `7a57312368877914cfd180b1f61f41e58b41ef0c`, tree
+`39a871e1b2e054e6e75bc531f7f08a0185e0d8c4`, from PR head
+`47c29b8ce07d3b3e63fa4c8e9669eaf5b440f4cf`. All 159 source files / 4148 tests
+passed with no failures, errors, skips or unrun files; raw branch coverage was
+91.17176972014165%. The new single EXE is 45,110,534 bytes, SHA-256
+`0730bdb33377354628e527eb51f6c8f742d7806539c792a10a95ced4371d6bd4`.
+
+The actual synchronized launch now produced one database/window owner, exactly
+one activation at the winning window, and normal zero exits for both processes.
+The owned abrupt-termination control returned outer 77; subsequent normal startup
+recovered the lock and retained the same service-created synthetic client in
+schema 28. Inner exit codes were not directly observed. The 18 frozen checks
+passed under native `qwindows`, with `network_attempts=[]`. Normal bootloader
+cleanup and the independently inspected final SQLite record also matched.
+
+The complete acceptance still failed at the after-18-check loader snapshot.
+Its 157 rows contained one EXE, 53 extracted modules, 93 direct-System32 modules,
+two WinSxS modules and eight external Tortoise components. Those eight match
+exact paths, sizes and hashes from the earlier independent Shell experiment
+on another VM; that historical observation is not same-run qualification.
+Reviewing every row also exposed a second rejection hidden behind the first:
+`System32/msvcp110_win.dll` matches the existing broad VC-name rule, despite
+Microsoft documenting that exact filename as a Windows-integrated component.
+No broad VC exemption follows: this needs its own narrow, live OS-origin and
+Microsoft-signature evidence, separate from any external Shell classification.
+
+The new payload retained 28 migrations, 264 notice files, Traditional Chinese
+Qt catalogue, PDF support and all ten VC destinations. All 43 historical system
+DLL exclusions were absent. Its 446 archive entries, schema-2 receipts, 78 final
+PE files and fresh five-member Microsoft signature checks were independently
+matched to actual bytes. Six GUI-ready snapshots had no external modules and
+passed the embedded-core origin checks. These earlier successful phases do not
+override the final loader rejection. No accepted kit was exported or Release
+published. Later source changes require a fresh full Windows run.
+
+Microsoft component reference: [Validation OS 2510 release notes](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/validation-os-release-notes/2510?view=windows-11).
+That documentation identifies the component; it does not authenticate this
+runner's particular file or prove every supported Windows installation was tested.
