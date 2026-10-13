@@ -14,6 +14,8 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path, PurePath
 
+from build_tools.source_materials import source_identity
+
 ROOT = Path(__file__).resolve().parents[1]
 MINIMUM_COVERAGE = 90.0
 
@@ -63,7 +65,8 @@ def run_matrix(output: Path, *, files: list[Path] | None = None, timeout: int = 
     env["PYTHONPATH"] = str(ROOT / "src")
     env["QT_QPA_PLATFORM"] = "offscreen"
     env["COVERAGE_FILE"] = str(data_dir / ".coverage")
-    summary = {"status": "running", "full_suite": selected == all_files,
+    tested_identity = source_identity(ROOT)
+    summary = {"status": "running", "source_identity": tested_identity, "full_suite": selected == all_files,
                "coverage_gate": MINIMUM_COVERAGE, "source_commit": os.environ.get("GITHUB_SHA", "not_recorded"),
                "files": [], "coverage_commands": [],
                "unrun_files": [], "raw_percent_covered": None}
@@ -149,7 +152,13 @@ def run_matrix(output: Path, *, files: list[Path] | None = None, timeout: int = 
                        and all(item["exit_code"] == 0 for item in summary["coverage_commands"]))
     all_tests_ok = (not summary["unrun_files"] and len(summary["files"]) == len(selected)
                     and all(item["status"] == "passed" for item in summary["files"]))
-    summary["status"] = "passed" if all_tests_ok and coverage_ok and all_commands_ok else "failed"
+    try:
+        source_unchanged = source_identity(ROOT) == tested_identity
+    except (ValueError, subprocess.CalledProcessError) as exc:
+        source_unchanged = False
+        summary["source_identity_error"] = str(exc)
+    summary["source_unchanged"] = source_unchanged
+    summary["status"] = "passed" if all_tests_ok and coverage_ok and all_commands_ok and source_unchanged else "failed"
     summary["totals"] = {name: sum(row.get(name, 0) for row in summary["files"])
                          for name in ("tests", "failures", "errors", "skipped")}
     save()

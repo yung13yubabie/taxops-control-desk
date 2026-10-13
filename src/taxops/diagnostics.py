@@ -105,6 +105,7 @@ def _run_checks(root: Path, report: dict) -> None:
     from .ui.main_window import MainWindow
     from .ui.style import apply
     from .diagnostics_qt_language import verify_chinese_widgets
+    from .diagnostics_notices import verify_notice_widgets
 
     def passed(name, **detail):
         report["checks"].append({"name": name, "status": "passed", **detail})
@@ -164,6 +165,8 @@ def _run_checks(root: Path, report: dict) -> None:
             window.show()
             app.processEvents()
             _require(window.isVisible(), "MainWindow failed to become visible")
+            passed("offline_third_party_notices_view_and_export",
+                   **verify_notice_widgets(window, app, root))
         finally:
             window.close()
             window.deleteLater()
@@ -333,6 +336,13 @@ def run_self_test(report_path: Path, *, require_frozen: bool = False) -> int:
                     _run_checks(Path(temp), report)
             _require(not report["network_attempts"], "Self-test attempted network access")
         report["checks"].append({"name": "temporary_data_cleanup", "status": "passed"})
+        if report["frozen"]:
+            from build_tools.windows_loaded_modules import capture_loaded_modules
+            report["loaded_modules"] = capture_loaded_modules("after_18_checks")
+            _require(report["loaded_modules"]["status"] == "observed",
+                     "Frozen diagnostics require actual Windows loaded-module evidence")
+        else:
+            report["loaded_modules"] = {"status": "unsupported", "reason": "Source execution is not frozen Windows module evidence"}
         report["status"] = "passed"
     except Exception as exc:
         report["error"] = {"type": type(exc).__name__, "message": str(exc)}

@@ -1,0 +1,27 @@
+TaxOps Application Code permission for LGPL recombination
+=======================================================
+
+Each recipient of TaxOps Control Desk may use, copy and modify the Application
+Code and necessary build materials supplied with that version, to the extent
+needed to replace or modify LGPL-covered components, recombine or relink those
+components with TaxOps, produce a modified Combined Work, and execute that
+modified Combined Work. Reverse engineering for debugging modifications to the
+LGPL-covered components is permitted.
+
+The supplied Application Code includes the exact application source, packaging
+specification, hooks, assets, database migrations, dependency pins and build
+scripts in the accompanying version-matched recombination kit. No proprietary
+key, publisher signature or online activation is required to perform this
+recombination or run the result. Build-input integrity checks are not runtime
+restrictions on the recipient's exercise of these permissions.
+
+This is the limited Application Code permission for the LGPLv3 section 4(d)(0)
+combined-work mechanism. It does not place the entire TaxOps project under MIT,
+GPL or LGPL, grant a general license for unrelated uses of TaxOps source, or
+change any separately applicable third-party license. Rights granted by the
+LGPL/GPL for covered components remain intact.
+
+Microsoft runtimes, Python, Qt, PySide, Shiboken and other third-party materials
+remain governed by their respective terms. In particular this permission does
+not authorize modifying Microsoft's proprietary redistributables. Preserve
+the applicable copyright and license notices.

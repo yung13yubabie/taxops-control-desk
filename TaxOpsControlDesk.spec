@@ -1,29 +1,38 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for TaxOps Control Desk (Windows one-dir build).
+"""PyInstaller spec for TaxOps Control Desk (Windows single-file build).
 
-Output: dist/TaxOpsControlDesk/TaxOpsControlDesk.exe
-Run with:  pyinstaller TaxOpsControlDesk.spec --noconfirm --clean
+Output: dist/TaxOpsControlDesk.exe
+Run with:  python -m build_tools.package_windows
 """
 
 from PyInstaller.utils.hooks import collect_submodules
-import PySide6
-from PySide6.QtCore import QLibraryInfo
 from pathlib import Path
-from shutil import copyfile
 import sys
 
 # The pyinstaller console script does not guarantee the spec directory is on
 # sys.path. Analysis.pathex is applied later than this build-time gate.
 sys.path.insert(0, str(Path(SPECPATH).resolve()))
+# collect_submodules runs while constructing Analysis arguments, before its
+# pathex is applied. Use only this source tree, never an inherited PYTHONPATH.
+sys.path.insert(0, str(Path(SPECPATH).resolve() / "src"))
 
 from build_tools.dependency_licenses import NOTICE_SOURCE, validate_build_environment
 
 validate_build_environment()
 
-_qt_translation = Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)) / "qtbase_zh_TW.qm"
-_qt_translation_target = str(Path("PySide6") / _qt_translation.parent.relative_to(Path(PySide6.__file__).parent))
-if not _qt_translation.is_file():
-    raise RuntimeError("Required Traditional Chinese Qt catalogue is missing")
+from build_tools.windows_package_environment import qt_translation_input
+
+_qt_translation_input = qt_translation_input()
+_qt_translation = Path(_qt_translation_input["path"])
+_qt_translation_target = _qt_translation_input["target"]
+
+_migration_modules = collect_submodules("taxops.db.migrations")
+_expected_migrations = {
+    "taxops.db.migrations." + path.stem
+    for path in (Path(SPECPATH).resolve() / "src/taxops/db/migrations").glob("_m*.py")
+}
+if not _expected_migrations or not _expected_migrations.issubset(_migration_modules):
+    raise RuntimeError("Required source migration hidden imports are missing")
 
 
 a = Analysis(
@@ -35,6 +44,8 @@ a = Analysis(
     hiddenimports=[
         # PySide6 modules not always auto-detected but loaded at runtime
         "PySide6.QtSvg",
+        "PySide6.support",
+        "PySide6.support.deprecated",
         "PySide6.QtXml",
         "PySide6.QtPrintSupport",
         "PySide6.QtNetwork",
@@ -49,7 +60,7 @@ a = Analysis(
         "jinja2.compiler",
         "jinja2.runtime",
         "jinja2.filters",
-    ] + collect_submodules("taxops.db.migrations"),
+    ] + _migration_modules,
     hookspath=["build_tools/pyinstaller_hooks"],
     hooksconfig={},
     runtime_hooks=[],
@@ -70,7 +81,12 @@ a = Analysis(
     noarchive=False,
 )
 
+from build_tools.official_vc_runtime import stage_analysis
+from build_tools.recombine_inputs import apply_recombination
 from build_tools.windows_system_runtime import filter_system_runtime
+
+a.binaries = stage_analysis(a.binaries)
+a.pure, a.binaries = apply_recombination(a.pure, a.binaries)
 
 # Windows 10 1809+ supplies these exact system APIs; keep the app-local VC DLLs.
 a.binaries = filter_system_runtime(a.binaries, a.datas)
@@ -80,8 +96,10 @@ pyz = PYZ(a.pure, a.zipped_data)
 exe = EXE(
     pyz,
     a.scripts,
-    [],
-    exclude_binaries=True,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    exclude_binaries=False,
     name="TaxOpsControlDesk",
     debug=False,
     bootloader_ignore_signals=False,
@@ -94,18 +112,3 @@ exe = EXE(
     argv_emulation=False,
     target_arch=None,
 )
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=False,
-    upx_exclude=["vcruntime140.dll", "python3*.dll"],
-    name="TaxOpsControlDesk",
-)
-
-# Keep the notice index discoverable beside the executable; all original texts
-# remain under the default PyInstaller _internal directory.
-copyfile(NOTICE_SOURCE / "README.txt", Path(coll.name) / "THIRD_PARTY_NOTICES.txt")

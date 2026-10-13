@@ -1,0 +1,145 @@
+TaxOps single-EXE build and LGPL recombination
+============================================
+
+The ordinary user needs only TaxOpsControlDesk.exe on supported Windows 10
+1809+ / Windows 11 x64. No Python, Visual Studio, Qt SDK, VC installer or network
+connection is required for core operation. The bootloader extracts its own
+runtime temporarily and removes that extraction on normal exit; application
+data persists under LOCALAPPDATA/TaxOpsControlDesk. Forced termination, power
+loss and external file locks can leave temporary files. No broad _MEI cleanup
+is performed or promised.
+
+This file documents a build procedure. It is not evidence that a particular
+EXE has passed clean offline, native IME, printing, DPI or accessibility tests.
+The release gate must retain exact source/tree/hash and actual EXE results.
+
+Contents and verification
+-------------------------
+The kit's source/ directory is an exact committed TaxOps tree: application,
+all 28 migrations, spec, hooks, assets, tests, release/CI pins and notices.
+SOURCE_IDENTITY.json records original commit/tree and every exported file's
+SHA-256. Python tools verify this inventory and report any recipient changes
+as a distinct recombined source identity. The original identity is not reused
+to disguise changes. Read assets/third_party_licenses/RECOMBINE_PERMISSION.txt
+for the limited Application Code grant. That grant does not relicense TaxOps.
+
+Matching Qt/PySide source directions and remaining source/hosting limitations
+are in assets/third_party_licenses/SOURCE_ACCESS.txt. In particular a GitHub
+qtwebengine tag tarball is not the complete Qt PDF/Chromium source. A publisher
+must supply equivalent access to the full official source and keep it working.
+
+Build-machine prerequisites only
+--------------------------------
+- Windows x64 with Python 3.11.9 x64, CMake >=3.22, Ninja
+- Visual Studio 2022 x64 C++ tools and Windows SDK >=10.0.17763
+- An x64 Native Tools prompt, with cl, cmake and ninja resolvable
+- Exact Qt 6.10.2 MSVC2022 SDK and source in build_tools/qgif_rebuild/README.md
+- Fixed official Microsoft VSIX described by build_tools/vc_redist_source.json
+
+Do not install these tools on the ordinary user's target computer. A supplied
+wheelhouse makes pip installation offline; it must include all release and CI
+pins. Without one, the script retrieves pinned packages through pip. Neither
+mode changes the offline runtime promise. Review/accept any applicable tool
+agreements before installing them; the script does not accept agreements.
+
+Run from source/ in a fresh build folder (replace bracketed paths):
+
+python -m build_tools.recombine --work "<new work folder>" --qt-prefix "<Qt 6.10.2 SDK prefix>" --qtbase-source "<official qtbase source.tar.xz>" --vc-redist-vsix "<fixed Microsoft VSIX>"
+
+For an already prepared, complete wheelhouse, append:
+--wheelhouse "<wheelhouse folder>"
+
+CMake path boundary
+-------------------
+The script resolves paths and passes separate argv elements, without a shell.
+For the fresh qgif compile it converts the source harness, work/build directory
+and Qt SDK prefix to forward-slash CMake paths; both -D directory values have
+explicit :PATH cache types. Spaces, apostrophes and non-ASCII characters are
+preserved, including Windows drive and UNC prefixes. The script does not mount
+network shares or guarantee permissions, availability, long-path support or
+every toolchain's behavior on a UNC share.
+
+These CMake paths cannot contain semicolons, double quotes, control characters,
+literal POSIX backslashes or CMake generator-expression syntax ($<...). Choose
+a source checkout, work folder and SDK directory without those characters.
+Unsupported paths fail before work-directory creation, virtual environments or
+source tests; this is a bounded supported path set, not every legal filename.
+Other file arguments stay separate argv elements rather than generated CMake
+code. Reusing an already compiled qgif does not invoke this CMake path boundary.
+
+Development/source testing also requires CMake >=3.22 on PATH: the qgif test
+file runs a real compiler-free configure fixture, including the old invalid
+backslash escape as a negative control. It does not skip when CMake is missing.
+An existing build-machine CMake or an explicitly selected isolated tool can be
+used via the test child process's PATH; do not add it to the runtime package.
+The fixture covers actual local directories with spaces/non-ASCII characters
+and drive/UNC cache syntax with GENERATED stubs. It is not Windows compilation,
+Qt ABI, or network-share evidence; the full modified qgif/EXE gates still apply.
+
+The script creates separate test and release virtual environments. It runs
+every source test file and the unrounded 90% branch coverage gate. It prepares
+actual modified qgif sources, compiles qgif.dll with CMake/Ninja, and probes the
+compiled metadata plus a real synthetic GIF decode. It copies PySide6/support/
+__init__.py into isolated staging and adds the actual executable marker source.
+It never edits the original installed wheel or a global package installation.
+
+The standard spec consumes those replacement build inputs and embeds them
+inside a new single EXE. It stages the five fixed Microsoft DLLs at eight
+Qt/Shiboken destinations only after member hashes and Windows Authenticode
+pass; the separate two CPython runtime files remain intact. The exact 43
+system-DLL filter, ten-VC receipt, complete PE imports/delay imports/forwarders
+and native Windows provider resolver still run.
+
+The actual rebuilt EXE must then pass all frozen checks, including its real
+offline notice viewer/export; compiled qgif metadata and GIF decoding; executed
+modified PySide6.support source; two normal GUI launches; duplicate-instance
+activation with no second database open; data outside _MEIPASS; relocated
+Chinese/space paths; and exact bootloader extraction removal on normal exit.
+No success marker alone qualifies. Reports and partial failed inputs are kept
+under the chosen work directory. A failed check stops the script. It does not
+publish, push, create a Release, alter app data, install system software, or
+sign an executable.
+
+Custom compatible replacements
+------------------------------
+The supplied marker change is a bounded, reproducible proof, not the only
+permitted modification. Recipients may change LGPL components as their rights
+allow, build compatible Windows x64 Release libraries and change the build-time
+replacement input JSON consumed by TAXOPS_RECOMBINE_INPUT. Preserve Qt/PySide
+6.10.2 interfaces and dependent DLL compatibility, or update the application
+and tests as needed. The stock demonstration probe expects its documented
+markers; update that probe for a different genuine modification rather than
+claiming it is the stock demonstration. Packaging hash checks can be updated
+for the recipient's chosen LGPL inputs. There is no external runtime DLL
+loader or original-library signature/hash enforcement in normal application use.
+
+Recombination is not bit-for-bit reproducible-build certification. Keep source
+hashes, tool versions, CMakeCache, verbose compiler/linker output, changed source
+files, replacement hashes and frozen reports beside the rebuilt EXE. The
+publisher's final distribution/legal and clean-offline acceptance gates remain
+separate from a successful local build.
+
+Reuse existing verified local inputs without downloads or reinstalls
+-------------------------------------------------------------------
+Packaging uses a separate child-only bounded PATH and the pinned release venv,
+while compiler/SDK selection and parent PATH remain unchanged. See
+docs/windows_build_input_portability.md for required schema-2 evidence, explicit
+optional-file absence, native OS proof and the remaining different-hash limit.
+
+If the build machine already has separate pinned test/release environments,
+append both --test-python "<test venv>/Scripts/python.exe" and
+--release-python "<release venv>/Scripts/python.exe". The script validates their
+versions and pip consistency, then uses them unchanged. Missing dependencies
+remain an error; this mode never invokes pip install or downloads tools.
+
+For a previously compiled and independently verified qgif, append all three:
+--compiled-qgif "<build>/plugins/imageformats/qgif.dll"
+--compiled-qgif-sha256 "<independently recorded SHA-256>"
+--prepared-qgif-source "<directory with four sources and source-receipt.json>"
+
+This checks the exact compiled bytes and prepared-source hashes, records their
+reuse, and still performs real DLL and frozen-EXE probes. It does not rerun Qt
+SDK tools or call the existing compiler. Keep the original compiler/linker logs
+with that local build evidence. This is reuse of an already proven source
+compile, not a new compilation claim. The official cached qtbase archive is
+still hash-checked. Neither source/SDK downloads nor installers are automatic.

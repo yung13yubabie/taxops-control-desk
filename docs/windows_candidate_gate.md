@@ -105,16 +105,20 @@ The earlier all-green ZIP is retained as evidence, not rewritten. A new packagin
 ## Exact Windows system-runtime policy
 
 New candidates target x64 Windows 10 1809+ / Windows 11. After Analysis, the spec
-excludes exactly 43 reviewed system DLLs (13 CRT contracts, 29 core contracts and
-ucrtbase), checking both destination and SHA-256. It retains the eight Qt-supplied
+has exactly 43 possible reviewed system-DLL exclusions (13 CRT contracts, 29 core
+contracts and ucrtbase). Present candidates require reviewed destination and
+historical SHA-256; absence requires complete native OS dependency proof. It retains the eight Qt-supplied
 and two CPython-supplied VC files unchanged, as well as PDF, PrintSupport,
 qwindows, image/TLS plugins and the Traditional Chinese catalogue. No wildcard
 API/ext-DLL removal or application behavior change is part of this policy.
 
-The new `artifacts/build-staging/windows-system-runtime.json` records original
-source paths, before/after inventories, exact removals, retained VC hashes,
-source commit/tree and notice-manifest identity. Missing or changed inputs fail
-the build. This file is generated diagnostic evidence, never source material.
+The schema-2 `artifacts/build-staging/windows-system-runtime.json` records original
+source paths, before/after inventories, exact removals and explicit absence,
+retained VC hashes, source commit/tree and notice-manifest identity. Missing
+required or changed present inputs fail. Linked package-environment and complete
+staged-native proof receipts are mandatory. See the [bounded packaging-input
+policy](windows_build_input_portability.md), including its residual different-hash
+limitation. These receipts are diagnostic evidence, never source material.
 The exact extracted candidate is compared with this staging receipt before its
 frozen checks. `windows-candidate/pe-dependencies.json` includes every native PE
 hash, complete normal/delay imports, bundled export forwarding and required

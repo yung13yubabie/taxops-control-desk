@@ -116,6 +116,9 @@ audit log：
   開啟 `attachments_dir`
 - 複製資料庫路徑 — `SettingsPage.on_copy_db_path` — 寫入剪貼簿
 - 複製附件路徑 — `SettingsPage.on_copy_attachments_path` — 寫入剪貼簿
+- 第三方授權 — `SettingsPage.on_third_party_notices` — 在設定頁頂端開啟離線原文檢視器。
+  `ThirdPartyNoticesDialog.on_export` 將目前已驗證的完整文字與清單匯出壓縮檔；
+  失敗顯示可重試說明，不覆蓋既有檔案。關閉不代表接受新條款，不自動開啟網頁。
 - 儲存使用者顯示名稱 — `SettingsPage.on_save_display_name` —
   service `SettingsService.set_setting` — repo `AppSettingsRepository.upsert` —
   audit `settings.update`

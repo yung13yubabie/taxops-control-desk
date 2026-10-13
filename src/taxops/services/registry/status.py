@@ -1,4 +1,4 @@
-"""Cache status + verification helpers (read-only)."""
+"""Cache status + verification helpers (cache reads and verification audit)."""
 
 from __future__ import annotations
 
@@ -69,33 +69,60 @@ def verify_cache(
     metadata_repo: TaxCacheMetadataRepository,
     audit: AuditService,
 ) -> CacheVerification:
-    """Read-only consistency check: metadata.row_count vs actual cache count.
+    """Check metadata.row_count vs actual cache count and audit the outcome.
 
-    Writes an audit log row recording the verification outcome.
+    Repositories share the audit connection, as wired by the service container.
+    Own the transaction when called on an idle connection; otherwise isolate
+    this operation in a savepoint and leave commit/rollback to the caller.
     """
-    status = get_cache_status(registry_repo, metadata_repo)
-    matches = (
-        status.metadata_row_count is not None
-        and status.metadata_row_count == status.row_count
-    )
-    audit.record(
-        action="tax_cache.verify",
-        target_type="tax_cache",
-        target_id=status.cache_version,
-        detail={
-            "metadata_row_count": status.metadata_row_count,
-            "actual_row_count": status.row_count,
-            "row_count_matches": matches,
-            "cache_version": status.cache_version,
-        },
-    )
-    return CacheVerification(
-        cache_version=status.cache_version,
-        metadata_row_count=status.metadata_row_count,
-        actual_row_count=status.row_count,
-        row_count_matches=matches,
-        last_import_source=status.last_import_source,
-        data_freshness_iso=status.data_freshness_iso,
-        source_sha256=status.source_sha256,
-        bundle_sha256_of_data=status.bundle_sha256_of_data,
-    )
+    conn = audit.connection
+    owns_transaction = not conn.in_transaction
+    savepoint = "taxops_verify_cache"
+    if owns_transaction:
+        # Reserve the audit write before reading so a concurrent import cannot
+        # change the cache between the metadata/count reads and the audit row.
+        conn.execute("BEGIN IMMEDIATE")
+    else:
+        conn.execute(f"SAVEPOINT {savepoint}")
+    try:
+        status = get_cache_status(registry_repo, metadata_repo)
+        matches = (
+            status.metadata_row_count is not None
+            and status.metadata_row_count == status.row_count
+        )
+        audit.record(
+            action="tax_cache.verify",
+            target_type="tax_cache",
+            target_id=status.cache_version,
+            detail={
+                "metadata_row_count": status.metadata_row_count,
+                "actual_row_count": status.row_count,
+                "row_count_matches": matches,
+                "cache_version": status.cache_version,
+            },
+        )
+        result = CacheVerification(
+            cache_version=status.cache_version,
+            metadata_row_count=status.metadata_row_count,
+            actual_row_count=status.row_count,
+            row_count_matches=matches,
+            last_import_source=status.last_import_source,
+            data_freshness_iso=status.data_freshness_iso,
+            source_sha256=status.source_sha256,
+            bundle_sha256_of_data=status.bundle_sha256_of_data,
+        )
+        if owns_transaction:
+            conn.commit()
+        else:
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+    except BaseException as exc:
+        try:
+            if owns_transaction:
+                conn.rollback()
+            else:
+                conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        except BaseException as cleanup_error:
+            exc.add_note(f"Cache verification rollback also failed: {cleanup_error!r}")
+        raise
+    return result
