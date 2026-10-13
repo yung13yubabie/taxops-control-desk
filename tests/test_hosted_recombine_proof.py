@@ -16,6 +16,7 @@ import urllib.error
 import zipfile
 
 from build_tools import hosted_recombine_proof as proof
+from build_tools import hosted_windows_bootstrap as bootstrap
 
 
 class Response(io.BytesIO):
@@ -360,6 +361,101 @@ class HostedProofTests(unittest.TestCase):
         for context in ("github", "needs", "strategy", "matrix", "vars", "secrets", "inputs"):
             valid = text.replace("    env:\n", "    env:\n      GOOD: ${{ " + context + ".value }}\n", 1)
             self.assertEqual(job_environment_context_violations(valid), [])
+
+    def test_bootstrap_uses_raw_windows_command_line_without_native_argv_marshalling(self):
+        cmd = Path(r"C:\Windows\System32\cmd.exe")
+        batch = Path(r"C:\Runner Temp\tool chain (space)\invoke compiler.cmd")
+        line = bootstrap.command_line(cmd, batch)
+        self.assertEqual(line, '"C:\\Windows\\System32\\cmd.exe" /d /q /v:off /s /c call '
+                               '"C:\\Runner Temp\\tool chain (space)\\invoke compiler.cmd"')
+        with patch.object(bootstrap.subprocess, "run") as run:
+            run.return_value.returncode = 37
+            code = bootstrap.invoke(cmd, batch, cwd=self.root, env={"PATH": "kept"}, log=self.root / "native.log")
+        self.assertEqual(code, 37)
+        self.assertIsInstance(run.call_args.args[0], str)
+        self.assertEqual(run.call_args.kwargs["executable"], str(cmd))
+        self.assertIs(run.call_args.kwargs["shell"], False)
+        self.assertEqual(run.call_args.kwargs["env"], {"PATH": "kept"})
+
+    def test_bootstrap_batch_propagates_failure_before_arch_or_child_and_never_dumps_environment(self):
+        target = self.root / "existing tool chain.bat"
+        batch = self.root / "wrapper.cmd"
+        bootstrap.wrapper(batch, target, ["python.exe", "child.py"])
+        content = batch.read_text()
+        self.assertLess(content.index('if not "%errorlevel%"=="0" exit /b %errorlevel%'), content.index("VSCMD_ARG_TGT_ARCH"))
+        self.assertLess(content.index("VSCMD_ARG_TGT_ARCH"), content.index('"python.exe"'))
+        self.assertNotIn("&& set", content)
+        self.assertNotIn("\nset\n", content)
+        for value in ('percent%path', 'quote"path', 'line\nbreak', 'bang!path', 'caret^path', 'amp&path', 'nul\x00path', 'tab\tpath', 'nonascii中文', 'delete\x7f'):
+            with self.assertRaises(proof.ProofError):
+                bootstrap.quoted(value)
+
+    def test_bootstrap_controls_precede_real_compiler_and_preserve_parent(self):
+        source = Path(bootstrap.__file__).read_text()
+        self.assertLess(source.index("    native_preflight(root, cmd, env)"), source.index("    wrapper(batch, vcvars"))
+        for label in ("success", "nonzero", "missing-marker", "wrong-arch"):
+            self.assertIn("'" + label + "':", source)
+        self.assertIn("dict(os.environ) == before", source)
+        workflow = (Path(__file__).parents[1] / ".github/workflows/hosted-recombine-proof.yml").read_text()
+        self.assertIn("python -m build_tools.hosted_windows_bootstrap", workflow)
+        self.assertNotIn("cmd.exe /d /s /c", workflow)
+        self.assertNotIn("SetEnvironmentVariable", workflow)
+
+    def test_native_controls_record_entry_separately_from_success_report(self):
+        (self.root / "evidence").mkdir()
+        def fake_invoke(cmd, batch, **kwargs):
+            label = batch.stem.removeprefix("invoke ")
+            if label in ("success", "missing-marker"):
+                (batch.parent / (label + ".entered")).write_text("entered")
+            if label == "success":
+                (batch.parent / "success.json").write_text(json.dumps({
+                    "marker": "synthetic marker with spaces", "arch": "x64"}))
+            return {"success": 0, "nonzero": 37, "missing-marker": 43, "wrong-arch": 41}[label]
+        with patch.object(bootstrap, "invoke", fake_invoke):
+            report = bootstrap.native_preflight(self.root, Path("cmd.exe"), {})
+        controls = {row["control"]: row for row in report["controls"]}
+        self.assertTrue(controls["missing-marker"]["child_reached"])
+        self.assertFalse(controls["missing-marker"]["child_report_written"])
+        self.assertFalse(controls["nonzero"]["child_reached"])
+        self.assertFalse(controls["wrong-arch"]["child_reached"])
+
+    def test_native_controls_reject_child_entry_after_nonzero_batch(self):
+        (self.root / "evidence").mkdir()
+        def fake_invoke(cmd, batch, **kwargs):
+            label = batch.stem.removeprefix("invoke ")
+            (batch.parent / (label + ".entered")).write_text("entered")
+            if label == "success":
+                (batch.parent / "success.json").write_text(json.dumps({
+                    "marker": "synthetic marker with spaces", "arch": "x64"}))
+                return 0
+            return 37
+        with patch.object(bootstrap, "invoke", fake_invoke):
+            with self.assertRaisesRegex(proof.ProofError, "Unexpected child entry"):
+                bootstrap.native_preflight(self.root, Path("cmd.exe"), {})
+
+    def test_native_preflight_preserves_safe_unexpected_exit_evidence(self):
+        (self.root / "evidence").mkdir()
+        with patch.object(bootstrap, "invoke", return_value=19):
+            with self.assertRaises(proof.ProofError):
+                bootstrap.native_preflight(self.root, Path("cmd.exe"), {})
+        report = proof.read_json(self.root / "evidence/bootstrap-native-controls.json")
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(report["active_control"], "success")
+        self.assertEqual(report["phase"], "validate")
+        self.assertEqual(report["controls"][0]["exit_code"], 19)
+
+    def test_native_preflight_timeout_receipt_redacts_raw_command_details(self):
+        (self.root / "evidence").mkdir()
+        with patch.object(bootstrap, "invoke", side_effect=bootstrap.subprocess.TimeoutExpired("SECRET", 30)):
+            with self.assertRaises(bootstrap.subprocess.TimeoutExpired):
+                bootstrap.native_preflight(self.root, Path("cmd.exe"), {})
+        path = self.root / "evidence/bootstrap-native-controls.json"
+        report = proof.read_json(path)
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(report["phase"], "invoke")
+        self.assertEqual(report["error"]["type"], "TimeoutExpired")
+        self.assertIsNone(report["error"]["observed_exit_code"])
+        self.assertNotIn("SECRET", path.read_text())
 
     def test_workflow_is_bounded_read_only_and_does_not_run_new_checkout_as_product(self):
         workflow = Path(__file__).parents[1] / ".github/workflows/hosted-recombine-proof.yml"

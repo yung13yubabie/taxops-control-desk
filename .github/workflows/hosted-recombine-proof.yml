@@ -57,14 +57,9 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or -not $vs -or @($vs).Count -ne 1) { throw 'One existing VS2022 C++ toolchain is required' }
           $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvarsall.bat'
           if (-not (Test-Path $vcvars)) { throw 'Existing VS2022 x64 environment script missing' }
-          # This only imports the existing compiler environment, never installs tools.
-          $vars = & cmd.exe /d /s /c "`"`"$vcvars`" x64 >nul && set`""
-          if ($LASTEXITCODE -ne 0) { throw 'Existing x64 compiler environment failed' }
-          foreach ($line in $vars) {
-            if ($line -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
-          }
-          if ($env:VSCMD_ARG_TGT_ARCH -ne 'x64') { throw 'Compiler target must be x64' }
-          python -m build_tools.hosted_recombine_proof run --root "$env:PROOF_ROOT"
+          # The bootstrap first runs native spaced-path success/nonzero controls.
+          # vcvars and the proof then run together in one child CMD, without an env dump.
+          python -m build_tools.hosted_windows_bootstrap --root "$env:PROOF_ROOT" --vcvars "$vcvars"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Collect bounded evidence, including partial failure diagnostics
         if: always()
