@@ -326,3 +326,52 @@ def test_native_injector_has_no_pid_or_external_handle_argument_or_fallback():
     assert "OpenProcess" not in source and "os._exit" not in source.split('"""')[-1]
     assert "CloseHandle" not in source and "DuplicateHandle" not in source
     assert 'WinDLL("kernel32", use_last_error=True)' in inspect.getsource(probe._termination_api)
+
+
+@pytest.mark.parametrize("code", [0, 1, 77, -1073741819, 3221225477])
+def test_race_duplicate_records_true_outer_exit_before_strict_verdict(code):
+    provenance = {}
+    if code:
+        with pytest.raises(gate.BundleVerificationError, match="Simultaneous duplicate"):
+            gate.check_race_duplicate_exit(code, 1234, provenance)
+    else:
+        gate.check_race_duplicate_exit(code, 1234, provenance)
+    assert provenance["race_duplicate_process"] == {
+        "bootloader_pid": 1234, "bootloader_exit_code": code,
+        "bootloader_exit_code_hex": f"0x{code & 0xffffffff:08x}",
+        "child_exit_code": None, "child_exit_code_observed": False,
+    }
+
+
+@pytest.mark.parametrize("submitted", [False, True])
+def test_probe_notification_fields_are_anonymous_and_do_not_change_result(tmp_path, monkeypatch, submitted):
+    from taxops.ui import app
+    from taxops.ui.single_instance import SingleInstanceGuard
+    token = owned_profile(tmp_path, monkeypatch)
+    mei = tmp_path / "temp/_MEIsynthetic"
+    mei.mkdir(parents=True)
+    monkeypatch.setattr(probe, "sys", SimpleNamespace(frozen=True, platform="win32", _MEIPASS=str(mei)))
+    diagnostic = {"phase": "submitted" if submitted else "connect", "attempts": 2,
+        "last_error_code": 2, "accepted_bytes": 9 if submitted else None, "elapsed_ms": 26,
+        "server_name": "must-not-export", "user_path": "must-not-export",
+        "environment": "must-not-export"}
+    guard = SimpleNamespace(_notification_diagnostics=diagnostic)
+    def original(self):
+        return submitted
+    monkeypatch.setattr(SingleInstanceGuard, "notify_existing", original)
+    def run():
+        assert SingleInstanceGuard.notify_existing(guard) is submitted
+        return 0 if submitted else 1
+    monkeypatch.setattr(app, "run", run)
+    report = tmp_path / "report.json"
+    args = ["--report", str(report), "--ready", str(tmp_path / "ready"),
+        "--release", str(tmp_path / "release"), "--instance-name", "synthetic-diagnostic",
+        "--profile-root", str(tmp_path), "--profile-token", token,
+        "--persistent-record", str(tmp_path / "record")]
+    assert probe.main(args) == (0 if submitted else 1)
+    result = json.loads(report.read_text(encoding="utf-8"))
+    assert result["notification"] == {key: diagnostic[key] for key in (
+        "phase", "attempts", "last_error_code", "accepted_bytes", "elapsed_ms")} | {"submitted": submitted}
+    assert result["status"] == ("passed" if submitted else "failed")
+    assert "must-not-export" not in json.dumps(result)
+    assert SingleInstanceGuard.notify_existing is original

@@ -4,8 +4,7 @@ Pattern:
     guard = SingleInstanceGuard("TaxOpsControlDesk.SingleInstance")
     guard.activation_requested.connect(startup_aware_activator)
     if not guard.acquire():
-        guard.notify_existing()
-        return 0
+        return 0 if guard.notify_existing() else 1
 
 The guard owns a ``QLocalServer`` on first instance; subsequent processes
 connect to the named pipe, send an ``activate`` message, and exit.  The
@@ -28,7 +27,8 @@ from ..core.paths import resolve_paths
 _log = logging.getLogger(__name__)
 
 _CONNECT_TIMEOUT_MS = 500
-_READ_TIMEOUT_MS = 500
+_NOTIFY_TIMEOUT_MS = 3000
+_CONNECT_RETRY_SECONDS = 0.025
 _WRITE_TIMEOUT_MS = 500
 _ACTIVATE_PAYLOAD = b"activate\n"
 
@@ -57,6 +57,8 @@ class SingleInstanceGuard(QObject):
         directory = lock_directory if lock_directory is not None else resolve_paths().data_root / ".instance-locks"
         self._lock_path = directory.absolute() / (hashlib.sha256(server_name.encode("utf-8")).hexdigest() + ".lock")
         self._file_lock: QLockFile | None = None
+        # Anonymous transport diagnostics consumed only by the isolated probe.
+        self._notification_diagnostics: dict = {}
 
     @property
     def lock_path(self) -> Path:
@@ -117,13 +119,25 @@ class SingleInstanceGuard(QObject):
         return True
 
     def notify_existing(self) -> bool:
-        """Send the activate payload to the running instance."""
-        sock = QLocalSocket()
+        """Wait briefly for an endpoint, then submit the activation frame once.
+
+        Only failed connections before any write may be retried. All waits
+        share one budget; Qt's synchronous native connect can itself overrun
+        that budget, so check it again before sending anything.
+        """
+        started = time.monotonic()
+        deadline = started + _NOTIFY_TIMEOUT_MS / 1000
+        diagnostic = self._notification_diagnostics = {
+            "phase": "connect", "attempts": 0, "last_error_code": None,
+            "accepted_bytes": None,
+        }
+        sock = None
         write_error = False
 
-        def record_error(_error) -> None:
+        def record_error(error) -> None:
             nonlocal write_error
             write_error = True
+            diagnostic["last_error_code"] = error.value
 
         def connected_without_error() -> bool:
             return (
@@ -132,15 +146,45 @@ class SingleInstanceGuard(QObject):
                 and sock.isValid()
             )
 
-        sock.errorOccurred.connect(record_error)
         try:
-            sock.connectToServer(self._server_name)
-            if not sock.waitForConnected(_CONNECT_TIMEOUT_MS):
+            while time.monotonic() < deadline:
+                diagnostic["attempts"] += 1
+                write_error = False
+                sock = QLocalSocket()
+                sock.errorOccurred.connect(record_error)
+                sock.connectToServer(self._server_name)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    sock.abort()
+                    return False
+                if sock.waitForConnected(min(_CONNECT_TIMEOUT_MS, max(1, int(remaining * 1000)))):
+                    break
+                error = sock.error()
+                diagnostic["last_error_code"] = error.value
+                # No bytes have been submitted. Abandon this connection before
+                # a fresh attempt, including any still-pending native connect.
+                sock.abort()
+                sock.disconnectFromServer()
+                sock = None
+                if error not in (
+                    QLocalSocket.LocalSocketError.ServerNotFoundError,
+                    QLocalSocket.LocalSocketError.ConnectionRefusedError,
+                ):
+                    return False
+                remaining = deadline - time.monotonic()
+                if remaining > 0:
+                    time.sleep(min(_CONNECT_RETRY_SECONDS, remaining))
+            else:
                 return False
-            if sock.write(_ACTIVATE_PAYLOAD) != len(_ACTIVATE_PAYLOAD):
+            if time.monotonic() >= deadline:
+                return False
+            diagnostic["phase"] = "write"
+            diagnostic["accepted_bytes"] = sock.write(_ACTIVATE_PAYLOAD)
+            if diagnostic["accepted_bytes"] != len(_ACTIVATE_PAYLOAD):
                 return False
             sock.flush()
-            deadline = time.monotonic() + _WRITE_TIMEOUT_MS / 1000
+            diagnostic["phase"] = "drain"
+            deadline = min(deadline, time.monotonic() + _WRITE_TIMEOUT_MS / 1000)
             # flush() may already have drained everything. A successful wait
             # reports progress, not necessarily completion of the full frame.
             while sock.bytesToWrite() > 0:
@@ -150,12 +194,19 @@ class SingleInstanceGuard(QObject):
                 if not sock.waitForBytesWritten(max(1, int(remaining * 1000))):
                     # Completion may have preceded the wait, so its signal
                     # is no longer observable. Pending bytes still mean failure.
-                    return sock.bytesToWrite() == 0 and connected_without_error()
+                    if sock.bytesToWrite() > 0:
+                        return False
+                    break
             # Windows may clear its write queue by deleting a failed pipe
             # writer. An empty queue alone cannot establish successful submission.
-            return connected_without_error()
+            if time.monotonic() >= deadline or not connected_without_error():
+                return False
+            diagnostic["phase"] = "submitted"
+            return True
         finally:
-            sock.disconnectFromServer()
+            diagnostic["elapsed_ms"] = round((time.monotonic() - started) * 1000)
+            if sock is not None:
+                sock.disconnectFromServer()
 
     def release(self) -> None:
         server = self._server

@@ -247,6 +247,16 @@ def check_owned_crash_exit(code: int, pid: int, provenance: dict) -> None:
             f"observed outer bootloader {code} (0x{code & 0xffffffff:08x}); inner exit unobserved")
 
 
+def check_race_duplicate_exit(code: int, pid: int, provenance: dict) -> None:
+    provenance["race_duplicate_process"] = {
+        "bootloader_pid": pid, "bootloader_exit_code": code,
+        "bootloader_exit_code_hex": f"0x{code & 0xffffffff:08x}",
+        "child_exit_code": None, "child_exit_code_observed": False,
+    }
+    if code != 0:
+        raise BundleVerificationError("Simultaneous duplicate launch did not exit successfully")
+
+
 def verify_lifecycle(exe: Path, output: Path, inventory: dict, *, timeout: int, provenance: dict) -> dict:
     profile = output / "隔離使用者 空白"
     env = isolated_environment(profile)
@@ -316,8 +326,7 @@ def verify_lifecycle(exe: Path, output: Path, inventory: dict, *, timeout: int, 
                 raise BundleVerificationError("Simultaneous launches produced no primary window")
             time.sleep(0.05)
         loser = next(label for label in children if label != winner)
-        if children[loser].wait(timeout=timeout):
-            raise BundleVerificationError("Simultaneous duplicate launch did not exit successfully")
+        check_race_duplicate_exit(children[loser].wait(timeout=timeout), children[loser].pid, provenance)
         secondary_report = read_report(output / f"{loser}.json")
         check_lifecycle_report(secondary_report, temp=temp, database=database, expected_native=expected_native, primary=False)
         (output / f"{winner}-release").write_text("Close race winner normally\n", encoding="utf-8")

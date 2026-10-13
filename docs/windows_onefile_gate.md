@@ -180,3 +180,33 @@ fully shown and checks complete local-socket submission. See the
 [startup activation contract](instance_activation.md). The constructor-event
 regression fails on the earlier source and passes on the corrected source;
 only a fresh Windows EXE run can close the observed frozen race failure.
+
+
+## Hosted isolated build passed; a later startup race remains
+
+[Run 38324859380](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38324859380)
+checked out `112da65855c24cf9f06d9dbb44785cf8b9389a73`, with tree
+`0aa15ec270b34a662d518e6b8c5f26f10f0a1517`, equal to reviewed local
+`4453a8f7a3781e91324dc1b54b224731ee26b463`. All 158 source files / 4104 tests
+passed, with no failures, errors, skips or unrun files and raw branch coverage
+91.1487758945386%. The release environment and actual PyInstaller build passed.
+The new EXE is 45,109,116 bytes with SHA-256
+`1089e571517e16dfd34fb20fb3fad16ad49fffb01d3a586e47627fd19c45a74c`.
+
+The schema-2 receipts report all 43 historical system DLLs absent and zero
+removed, with the ten retained VC entries preserved. The payload dependency gate
+completed before lifecycle execution; it did not require arbitrary copies of
+those 43 files. This hosted result does not establish compatibility with every
+SDK or clean end-user Windows installation.
+
+The full gate still failed during the synchronized two-process launch. The loser
+recorded no lock ownership or bootstrap, displayed the existing not-ready message,
+and returned 1 normally. The winner's ready report recorded ownership, schema 28
+and a shown window, but zero activations. It has no final normal-exit report: the
+gate stopped and invoked its retained-process failure cleanup. This result is
+not evidence of a new access violation. It also provides no result for the later
+self-termination, recovery, 18-check suite or kit export.
+
+The captured reports do not identify the exact connection phase. A potential gap
+between lock acquisition and socket listening is under review; no return code,
+notification requirement or readiness assertion is relaxed to mask the failure.

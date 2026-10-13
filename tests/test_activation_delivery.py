@@ -143,7 +143,9 @@ def test_notification_drain_deadline_cannot_spin_forever(qapp, tmp_path, monkeyp
         def bytesToWrite(self): return 9
         def waitForBytesWritten(self, timeout): pytest.fail("Deadline has expired")
         def disconnectFromServer(self): pass
-    ticks = iter([10.0, 11.0])
+    # The operation budget begins before connect; expire the smaller drain
+    # budget only after the first queued-bytes check.
+    ticks = iter([10.0, 10.0, 10.0, 10.0, 10.0, 11.0, 11.0])
     monkeypatch.setattr(instance, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
     monkeypatch.setattr(instance, "QLocalSocket", Socket)
     assert not instance.SingleInstanceGuard("synthetic", lock_directory=tmp_path).notify_existing()
@@ -235,7 +237,7 @@ def test_empty_queue_after_pipe_failure_is_not_notification_success(qapp, tmp_pa
         def fail_pipe(self):
             self.failed = True
             if failure == "error":
-                self.on_error("synthetic pipe failure")
+                self.on_error(instance.QLocalSocket.LocalSocketError.PeerClosedError)
         def flush(self):
             if phase == "flush":
                 self.fail_pipe()
@@ -249,6 +251,7 @@ def test_empty_queue_after_pipe_failure_is_not_notification_success(qapp, tmp_pa
     # A callable preserves the enum used by the production status check.
     class Factory:
         LocalSocketState = Socket.LocalSocketState
+        LocalSocketError = instance.QLocalSocket.LocalSocketError
         def __new__(cls): return socket
     monkeypatch.setattr(instance, "QLocalSocket", Factory)
     assert not instance.SingleInstanceGuard("synthetic", lock_directory=tmp_path).notify_existing()

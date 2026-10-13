@@ -38,3 +38,24 @@ def test_quick_packaging_preflight_calls_shared_cli_and_preserves_nonzero() -> N
     assert "build_tools.package_windows" in main and "build_tools.verify_onefile" in main
     assert "build_tools.run_test_matrix" in main
     assert "build_tools.windows_package_environment --output" not in main
+
+
+def test_quick_startup_diagnostics_preserve_complete_files_and_failure_exit() -> None:
+    workflow = Path(".github/workflows/windows-candidate.yml").read_text(encoding="utf-8")
+    main, quick = workflow.split("  windows-ui-diagnostics:", 1)
+    expected = (
+        "test_notification_readiness", "test_activation_delivery",
+        "test_atomic_instance_lock", "test_single_instance", "test_onefile_gate",
+        "test_native_font_probe", "test_qt_geometry_diagnostics",
+        "test_deep_chinese_ui", "test_frozen_self_test", "test_novice_client_forms",
+        "test_ui_stage_5_date_field", "test_v032_receipt_workbench",
+    )
+    declared = quick.split("$files = @(", 1)[1].split(")", 1)[0]
+    assert tuple(item.strip().strip("'") for item in declared.split(",")) == expected
+    assert "Twelve complete synthetic startup/UI/diagnostic test files" in quick
+    assert '\"tests/$file.py\"' in quick
+    assert "if ($code -ne 0) { $failed = $true }" in quick
+    assert "if ($failed) { exit 1 }" in quick
+    assert "continue-on-error" not in quick
+    assert "build_tools.run_test_matrix" in main
+    assert "build_tools.verify_onefile" in main

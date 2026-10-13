@@ -11,6 +11,22 @@ and coalesced. They are delivered once after `show()` returns, never against a
 half-constructed window. Later requests activate normally; database shutdown
 disables activation before releasing the guard.
 
+A lock holder can be scheduled between acquiring ownership and publishing the
+local endpoint. The notifier therefore retries only `ServerNotFoundError` and
+`ConnectionRefusedError`, before any write, using a fresh socket and a positive
+backoff of at most 25 ms. Other connection errors fail immediately. Each failed
+attempt is aborted and disconnected. One monotonic 3000 ms application budget
+starts at notification entry, covers connection attempts and write draining,
+and is never reset by a retry. The existing write-drain cap remains 500 ms;
+it is also limited by the remaining overall budget.
+
+This is not a hard wall-clock guarantee. In pinned
+[Qt 6.10.2's Windows implementation](https://github.com/qt/qtbase/blob/v6.10.2/src/network/socket/qlocalsocket_win.cpp),
+`waitForConnected()` ignores its millisecond argument; a missing pipe fails
+immediately, while `connectToServer()` can synchronously wait on a busy pipe.
+The application cannot interrupt that native call. It checks the shared deadline
+after connecting and before writing, and does not write or retry after exhaustion.
+
 The notifier accepts success only after the complete `activate\n` payload is
 accepted and its local write queue drains under one bounded deadline. `flush()`
 may already have emptied that queue, and one `waitForBytesWritten()` result means
@@ -18,6 +34,10 @@ progress rather than necessarily complete transfer. Success also requires a vali
 connected socket with no observed error: Qt's Windows pipe-error path can discard
 a failed writer and leave a zero-length queue. Failure follows the existing
 bounded reacquisition/error-message path and must not claim notification success.
+Once any write is attempted, including an error or partial acceptance, the
+notification is never replayed. If the original owner cancels or fails before
+listening, a failed notification still permits only the existing single atomic
+reacquisition, never a lock deletion or a second database owner.
 Successful submission is not a receiver acknowledgement or proof of foreground
 activation; the real onefile race gate separately checks the winner's activation.
 
@@ -28,7 +48,19 @@ probe never activates the window.
 
 `test_activation_delivery.py` covers the startup phases, real MainWindow/page
 construction with a queued Qt signal, write/drain failures and framing boundaries.
-`test_single_instance.py` remains the real cross-process local-socket test; its
+`test_notification_readiness.py` uses explicit transport/clock doubles and real
+file locks to cover late readiness, cancellation, legacy endpoints, deadlines,
+non-transient errors and no replay after a write. It is not real IPC acceptance.
+`test_single_instance.py` retains the real cross-process local-socket tests and
+adds a lock-held, deliberately delayed-listen case requiring exactly one received
+activation and an actually shown Qt window. Its
 failures are not skipped or replaced by these source contracts. The frozen race,
 normal close, recovery, strict crash code 77, 18 self-tests and raw 90% coverage
 requirements remain unchanged.
+
+The isolated frozen probe records only notification phase, attempt count,
+last Qt error code, accepted byte count, elapsed milliseconds and the submission
+result. The outer gate records the race loser's actual bootloader exit code before
+applying the unchanged zero-exit requirement. These diagnostics do not imply an
+inner exit code, receiver acknowledgement or usable window. The strict winner
+window/database/activation checks still determine the frozen verdict.

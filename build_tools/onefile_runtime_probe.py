@@ -113,6 +113,7 @@ def main(argv=None) -> int:
         app._SINGLE_INSTANCE_NAME = args.instance_name
         original_bootstrap, original_show = app.bootstrap, MainWindow.show
         original_acquire, original_activate = SingleInstanceGuard.acquire, app._activate_window
+        original_notify = SingleInstanceGuard.notify_existing
         original_information, original_critical = QMessageBox.information, QMessageBox.critical
         def bootstrap(*a, **kw):
             report["bootstrap_calls"] += 1
@@ -132,6 +133,16 @@ def main(argv=None) -> int:
                 barrier_passed = True
             result = original_acquire(guard)
             report["guard_acquired"] = result
+            return result
+        def notify(guard):
+            result = original_notify(guard)
+            # Fixed anonymous fields only: no server name, user paths, raw
+            # socket error text or environment. This never alters the verdict.
+            report["notification"] = {
+                key: guard._notification_diagnostics[key]
+                for key in ("phase", "attempts", "last_error_code", "accepted_bytes", "elapsed_ms")
+            }
+            report["notification"]["submitted"] = result
             return result
         def activate(window):
             report["activation_count"] += 1
@@ -172,12 +183,14 @@ def main(argv=None) -> int:
             window._lifecycle_probe_timer = timer
         app.bootstrap, MainWindow.show = bootstrap, show
         SingleInstanceGuard.acquire, app._activate_window = acquire, activate
+        SingleInstanceGuard.notify_existing = notify
         QMessageBox.information, QMessageBox.critical = information, critical
         try:
             result = app.run()
         finally:
             app.bootstrap, MainWindow.show = original_bootstrap, original_show
             SingleInstanceGuard.acquire, app._activate_window = original_acquire, original_activate
+            SingleInstanceGuard.notify_existing = original_notify
             QMessageBox.information, QMessageBox.critical = original_information, original_critical
         report.update({"exit_code": result, "normal_exit": True,
                        "status": "passed" if result == 0 else "failed"})
