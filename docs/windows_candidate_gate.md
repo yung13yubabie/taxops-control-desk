@@ -1,8 +1,15 @@
 # Windows candidate build and artifact self-test
 
-## Verified rebuilt candidate: run 38252711536
+Current single-EXE evidence is in [the onefile gate record](windows_onefile_gate.md#latest-normal-candidate-and-modified-component-proof):
+normal run 38352573945 and modified-component proof run 38355622300. The current
+candidate uses PyInstaller onefile packaging. The remaining document records the
+historical one-directory baseline and its procedures; instructions to extract and
+retain an entire ZIP apply only to that older package, not the current single EXE.
+See [current tryout instructions](candidate_tryout.md) before running the candidate.
 
-The seventh [Windows run](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38252711536) completed successfully on 2026-10-12. All **141/141 complete test files and 3461/3461 tests** passed, with zero failures, errors, skips or unrun files. Combined raw branch coverage is **91.06710039545861%**, above the unchanged 90% gate. The separate seven-file suite passed 193 overlapping tests; do not add those to the full-suite count.
+## Historical verified one-directory candidate: run 38252711536
+
+The seventh [Windows run](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38252711536) completed successfully on 2026-10-12. All **141/141 complete test files and 3461/3461 tests** passed, with zero failures, errors, skips or unrun files. Raw combined line/branch coverage is **91.06710039545861%**, above the unchanged 90% gate. The separate seven-file suite passed 193 overlapping tests; do not add those to the full-suite count.
 
 Exact provenance:
 

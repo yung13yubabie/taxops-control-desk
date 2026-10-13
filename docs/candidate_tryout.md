@@ -5,8 +5,8 @@
 開始前
 1. 請用空白測試電腦，或從未使用過 TaxOps 的新 Windows 帳號。先關閉這部電腦上所有 TaxOps 視窗。
 2. 請勿在平常工作的 Windows 帳號直接試開。程式會讀取該帳號原有的 TaxOps 資料；把 EXE 複製到另一個資料夾，不會隔離資料。
-3. 將整個 ZIP 解壓縮，再開啟 TaxOpsControlDesk.exe。請保留旁邊的所有檔案，不需另裝 Python。
-4. 若 Windows 阻擋、缺檔或畫面空白，先停止，回報提示內容。不要關閉防護或自行替換套件內檔案。
+3. 本次候選是單一 TaxOpsControlDesk.exe，直接開啟即可；不需解壓原始碼／重組 kit，也不需另裝 Python、Qt 或開發工具。
+4. 此 EXE 未簽署。若 Windows 阻擋、缺檔或畫面空白，先停止，回報提示內容；不要略過安全警告、關閉防護或自行替換程式元件。
 
 建議先試這幾件事
 - 新增「試用客戶」與案件，建立索件和待辦。
@@ -24,4 +24,4 @@
 
 ## 授權與來源
 
-套件旁的 `THIRD_PARTY_NOTICES.txt` 列出第三方授權。Qt／PySide／Shiboken 6.10.2 的 [固定版本原始碼下載與替換說明](../assets/third_party_licenses/SOURCE_ACCESS.txt) 同時保存在套件內；完整範圍與待確認的 Microsoft 分發條件見 [授權說明](third_party_licenses.md)。目前候選尚未發布，下載須以核對完成後提供的套件為準。
+第三方授權隨 EXE 內嵌，可在「資料與工具 → 設定 → 第三方授權」離線閱讀及匯出。Qt／PySide／Shiboken 6.10.2 的 [固定版本原始碼下載與替換說明](../assets/third_party_licenses/SOURCE_ACCESS.txt) 同時保存在套件內；完整範圍與 Microsoft 分發條件見 [授權說明](third_party_licenses.md)。[候選 Release](https://github.com/yung13yubabie/taxops-control-desk/releases/tag/v0.33.0-rc.1) 提供單一 EXE、來源／重組 kit、SHA256SUMS.txt 與 TRYOUT-zh-TW.txt；一般試用只需 EXE，請先核對下載檔案的 SHA-256。修改元件重組 EXE 僅是工程驗證，未列為日常試用資產。

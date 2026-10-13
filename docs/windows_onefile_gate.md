@@ -2,11 +2,74 @@
 
 This describes the Phase B implementation and required evidence. It does not
 supersede historical one-directory artifacts or label an untested EXE accepted.
-The build remains a candidate until its exact final tree passes all gates.
+The current hosted-verified candidate is published as a prerelease. Clean offline
+end-user Windows and manual acceptance remain outstanding.
+
+## Latest normal candidate and modified-component proof
+
+Published candidate [v0.33.0-rc.1](https://github.com/yung13yubabie/taxops-control-desk/releases/tag/v0.33.0-rc.1)
+contains the normal `TaxOpsControlDesk.exe`, its matching source/recombination kit,
+`SHA256SUMS.txt` and `TRYOUT-zh-TW.txt`. The stable release remains v0.31.0.
+The EXE is unsigned; this prerelease is for isolated synthetic-data tryout.
+
+[Normal run 38352573945](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38352573945)
+passed both Windows jobs. All **164 source files / 4474 tests** passed with zero
+failures, errors, skips or unrun files. Raw combined line/branch coverage is
+**91.17176972014165%**, above the unchanged unrounded 90% gate.
+
+- PR head: `667a661dd523bbfdfe0c4511a51b41555313920f`
+- Actual build source and release tag target: `4b135c42a25bc64ade191095e7bce722cd2b8a08`
+- Build source tree: `e3760516797677dbf5d4a41dcdb24bf6460f11a9`
+- Normal EXE: **44,922,684 bytes**, SHA-256 `cd6af50d8acca38e05f7a433062cf9bf000236a92630ed8400d0585032b191e4`
+- Matching kit: **68,030,291 bytes**, SHA-256 `7de9f51b8ed182cc65190e6c7b1146d789a0987b2855cde95926ee426a705152`
+- Kit: **720 source files**; source-material SHA-256 `adce51b5e5708016a1ff3f2f926c82d6be0029ca658f1ab398eca3548f7bb332`
+
+Independent review matched the actual 446-entry payload, 78 native PE files,
+ten retained VC destinations, 28 migrations, 264 notice files and all seven
+ledger icon resources. The EXE passed all 18 frozen checks under native Windows
+Qt with `network_attempts=[]`. The startup race had two normal zero exits and
+exactly one winning-window activation. Controlled outer exit 77 recovered the
+same synthetic client; normal extraction cleanup also passed. Core actual-loaded
+origins, fresh same-run independent Shell classification and the narrow signed
+Windows inbox-component rule passed without exempting protected payload or real
+PE dependencies. These checks establish hosted evidence, not a clean target.
+
+[Modified-component proof run 38355622300](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38355622300)
+materialized that actual exported kit and reran all 164 / 4474 tests with the same
+raw coverage. All 720 original source files remained unchanged. MSVC/Ninja
+actually compiled modified Qt 6.10.2 qgif source; the isolated build also replaced
+`PySide6.support` with a modified real package, preserving submodule imports.
+
+- Compiled and embedded qgif SHA-256: `536f1e4b662896830763ceb23d3bc6b1e90eb0a4828c6bf7d36526c00a1f7d5a`
+- Modified support source SHA-256: `6c39cd7022fa7231ef9c0d306e168d75ef28f5c5147328ddbbe61d811deb3331`
+- Modified EXE: **44,908,561 bytes**, SHA-256 `f021c5d232369f21b6df2da812fd6ae4212e93b4f921bfbfabb64ef525668296`
+
+The actual rebuilt EXE passed the compiled metadata and red-GIF decode controls,
+executed the modified support package from its embedded PYZ, and passed the
+original complete onefile gate, including 18 frozen checks, lifecycle/recovery
+and strict loaded-module classification. The normal EXE negative control failed
+as expected for the missing compiled marker. Workflow completion and independent
+full artifact review both passed. This modified EXE is engineering proof of
+recombination, not a second daily-use release asset.
+
+Python/PySide6/SQLite and PyInstaller remain the application and packaging stack.
+CMake/Ninja/MSVC serve the optional modified-Qt rebuild; CMake also runs its
+build-script configure tests. Ordinary users install none of these tools.
+[Fixed source-access instructions](https://github.com/yung13yubabie/taxops-control-desk/blob/4b135c42a25bc64ade191095e7bce722cd2b8a08/assets/third_party_licenses/SOURCE_ACCESS.txt)
+and the kit's notices retain their original bytes. This documentation update is
+later than the build: its commit/tree is not the source of either tested EXE.
+
+Clean offline Windows 10/11, manual DPI/IME/printing/accessibility and actual
+desktop/taskbar pinning remain unverified. Signing/SmartScreen acceptance and
+blanket legal clearance are not claimed. Historical failed runs below remain
+failed; the older CRT/PySide counterexample is not repaired by changing the
+controlled termination model. No all-green Linux result is claimed.
+
+## Acceptance requirements
 
 | Requirement | Implementation | Required real acceptance | Current boundary |
 |---|---|---|---|
-| One EXE, no target prerequisites | Standard PyInstaller `EXE` includes binaries and data; no `COLLECT`, external loader, installer or activation | Copy only EXE into a Chinese/space path; native launch, embedded inventory and clean offline target | Source/spec contracts exist; final Windows EXE and clean target pending |
+| One EXE, no target prerequisites | Standard PyInstaller `EXE` includes binaries and data; no `COLLECT`, external loader, installer or activation | Copy only EXE into a Chinese/space path; native launch, embedded inventory and clean offline target | Hosted single EXE passed in run 38352573945; clean target pending |
 | Core offline operation | Existing local SQLite/services and full synthetic frozen suite | Native Windows self-test has no network attempts; disconnected target test | An audit hook is not an OS firewall or clean-target proof |
 | Functional and data retention | All 28 migrations and original services/assets remain | Complete source regression; real-profile service-created client retains ID/code/name after normal restart, race and owned crash recovery | No production data in these tests; actual EXE persistence must pass |
 | Chinese, assets, notices | Embedded icon, real Qt Traditional Chinese catalogue, offline settings notice viewer/export | Real 18-check EXE suite validates catalogue, widget, complete byte-preserved notice corpus and exported ZIP | Manual IME, DPI, accessibility and print interaction remain separate |
@@ -15,7 +78,7 @@ The build remains a candidate until its exact final tree passes all gates.
 | Normal bootloader lifecycle | Exact child `_MEIPASS` and native hashes reported; external parent checks after bootloader exit | Four normal GUI launches, two duplicate attempts, no normal extraction left behind, data outside MEI | Forced outer-process termination/power loss may leave temporary files; no broad `_MEI*` deletion |
 | Startup contention and recovery | Atomic per-user ownership before database bootstrap; IPC only activation | Two warmed EXE children meet a barrier and start acquisition together; exactly one opens DB/window; owned child crash then recovery | Stale/live/PID-reuse behavior needs source and Windows tests; never force-delete a live lock |
 | Unusable TEMP / storage errors | Gate owns a synthetic profile; invalid TEMP is an ordinary file, no ACL change | Bootloader returns nonzero/no DB, normal TEMP retry; blocked data-root file produces actual Chinese error/no bootstrap, then the same repaired profile starts | This is not a full-disk hardware fault or permission-change test |
-| Genuine LGPL recombination | Actual modified `PySide6/support/__init__.py` keeps package semantics; actual source-compiled qgif metadata and GIF decode | Fresh DLL probe and actual rebuilt EXE execute both modifications, plus all original acceptance gates | A local Qt 6.10.2 qgif source compile/load/decode has been observed; final modified single EXE pending |
+| Genuine LGPL recombination | Actual modified `PySide6/support/__init__.py` keeps package semantics; actual source-compiled qgif metadata and GIF decode | Fresh DLL probe and actual rebuilt EXE execute both modifications, plus all original acceptance gates | Modified single EXE and independent full review passed for run 38355622300 |
 | Exact Application Code kit | Source/spec/hooks/assets/migrations/pins/hash inventory/notices plus limited permission and executable recipe | Export matches accepted EXE source commit/tree/hash; modified recipient source has distinct identity | Narrow permission does not relicense the project MIT/GPL; full source-access obligations remain |
 | Immutable complete regression | Every test file in a separate process, no skipped/missing tests in release acceptance, raw combined line/branch coverage >=90% | Exact final Windows source matrix plus 17 existing + 1 notice frozen check | Focused tests and Linux platform limitations are not Windows acceptance |
 
@@ -81,8 +144,9 @@ dependency names cannot qualify. This is an observation classification, not a
 trusted-extension designation or a claim that no dynamic dependency exists.
 A separate exact `System32/msvcp110_win.dll` rule requires fresh Microsoft
 signature and matching OriginalFilename evidence; generic VC families are not
-exempted. These candidate rules require fresh Windows acceptance. The original
-OS-location rule alone remains neither a signature nor a clean-machine claim.
+exempted. The current normal and modified runs exercise these rules with fresh
+evidence. The original OS-location rule alone remains neither a signature nor a
+clean-machine claim.
 
 `loaded_embedded` and `not_observed_embedded` are reported separately for each
 sample. A plugin not loaded at that instant, an untriggered delay import, or a
@@ -90,8 +154,8 @@ sample. A plugin not loaded at that instant, an untriggered delay import, or a
 never substituted for actual loading. Linux/source runs explicitly report this
 native evidence as unsupported, without adding test skips or changing the 18
 checks or raw 90% coverage gate. Synthetic contract tests are not Windows EXE
-acceptance. The next rebuilt Windows artifact must supply these snapshots;
-previous artifact evidence does not retroactively satisfy the new requirement.
+acceptance. Every newly built Windows artifact must supply these snapshots;
+previous artifact evidence does not qualify changed bytes.
 
 Microsoft API references:
 - [EnumProcessModulesEx](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-enumprocessmodulesex)
@@ -161,10 +225,14 @@ that full import once, records the original live page transition, and gives
 each test its own database through SQLite backup. The original case names,
 assertions and full 1,705,060-row input remain. Linux success, including
 reversed and individually selected cases, does not establish the final
-Windows elapsed time; that must be measured again on the fixed candidate.
+Windows elapsed time. The current fixed-kit Windows matrix passed the unchanged
+900-second per-file limit; that does not qualify a different source or machine.
 
 
 ## Observed simultaneous-start failure
+
+The following run-by-run sections are historical. Their failures and pending
+steps describe those exact artifacts; the current result is recorded above.
 
 [Run 38293931640](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38293931640)
 passed all 153 source files / 3838 tests, with raw combined line/branch coverage
@@ -359,9 +427,9 @@ coverage. Its genuine qgif configure then failed: the kit's untyped
 `D:\a\...` as an invalid `\a` escape in the source list. No modified EXE was
 produced. The original kit remains unchanged and this result remains failed.
 
-The build-path correction requires a new candidate and new kit with their own
-matching source identity, followed by fresh modified qgif/PySide compilation and
-the original complete EXE gates. The source-identity gate is not relaxed to label
-an edited copy of the old kit as accepted. Release remains unpublished. Hosted
-verification also does not establish clean offline Windows, manual DPI/IME,
-desktop pinning, or publisher signing.
+That failure required a new candidate and kit with matching source identity,
+followed by fresh modified qgif/PySide compilation and the original complete EXE
+gates. The current runs above supply that new evidence; the source-identity gate
+was not relaxed and the old kit remains unchanged. No Release had been published
+at the time of this historical run. Hosted verification does not establish clean
+offline Windows, manual DPI/IME, desktop pinning, or publisher signing.
