@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import stat
 import tempfile
+import types
 import unittest
 from unittest.mock import patch
 import urllib.error
@@ -87,6 +88,70 @@ class HostedProofTests(unittest.TestCase):
             for key, value in values.items():
                 stack.enter_context(patch.object(proof, key, value))
             return proof.materialize(path, self.root)
+
+    def test_fixed_pins_bind_the_verified_reissued_normal_and_kit(self):
+        # Independently read from raw artifact 11792730247, never a latest lookup.
+        expected = {
+            "RUN": 38352573945, "ARTIFACT": 11792730247,
+            "OUTER_BYTES": 371481709, "OUTER_FILES": 848, "OUTER_EXPANDED": 371278191,
+            "KIT_BYTES": 68030291, "KIT_EXPANDED": 73346732, "EXE_BYTES": 44922684, "SOURCE_FILES": 720,
+            "HEAD": "667a661dd523bbfdfe0c4511a51b41555313920f",
+            "COMMIT": "4b135c42a25bc64ade191095e7bce722cd2b8a08",
+            "TREE": "e3760516797677dbf5d4a41dcdb24bf6460f11a9",
+            "OUTER_SHA": "ba8be70289408c0d23eb1c5a4e0e650f08ef9b2f45811b760bc4fe0f0449e49b",
+            "KIT_SHA": "7de9f51b8ed182cc65190e6c7b1146d789a0987b2855cde95926ee426a705152",
+            "EXE_SHA": "cd6af50d8acca38e05f7a433062cf9bf000236a92630ed8400d0585032b191e4",
+            "PROVENANCE_SHA": "cab0952b3d9ae851261cc64ec800eb7b394557a9201823a67c13b9d99e97448b",
+            "MATERIAL_SHA": "adce51b5e5708016a1ff3f2f926c82d6be0029ca658f1ab398eca3548f7bb332",
+        }
+        self.assertEqual({key: getattr(proof, key) for key in expected}, expected)
+
+    def test_previous_normal_run_metadata_is_not_an_accepted_fallback(self):
+        previous = {"id": 11787768438, "name": "windows-candidate-36a90de4a4dc8767133961b512dfc5609998b3f3",
+                    "size_in_bytes": 371463777, "expired": False,
+                    "digest": "sha256:bccf78052ce7e56d3fa0a473496dd2a5c0bab323ff5a019b20affea54d43cf75",
+                    "workflow_run": {"id": 38343015308, "head_sha": "435dfd2df77b652727c1eccb5d24a709a4ce427e",
+                                     "repository_id": 1241835486, "head_repository_id": 1241835486}}
+        with self.assertRaisesRegex(proof.ProofError, "metadata differs"):
+            proof.artifact_metadata(previous)
+
+    def test_verify_requires_exact_reissued_source_test_count(self):
+        # Exercise verify's actual predicate, stopping before native frozen work.
+        class ReachedFrozenGate(Exception):
+            pass
+        def stop_before_frozen_work(report):
+            raise ReachedFrozenGate()
+        pyside = types.ModuleType("PySide6")
+        pyside.support = types.ModuleType("PySide6.support")
+        modules = {
+            "PyInstaller": types.ModuleType("PyInstaller"),
+            "PyInstaller.archive": types.ModuleType("PyInstaller.archive"),
+            "PyInstaller.archive.readers": types.SimpleNamespace(CArchiveReader=None),
+            "PySide6": pyside, "PySide6.support": pyside.support,
+            "build_tools.source_materials": types.SimpleNamespace(source_identity=lambda path: {}),
+            "build_tools.verify_windows_bundle": types.SimpleNamespace(
+                isolated_environment=None, validate_report=stop_before_frozen_work),
+        }
+        for count in (4474, 4421, 4473, 4475):
+            matrix = {"status": "passed", "full_suite": True, "files": [{}] * 164,
+                      "totals": {"tests": count, "failures": 0, "errors": 0, "skipped": 0},
+                      "raw_percent_covered": 91.17176972014165}
+            def read(path):
+                if path.name == "matrix.json":
+                    return matrix
+                if path.name == "onefile-provenance.json":
+                    return {"status": "passed", "recombined": True, "single_file": True,
+                            "build_source_commit": proof.COMMIT, "build_source_tree": proof.TREE}
+                return {}
+            with self.subTest(count=count), patch.dict(proof.sys.modules, modules), \
+                 patch.object(proof.sys, "path", proof.sys.path.copy()), \
+                 patch.object(proof, "verify_materialized_source"), patch.object(proof, "read_json", read):
+                if count == 4474:
+                    with self.assertRaises(ReachedFrozenGate):
+                        proof.verify(self.root)
+                else:
+                    with self.assertRaisesRegex(proof.ProofError, "Fresh complete source matrix missing"):
+                        proof.verify(self.root)
 
     def test_materializes_exact_source_without_git_or_code_execution(self):
         result = self.materialize_fixture()
@@ -318,7 +383,7 @@ class HostedProofTests(unittest.TestCase):
         with self.assertRaisesRegex(proof.ProofError, "reparse"):
             proof.collect(self.root, self.root / "upload")
 
-    def test_receipt_contracts_match_actual_run_38343015308_schema_fields(self):
+    def test_receipt_contracts_match_actual_run_38352573945_schema_fields(self):
         # Schema/status fields read from the fixed real normal artifact, not inferred.
         records = {"package-environment.json": {"schema": 1, "status": "passed"},
                    "official-vc.json": {"schema": 1, "status": "passed"},

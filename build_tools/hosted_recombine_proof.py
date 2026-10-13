@@ -23,23 +23,23 @@ import urllib.request
 import zipfile
 
 REPO = "yung13yubabie/taxops-control-desk"
-RUN = 38343015308
-ARTIFACT = 11787768438
-OUTER_BYTES = 371463777
+RUN = 38352573945
+ARTIFACT = 11792730247
+OUTER_BYTES = 371481709
 OUTER_FILES = 848
-OUTER_EXPANDED = 371260259
-KIT_BYTES = 68024395
-KIT_EXPANDED = 73329968
+OUTER_EXPANDED = 371278191
+KIT_BYTES = 68030291
+KIT_EXPANDED = 73346732
 EXE_BYTES = 44922684
 SOURCE_FILES = 720
-HEAD = "435dfd2df77b652727c1eccb5d24a709a4ce427e"
-COMMIT = "36a90de4a4dc8767133961b512dfc5609998b3f3"
-TREE = "34cd3e0f11202c04b6b12ffc6c66fc7367816c1f"
-OUTER_SHA = "bccf78052ce7e56d3fa0a473496dd2a5c0bab323ff5a019b20affea54d43cf75"
-KIT_SHA = "bc2dc0db02c36557e9fa50e416863a61b150bdf19ab2b0ac1a781376168e5e3a"
-EXE_SHA = "029a3bc84a663d78b5f5748dbc110a7d5a5cf5797c0a87d1e4e8b80c53a2e24f"
-PROVENANCE_SHA = "057c7cdd261bd30d69bb125b1eaec37cd617dfb72974e7a3d8cb1b3419f0ea6e"
-MATERIAL_SHA = "06e2f0fc7de3de81dc78a059fcc06a55e2e00e5d473404f320a339536ff4d4c3"
+HEAD = "667a661dd523bbfdfe0c4511a51b41555313920f"
+COMMIT = "4b135c42a25bc64ade191095e7bce722cd2b8a08"
+TREE = "e3760516797677dbf5d4a41dcdb24bf6460f11a9"
+OUTER_SHA = "ba8be70289408c0d23eb1c5a4e0e650f08ef9b2f45811b760bc4fe0f0449e49b"
+KIT_SHA = "7de9f51b8ed182cc65190e6c7b1146d789a0987b2855cde95926ee426a705152"
+EXE_SHA = "cd6af50d8acca38e05f7a433062cf9bf000236a92630ed8400d0585032b191e4"
+PROVENANCE_SHA = "cab0952b3d9ae851261cc64ec800eb7b394557a9201823a67c13b9d99e97448b"
+MATERIAL_SHA = "adce51b5e5708016a1ff3f2f926c82d6be0029ca658f1ab398eca3548f7bb332"
 STOCK_QGIF_SHA = "d86d2e5a17c3af5569a930c5ed204860d0f583549e66db60991dce8b07298ac0"
 SUPPORT_SHA = "0ec13f5a5f7e381a31c2d1994d5baaea4d88f3a0524ba7ab9416bb1e9b3635ff"
 QGIF_MARKER = "taxops-qgif-recombine-6.10.2-v1"
@@ -460,7 +460,7 @@ def verify(root: Path) -> None:
             and provenance.get("build_source_tree") == TREE, "Recombined gate did not pass the fixed source")
     require(matrix.get("status") == "passed" and matrix.get("full_suite") is True
             and len(matrix.get("files", [])) == 164 and matrix.get("totals") == {
-                "tests": 4421, "failures": 0, "errors": 0, "skipped": 0}
+                "tests": 4474, "failures": 0, "errors": 0, "skipped": 0}
             and matrix.get("raw_percent_covered", 0) >= 90, "Fresh complete source matrix missing")
     validate_report(read_json(result_dir / "frozen-self-test.json"))
     for name in STAGING:
