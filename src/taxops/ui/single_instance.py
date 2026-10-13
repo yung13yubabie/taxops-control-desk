@@ -29,7 +29,6 @@ _log = logging.getLogger(__name__)
 _CONNECT_TIMEOUT_MS = 500
 _NOTIFY_TIMEOUT_MS = 3000
 _CONNECT_RETRY_SECONDS = 0.025
-_WRITE_TIMEOUT_MS = 500
 _ACTIVATE_PAYLOAD = b"activate\n"
 
 
@@ -184,7 +183,9 @@ class SingleInstanceGuard(QObject):
                 return False
             sock.flush()
             diagnostic["phase"] = "drain"
-            deadline = min(deadline, time.monotonic() + _WRITE_TIMEOUT_MS / 1000)
+            # A Windows pipe can connect before the owner accepts it and starts
+            # its native reader. Drain this one write using the original budget,
+            # rather than assuming a connected endpoint is already reading.
             # flush() may already have drained everything. A successful wait
             # reports progress, not necessarily completion of the full frame.
             while sock.bytesToWrite() > 0:

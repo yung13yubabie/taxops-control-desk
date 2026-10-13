@@ -122,7 +122,7 @@ def test_notify_requires_complete_write_and_bounded_drain(qapp, tmp_path, monkey
         def bytesToWrite(self):
             return next(counts)
         def waitForBytesWritten(self, timeout):
-            assert 0 < timeout <= 500
+            assert 0 < timeout <= 3000
             events.append("wait")
             return next(outcomes)
         def disconnectFromServer(self):
@@ -134,19 +134,18 @@ def test_notify_requires_complete_write_and_bounded_drain(qapp, tmp_path, monkey
 
 
 def test_notification_drain_deadline_cannot_spin_forever(qapp, tmp_path, monkeypatch):
+    clock = SimpleNamespace(now=10.0)
     class Socket:
         errorOccurred = SimpleNamespace(connect=lambda callback: None)
         def connectToServer(self, name): pass
         def waitForConnected(self, timeout): return True
         def write(self, payload): return len(payload)
-        def flush(self): pass
+        def flush(self): clock.now += 3.0
         def bytesToWrite(self): return 9
         def waitForBytesWritten(self, timeout): pytest.fail("Deadline has expired")
         def disconnectFromServer(self): pass
-    # The operation budget begins before connect; expire the smaller drain
-    # budget only after the first queued-bytes check.
-    ticks = iter([10.0, 10.0, 10.0, 10.0, 10.0, 11.0, 11.0])
-    monkeypatch.setattr(instance, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+    # The operation budget begins before connect and cannot reset for draining.
+    monkeypatch.setattr(instance, "time", SimpleNamespace(monotonic=lambda: clock.now))
     monkeypatch.setattr(instance, "QLocalSocket", Socket)
     assert not instance.SingleInstanceGuard("synthetic", lock_directory=tmp_path).notify_existing()
 
