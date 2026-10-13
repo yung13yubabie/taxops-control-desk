@@ -8,11 +8,12 @@ logic itself.
 from __future__ import annotations
 
 import os
+import sqlite3
 import sys
 
 from ..core.paths import AppPaths, ensure_paths, resolve_paths
 from ..core.resources import asset_path
-from ..db.connection import open_connection
+from ..db.connection import close_after_failed_setup, open_connection
 from ..db.migrate import UnsupportedSchemaError, apply_migrations
 from ..services.container import ServiceContainer, build_container
 
@@ -51,8 +52,8 @@ def bootstrap(paths: AppPaths | None = None) -> ServiceContainer:
     try:
         apply_migrations(conn)
         return build_container(paths, conn)
-    except Exception:
-        conn.close()
+    except Exception as exc:
+        close_after_failed_setup(conn, exc)
         raise
 
 
@@ -71,51 +72,75 @@ def _activate_window(window) -> None:
 
 
 def run() -> int:
-    """Entry point used by ``python -m taxops``."""
+    """Acquire the instance guard before opening or migrating any database."""
     _set_windows_app_user_model_id()
     from PySide6.QtCore import QCoreApplication, Qt
+    from PySide6.QtWidgets import QApplication, QMessageBox
     from ..i18n.qt import install_chinese
-    QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_DontUseNativeDialogs)
-    try:
-        container = bootstrap()
-    except UnsupportedSchemaError:
-        from PySide6.QtWidgets import QApplication, QMessageBox
+    from .single_instance import InstanceLockError, SingleInstanceGuard
 
-        app = QApplication.instance() or QApplication(sys.argv)
-        install_chinese(app)
-        _set_app_icon(app)
-        QMessageBox.critical(None, "資料版本不相容", "這份資料由較新版本的程式建立，為保護資料已停止開啟。請改用最新版本；不要刪除或覆蓋原本資料。")
-        return 1
+    QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_DontUseNativeDialogs)
+    app = QApplication.instance() or QApplication(sys.argv)
+    install_chinese(app)
+    _set_app_icon(app)
+    from .style import apply as apply_style
+    apply_style(app)
+
+    guard = SingleInstanceGuard(_SINGLE_INSTANCE_NAME)
+    container = None
+    window = None
+    activation_ready = False
+    activation_pending = False
+
+    def request_activation():
+        nonlocal activation_pending
+        # Page constructors and show() may dispatch Qt events. Do not lose an
+        # early request or activate a half-constructed window.
+        if not activation_ready:
+            activation_pending = True
+        else:
+            _activate_window(window)
+
+    guard.activation_requested.connect(request_activation)
     try:
-        # Local import so the test/CI process can import bootstrap without
-        # requiring Qt to be importable.
-        from PySide6.QtWidgets import QApplication, QMessageBox
+        try:
+            acquired = guard.acquire()
+            if not acquired:
+                if guard.notify_existing():
+                    QMessageBox.information(None, "程式已開啟", "已通知原本的程式顯示視窗，請查看工作列。")
+                    return 0
+                # The previous process may have finished between locking and
+                # notification. One bounded retry is safe; never delete a lock.
+                acquired = guard.acquire()
+                if not acquired:
+                    QMessageBox.information(None, "程式尚未就緒", "程式可能仍在啟動或關閉中，暫時無法顯示原視窗。請稍候再開啟；若仍無法開啟，請重新啟動電腦後再試。")
+                    return 1
+        except InstanceLockError as exc:
+            QMessageBox.critical(None, "無法開啟程式", str(exc))
+            return 1
+        try:
+            container = bootstrap()
+        except UnsupportedSchemaError:
+            QMessageBox.critical(None, "資料版本不相容", "這份資料由較新版本的程式建立，為保護資料已停止開啟。請改用最新版本；不要刪除或覆蓋原本資料。")
+            return 1
+        except (sqlite3.Error, OSError) as exc:
+            from .startup_errors import startup_error_message
+
+            QMessageBox.critical(None, "無法開啟資料", startup_error_message(exc))
+            return 1
 
         from .main_window import MainWindow
-        from .single_instance import SingleInstanceGuard
-
-        app = QApplication.instance() or QApplication(sys.argv)
-        install_chinese(app)
-        _set_app_icon(app)
-        from .style import apply as apply_style
-        apply_style(app)
-
-        guard = SingleInstanceGuard(_SINGLE_INSTANCE_NAME)
-        if not guard.acquire():
-            guard.notify_existing()
-            QMessageBox.information(
-                None,
-                "TaxOps Control Desk",
-                "TaxOps Control Desk 已在執行中，已將原視窗切回前景。",
-            )
-            return 0
-
         window = MainWindow(container)
         window.show()
-        guard.activation_requested.connect(lambda w=window: _activate_window(w))
+        activation_ready = True
+        if activation_pending:
+            activation_pending = False
+            _activate_window(window)
+        return int(app.exec())
+    finally:
+        activation_ready = False
         try:
-            return int(app.exec())
+            if container is not None:
+                container.close()
         finally:
             guard.release()
-    finally:
-        container.close()

@@ -17,11 +17,12 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from build_tools.dependency_licenses import LicenseAssetError, validate_bundle_licenses
+from build_tools.dependency_licenses import NOTICE_SOURCE, LicenseAssetError, validate_bundle_licenses
 from build_tools.windows_system_runtime import validate_system_runtime_bundle, validate_staging_report
 from build_tools.windows_pe_dependencies import verify_pe_dependencies
 
 EXPECTED_CHECKS = frozenset({
+    "offline_third_party_notices_view_and_export",
     "qt_traditional_chinese_widgets_and_fallback",
     "qt_application_and_icon", "image_codecs", "qt_pdf_and_pdf_widgets", "ssl_runtime",
     "all_migrations", "main_window_construct_show_close", "client_case_document_task_and_fts",
@@ -102,6 +103,18 @@ def validate_report(report: dict) -> None:
             or language.get("locale") != "zh_TW"
             or language.get("missing_catalogue", {}).get("fully_localized") is not False):
         raise BundleVerificationError("Complete Qt translation and partial fallback evidence required")
+    notices = next(c for c in checks if c.get("name") == "offline_third_party_notices_view_and_export")
+    manifest = (NOTICE_SOURCE / "manifest.json").read_bytes()
+    export_hash = notices.get("export_sha256")
+    if (notices.get("entry") != "settings"
+            or notices.get("displayed_text_verified") is not True
+            or notices.get("export_bytes_verified") is not True
+            or type(notices.get("file_count")) is not int
+            or notices["file_count"] != len(json.loads(manifest)["files"]) + 1
+            or notices.get("manifest_sha256") != hashlib.sha256(manifest).hexdigest()
+            or not isinstance(export_hash, str) or len(export_hash) != 64
+            or any(c not in "0123456789abcdef" for c in export_hash)):
+        raise BundleVerificationError("Complete offline notice viewing/export evidence required")
     if report.get("clean_os_verified") is not False or report.get("manual_gui_verified") is not False:
         raise BundleVerificationError("Automated report overstates clean-OS/manual acceptance")
 
@@ -121,10 +134,14 @@ def isolated_environment(root: Path) -> dict[str, str]:
     return env
 
 
-def verify_native_dependencies(bundle: Path, output: Path) -> dict:
+def verify_native_dependencies(bundle: Path, output: Path, *, staging_report: Path | None = None) -> dict:
     """Check the extracted ZIP against staging and this host's OS providers."""
     files = [p for p in bundle.rglob("*") if p.is_file()]
-    return {**validate_system_runtime_bundle(bundle, files), **validate_staging_report(bundle),
+    system = validate_system_runtime_bundle(bundle, files)
+    proof_output = output / "current-host-native-proof"
+    staging = (validate_staging_report(bundle, proof_output=proof_output) if staging_report is None
+               else validate_staging_report(bundle, staging_report, proof_output=proof_output))
+    return {**system, **staging,
             **verify_pe_dependencies(bundle, output / "pe-dependencies.json")}
 
 

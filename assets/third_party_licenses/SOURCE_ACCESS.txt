@@ -1,12 +1,12 @@
-Source access and shared-library replacement
+Source access and single-EXE recombination
 ===========================================
 
 Selected network source-delivery route
 -------------------------------------
 For this candidate's network download, the selected route is network access
 under GPLv3 section 6(d) for the LGPL-covered library object code. The separate
-combined-work mechanism is LGPLv3 section 4(d)(1): dynamically loaded,
-replaceable shared libraries. These are different requirements; this is not
+combined-work mechanism is LGPLv3 section 4(d)(0): accompanying Application
+Code and build materials suitable for recombining with modified libraries. These are different requirements; this is not
 an "LGPL section 6(d)" procedure and does not select GPL for TaxOps itself.
 
 The binary download's description must link directly to this SOURCE_ACCESS.txt
@@ -14,8 +14,9 @@ at the same TaxOps source revision and identify the bundled Qt/PySide/Shiboken
 version as 6.10.2. The repository's docs/third_party_licenses.md provides the
 same directions beside the candidate documentation. Recipients can download
 the matching source archives below at no additional charge; they do not have
-to download source just to obtain the application. Keep this file and the
-license directory with any copy of the application folder.
+to download source just to obtain the application. These notices are embedded in the single EXE and available from the offline
+Third-party licenses viewer/export. Supply the matching recombination kit
+beside each binary download and preserve its RECOMBINE_PERMISSION.txt.
 
 Qt / PySide / Shiboken 6.10.2 sources
 -----------------------------------
@@ -33,6 +34,18 @@ Qt image-format plugins:
 https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qtimageformats-everywhere-src-6.10.2.tar.xz
 Qt PDF and its Chromium/PDFium snapshot (inside Qt WebEngine sources):
 https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qtwebengine-everywhere-src-6.10.2.tar.xz
+The official Qt mirror list identifies that full WebEngine release archive as
+881,342,592 bytes with publisher-declared SHA-256:
+856eddf292a69a88618567deea67711b4ec720e69bcb575ed7bb539c9023961e
+https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qtwebengine-everywhere-src-6.10.2.tar.xz.mirrorlist
+
+This fixed complete source is identified and available through the official
+source listing. The 881 MB archive was not downloaded for the bounded qgif
+experiment; the published digest must be checked after any actual download.
+The source-access route does not require downloading or rebuilding WebEngine
+to perform the qgif recombination test. Maintaining equivalent source access
+for the distribution lifetime is a separate publisher responsibility.
+
 Qt translation catalogues:
 https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qttranslations-everywhere-src-6.10.2.tar.xz
 PySide6 and Shiboken6 (both in pyside-setup):
@@ -55,14 +68,20 @@ and third-party components, including their separate source licenses.
 
 Build inputs and local changes
 ------------------------------
-TaxOps does not patch or rebuild Qt, PySide or Shiboken. It collects files from
-the official 6.10.2 Windows x64 PyPI wheels identified by URL and SHA-256 in
-manifest.json. It excludes an unused VirtualKeyboard plugin before collection;
-this changes the package inventory, not the remaining libraries' source code.
-The bindings use the CPython stable ABI (cp39-abi3-win_amd64 wheels); TaxOps
-runs them with CPython 3.11.9. Use Windows x64 Release shared libraries, not a
-static, debug, ARM64, or differently versioned set. Keep compatible dependent
-DLLs together. A replacement must preserve the interfaces used by the app.
+The normal build collects the official 6.10.2 Windows x64 PyPI wheels recorded
+by URL/SHA-256 in manifest.json. It removes an unused VirtualKeyboard plugin
+and stages the fixed Microsoft redistributable separately without modifying
+installed wheels. The recombination demonstration makes actual source changes:
+PySide6/support/__init__.py receives TAXOPS_RECOMBINE_MARKER, and Qt's gif.json
+receives TaxOpsRecombineMarker before a real qgif.dll source compile. Exact
+changes, source hashes, CMake inputs and executable probes are supplied in the
+version-matched kit. These demonstration changes are not claimed as performed
+in an ordinary build unless its receipt and frozen probes prove them.
+
+Use Windows x64 Release shared libraries and Qt/PySide 6.10.2 interfaces.
+TaxOps uses CPython 3.11.9 and the bindings' stable-ABI cp39-abi3 Windows wheels.
+Keep compatible dependent DLLs together; do not use debug, ARM64 or static
+libraries without adapting and revalidating the complete build.
 
 The fixed-version source distributions include build scripts, headers and
 configuration logic. Relevant upstream instructions and scripts are:
@@ -88,34 +107,33 @@ use_custom_libcxx=false and use_partition_alloc=true. These are published build
 inputs, not a recovered log of the precise vendor wheel invocation.
 
 The vendor's generated CMakeCache.txt, complete GN args and wheel build log
-were not recovered. No extra vendor patch is identified, and no TaxOps patch
-needs to be supplied. An independent compatible replacement build has not
-been performed. These are the specific reproducibility/validation limits;
+were not recovered. No extra vendor patch is identified. TaxOps demonstration patches and their
+rebuild harness are supplied. Successful Windows compilation and actual frozen
+replacement execution must be evidenced for the version being distributed. These are the specific reproducibility/validation limits;
 bit-for-bit reproduction is not claimed and is not used as an indefinite
 source-delivery blocker. If a different source revision or an additional
 necessary vendor patch is discovered, update these directions and provide it
 before presenting that library's corresponding source as complete.
 
-Replacing a shared library (LGPLv3 section 4(d)(1))
---------------------------------------------------
-TaxOps uses a PyInstaller one-directory bundle with separate Qt, PySide6 and
-Shiboken DLL/PYD files. There is no runtime hash check imposed by TaxOps on
-these libraries. The packaging gate checks candidate inputs, not a user's
-right to modify installed LGPL-covered libraries.
+Recombining the single EXE (LGPLv3 section 4(d)(0))
+-------------------------------------------------
+The ordinary user receives one EXE. It contains all application runtime files;
+Qt libraries are extracted temporarily by the standard PyInstaller bootloader.
+The recipient does not have to replace files inside a transient _MEIPASS folder.
 
-1. Work on a separate copy of the entire extracted application folder in a
-   test Windows account or test machine, with the application closed. Retain
-   the original bundle. Do not test modified libraries against live data.
-2. Build the desired modified library for Windows x64, using a compatible
-   compiler/runtime, Python 3.11 interface where applicable, Qt/PySide/Shiboken
-   ABI and the required features. Follow the fixed-version instructions above.
-3. Replace the corresponding files in _internal/PySide6 and/or
-   _internal/shiboken6, retaining the directory layout. Replace dependent
-   libraries together when compatibility requires it. An incompatible build
-   can fail to load or crash; compatibility has to be tested.
-4. Run the copied application's synthetic --self-test --require-frozen with
-   a report path in a temporary test directory, then perform appropriate UI
-   tests on synthetic data. Restore the original folder if necessary.
+The accompanying exact Application Code kit includes source, spec, hooks,
+assets, all 28 migrations, pins, source hashes, original notices,
+BUILD_RECOMBINE.txt and the limited RECOMBINE_PERMISSION.txt. Its executable
+build_tools.recombine script creates isolated environments, compiles and stages
+modified Qt/PySide components, and builds a new standard single EXE. Refer to
+BUILD_RECOMBINE.txt for prerequisites and the complete command. No external DLL
+loader, publisher key, signature bypass or online activation is required.
+
+Use a test Windows account and synthetic data. Run the entire regression/90%
+branch coverage gate and all actual EXE checks. A report marker without the
+modified module executing, or without real qgif metadata and GIF decoding,
+is not recombination evidence. The supplied build checks are not runtime
+restrictions on exercising the recipient's LGPL permissions.
 
 The included LGPL/GPL texts describe the rights applicable to the covered
 libraries, including modification and reverse engineering for debugging such

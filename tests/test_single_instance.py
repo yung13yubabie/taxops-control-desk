@@ -15,7 +15,12 @@ import pytest
 from PySide6.QtWidgets import QApplication
 from PySide6.QtNetwork import QLocalServer
 
-from taxops.ui.single_instance import SingleInstanceGuard
+from taxops.ui.single_instance import InstanceLockError, SingleInstanceGuard
+
+
+@pytest.fixture(autouse=True)
+def isolated_lock_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-data"))
 
 
 @pytest.fixture()
@@ -79,7 +84,9 @@ def test_listen_failure_does_not_fail_open(
     )
 
     guard = SingleInstanceGuard(server_name)
-    assert guard.acquire() is False
+    with pytest.raises(InstanceLockError):
+        guard.acquire()
+    assert not guard.lock_path.exists()
 
 
 def test_notify_existing_fires_activation_signal_across_processes(
@@ -169,3 +176,135 @@ def test_payload_check_rejects_unrelated_bytes(server_name: str) -> None:
         assert fired == []
     finally:
         holder.release()
+
+
+def test_notification_waits_for_real_lock_holder_to_listen(tmp_path, server_name, monkeypatch):
+    """The lock is really held while Qt's activation endpoint is unpublished.
+
+    This exercises real Qt IPC on each OS; a host that cannot listen fails,
+    just like the other IPC tests. It is not a frozen Windows acceptance.
+    """
+    import json
+    locked = tmp_path / "locked"
+    finished = tmp_path / "finished.json"
+    release_endpoint = tmp_path / "release-endpoint"
+    code = """
+import json, sys, time
+from pathlib import Path
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtNetwork import QLocalServer
+from taxops.ui.single_instance import SingleInstanceGuard
+app = QApplication([])
+guard = SingleInstanceGuard(sys.argv[1])
+window = QWidget()
+received = []
+visible_at_activation = []
+def activate():
+    visible = window.isVisible()
+    visible_at_activation.append(visible)
+    received.append("activate")
+    assert visible
+    QTimer.singleShot(100, app.quit)
+guard.activation_requested.connect(activate)
+original = QLocalServer.listen
+def delayed_listen(server, name):
+    assert guard._file_lock is not None and guard._file_lock.isLocked()
+    Path(sys.argv[2]).write_text("lock held; endpoint not yet listening", encoding="utf-8")
+    deadline = time.monotonic() + 15
+    while not Path(sys.argv[4]).exists():
+        if time.monotonic() >= deadline:
+            raise RuntimeError("Notifier did not release endpoint barrier")
+        time.sleep(0.01)
+    return original(server, name)
+QLocalServer.listen = delayed_listen
+try:
+    assert guard.acquire()
+    window.show()
+    QTimer.singleShot(10000, app.quit)
+    app.exec()
+    Path(sys.argv[3]).write_text(json.dumps({"received": received,
+        "visible_at_activation": visible_at_activation,
+        "window_visible_after_exec": window.isVisible()}), encoding="utf-8")
+    raise SystemExit(0 if received == ["activate"] and visible_at_activation == [True] else 3)
+finally:
+    window.close()
+    guard.release()
+"""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(Path.cwd() / "src")
+    child = subprocess.Popen([sys.executable, "-c", code, server_name, str(locked), str(finished), str(release_endpoint)],
+                             env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        deadline = time.monotonic() + 30
+        while not locked.exists() and child.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert locked.exists(), "Child did not hold the real lock before listen"
+        guard = SingleInstanceGuard(server_name)
+        assert not guard.acquire()
+        from PySide6.QtNetwork import QLocalSocket
+        original_connect = QLocalSocket.connectToServer
+        def connect_and_release(socket, name):
+            original_connect(socket, name)
+            # Release the real holder only after the first actual absent-pipe
+            # result, making this regression independent of scheduler timing.
+            if name == server_name and socket.state() == QLocalSocket.LocalSocketState.UnconnectedState:
+                assert socket.error() in (QLocalSocket.LocalSocketError.ServerNotFoundError,
+                                          QLocalSocket.LocalSocketError.ConnectionRefusedError)
+                release_endpoint.write_text("First real connect failed", encoding="utf-8")
+        monkeypatch.setattr(QLocalSocket, "connectToServer", connect_and_release)
+        notified = guard.notify_existing()
+        stdout, stderr = child.communicate(timeout=15)
+        assert child.returncode == 0, (stdout, stderr)
+        assert notified
+        assert guard._notification_diagnostics["attempts"] > 1
+        result = json.loads(finished.read_text(encoding="utf-8"))
+        assert result["received"] == ["activate"]
+        assert result["visible_at_activation"] == [True]
+        # QApplication handles Quit by closing its windows before exec returns.
+        # The after-exec observation is diagnostic, not activation readiness.
+        assert isinstance(result["window_visible_after_exec"], bool)
+    finally:
+        if child.poll() is None:
+            if sys.platform == "win32":
+                from build_tools.owned_process_cleanup import terminate_owned_tree
+                terminate_owned_tree(child, tmp_path / "owned-child-failure-cleanup.json")
+            else:
+                child.kill()  # Only this synthetic child owned by this test.
+                child.wait(timeout=5)
+
+
+@pytest.mark.parametrize("visibility", [[True], [False], [False, True], [True, True]])
+def test_activation_observation_uses_actual_callback_visibility(visibility):
+    """Exercise the embedded callback, including Qt swallowing a slot assertion."""
+    import ast
+    import inspect
+    from types import SimpleNamespace
+    test_body = ast.parse(inspect.getsource(test_notification_waits_for_real_lock_holder_to_listen)).body[0]
+    child_source = next(node.value.value for node in test_body.body
+        if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "code")
+    child = ast.parse(child_source)
+    callback = next(node for node in child.body if isinstance(node, ast.FunctionDef) and node.name == "activate")
+    exit_call = next(node.exc for node in ast.walk(child) if isinstance(node, ast.Raise)
+        and isinstance(node.exc, ast.Call) and isinstance(node.exc.func, ast.Name)
+        and node.exc.func.id == "SystemExit")
+    window = SimpleNamespace(visible=True)
+    window.isVisible = lambda: window.visible
+    context = {"window": window, "received": [], "visible_at_activation": [],
+        "app": SimpleNamespace(quit=lambda: None),
+        "QTimer": SimpleNamespace(singleShot=lambda ms, fn: None)}
+    exec(compile(ast.Module(body=[callback], type_ignores=[]), "<actual-child-callback>", "exec"), context)
+    for visible in visibility:
+        window.visible = visible
+        if visible:
+            context["activate"]()
+        else:
+            with pytest.raises(AssertionError):
+                context["activate"]()
+    # A later visible state must not conceal an invisible or repeated callback.
+    window.visible = True
+    assert context["received"] == ["activate"] * len(visibility)
+    assert context["visible_at_activation"] == visibility
+    actual_exit = eval(compile(ast.Expression(exit_call.args[0]), "<actual-child-exit>", "eval"), context)
+    assert actual_exit == (0 if visibility == [True] else 3)

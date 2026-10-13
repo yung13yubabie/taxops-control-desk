@@ -43,7 +43,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m venv .venv-release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          .\.venv-release\Scripts\python.exe -m pip install --only-binary=:all: -r requirements-release.txt
+          .\.venv-release\Scripts\python.exe -m pip install --only-binary=:all: --require-hashes -r requirements-release-hashed.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\.venv-release\Scripts\python.exe -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -53,13 +53,23 @@ jobs:
         run: |
           .\.venv-test\Scripts\python.exe -m build_tools.run_test_matrix --output artifacts\source-tests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Build candidate from the isolated release environment
+      - name: Stage the fixed official Microsoft component and build the single EXE
         run: |
+          $source = Get-Content build_tools/vc_redist_source.json -Raw | ConvertFrom-Json
+          $payload = $source.package.payloads[0]
+          $vsix = Join-Path $env:RUNNER_TEMP "TaxOps-Microsoft.VC.fixed.vsix"
+          Invoke-WebRequest -Uri $payload.url -OutFile $vsix
+          if ((Get-FileHash -Algorithm SHA256 $vsix).Hash.ToLowerInvariant() -ne $payload.sha256) { throw "Official Microsoft VSIX hash mismatch" }
+          $env:TAXOPS_VC_REDIST_VSIX = $vsix
           .\.venv-release\Scripts\python.exe -m build_tools.package_windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Test the zipped artifact with its own frozen runtime
+      - name: Test the exact single EXE payload and normal bootloader lifecycle
         run: |
-          .\.venv-release\Scripts\python.exe -m build_tools.verify_windows_bundle --output artifacts\windows-candidate
+          .\.venv-release\Scripts\python.exe -m build_tools.verify_onefile --output artifacts\windows-onefile --source-matrix artifacts\source-tests\matrix.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Export matching Application Code recombination materials
+        run: |
+          .\.venv-release\Scripts\python.exe -m build_tools.make_recombine_kit --exe artifacts\windows-onefile\TaxOpsControlDesk.exe --provenance artifacts\windows-onefile\onefile-provenance.json --output artifacts\TaxOpsControlDesk-recombine-kit.zip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Record acceptance boundary
         if: always()
@@ -115,7 +125,7 @@ jobs:
             event_head_sha = '${{ github.event.pull_request.head.sha }}'
             checkout_sha = (git rev-parse HEAD)
             checkout_tree = (git rev-parse 'HEAD^{tree}')
-            scope = 'Seven complete synthetic UI/diagnostic test files and separate native glyph probe; not the release gate'
+            scope = 'Seventeen complete synthetic packaging/startup/UI/diagnostic test files and separate native glyph probe; not the release gate'
           } | ConvertTo-Json | Out-File -Encoding utf8 "$env:TAXOPS_UI_DIAGNOSTICS_DIR/provenance.json"
           python -m venv .venv-test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -123,9 +133,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\.venv-test\Scripts\python.exe -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preflight packaging inputs in the diagnostic environment
+        if: always()
+        run: |
+          @{
+            scope = 'Same packaging input implementation in pinned test venv; not a release build or artifact acceptance'
+            packaging_and_native_acceptance = 'not performed by this diagnostic step'
+          } | ConvertTo-Json | Out-File -Encoding utf8 "$env:TAXOPS_UI_DIAGNOSTICS_DIR/package-input-boundary.json"
+          .\.venv-test\Scripts\python.exe -m build_tools.windows_package_environment --output "$env:TAXOPS_UI_DIAGNOSTICS_DIR/package-environment.json" --probe-qt-translation *> "$env:TAXOPS_UI_DIAGNOSTICS_DIR/package-input-process.log"
+          $code = $LASTEXITCODE
+          Get-Content "$env:TAXOPS_UI_DIAGNOSTICS_DIR/package-input-process.log"
+          if ($code -ne 0) { exit $code }
       - name: Run each complete diagnostic file and retain every failure
         run: |
-          $files = @('test_native_font_probe', 'test_qt_geometry_diagnostics', 'test_deep_chinese_ui', 'test_frozen_self_test', 'test_novice_client_forms', 'test_ui_stage_5_date_field', 'test_v032_receipt_workbench')
+          $files = @('test_qgif_rebuild', 'test_shell_icon_probe', 'test_shell_module_baseline', 'test_shell_loaded_classification', 'test_windows_inbox_runtime', 'test_notification_readiness', 'test_activation_delivery', 'test_atomic_instance_lock', 'test_single_instance', 'test_onefile_gate', 'test_native_font_probe', 'test_qt_geometry_diagnostics', 'test_deep_chinese_ui', 'test_frozen_self_test', 'test_novice_client_forms', 'test_ui_stage_5_date_field', 'test_v032_receipt_workbench')
           $results = @()
           $failed = $false
           foreach ($file in $files) {
@@ -143,6 +164,32 @@ jobs:
         run: |
           .\.venv-test\Scripts\python.exe -m build_tools.native_font_probe --output-dir "$env:TAXOPS_UI_DIAGNOSTICS_DIR/native-font"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Diagnose the same fixed Microsoft signature stage separately
+        if: always()
+        run: |
+          $source = Get-Content build_tools/vc_redist_source.json -Raw | ConvertFrom-Json
+          $payload = $source.package.payloads[0]
+          $directory = "$env:TAXOPS_UI_DIAGNOSTICS_DIR/signature"
+          New-Item -ItemType Directory -Force $directory | Out-Null
+          @{
+            status = 'failed'
+            stage = 'download'
+            package_url = $payload.url
+            expected_sha256 = $payload.sha256
+            expected_bytes = $source.observed_package_bytes
+            scope = 'signature-only diagnostic; not application acceptance'
+          } | ConvertTo-Json | Out-File -Encoding utf8 "$directory/official-vc.json"
+          $vsix = Join-Path $env:RUNNER_TEMP "TaxOps-Microsoft.VC.diagnostic.vsix"
+          try {
+            Invoke-WebRequest -Uri $payload.url -OutFile $vsix
+            python -m build_tools.official_vc_runtime --signature-only --archive "$vsix" --receipt "$directory/official-vc.json" *> "$directory/process.log"
+            $code = $LASTEXITCODE
+            Get-Content "$directory/process.log"
+            if ($code -ne 0) { exit $code }
+          } catch {
+            $_ | Out-File -Append -Encoding utf8 "$directory/process.log"
+            throw
+          }
       - name: Upload synthetic UI diagnostics even when assertions fail
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
 import subprocess
@@ -27,6 +28,11 @@ def _passing_windows_report():
     language = next(c for c in report["checks"] if c["name"] == "qt_traditional_chinese_widgets_and_fallback")
     language.update(catalogue_loaded=True, initial_locale="en_US", locale="zh_TW",
                     missing_catalogue={"fully_localized": False})
+    notices = next(c for c in report["checks"] if c["name"] == "offline_third_party_notices_view_and_export")
+    manifest = (gate.NOTICE_SOURCE / "manifest.json").read_bytes()
+    notices.update(entry="settings", displayed_text_verified=True, export_bytes_verified=True,
+                   file_count=len(json.loads(manifest)["files"]) + 1,
+                   manifest_sha256=hashlib.sha256(manifest).hexdigest(), export_sha256="0" * 64)
     return report
 
 
@@ -57,7 +63,12 @@ def test_source_self_test_runs_real_isolated_roundtrip(tmp_path):
     assert process.returncode == 0, (payload, process.stderr)
     assert payload["status"] == "passed"
     assert payload["frozen"] is False
+    assert payload["loaded_modules"]["status"] == "unsupported"
+    assert "modules" not in payload["loaded_modules"]
     assert payload["network_attempts"] == []
+    notices = next(c for c in payload["checks"] if c["name"] == "offline_third_party_notices_view_and_export")
+    assert notices["displayed_text_verified"] is True and notices["export_bytes_verified"] is True
+    assert notices["manifest_sha256"] == hashlib.sha256((gate.NOTICE_SOURCE / "manifest.json").read_bytes()).hexdigest()
     assert gate.EXPECTED_CHECKS.issubset({c["name"] for c in payload["checks"]})
     untouched = [tmp_path / "must_not_touch", tmp_path / "must_not_touch_profile"]
     observed = {
@@ -107,14 +118,14 @@ def test_source_self_test_exercises_in_process_coverage(tmp_path, qapp):
     before = set(qapp.topLevelWidgets())
     report = tmp_path / "covered-source.json"
     assert diagnostics.run_self_test(report) == 0
-    assert json.loads(report.read_text())["status"] == "passed"
+    assert json.loads(report.read_text(encoding="utf-8"))["status"] == "passed"
     assert set(qapp.topLevelWidgets()) == before
 
 
 def test_self_test_rejects_source_when_frozen_is_required(tmp_path):
     report = tmp_path / "refused.json"
     assert diagnostics.run_self_test(report, require_frozen=True) == 1
-    payload = json.loads(report.read_text())
+    payload = json.loads(report.read_text(encoding="utf-8"))
     assert payload["status"] == "failed"
     assert payload["checks"] == []
 
@@ -137,7 +148,7 @@ def test_swallowed_network_attempt_still_fails_report(tmp_path, monkeypatch):
     monkeypatch.setattr(diagnostics, "_run_checks", swallow)
     report = tmp_path / "swallowed.json"
     assert diagnostics.run_self_test(report) == 1
-    payload = json.loads(report.read_text())
+    payload = json.loads(report.read_text(encoding="utf-8"))
     assert payload["status"] == "failed"
     assert payload["network_attempts"] == ["socket.getaddrinfo"]
 
@@ -146,12 +157,12 @@ def test_self_test_failure_writes_failure_report_and_cleans_temporary_data(tmp_p
     roots = []
     def fail(root, report):
         roots.append(root)
-        (root / "synthetic.txt").write_text("fixture")
+        (root / "synthetic.txt").write_text("fixture", encoding="utf-8")
         raise RuntimeError("injected failure")
     monkeypatch.setattr(diagnostics, "_run_checks", fail)
     report = tmp_path / "failed.json"
     assert diagnostics.run_self_test(report) == 1
-    assert json.loads(report.read_text())["error"]["message"] == "injected failure"
+    assert json.loads(report.read_text(encoding="utf-8"))["error"]["message"] == "injected failure"
     assert roots and all(not root.exists() for root in roots)
 
 
@@ -271,7 +282,7 @@ def test_gate_executes_extracted_artifact_and_preserves_tested_zip(tmp_path, mon
     candidate = output / "TaxOpsControlDesk-windows-candidate.zip"
     assert result["sha256"] == gate._sha256(candidate)
     assert not launched[0].exists()
-    assert json.loads((output / "bundle-provenance.json").read_text())["status"] == "passed"
+    assert json.loads((output / "bundle-provenance.json").read_text(encoding="utf-8"))["status"] == "passed"
 
 
 @pytest.mark.parametrize("failure", ["missing_report", "timeout"])
@@ -288,17 +299,18 @@ def test_gate_failure_never_publishes_candidate(tmp_path, monkeypatch, failure):
     with pytest.raises((gate.BundleVerificationError, subprocess.TimeoutExpired)):
         gate.verify_bundle(bundle, output)
     assert not (output / "TaxOpsControlDesk-windows-candidate.zip").exists()
-    assert json.loads((output / "bundle-provenance.json").read_text())["status"] == "failed"
+    assert json.loads((output / "bundle-provenance.json").read_text(encoding="utf-8"))["status"] == "failed"
 
 
 def test_windows_workflow_is_nonpublishing_and_pinned():
-    workflow = (ROOT / ".github/workflows/windows-candidate.yml").read_text()
+    workflow = (ROOT / ".github/workflows/windows-candidate.yml").read_text(encoding="utf-8")
     assert "pull_request:" in workflow and "workflow_dispatch:" in workflow
     assert "pull_request_target" not in workflow
     assert "contents: read" in workflow and "contents: write" not in workflow
     assert "secrets." not in workflow
     assert "persist-credentials: false" in workflow
-    assert "build_tools.verify_windows_bundle" in workflow
+    assert "build_tools.verify_onefile" in workflow
+    assert "build_tools.make_recombine_kit" in workflow
     assert "build_tools.run_test_matrix" in workflow
     assert "--files" not in workflow
     for line in workflow.splitlines():
@@ -319,7 +331,7 @@ def test_self_test_scopes_profile_paths_and_restores_environment(tmp_path, monke
         else:
             prior = tmp_path / f"original-{key}"
             prior.mkdir()
-            (prior / "preserved.txt").write_text("original synthetic state")
+            (prior / "preserved.txt").write_text("original synthetic state", encoding="utf-8")
             monkeypatch.setenv(key, str(prior))
             previous[key] = str(prior)
     observed = {}
@@ -336,7 +348,7 @@ def test_self_test_scopes_profile_paths_and_restores_environment(tmp_path, monke
     monkeypatch.setattr(diagnostics, "_run_checks", synthetic_native_write)
     report = tmp_path / "profile-scope.json"
     assert diagnostics.run_self_test(report) == int(fail)
-    payload = json.loads(report.read_text())
+    payload = json.loads(report.read_text(encoding="utf-8"))
     assert payload["status"] == ("failed" if fail else "passed")
     if fail:
         assert payload["error"]["message"] == "ordinary synthetic check failure"
@@ -345,7 +357,7 @@ def test_self_test_scopes_profile_paths_and_restores_environment(tmp_path, monke
     for value in previous.values():
         if value is not None:
             assert sorted(p.name for p in Path(value).iterdir()) == ["preserved.txt"]
-            assert (Path(value) / "preserved.txt").read_text() == "original synthetic state"
+            assert (Path(value) / "preserved.txt").read_text(encoding="utf-8") == "original synthetic state"
 
 
 def test_profile_setup_failure_restores_environment_before_checks(tmp_path, monkeypatch):
@@ -362,7 +374,7 @@ def test_profile_setup_failure_restores_environment_before_checks(tmp_path, monk
     monkeypatch.setattr(diagnostics, "_run_checks", lambda root, report: called.append(root))
     report = tmp_path / "setup-failure.json"
     assert diagnostics.run_self_test(report) == 1
-    assert json.loads(report.read_text())["error"]["message"] == "synthetic profile setup failure"
+    assert json.loads(report.read_text(encoding="utf-8"))["error"]["message"] == "synthetic profile setup failure"
     assert dict(os.environ) == before
     assert called == []
 
@@ -380,4 +392,19 @@ def test_native_dependency_failure_blocks_candidate_and_frozen_execution(tmp_pat
     with pytest.raises(gate.BundleVerificationError, match="missing OS provider"):
         gate.verify_bundle(bundle, output)
     assert not (output / "TaxOpsControlDesk-windows-candidate.zip").exists()
-    assert json.loads((output / "bundle-provenance.json").read_text())["status"] == "failed"
+    assert json.loads((output / "bundle-provenance.json").read_text(encoding="utf-8"))["status"] == "failed"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("entry", "unavailable"), ("displayed_text_verified", False),
+    ("export_bytes_verified", False), ("file_count", 0), ("file_count", True),
+    ("manifest_sha256", "0" * 64), ("export_sha256", ""), ("export_sha256", 12),
+    ("export_sha256", "g" * 64),
+])
+def test_frozen_gate_rejects_incomplete_notice_evidence(field, value):
+    report = _passing_windows_report()
+    gate.validate_report(report)
+    notices = next(c for c in report["checks"] if c["name"] == "offline_third_party_notices_view_and_export")
+    notices[field] = value
+    with pytest.raises(gate.BundleVerificationError, match="notice"):
+        gate.validate_report(report)

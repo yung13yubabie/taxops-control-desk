@@ -46,6 +46,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...core.paths import AppPaths
+from ...core.third_party_notices import NoticeError
 from ...db.connection import open_connection
 from ...db.migrate import apply_migrations
 from ...i18n import BUTTON_LABELS, DISABLED_TOOLTIP, NAV_LABELS, error_message
@@ -59,6 +60,7 @@ from ...services.registry_download import DownloadError, download_registry_zip
 from ...services.backup import BackupError
 from ...services.settings import SettingsValidationError
 from ..dialogs.mismatch_review_dialog import MismatchItem, MismatchReviewDialog
+from ..dialogs.third_party_notices_dialog import ThirdPartyNoticesDialog
 from ..action_registry import PAGE_SETTINGS, actions_for_page
 from ..style import TEXT_MUTED
 from ..widgets.flow_layout import FlowLayout
@@ -148,7 +150,13 @@ class SettingsPage(QWidget):
 
         title = QLabel(NAV_LABELS["settings"])
         title.setObjectName("PageTitle")
-        outer.addWidget(title)
+        title_row = QHBoxLayout()
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        self._licenses_btn = QPushButton("第三方授權")
+        self._licenses_btn.clicked.connect(self.on_third_party_notices)
+        title_row.addWidget(self._licenses_btn)
+        outer.addLayout(title_row)
 
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
@@ -173,6 +181,18 @@ class SettingsPage(QWidget):
         body_layout.addStretch(1)
 
         self._scroll.setWidget(self._settings_body)
+
+    def on_third_party_notices(self) -> None:
+        try:
+            dialog = ThirdPartyNoticesDialog(self)
+        except NoticeError:
+            _log.exception("Bundled third-party notices are unavailable")
+            QMessageBox.warning(self, "無法開啟授權文件", "隨程式附上的授權文件不完整或無法讀取。請重新下載完整程式後再試。")
+            return
+        try:
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
 
     # ------------------------------------------------------------------
     # Sections

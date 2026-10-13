@@ -167,6 +167,23 @@
       "filename": "python-3.11.9-embed-amd64.zip",
       "url": "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip",
       "sha256": "009d6bf7e3b2ddca3d784fa09f90fe54336d5b60f0e0f305c37f400bf83cfd3b"
+    },
+    {
+      "name": "Microsoft.VC.14.44.17.14.CRT.Redist.X64.base",
+      "version": "14.44.35211",
+      "fileName": "Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+      "url": "https://download.visualstudio.microsoft.com/download/pr/45d3b8dd-bced-4b37-9974-142f748d710c/4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5/Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+      "sha256": "4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5"
+    },
+    {
+      "name": "Qt WebEngine complete release source including Chromium/PDFium",
+      "version": "6.10.2",
+      "filename": "qtwebengine-everywhere-src-6.10.2.tar.xz",
+      "url": "https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qtwebengine-everywhere-src-6.10.2.tar.xz",
+      "sha256": "856eddf292a69a88618567deea67711b4ec720e69bcb575ed7bb539c9023961e",
+      "bytes": 881342592,
+      "verification": "Publisher-declared digest and size from the official mirrorlist; complete archive not downloaded for the qgif experiment",
+      "hash_source_url": "https://download.qt.io/archive/qt/6.10/6.10.2/submodules/qtwebengine-everywhere-src-6.10.2.tar.xz.mirrorlist"
     }
   ],
   "components": [
@@ -1027,10 +1044,10 @@
   "qt_pdf_source_revision": "c971c6841dd6beab9f54aeaf9a53be413273039e",
   "unresolved_release_review": [
     {
-      "component": "Microsoft VC redistribution basis",
-      "status": "Distribution basis for the eight Qt-supplied VC DLLs remains under review; CPython downstream route preserved",
-      "detail": "Two root VCRUNTIME DLLs match CPython 3.11.9, whose Windows LICENSE provides a downstream route with four restrictions. Eight Qt/PySide/Shiboken VC DLLs match official wheels; the exact applicable distribution source and terms still require verification. Forty-three reviewed API-set/UCRT files are excluded from this Windows 10 1809+/11 package and supplied by the OS. Their old hashes remain as exclusion evidence, not as current bundled files. Permission to use a development tool does not by itself prove the identity or distribution basis of these Qt-supplied files. Local repair and candidate CI remain permitted.",
-      "source_url": "https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files"
+      "component": "Microsoft VC distribution conditions",
+      "status": "Fixed official-source route selected; Windows signature validation and release review required",
+      "detail": "Eight Qt/Shiboken destinations use five unmodified official Microsoft VSIX members; two CPython DLLs retain their original CPython provenance. Every build must validate SHA-256 and Authenticode. The dynamic catalog SHA/size discrepancy remains unresolved and is not claimed as verified. Final downstream terms/notices and clean offline acceptance remain release gates.",
+      "source_url": "https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution#visual-c-runtime-files"
     }
   ],
   "files": [
@@ -1053,12 +1070,12 @@
     },
     {
       "path": "README.txt",
-      "sha256": "4626d8959fb3344deb7edc1470a6e73ea58f74fe4e80eb86d259dd96be624bc6",
+      "sha256": "2d1cd36f346101682fc2878b20dcdf41259a7a956b4f69ef6e20cb385e490edb",
       "origin": "Project-authored component and notice index"
     },
     {
       "path": "SOURCE_ACCESS.txt",
-      "sha256": "fe3d9b5d0a94fb3ce7212145892139e5b4dc117f2f5238252ee379956611eda2",
+      "sha256": "35dd30ac84ade555ed390dbc36c26a8ffb6bfef1c6edff8333c0118b0a9cd44b",
       "origin": "Project-authored exact source directions and library replacement instructions"
     },
     {
@@ -2946,6 +2963,12 @@
       "sha256": "c6e6c5473d936af89e4ffa22865c35c168daeb5b5b5a79072e2152c35e5ef222",
       "source_url": "https://github.com/qt/qtwebengine-chromium/blob/c971c6841dd6beab9f54aeaf9a53be413273039e/chromium/third_party/zlib/contrib/minizip/README.chromium",
       "scope": "Conservative exact-source QtPDF/PDFium notice corpus; README files preserve versions and conditional Shipped fields"
+    },
+    {
+      "path": "RECOMBINE_PERMISSION.txt",
+      "sha256": "03924529faff3ec84ca8ede7d072759ae79dc2090ace15c0b4d84e55bbf2f2cc",
+      "bytes": 1633,
+      "origin": "TaxOps project-specific limited Application Code recombination permission"
     }
   ],
   "runtime_components": [
@@ -3186,7 +3209,7 @@
   "reviewed_microsoft_binaries": [
     {
       "bundle_path": "_internal/PySide6/MSVCP140.dll",
-      "sha256": "9a6cf6095a24dfaca230409fc795d688619dc5663200ae59213eeaaa02d030b3",
+      "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9",
       "pe_file_version": [
         14,
         44,
@@ -3194,16 +3217,23 @@
         0
       ],
       "matches": [
+        {
+          "distribution": "Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+          "source_path": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140.dll"
+        }
+      ],
+      "notice_basis": "Unmodified fixed Microsoft Visual C++ 2022 distributable component, under Community 2022 section 4 and the official REDIST list. Build gate requires exact VSIX/member SHA-256 and valid Microsoft Authenticode on Windows. Prior wheel identities are historical only.",
+      "prior_wheel_sha256": "9a6cf6095a24dfaca230409fc795d688619dc5663200ae59213eeaaa02d030b3",
+      "prior_wheel_matches": [
         {
           "distribution": "pyside6_essentials-6.10.2-cp39-abi3-win_amd64.whl",
           "source_path": "PySide6/msvcp140.dll"
         }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+      ]
     },
     {
       "bundle_path": "_internal/PySide6/MSVCP140_1.dll",
-      "sha256": "8ce6980144fadfea52b6f14f7799e05e3232c28414fb5e617968a814be33fc1a",
+      "sha256": "bfad5aef4c63a669e3c140655cdfdf395b6c979b400a447bd5dcb65ed8826c3d",
       "pe_file_version": [
         14,
         44,
@@ -3211,16 +3241,23 @@
         0
       ],
       "matches": [
+        {
+          "distribution": "Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+          "source_path": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140_1.dll"
+        }
+      ],
+      "notice_basis": "Unmodified fixed Microsoft Visual C++ 2022 distributable component, under Community 2022 section 4 and the official REDIST list. Build gate requires exact VSIX/member SHA-256 and valid Microsoft Authenticode on Windows. Prior wheel identities are historical only.",
+      "prior_wheel_sha256": "8ce6980144fadfea52b6f14f7799e05e3232c28414fb5e617968a814be33fc1a",
+      "prior_wheel_matches": [
         {
           "distribution": "pyside6_essentials-6.10.2-cp39-abi3-win_amd64.whl",
           "source_path": "PySide6/msvcp140_1.dll"
         }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+      ]
     },
     {
       "bundle_path": "_internal/PySide6/MSVCP140_2.dll",
-      "sha256": "14301dc6a6021b6e70d102535d9b9a7ad1a40cfc61e88b601a9af8b84e0096b2",
+      "sha256": "3ea06f0ee098b4823cb79599df3780e7f23cce52c19aac31d2a0d47efe33a5e9",
       "pe_file_version": [
         14,
         44,
@@ -3228,16 +3265,23 @@
         0
       ],
       "matches": [
+        {
+          "distribution": "Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+          "source_path": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140_2.dll"
+        }
+      ],
+      "notice_basis": "Unmodified fixed Microsoft Visual C++ 2022 distributable component, under Community 2022 section 4 and the official REDIST list. Build gate requires exact VSIX/member SHA-256 and valid Microsoft Authenticode on Windows. Prior wheel identities are historical only.",
+      "prior_wheel_sha256": "14301dc6a6021b6e70d102535d9b9a7ad1a40cfc61e88b601a9af8b84e0096b2",
+      "prior_wheel_matches": [
         {
           "distribution": "pyside6_essentials-6.10.2-cp39-abi3-win_amd64.whl",
           "source_path": "PySide6/msvcp140_2.dll"
         }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+      ]
     },
     {
       "bundle_path": "_internal/PySide6/VCRUNTIME140.dll",
-      "sha256": "21a16fc13606d5d6091bca7e110d051bc0b247852c468565ac2f11b26cde9db8",
+      "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
       "pe_file_version": [
         14,
         44,
@@ -3245,16 +3289,23 @@
         0
       ],
       "matches": [
+        {
+          "distribution": "Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+          "source_path": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140.dll"
+        }
+      ],
+      "notice_basis": "Unmodified fixed Microsoft Visual C++ 2022 distributable component, under Community 2022 section 4 and the official REDIST list. Build gate requires exact VSIX/member SHA-256 and valid Microsoft Authenticode on Windows. Prior wheel identities are historical only.",
+      "prior_wheel_sha256": "21a16fc13606d5d6091bca7e110d051bc0b247852c468565ac2f11b26cde9db8",
+      "prior_wheel_matches": [
         {
           "distribution": "pyside6_essentials-6.10.2-cp39-abi3-win_amd64.whl",
           "source_path": "PySide6/vcruntime140.dll"
         }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+      ]
     },
     {
       "bundle_path": "_internal/PySide6/VCRUNTIME140_1.dll",
-      "sha256": "e1c403e00debd7ab4481f142f22b01cad03472b26a93c7e95cd3f66897156b34",
+      "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f",
       "pe_file_version": [
         14,
         44,
@@ -3262,16 +3313,23 @@
         0
       ],
       "matches": [
+        {
+          "distribution": "Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+          "source_path": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140_1.dll"
+        }
+      ],
+      "notice_basis": "Unmodified fixed Microsoft Visual C++ 2022 distributable component, under Community 2022 section 4 and the official REDIST list. Build gate requires exact VSIX/member SHA-256 and valid Microsoft Authenticode on Windows. Prior wheel identities are historical only.",
+      "prior_wheel_sha256": "e1c403e00debd7ab4481f142f22b01cad03472b26a93c7e95cd3f66897156b34",
+      "prior_wheel_matches": [
         {
           "distribution": "pyside6_essentials-6.10.2-cp39-abi3-win_amd64.whl",
           "source_path": "PySide6/vcruntime140_1.dll"
         }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+      ]
     },
     {
       "bundle_path": "_internal/shiboken6/MSVCP140.dll",
-      "sha256": "d8fcd3b7619e7aa5623653afecbec42751358e56ac04aed7cc679cc494376ef1",
+      "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9",
       "pe_file_version": [
         14,
         44,
@@ -3279,16 +3337,23 @@
         0
       ],
       "matches": [
+        {
+          "distribution": "Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+          "source_path": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140.dll"
+        }
+      ],
+      "notice_basis": "Unmodified fixed Microsoft Visual C++ 2022 distributable component, under Community 2022 section 4 and the official REDIST list. Build gate requires exact VSIX/member SHA-256 and valid Microsoft Authenticode on Windows. Prior wheel identities are historical only.",
+      "prior_wheel_sha256": "d8fcd3b7619e7aa5623653afecbec42751358e56ac04aed7cc679cc494376ef1",
+      "prior_wheel_matches": [
         {
           "distribution": "shiboken6-6.10.2-cp39-abi3-win_amd64.whl",
           "source_path": "shiboken6/msvcp140.dll"
         }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+      ]
     },
     {
       "bundle_path": "_internal/shiboken6/VCRUNTIME140.dll",
-      "sha256": "bd2cce9499558b77b919c6cc70db52e7c697b76f2f53376ec9eab79e0c292a4d",
+      "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
       "pe_file_version": [
         14,
         44,
@@ -3296,16 +3361,23 @@
         0
       ],
       "matches": [
+        {
+          "distribution": "Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+          "source_path": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140.dll"
+        }
+      ],
+      "notice_basis": "Unmodified fixed Microsoft Visual C++ 2022 distributable component, under Community 2022 section 4 and the official REDIST list. Build gate requires exact VSIX/member SHA-256 and valid Microsoft Authenticode on Windows. Prior wheel identities are historical only.",
+      "prior_wheel_sha256": "bd2cce9499558b77b919c6cc70db52e7c697b76f2f53376ec9eab79e0c292a4d",
+      "prior_wheel_matches": [
         {
           "distribution": "shiboken6-6.10.2-cp39-abi3-win_amd64.whl",
           "source_path": "shiboken6/vcruntime140.dll"
         }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+      ]
     },
     {
       "bundle_path": "_internal/shiboken6/VCRUNTIME140_1.dll",
-      "sha256": "813c8808223f29b7d68589f62f2812d87e5e43b5d50ce7f351942a5c92cde5a6",
+      "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f",
       "pe_file_version": [
         14,
         44,
@@ -3314,11 +3386,18 @@
       ],
       "matches": [
         {
+          "distribution": "Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+          "source_path": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140_1.dll"
+        }
+      ],
+      "notice_basis": "Unmodified fixed Microsoft Visual C++ 2022 distributable component, under Community 2022 section 4 and the official REDIST list. Build gate requires exact VSIX/member SHA-256 and valid Microsoft Authenticode on Windows. Prior wheel identities are historical only.",
+      "prior_wheel_sha256": "813c8808223f29b7d68589f62f2812d87e5e43b5d50ce7f351942a5c92cde5a6",
+      "prior_wheel_matches": [
+        {
           "distribution": "shiboken6-6.10.2-cp39-abi3-win_amd64.whl",
           "source_path": "shiboken6/vcruntime140_1.dll"
         }
-      ],
-      "notice_basis": "Exact official PySide6/Shiboken wheel provenance. No separate Microsoft downstream terms were present in the reviewed wheel; do not assume the Python runtime license covers these different binaries."
+      ]
     },
     {
       "bundle_path": "_internal/VCRUNTIME140.dll",

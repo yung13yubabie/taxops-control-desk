@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>TaxOps TO monogram candidate</title>
+  <rect x="8" y="8" width="240" height="240" rx="40" fill="#2563EB"/>
+  <path d="M156 60c32 0 50 22 50 66v8c0 44-18 66-50 66s-50-22-50-66v-8c0-44 18-66 50-66zm0 28c-15 0-22 12-22 38v8c0 26 7 38 22 38s22-12 22-38v-8c0-26-7-38-22-38z" fill="#FFFFFF" fill-rule="evenodd"/>
+  <path d="M46 60h110v28h-41v112H87V88H46z" fill="#FFFFFF"/>
+</svg>

@@ -10,6 +10,7 @@ import ctypes
 import json
 import ntpath
 import platform
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -26,7 +27,16 @@ _ZERO_ENTRY_WARNINGS = frozenset(
 )
 
 
-def read_pe(path: Path, bundle: Path) -> dict:
+def dll_name(value: str) -> str:
+    """Permit bare import names only, before any Windows loader operation."""
+    if (not isinstance(value, str)
+            or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*\.(?:dll|drv)", value, re.ASCII | re.IGNORECASE)
+            or ".." in value):
+        raise SystemRuntimeError("PE dependency contains an unsafe DLL name")
+    return value
+
+
+def read_pe(path: Path, bundle: Path, *, reviewed_system_forwarder: bool = False) -> dict:
     """Reject invalid/non-x64 images and incomplete parsing, including limit warnings."""
     import pefile
 
@@ -54,8 +64,7 @@ def read_pe(path: Path, bundle: Path) -> dict:
         ):
             for entry in getattr(pe, attribute, []):
                 dll = entry.dll.decode("ascii")
-                if not dll or ntpath.basename(dll) != dll or ":" in dll:
-                    raise SystemRuntimeError("PE import contains an unsafe DLL name")
+                dll_name(dll)
                 imports.append(
                     {
                         "kind": kind,
@@ -94,7 +103,7 @@ def read_pe(path: Path, bundle: Path) -> dict:
             raise SystemRuntimeError(f"Incomplete PE export parsing: {path.name}")
         warnings = pe.get_warnings()
         forwarder_only = (
-            path.name.casefold() == "python3.dll"
+            (path.name.casefold() == "python3.dll" or reviewed_system_forwarder)
             and pe.OPTIONAL_HEADER.AddressOfEntryPoint == 0
             and exports
             and all(item["forwarder"] for item in exports)
@@ -180,6 +189,7 @@ class WindowsSystemResolver:
     def resolve(self, dll: str, symbols: list[dict]) -> dict:
         from ctypes import wintypes
 
+        dll_name(dll)
         key = dll.casefold()
         if key not in self.handles:
             handle = self.kernel.LoadLibraryExW(
@@ -251,6 +261,7 @@ def inspect_dependencies(inventory: list[dict], resolver) -> dict:
         )
 
     def resolve(dll, symbols, active):
+        dll_name(dll)
         if dll.casefold() not in by_name:
             return resolver.resolve(dll, symbols)
         paths = []
@@ -274,7 +285,13 @@ def inspect_dependencies(inventory: list[dict], resolver) -> dict:
                 identity = (target["path"], key)
                 if identity in active:
                     raise SystemRuntimeError("Cyclic PE export forwarder")
+                if not isinstance(forwarder, str) or "." not in forwarder:
+                    raise SystemRuntimeError("Invalid PE export forwarder")
                 library, name = forwarder.rsplit(".", 1)
+                dll_name(library + ".dll")
+                if not name or "\x00" in name or (name.startswith("#") and
+                        not re.fullmatch(r"#[1-9][0-9]{0,4}", name)):
+                    raise SystemRuntimeError("Invalid PE export forwarder symbol")
                 forwarded_symbol = {
                     "name": None if name.startswith("#") else name,
                     "ordinal": int(name[1:]) if name.startswith("#") else None,

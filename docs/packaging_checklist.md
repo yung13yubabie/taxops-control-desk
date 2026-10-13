@@ -1,5 +1,9 @@
 # Packaging Checklist (Windows EXE)
 
+This checklist describes the historical one-directory smoke workflow. Current
+single-EXE acceptance and wrapper-required packaging inputs are defined in the
+[onefile gate](windows_onefile_gate.md) and [bounded input policy](windows_build_input_portability.md).
+
 PyInstaller packaging pre-closeout is implemented. The automated build and
 smoke test pass, but the manual Windows UI checklist below must still be run
 before release readiness is claimed.

@@ -116,6 +116,10 @@ def test_run_shows_clear_schema_error_and_exits_nonzero(monkeypatch) -> None:
         raise error
 
     monkeypatch.setattr(app_module, "bootstrap", fail)
+    # This checks the schema dialog, not the real OS instance lock/IPC. Those
+    # have separate multiprocess integration coverage.
+    monkeypatch.setattr("taxops.ui.single_instance.SingleInstanceGuard.acquire", lambda self: True)
+    monkeypatch.setattr("taxops.ui.single_instance.SingleInstanceGuard.release", lambda self: None)
     messages = []
     monkeypatch.setattr(QMessageBox, "critical", lambda *args: messages.append(args))
 

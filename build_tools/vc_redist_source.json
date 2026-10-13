@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "package": {
+    "id": "Microsoft.VC.14.44.17.14.CRT.Redist.X64.base",
+    "version": "14.44.35211",
+    "type": "Vsix",
+    "payloads": [
+      {
+        "fileName": "Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+        "sha256": "4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5",
+        "size": 3236248,
+        "url": "https://download.visualstudio.microsoft.com/download/pr/45d3b8dd-bced-4b37-9974-142f748d710c/4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5/Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+        "signer": {
+          "$ref": "1"
+        }
+      }
+    ],
+    "installSizes": {
+      "targetDrive": 9912456
+    }
+  },
+  "observed_package_bytes": 3224191,
+  "files": [
+    {
+      "name": "msvcp140.dll",
+      "source_member": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140.dll",
+      "bytes": 557728,
+      "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9",
+      "pe_file_version": "14.44.35211.0",
+      "internal_manifest_hash_matches": true
+    },
+    {
+      "name": "msvcp140_1.dll",
+      "source_member": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140_1.dll",
+      "bytes": 35952,
+      "sha256": "bfad5aef4c63a669e3c140655cdfdf395b6c979b400a447bd5dcb65ed8826c3d",
+      "pe_file_version": "14.44.35211.0",
+      "internal_manifest_hash_matches": true
+    },
+    {
+      "name": "msvcp140_2.dll",
+      "source_member": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140_2.dll",
+      "bytes": 280200,
+      "sha256": "3ea06f0ee098b4823cb79599df3780e7f23cce52c19aac31d2a0d47efe33a5e9",
+      "pe_file_version": "14.44.35211.0",
+      "internal_manifest_hash_matches": true
+    },
+    {
+      "name": "vcruntime140.dll",
+      "source_member": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140.dll",
+      "bytes": 124544,
+      "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
+      "pe_file_version": "14.44.35211.0",
+      "internal_manifest_hash_matches": true
+    },
+    {
+      "name": "vcruntime140_1.dll",
+      "source_member": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140_1.dll",
+      "bytes": 49792,
+      "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f",
+      "pe_file_version": "14.44.35211.0",
+      "internal_manifest_hash_matches": true
+    }
+  ],
+  "catalog_verification_note": "Catalog received SHA256 f0a50ea157222c29abd5ea6ff01bfc3c33b04e011c5e45ee2ca38ef0778e5643, bytes17954732; channel claimed6e470016e4324c84c255ffd0beb3767d17ec89cc8561e9409ee3e1f6d29400f5, bytes30443537. Unresolved, do not call catalog hash verified. VSIX itself SHA256 matches catalog/official URL; its observed size3224191 differs catalog size3236248. Each selected DLL hash matches internal VSIX manifest. Windows Authenticode validation is pending.",
+  "terms_url": "https://visualstudio.microsoft.com/license-terms/vs2022-ga-community/",
+  "redist_list_url": "https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution#visual-c-runtime-files"
+}

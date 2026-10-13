@@ -125,7 +125,7 @@ def test_qt_file_dialog_catalogue_and_paths(qapp, tmp_path):
 def test_service_error_codes_have_specific_chinese_guidance():
     codes = set()
     for source in Path('src/taxops/services').rglob('*.py'):
-        for node in ast.walk(ast.parse(source.read_text())):
+        for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
             if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call):
                 for arg in node.exc.args:
                     if isinstance(arg, ast.Constant) and isinstance(arg.value, str) and re.fullmatch(r'[a-z_]+(?:\.[a-z_]+)+', arg.value):
@@ -155,7 +155,7 @@ def test_file_dialog_accept_and_overwrite_cancel(qapp, tmp_path):
     from PySide6.QtCore import QTimer
     install_chinese(qapp)
     file = tmp_path / '中文 空格 original.txt'
-    file.write_text('synthetic unchanged')
+    file.write_text('synthetic unchanged', encoding="utf-8")
     dialog = QFileDialog(None, '選擇檔案', str(tmp_path))
     dialog.setOption(QFileDialog.Option.DontUseNativeDialog)
     dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
@@ -177,7 +177,7 @@ def test_file_dialog_accept_and_overwrite_cancel(qapp, tmp_path):
     QTimer.singleShot(20, decline_overwrite)
     dialog.accept()
     assert seen and not any(word in seen[0] for word in ('already exists', 'replace it'))
-    assert file.read_text() == 'synthetic unchanged'
+    assert file.read_text(encoding="utf-8") == 'synthetic unchanged'
     dialog.reject()
 
 

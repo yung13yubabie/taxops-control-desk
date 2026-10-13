@@ -203,6 +203,24 @@ ACTION_REGISTRY: tuple[UIActionContract, ...] = (
     ),
     # Settings page (enabled)
     UIActionContract(
+        button_label="第三方授權", page=PAGE_SETTINGS,
+        handler="SettingsPage.on_third_party_notices", service=None, repository=None,
+        success_text="", failure_text="無法開啟授權文件", audit_action=None,
+        test_marker="test_settings_opens_notices_offline", enabled=True,
+    ),
+    UIActionContract(
+        button_label="匯出全部授權文件", page=PAGE_SETTINGS,
+        handler="ThirdPartyNoticesDialog.on_export", service=None, repository=None,
+        success_text="全部授權文件已儲存", failure_text="授權文件無法儲存",
+        audit_action=None, test_marker="test_notice_export_button", enabled=True,
+    ),
+    UIActionContract(
+        button_label="關閉", page=PAGE_SETTINGS,
+        handler="ThirdPartyNoticesDialog.reject", service=None, repository=None,
+        success_text="", failure_text="", audit_action=None,
+        test_marker="test_notice_dialog_close", enabled=True,
+    ),
+    UIActionContract(
         button_label="開啟資料庫資料夾",
         page=PAGE_SETTINGS,
         handler="SettingsPage.on_open_data_folder",

@@ -6,7 +6,7 @@ Jinja2 3.1.6, MarkupSafe 3.0.3, openpyxl 3.1.5 and et_xmlfile 2.0.0.
 The packaged executable also contains a PyInstaller 6.11.1 bootloader.
 The original copyright and license texts are retained under:
 
-    _internal/third_party_licenses/
+    third_party_licenses/ inside the EXE (available in the offline viewer/export)
 
 The manifest.json in that directory identifies exact upstream distributions,
 source URLs, versions, component mappings and SHA-256 hashes of these notices.
@@ -20,9 +20,10 @@ The reviewed Qt modules have LGPLv3 open-source licensing alternatives. The
 complete LGPLv3 and GPLv3 texts and upstream attribution files are included.
 Do not remove notices or prevent the rights granted for the covered libraries,
 including modification and reverse engineering for debugging modifications.
-The libraries are separate DLLs in the one-directory distribution, using the
-shared-library mechanism in LGPLv3 section 4(d)(1). SOURCE_ACCESS.txt supplies
-fixed-version source downloads, build inputs and replacement instructions. The
+The single-EXE distribution uses LGPLv3 section 4(d)(0): the matching
+Application Code/build kit and limited RECOMBINE_PERMISSION.txt permit rebuilding
+with modified LGPL libraries. SOURCE_ACCESS.txt supplies fixed-version source
+downloads and recombination instructions. The
 selected source-delivery route for the network download is GPLv3 section 6(d):
 clear directions beside the binary and equivalent no-additional-charge source
 access. That file explains the publisher's availability responsibility and the
@@ -68,10 +69,13 @@ for that Windows build, subject to its four stated restrictions. The two root
 VCRUNTIME DLLs match that official Python distribution. This does not mean
 Python users must purchase Visual Studio.
 
-The separate Qt/PySide/Shiboken VC DLLs match their official wheels, but those
-wheels do not supply separate Microsoft redistribution terms. Their exact
-applicable distribution basis remains under review; approval to use a build
-product does not itself establish the source of these particular bytes.
+Eight Qt/PySide/Shiboken locations receive five unmodified files from the fixed
+official Microsoft VC 2022 redistributable component. Its Community 2022 terms
+and official REDIST list are linked in the source manifest. The build requires
+exact VSIX/member SHA-256 and valid Microsoft Authenticode trust. Prior wheel
+identities remain historical evidence, not the distributed replacement bytes.
+The dynamic catalog's mismatched SHA/size is explicitly unresolved; independent
+fixed-package and DLL verification does not erase that discrepancy.
 The manifest retains ten bundled VC file identities and separately records
 43 excluded system files: 13 CRT API contracts, 29 core API contracts and
 ucrtbase.dll. For this Windows 10 1809+/Windows 11 x64 target, the OS supplies
@@ -90,4 +94,5 @@ Any Python, package, Qt module, plugin or native dependency change requires a
 fresh review. Packaging checks asset hashes, release versions and the approved
 Qt native inventory. It does not publish a release. A new bundle must pass the
 unchanged full source/coverage gate and be extracted and self-tested as that
-same frozen executable. Notices must travel with the entire extracted folder.
+same frozen executable. Notices remain embedded and exportable offline; the
+version-matched recombination kit accompanies the release separately.

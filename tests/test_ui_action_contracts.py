@@ -22,6 +22,7 @@ from taxops.ui.action_registry import (
 _EMBEDDED_ONLY_PAGES = {PAGE_DOC_REQUESTS}
 
 _HANDLER_MODULES = {
+    "ThirdPartyNoticesDialog": "taxops.ui.dialogs.third_party_notices_dialog",
     "AnnualWorkbenchPage": "taxops.ui.pages.annual_workbench_page",
     "AnnualWorkspaceDialog": "taxops.ui.dialogs.annual_workspace_dialog",
     "AnnualItemDetail": "taxops.ui.widgets.annual_item_detail",
