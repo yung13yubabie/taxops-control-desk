@@ -1,0 +1,90 @@
+name: Fixed exported kit modified-component proof
+
+on:
+  push:
+    branches: [diagnostics/hosted-recombine-proof-20261013]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fixed-kit-recombine-proof-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prove-exported-kit:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read # Read only the fixed existing artifact; no PAT or persistent grant.
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      PROOF_ROOT: ${{ runner.temp }}\TaxOpsFixedKitProof
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11.9'
+          architecture: x64
+          cache: ''
+      - name: Fail-fast proof contracts and public checkout hygiene
+        run: |
+          python -m build_tools.check_repository_hygiene
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_hosted_recombine_proof.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify fixed prior artifact and official build-only inputs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python -m build_tools.hosted_recombine_proof acquire --root "$env:PROOF_ROOT"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build fresh modified components from the actual exported kit
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere)) { throw 'Existing vswhere is required' }
+          $vs = & $vswhere -latest -products '*' -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $vs -or @($vs).Count -ne 1) { throw 'One existing VS2022 C++ toolchain is required' }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvarsall.bat'
+          if (-not (Test-Path $vcvars)) { throw 'Existing VS2022 x64 environment script missing' }
+          # This only imports the existing compiler environment, never installs tools.
+          $vars = & cmd.exe /d /s /c "`"`"$vcvars`" x64 >nul && set`""
+          if ($LASTEXITCODE -ne 0) { throw 'Existing x64 compiler environment failed' }
+          foreach ($line in $vars) {
+            if ($line -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
+          }
+          if ($env:VSCMD_ARG_TGT_ARCH -ne 'x64') { throw 'Compiler target must be x64' }
+          python -m build_tools.hosted_recombine_proof run --root "$env:PROOF_ROOT"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Collect bounded evidence, including partial failure diagnostics
+        if: always()
+        run: |
+          python -m build_tools.hosted_recombine_proof collect --root "$env:PROOF_ROOT" --output artifacts\fixed-kit-proof
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          @'
+          This workflow attempts a fresh modified-component rebuild from the fixed exported kit.
+          The normal input EXE is only a negative control, never the rebuilt output.
+          A pass requires proof-result.json status=passed and the original complete gates.
+          Cancellation/timeout is incomplete proof and does not demonstrate normal cleanup.
+          Partial diagnostic uploads may be unavailable after cancellation.
+          Hosted synthetic checks are not clean offline OS, manual IME/DPI/printing,
+          real-data upgrade, publisher signing, full source-hosting or legal acceptance.
+          No Release is published. Raw SDK, VSIX, virtual environments and tokens are excluded.
+          '@ | Out-File -Encoding utf8 artifacts\fixed-kit-proof\ACCEPTANCE-BOUNDARY.txt
+      - name: Upload only the explicit proof evidence tree
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fixed-kit-recombine-proof-${{ github.sha }}
+          path: artifacts/fixed-kit-proof/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
