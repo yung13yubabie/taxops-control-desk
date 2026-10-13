@@ -199,9 +199,12 @@ app = QApplication([])
 guard = SingleInstanceGuard(sys.argv[1])
 window = QWidget()
 received = []
+visible_at_activation = []
 def activate():
-    assert window.isVisible()
+    visible = window.isVisible()
+    visible_at_activation.append(visible)
     received.append("activate")
+    assert visible
     QTimer.singleShot(100, app.quit)
 guard.activation_requested.connect(activate)
 original = QLocalServer.listen
@@ -221,8 +224,9 @@ try:
     QTimer.singleShot(10000, app.quit)
     app.exec()
     Path(sys.argv[3]).write_text(json.dumps({"received": received,
-        "window_visible": window.isVisible()}), encoding="utf-8")
-    raise SystemExit(0 if received == ["activate"] else 3)
+        "visible_at_activation": visible_at_activation,
+        "window_visible_after_exec": window.isVisible()}), encoding="utf-8")
+    raise SystemExit(0 if received == ["activate"] and visible_at_activation == [True] else 3)
 finally:
     window.close()
     guard.release()
@@ -254,8 +258,12 @@ finally:
         assert child.returncode == 0, (stdout, stderr)
         assert notified
         assert guard._notification_diagnostics["attempts"] > 1
-        assert json.loads(finished.read_text(encoding="utf-8")) == {
-            "received": ["activate"], "window_visible": True}
+        result = json.loads(finished.read_text(encoding="utf-8"))
+        assert result["received"] == ["activate"]
+        assert result["visible_at_activation"] == [True]
+        # QApplication handles Quit by closing its windows before exec returns.
+        # The after-exec observation is diagnostic, not activation readiness.
+        assert isinstance(result["window_visible_after_exec"], bool)
     finally:
         if child.poll() is None:
             if sys.platform == "win32":
@@ -264,3 +272,39 @@ finally:
             else:
                 child.kill()  # Only this synthetic child owned by this test.
                 child.wait(timeout=5)
+
+
+@pytest.mark.parametrize("visibility", [[True], [False], [False, True], [True, True]])
+def test_activation_observation_uses_actual_callback_visibility(visibility):
+    """Exercise the embedded callback, including Qt swallowing a slot assertion."""
+    import ast
+    import inspect
+    from types import SimpleNamespace
+    test_body = ast.parse(inspect.getsource(test_notification_waits_for_real_lock_holder_to_listen)).body[0]
+    child_source = next(node.value.value for node in test_body.body
+        if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "code")
+    child = ast.parse(child_source)
+    callback = next(node for node in child.body if isinstance(node, ast.FunctionDef) and node.name == "activate")
+    exit_call = next(node.exc for node in ast.walk(child) if isinstance(node, ast.Raise)
+        and isinstance(node.exc, ast.Call) and isinstance(node.exc.func, ast.Name)
+        and node.exc.func.id == "SystemExit")
+    window = SimpleNamespace(visible=True)
+    window.isVisible = lambda: window.visible
+    context = {"window": window, "received": [], "visible_at_activation": [],
+        "app": SimpleNamespace(quit=lambda: None),
+        "QTimer": SimpleNamespace(singleShot=lambda ms, fn: None)}
+    exec(compile(ast.Module(body=[callback], type_ignores=[]), "<actual-child-callback>", "exec"), context)
+    for visible in visibility:
+        window.visible = visible
+        if visible:
+            context["activate"]()
+        else:
+            with pytest.raises(AssertionError):
+                context["activate"]()
+    # A later visible state must not conceal an invisible or repeated callback.
+    window.visible = True
+    assert context["received"] == ["activate"] * len(visibility)
+    assert context["visible_at_activation"] == visibility
+    actual_exit = eval(compile(ast.Expression(exit_call.args[0]), "<actual-child-exit>", "eval"), context)
+    assert actual_exit == (0 if visibility == [True] else 3)

@@ -64,3 +64,21 @@ result. The outer gate records the race loser's actual bootloader exit code befo
 applying the unchanged zero-exit requirement. These diagnostics do not imply an
 inner exit code, receiver acknowledgement or usable window. The strict winner
 window/database/activation checks still determine the frozen verdict.
+
+## Visibility observation in the real IPC regression
+
+The delayed-listen child records visibility inside the actual activation
+callback, before scheduling normal shutdown. Both its exit decision and the
+parent require exactly one receipt and exactly one true visibility observation.
+A hidden callback is recorded before its assertion, so a swallowed Qt slot
+exception cannot be concealed by a later visible callback. The after-exec
+visibility is retained separately as diagnostic information.
+
+The earlier Windows quick run
+[38328350140](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38328350140)
+completed the retry, callback and normal child exit but failed its final
+post-quit visibility assertion. Qt's
+[QApplication Quit handling](https://github.com/qt/qtbase/blob/v6.10.2/src/widgets/kernel/qapplication.cpp#L1560-L1578)
+closes windows before leaving the event loop. That failed result is retained;
+observing activation before shutdown corrects the test's timing, not the
+application or the frozen acceptance policy.
