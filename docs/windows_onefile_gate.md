@@ -17,7 +17,7 @@ The build remains a candidate until its exact final tree passes all gates.
 | Unusable TEMP / storage errors | Gate owns a synthetic profile; invalid TEMP is an ordinary file, no ACL change | Bootloader returns nonzero/no DB, normal TEMP retry; blocked data-root file produces actual Chinese error/no bootstrap, then the same repaired profile starts | This is not a full-disk hardware fault or permission-change test |
 | Genuine LGPL recombination | Actual modified `PySide6/support/__init__.py` keeps package semantics; actual source-compiled qgif metadata and GIF decode | Fresh DLL probe and actual rebuilt EXE execute both modifications, plus all original acceptance gates | A local Qt 6.10.2 qgif source compile/load/decode has been observed; final modified single EXE pending |
 | Exact Application Code kit | Source/spec/hooks/assets/migrations/pins/hash inventory/notices plus limited permission and executable recipe | Export matches accepted EXE source commit/tree/hash; modified recipient source has distinct identity | Narrow permission does not relicense the project MIT/GPL; full source-access obligations remain |
-| Immutable complete regression | Every test file in a separate process, no skipped/missing tests in release acceptance, raw branch coverage >=90% | Exact final Windows source matrix plus 17 existing + 1 notice frozen check | Focused tests and Linux platform limitations are not Windows acceptance |
+| Immutable complete regression | Every test file in a separate process, no skipped/missing tests in release acceptance, raw combined line/branch coverage >=90% | Exact final Windows source matrix plus 17 existing + 1 notice frozen check | Focused tests and Linux platform limitations are not Windows acceptance |
 
 ## Trust and data boundaries
 
@@ -167,7 +167,7 @@ Windows elapsed time; that must be measured again on the fixed candidate.
 ## Observed simultaneous-start failure
 
 [Run 38293931640](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38293931640)
-passed all 153 source files / 3838 tests, with raw branch coverage
+passed all 153 source files / 3838 tests, with raw combined line/branch coverage
 91.05698731866956%, and built a fresh onefile EXE. Its exact source tree was
 `44f0214d10754dcd598a9a2b76eeddbfb8170489`. During the actual two-process
 start barrier, exactly one process acquired ownership and opened schema 28;
@@ -195,7 +195,7 @@ only a fresh Windows EXE run can close the observed frozen race failure.
 checked out `112da65855c24cf9f06d9dbb44785cf8b9389a73`, with tree
 `0aa15ec270b34a662d518e6b8c5f26f10f0a1517`, equal to reviewed local
 `4453a8f7a3781e91324dc1b54b224731ee26b463`. All 158 source files / 4104 tests
-passed, with no failures, errors, skips or unrun files and raw branch coverage
+passed, with no failures, errors, skips or unrun files and raw combined line/branch coverage
 91.1487758945386%. The release environment and actual PyInstaller build passed.
 The new EXE is 45,109,116 bytes with SHA-256
 `1089e571517e16dfd34fb20fb3fad16ad49fffb01d3a586e47627fd19c45a74c`.
@@ -224,7 +224,7 @@ notification requirement or readiness assertion is relaxed to mask the failure.
 [Run 38330485769](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38330485769)
 checked out `315db2d2b18400b97abf4129b4c54d86ba1c9969`, tree
 `6bd72a98c84c4b7d18f2b6f270a2da44ef73d135`. All 159 source files / 4136 tests
-passed, with no failures, errors, skips or unrun files and raw branch coverage
+passed, with no failures, errors, skips or unrun files and raw combined line/branch coverage
 91.17232302340885%. The actual newly built EXE is 45,110,608 bytes, SHA-256
 `b34c3819e412b8ea01c52c7cd101a804f20ebf40782c061597f6cf39a9f827d0`.
 Its payload and dependency gates passed; synchronized startup remained failed.
@@ -278,7 +278,7 @@ controlled source transport repair, not a repaired or accepted frozen executable
 The independent Linux full matrix at local `fcc61c3c6d50566bc58f49b7990ae40449c6201c`
 (tree `1c89411e328621e5236ec0665ee7a1babd45b057`) ran all 159 files / 4148 cases:
 4141 passed, six existing local IPC-environment cases failed, and one existing
-Windows-shell case skipped; no errors or unrun files. Raw branch coverage was
+Windows-shell case skipped; no errors or unrun files. Raw combined line/branch coverage was
 91.1310288633301% and the source remained unchanged. Its overall result is failed.
 Later documentation-only changes are not represented as that matrix's source tree;
 the next Windows run must test and package its own exact checkout anew.
@@ -290,7 +290,7 @@ the next Windows run must test and package its own exact checkout anew.
 checked out `7a57312368877914cfd180b1f61f41e58b41ef0c`, tree
 `39a871e1b2e054e6e75bc531f7f08a0185e0d8c4`, from PR head
 `47c29b8ce07d3b3e63fa4c8e9669eaf5b440f4cf`. All 159 source files / 4148 tests
-passed with no failures, errors, skips or unrun files; raw branch coverage was
+passed with no failures, errors, skips or unrun files; raw combined line/branch coverage was
 91.17176972014165%. The new single EXE is 45,110,534 bytes, SHA-256
 `0730bdb33377354628e527eb51f6c8f742d7806539c792a10a95ced4371d6bd4`.
 
@@ -325,3 +325,43 @@ published. Later source changes require a fresh full Windows run.
 Microsoft component reference: [Validation OS 2510 release notes](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/validation-os-release-notes/2510?view=windows-11).
 That documentation identifies the component; it does not authenticate this
 runner's particular file or prove every supported Windows installation was tested.
+
+## Accepted Hosted candidate and exported kit path failure
+
+[Run 38343015308](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38343015308)
+completed both Windows jobs successfully. Its exact build source was
+`36a90de4a4dc8767133961b512dfc5609998b3f3`, tree
+`34cd3e0f11202c04b6b12ffc6c66fc7367816c1f`. All 164 source files / 4421
+tests passed with no failures, errors, skips or unrun files; raw combined line/branch coverage
+was 91.17176972014165%.
+
+The actual onefile EXE was 44,922,684 bytes, SHA-256
+`029a3bc84a663d78b5f5748dbc110a7d5a5cf5797c0a87d1e4e8b80c53a2e24f`.
+Independent review matched its 446 payload entries, complete 78-PE dependency
+graph, ten bundled VC destinations, 28 migrations and 264 notice files. All 18
+frozen checks passed with `network_attempts=[]`; the two-process race produced
+normal exits and one activation, and controlled exit 77 recovered the same
+synthetic record. Fresh same-run Shell evidence and Microsoft inbox-component
+signature checks passed without exempting core, VC or real PE dependencies.
+All seven embedded icon resources matched the selected ledger ICO bytes.
+
+The exported kit was 68,024,395 bytes, SHA-256
+`bc2dc0db02c36557e9fa50e416863a61b150bdf19ab2b0ac1a781376168e5e3a`.
+Its 720 source files and manifest were independently matched to the exact source
+and accepted EXE. This establishes accurate material export, not a successful
+modified-component rebuild.
+
+[Run 38348191958](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38348191958)
+materialized that fixed kit, passed four native CMD bootstrap controls, initialized
+the existing x64 compiler, and reran all 164 / 4421 source tests with the same raw combined line/branch
+coverage. Its genuine qgif configure then failed: the kit's untyped
+`-DQGIF_SOURCE_DIR` argument retained Windows backslashes, and CMake interpreted
+`D:\a\...` as an invalid `\a` escape in the source list. No modified EXE was
+produced. The original kit remains unchanged and this result remains failed.
+
+The build-path correction requires a new candidate and new kit with their own
+matching source identity, followed by fresh modified qgif/PySide compilation and
+the original complete EXE gates. The source-identity gate is not relaxed to label
+an edited copy of the old kit as accepted. Release remains unpublished. Hosted
+verification also does not establish clean offline Windows, manual DPI/IME,
+desktop pinning, or publisher signing.

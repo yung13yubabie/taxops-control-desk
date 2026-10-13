@@ -37,7 +37,7 @@
 
 ## 本輪修正與驗證
 
-- 採用選定的「帳冊」應用程式圖示，提供 16–256 px 七種尺寸，沿用現有視窗／EXE 圖示路徑；[圖示與識別契約](docs/application_icon_contract.md) 已有真 Qt 抽查，新 EXE 內嵌及實機釘選仍待驗。
+- 採用選定的「帳冊」應用程式圖示，提供 16–256 px 七種尺寸，沿用現有視窗／EXE 圖示路徑；[圖示與識別契約](docs/application_icon_contract.md) 已有真 Qt 抽查，已驗 EXE 的七個圖示資源均與選定圖檔一致；實機釘選仍待驗。
 - 完整備份與乾淨目錄還原；提交後暫存清理失敗顯示成功與警告。
 - 混合索件狀態不再因「已接收 → 已確認」倒退。
 - 工商匯入與下載來源稽核同一交易；完成後釋放進度對話框。
@@ -53,25 +53,29 @@
 ### 實際驗證進度
 
 - 較早的完整資料夾套件已通過 Windows 回歸及 17 項 EXE 自測；它是歷史基準，不能當作單一 EXE 已驗收。固定版本、雜湊及歷次結果見 [Windows 候選驗證](docs/windows_candidate_gate.md)。
-- 第一個真正單檔 EXE 已由 [run 38280844680](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38280844680) 建出：來源完整 152 檔、3807 項通過，實值 branch coverage 91.05698731866956%。該 EXE 的受控 CRT 中止沒有得到預期退出碼，因此整體驗收失敗，沒有作為成品發布。
+- 第一個真正單檔 EXE 已由 [run 38280844680](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38280844680) 建出：來源完整 152 檔、3807 項通過，實值 coverage（含分支收集） 91.05698731866956%。該 EXE 的受控 CRT 中止沒有得到預期退出碼，因此整體驗收失敗，沒有作為成品發布。
 - 故障注入現明確模擬不經正常清理的本人程序中止，仍須取得退出碼 77、重啟及資料／鎖恢復、18 項實際 EXE 自測。原 CRT/PySide 異常證據保留，不能以新模型聲稱已修好 PySide。[run 38293931640](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38293931640) 的 153 檔、3838 項來源測試通過，但新 EXE 在同步雙開時未將通知送達勝方視窗，整體仍失敗，尚未執行新中止控制及後續 18 項自測。此通知問題、本機稅籍資料交易與測試準備修正均須以新固定來源重驗。
 - 本機原設定頁回歸重複匯入同一份 1,705,060 筆公開資料，超過原 900 秒限制。測試現共享一次完整真匯入，各測項使用獨立 SQLite 複本，保留兩組原斷言；沒有縮減資料、刪除失敗或提高時限。後續固定版本的本機回報見下段。
 
-較新的 [run 38298961816](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38298961816) 已取得 155 檔、3897 項全部通過，原始分支覆蓋率 91.1487758945386%。該新 EXE 的雙開通知、中止碼 77、重啟資料保留及 18 項功能檢查通過；完整驗收仍失敗，原因是末端模組快照出現 8 個宿主 Tortoise 元件。另一次 [獨立 Shell 觀察](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38303276207) 在相同 runner 映像的不同虛擬機重現相同路徑與檔案雜湊；它沒有改寫原驗收失敗或豁免核心元件來源。
+較新的 [run 38298961816](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38298961816) 已取得 155 檔、3897 項全部通過，原始合併行／分支覆蓋率 91.1487758945386%。該新 EXE 的雙開通知、中止碼 77、重啟資料保留及 18 項功能檢查通過；完整驗收仍失敗，原因是末端模組快照出現 8 個宿主 Tortoise 元件。另一次 [獨立 Shell 觀察](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38303276207) 在相同 runner 映像的不同虛擬機重現相同路徑與檔案雜湊；它沒有改寫原驗收失敗或豁免核心元件來源。
 
 本機重組後續回報完整來源測試及修改後 qgif 小型探針通過，設定頁 8 項回歸在原 900 秒內結束；但封裝被不同來源的系統 DLL 擋下，沒有產出合格重組 EXE。目前修正建置工具繼承的 DLL 搜尋路徑，以及驗收材料缺件的預檢。這些新修正仍須固定來源的完整回歸和新 Windows 建置；尚未完成的重組／乾淨離線驗收保留。
 
-前一輪 [run 38330485769](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38330485769) 已通過 Windows 全部 159 檔、4136 項，實值 branch coverage 91.17232302340885%，並成功建出新的單一 EXE。完整驗收仍失敗：同步雙開時，第二個程序的通知雖交給 Qt，卻未在寫入等待期限內送完，因此顯示「程式尚未就緒」並返回 1；第一個程序已開啟視窗但沒有收到啟用通知。本輪未執行後續中止、18 項自測及重組套件匯出。
+前一輪 [run 38330485769](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38330485769) 已通過 Windows 全部 159 檔、4136 項，實值 coverage（含分支收集） 91.17232302340885%，並成功建出新的單一 EXE。完整驗收仍失敗：同步雙開時，第二個程序的通知雖交給 Qt，卻未在寫入等待期限內送完，因此顯示「程式尚未就緒」並返回 1；第一個程序已開啟視窗但沒有收到啟用通知。本輪未執行後續中止、18 項自測及重組套件匯出。
 
 [獨立 Windows 傳送診斷](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38334298605) 確認：接收端尚未接受連線時，額外的 500 ms 寫入期限會提前結束通知；接受連線後，即使接收端事件迴圈暫停，資料仍能送完。候選修補改用原本單一 3000 ms 總預算，不重送通知，也不把送出當作視窗已顯示。[修後 Windows 對照](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38335606087) 已確認延後接受連線的通知能完整送達且只觸發一次；一直未接受連線及提前關閉的情境仍正確失敗。這項來源修效另由下述新 EXE 回驗，歷史失敗不改判。
 
-最新 [run 38336220402](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38336220402) 已通過全部 159 檔、4148 項 Windows 來源回歸，原始分支覆蓋率 91.17176972014165%。新單一 EXE 的同步雙開兩方正常退出，第一個視窗收到一次啟用；本人中止碼 77、重啟後原合成資料保留及 18 項 frozen 自測也通過，未記錄網路嘗試。完整驗收仍失敗：末端實載快照出現 8 個宿主 Tortoise 元件，逐條覆核另發現 Windows 系統元件 msvcp110_win.dll 被現有 VC 名稱規則拒絕。新的候選驗收分類要求同次、同主機的獨立 Shell 觀察及嚴格來源核對，系統元件另需即時簽章與身分證據；此規則仍待新 Windows 實測，未知外部模組與核心元件來源檢查持續保留。沒有匯出合格重組套件或發布此 EXE，精確來源及雜湊見 [單檔驗收紀錄](docs/windows_onefile_gate.md#latest-notification-repair-and-remaining-module-classification-failure)。
+歷史 [run 38336220402](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38336220402) 已通過全部 159 檔、4148 項 Windows 來源回歸，原始合併行／分支覆蓋率 91.17176972014165%。該單一 EXE 的同步雙開、本人中止碼 77、重啟資料保留及 18 項 frozen 自測通過，但完整驗收因末端模組分類失敗。原失敗不改判；精確來源及雜湊見 [歷史單檔驗收紀錄](docs/windows_onefile_gate.md#latest-notification-repair-and-remaining-module-classification-failure)。
+
+最新一般候選 [run 38343015308](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38343015308) 的兩個 Windows 工作均通過。完整來源回歸為 164 檔、4421 項，零失敗、錯誤及略過，實值 coverage（含分支收集） 91.17176972014165%。真正單一 EXE 已通過雙開的一次啟用、退出碼 77 與同資料恢復、18 項 frozen 檢查、核心元件實載來源及同次獨立 Shell 分類；有匯出與該 EXE／來源身分精確相符的重組材料，且成品、圖示與材料已獨立核對。
+
+隨後 [固定匯出材料重組 run 38348191958](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38348191958) 也重新通過原 164 檔、4421 項及原覆蓋率門檻，但在真正編譯修改後 qgif 前，CMake 拒絕了建置腳本傳入的 Windows 反斜線路徑。這是重組腳本的可攜性缺陷；該材料不能稱為已完成修改元件重建。修正後必須重新產生同來源身分的候選 EXE 與材料，再從新材料重驗；原一般候選的通過和本次重組的失敗分別保留。詳見 [一般候選通過與重組路徑缺陷](docs/windows_onefile_gate.md#accepted-hosted-candidate-and-exported-kit-path-failure)。
 
 **候選尚未發布。** 最終 Release 必須附重新驗證的單一 EXE，以及必要的第三方授權通知與原始碼／重組材料；不以舊 ZIP 或只有原始碼代替 EXE。原始碼重組材料供有需要的接收者使用，不是一般使用者的安裝前提。具體方案見 [單檔 EXE 與重組驗收](docs/windows_onefile_gate.md) 和 [第三方元件說明](docs/third_party_licenses.md)。
 
 已知限制：Hosted Windows 測試不是乾淨離線 Windows 10/11 實機；人工 DPI、輸入法、列印、輔助功能及簽署／SmartScreen 仍需核對。原生 Windows 合成中文字形抽查已通過，但不代表所有姓名或字集；小尺寸月曆在 offscreen 第六週文字下緣仍略裁切。缺繁中翻譯檔時只有有限按鈕後備，EXE gate 仍要求完整翻譯資產。
 
-可靠性契約見 [驗證紀錄](docs/reliability_latest_port.md)。完整逐檔獨立 process 與實值 branch coverage **90%** 門檻保留；Linux 的既有 IPC 環境失敗仍如實標記，不能當作 Windows 結果。
+可靠性契約見 [驗證紀錄](docs/reliability_latest_port.md)。完整逐檔獨立 process 與實值 coverage（含分支收集） **90%** 門檻保留；Linux 的既有 IPC 環境失敗仍如實標記，不能當作 Windows 結果。
 
 已發布版本可在 [GitHub Releases](https://github.com/yung13yubabie/taxops-control-desk/releases) 核對。repo 的 `dist/` 是建置輸出，不是永久下載來源。`docs/v0.32.0_test_checklist.md` 記錄較早 內部測試建置，並非本輪驗收。
 

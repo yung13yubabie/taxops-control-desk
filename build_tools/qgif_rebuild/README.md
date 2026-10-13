@@ -21,9 +21,16 @@ versions and the selected Windows SDK. Do not guess compiler installation paths.
 
 ```text
 python build_tools/qgif_rebuild/prepare_source.py --archive "<qtbase source.tar.xz>" --output "<work>/modified-qgif-source"
-cmake -S build_tools/qgif_rebuild -B "<work>/qgif-build" -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=<QT_PREFIX>" "-DQGIF_SOURCE_DIR=<work>/modified-qgif-source"
+cmake -S build_tools/qgif_rebuild -B "<work>/qgif-build" -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH:PATH=<QT_PREFIX>" "-DQGIF_SOURCE_DIR:PATH=<work>/modified-qgif-source"
 cmake --build "<work>/qgif-build" --verbose
 ```
+
+Use absolute, forward-slash paths for the two `-D...:PATH=` values, including
+on Windows (for example `D:/build work/modified-qgif-source`). Keep each full
+argument quoted. The automated recombination script normalizes these paths and
+rejects unsupported single-path syntax before doing work; see the supported
+path boundary in `BUILD_RECOMBINE.txt`. In particular, a semicolon is a CMake
+list delimiter, not an additional supported SDK prefix in this procedure.
 
 The output is `<work>/qgif-build/plugins/imageformats/qgif.dll`. Preserve it,
 its SHA-256, all four prepared source files, `source-receipt.json`, copied

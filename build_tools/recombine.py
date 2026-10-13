@@ -7,7 +7,7 @@ import platform
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from build_tools.dependency_licenses import ROOT, sha256
 from build_tools.qgif_rebuild.prepare_source import prepare, QTBASE_SHA256
@@ -23,6 +23,26 @@ def run(command: list[str], *, env: dict | None = None, log: Path | None = None)
         subprocess.run(command, cwd=ROOT, env=env, check=True)
 
 
+def cmake_path(path: PurePath) -> str:
+    """One absolute CMake path, not a CMake list or generated expression."""
+    value = path.as_posix()
+    if (not path.is_absolute() or any(c in value for c in ';"\\')
+            or any(ord(c) < 32 or ord(c) == 127 for c in value) or "$<" in value):
+        raise ValueError("CMake paths must be absolute and contain no semicolon, double quote, "
+                         "literal backslash, control character or generator expression; "
+                         "use a build/source/SDK directory without those characters")
+    return value
+
+
+def cmake_path_arguments(harness: PurePath, build: PurePath, qt_prefix: PurePath,
+                         source: PurePath) -> list[str]:
+    # Keep each path in one argv element. Native Windows backslashes must never
+    # reach add_library() as an untyped CMake cache value (e.g. invalid '\\a').
+    return ["-S", cmake_path(harness), "-B", cmake_path(build),
+            f"-DCMAKE_PREFIX_PATH:PATH={cmake_path(qt_prefix)}",
+            f"-DQGIF_SOURCE_DIR:PATH={cmake_path(source)}"]
+
+
 def recombine(work: Path, qt_prefix: Path, qtbase_source: Path, vc_redist: Path,
               *, wheelhouse: Path | None = None, test_python: Path | None = None,
               release_python: Path | None = None, compiled_qgif: Path | None = None,
@@ -35,6 +55,13 @@ def recombine(work: Path, qt_prefix: Path, qtbase_source: Path, vc_redist: Path,
         raise ValueError("Supply both existing isolated test and release Python interpreters")
     if compiled_qgif and (not compiled_qgif_sha256 or prepared_qgif_source is None):
         raise ValueError("Reusing a compiled qgif requires its exact SHA-256 and prepared source directory")
+    # Fail before work writes, venv creation or the full source matrix. Reuse of
+    # an already compiled plugin does not cross this CMake boundary.
+    source = work / "modified-qgif-source"
+    build = work / "qgif-build"
+    configure = None if compiled_qgif else ["cmake", *cmake_path_arguments(
+        ROOT / "build_tools/qgif_rebuild", build, qt_prefix, source),
+        "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release"]
     if sha256(qtbase_source) != QTBASE_SHA256:
         raise ValueError("Cached official Qt source SHA-256 mismatch")
     if not (qt_prefix / "bin/Qt6Core.dll").is_file():
@@ -77,12 +104,9 @@ def recombine(work: Path, qt_prefix: Path, qtbase_source: Path, vc_redist: Path,
                 raise ValueError("Prepared qgif source changed after its compile receipt")
         (work / "reused-qgif-identity.json").write_text(json.dumps({"sha256": sha256(plugin), "source_receipt": receipt}, indent=2) + "\n", encoding="utf-8")
     else:
-        source = work / "modified-qgif-source"
         prepare(qtbase_source, source)
-        build = work / "qgif-build"
-        run(["cmake", "-S", str(ROOT / "build_tools/qgif_rebuild"), "-B", str(build), "-G", "Ninja",
-             "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_PREFIX_PATH={qt_prefix}", f"-DQGIF_SOURCE_DIR={source}"], log=work / "qgif-configure.txt")
-        run(["cmake", "--build", str(build), "--verbose"], log=work / "qgif-compile.txt")
+        run(configure, log=work / "qgif-configure.txt")
+        run(["cmake", "--build", cmake_path(build), "--verbose"], log=work / "qgif-compile.txt")
         plugin = build / "plugins/imageformats/qgif.dll"
     run([interpreters["release"], "-m", "build_tools.recombine_probe", "--plugin", str(plugin), "--report", str(work / "compiled-qgif-probe.json")])
     original = subprocess.run([interpreters["release"], "-c", "import PySide6.support; print(PySide6.support.__file__)"],

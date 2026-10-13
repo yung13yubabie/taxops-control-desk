@@ -49,6 +49,33 @@ python -m build_tools.recombine --work "<new work folder>" --qt-prefix "<Qt 6.10
 For an already prepared, complete wheelhouse, append:
 --wheelhouse "<wheelhouse folder>"
 
+CMake path boundary
+-------------------
+The script resolves paths and passes separate argv elements, without a shell.
+For the fresh qgif compile it converts the source harness, work/build directory
+and Qt SDK prefix to forward-slash CMake paths; both -D directory values have
+explicit :PATH cache types. Spaces, apostrophes and non-ASCII characters are
+preserved, including Windows drive and UNC prefixes. The script does not mount
+network shares or guarantee permissions, availability, long-path support or
+every toolchain's behavior on a UNC share.
+
+These CMake paths cannot contain semicolons, double quotes, control characters,
+literal POSIX backslashes or CMake generator-expression syntax ($<...). Choose
+a source checkout, work folder and SDK directory without those characters.
+Unsupported paths fail before work-directory creation, virtual environments or
+source tests; this is a bounded supported path set, not every legal filename.
+Other file arguments stay separate argv elements rather than generated CMake
+code. Reusing an already compiled qgif does not invoke this CMake path boundary.
+
+Development/source testing also requires CMake >=3.22 on PATH: the qgif test
+file runs a real compiler-free configure fixture, including the old invalid
+backslash escape as a negative control. It does not skip when CMake is missing.
+An existing build-machine CMake or an explicitly selected isolated tool can be
+used via the test child process's PATH; do not add it to the runtime package.
+The fixture covers actual local directories with spaces/non-ASCII characters
+and drive/UNC cache syntax with GENERATED stubs. It is not Windows compilation,
+Qt ABI, or network-share evidence; the full modified qgif/EXE gates still apply.
+
 The script creates separate test and release virtual environments. It runs
 every source test file and the unrounded 90% branch coverage gate. It prepares
 actual modified qgif sources, compiles qgif.dll with CMake/Ninja, and probes the
