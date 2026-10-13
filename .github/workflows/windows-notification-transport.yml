@@ -1,0 +1,94 @@
+name: Windows activation transport observations
+
+on:
+  push:
+    branches: [diagnostics/notification-drain-20261013]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-notification-transport-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  observe-notification-transport:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      PYTHONUTF8: '1'
+      PYTHONPATH: src
+      QT_QPA_PLATFORM: windows
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # pinned v5 revision
+        with:
+          python-version: '3.11.9'
+          architecture: x64
+          cache: ''
+      - name: Check public source and install existing official pins
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          @{
+            scope = 'Synthetic source Qt transport observations; not frozen EXE or release acceptance'
+            checkout_sha = (git rev-parse HEAD)
+            checkout_tree = (git rev-parse 'HEAD^{tree}')
+          } | ConvertTo-Json | Out-File -Encoding utf8 artifacts/notification-transport-boundary.json
+          python -m build_tools.check_repository_hygiene
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m venv .venv-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\.venv-test\Scripts\python.exe -m pip install --only-binary=:all: --require-hashes -r requirements-release-hashed.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\.venv-test\Scripts\python.exe -m pip install --only-binary=:all: -r requirements-ci.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\.venv-test\Scripts\python.exe -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run the complete diagnostic contract file
+        run: |
+          .\.venv-test\Scripts\python.exe -m pytest -q tests/test_notification_transport_probe.py --junitxml=artifacts/notification-transport-tests.xml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Observe unchanged notification path in controlled real Qt children
+        run: |
+          .\.venv-test\Scripts\python.exe -m build_tools.notification_transport_probe --output artifacts/notification-transport
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain only bounded synthetic observations
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-notification-transport-${{ github.sha }}
+          path: |
+            artifacts/notification-transport-boundary.json
+            artifacts/notification-transport-tests.xml
+            artifacts/notification-transport/notification-transport.json
+            artifacts/notification-transport/immediate/sender.json
+            artifacts/notification-transport/immediate/receiver.json
+            artifacts/notification-transport/immediate/sender-process.log
+            artifacts/notification-transport/immediate/receiver-process.log
+            artifacts/notification-transport/delayed_accept/sender.json
+            artifacts/notification-transport/delayed_accept/receiver.json
+            artifacts/notification-transport/delayed_accept/sender-process.log
+            artifacts/notification-transport/delayed_accept/receiver-process.log
+            artifacts/notification-transport/accepted_no_dispatch/sender.json
+            artifacts/notification-transport/accepted_no_dispatch/receiver.json
+            artifacts/notification-transport/accepted_no_dispatch/sender-process.log
+            artifacts/notification-transport/accepted_no_dispatch/receiver-process.log
+            artifacts/notification-transport/never_accept/sender.json
+            artifacts/notification-transport/never_accept/receiver.json
+            artifacts/notification-transport/never_accept/sender-process.log
+            artifacts/notification-transport/never_accept/receiver-process.log
+            artifacts/notification-transport/peer_close/sender.json
+            artifacts/notification-transport/peer_close/receiver.json
+            artifacts/notification-transport/peer_close/sender-process.log
+            artifacts/notification-transport/peer_close/receiver-process.log
+            artifacts/notification-transport/*/owned-process-cleanup.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
