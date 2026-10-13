@@ -17,8 +17,10 @@ local endpoint. The notifier therefore retries only `ServerNotFoundError` and
 backoff of at most 25 ms. Other connection errors fail immediately. Each failed
 attempt is aborted and disconnected. One monotonic 3000 ms application budget
 starts at notification entry, covers connection attempts and write draining,
-and is never reset by a retry. The existing write-drain cap remains 500 ms;
-it is also limited by the remaining overall budget.
+and is never reset by a retry or by write progress. Draining the single submitted
+frame uses only the remaining budget. A connected Windows pipe does not imply
+that the owner has accepted it and started its native reader, so there is no
+separate, shorter write-drain deadline.
 
 This is not a hard wall-clock guarantee. In pinned
 [Qt 6.10.2's Windows implementation](https://github.com/qt/qtbase/blob/v6.10.2/src/network/socket/qlocalsocket_win.cpp),
@@ -40,6 +42,7 @@ listening, a failed notification still permits only the existing single atomic
 reacquisition, never a lock deletion or a second database owner.
 Successful submission is not a receiver acknowledgement or proof of foreground
 activation; the real onefile race gate separately checks the winner's activation.
+An unsuccessful or expired write does not prove that the peer received no bytes.
 
 The receiver retains only a bounded prefix of that exact frame, including across
 multiple reads and the final disconnect. It rejects unrelated, substring-only or
@@ -51,6 +54,9 @@ construction with a queued Qt signal, write/drain failures and framing boundarie
 `test_notification_readiness.py` uses explicit transport/clock doubles and real
 file locks to cover late readiness, cancellation, legacy endpoints, deadlines,
 non-transient errors and no replay after a write. It is not real IPC acceptance.
+It also covers an 800 ms drain, connection time deducted from the same budget,
+partial drain progress, undrained timeouts and complete writes/empty queues at
+or after the deadline.
 `test_single_instance.py` retains the real cross-process local-socket tests and
 adds a lock-held, deliberately delayed-listen case requiring exactly one received
 activation and an actually shown Qt window. Its
@@ -64,6 +70,34 @@ result. The outer gate records the race loser's actual bootloader exit code befo
 applying the unchanged zero-exit requirement. These diagnostics do not imply an
 inner exit code, receiver acknowledgement or usable window. The strict winner
 window/database/activation checks still determine the frozen verdict.
+
+## Windows pipe acceptance and the shared budget
+
+The pinned Qt/PySide 6.10.2 source diagnostic
+[38334298605](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38334298605)
+called the production notifier against real, separately owned Windows listeners.
+When acceptance was withheld for 800 ms, the old 500 ms drain cap expired with
+all nine bytes pending and no write-completion signal. Once the receiver had
+accepted and started its native reader, the write completed even while Qt
+activation dispatch was held for 800 ms. A never-accepted connection retained
+its pending bytes; a closed peer could leave an empty queue but failed the
+existing error/validity checks.
+
+These controls support removing the phase-local cap while retaining the
+original 3000 ms total budget and one-write rule. The fixed-source rerun
+[38335606087](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38335606087)
+bound both actors to the corrected source and unchanged probe hashes. Delayed
+acceptance then drained all nine bytes at 797 ms and produced one activation;
+the two other positive controls also activated once. The never-accepted case
+still failed with nine bytes pending after its single 3000 ms wait (3016 ms
+observed), and the closed-peer case still failed with an error and invalid
+socket despite its empty queue. Each sender wrote once and all actors exited
+normally.
+
+These are QCoreApplication source/native-transport controls. They do not
+establish the exact receiver phase of the earlier frozen failure or prove
+the corrected frozen application works. The unchanged onefile race gate
+must still be rerun; startup beyond the total budget is not promised.
 
 ## Visibility observation in the real IPC regression
 

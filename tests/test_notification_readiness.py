@@ -27,7 +27,8 @@ def endpoint(monkeypatch, tmp_path, qapp):
     clock = Clock()
     state = SimpleNamespace(ready_at=10.1, connect_cost=0.0, wait_connected_cost=0.0, write_cost=0.0,
         error=QLocalSocket.LocalSocketError.ServerNotFoundError, accepted=9,
-        pending=0, drain_cost=0.0, events=[], sockets=[])
+        pending=0, drain_cost=0.0, flush_cost=0.0, pending_after=0,
+        wait_result=True, drain_steps=[], events=[], sockets=[])
 
     class Socket:
         LocalSocketState = QLocalSocket.LocalSocketState
@@ -66,16 +67,19 @@ def endpoint(monkeypatch, tmp_path, qapp):
 
         def flush(self):
             state.events.append('flush')
+            clock.now += state.flush_cost
 
         def bytesToWrite(self):
             return state.pending
 
         def waitForBytesWritten(self, timeout):
-            assert 0 < timeout <= 500
+            assert 0 < timeout <= 3000
             state.events.append(('wait', timeout))
-            clock.now += state.drain_cost
-            state.pending = 0
-            return True
+            cost, pending, result = (state.drain_steps.pop(0) if state.drain_steps else
+                (state.drain_cost, state.pending_after, state.wait_result))
+            clock.now += cost
+            state.pending = pending
+            return result
 
         def state(self):
             return self.LocalSocketState.ConnectedState
@@ -159,6 +163,72 @@ def test_deadline_is_shared_with_write_drain_not_reset_after_readiness(endpoint)
     assert state.events.count('write') == 1
     waits = [event[1] for event in state.events if isinstance(event, tuple)]
     assert len(waits) == 1 and 0 < waits[0] <= 50
+
+
+def test_connected_endpoint_can_take_800ms_to_start_native_reading(endpoint):
+    clock, state, guard = endpoint
+    state.ready_at = 10.0
+    state.pending = 9
+    state.drain_cost = 0.8
+    assert guard.notify_existing()
+    assert state.events.count('connect') == state.events.count('write') == 1
+    assert state.pending == 0
+    assert ('wait', 3000) in state.events
+    assert guard._notification_diagnostics['elapsed_ms'] == 800
+
+
+@pytest.mark.parametrize('connect_cost', [2.0, 2.8])
+def test_native_connect_cost_leaves_only_remaining_budget_for_drain(endpoint, connect_cost):
+    clock, state, guard = endpoint
+    state.connect_cost = connect_cost
+    state.pending = 9
+    state.drain_cost = 0.1
+    assert guard.notify_existing()
+    waits = [event[1] for event in state.events if isinstance(event, tuple)]
+    remaining_ms = round((3.0 - connect_cost) * 1000)
+    assert len(waits) == 1 and remaining_ms - 1 <= waits[0] <= remaining_ms
+    assert state.events.count('connect') == state.events.count('write') == 1
+
+
+def test_partial_drain_progress_uses_same_deadline_without_replaying_frame(endpoint):
+    clock, state, guard = endpoint
+    state.ready_at = 10.0
+    state.pending = 9
+    state.drain_steps = [(0.8, 4, True), (0.8, 0, True)]
+    assert guard.notify_existing()
+    waits = [event[1] for event in state.events if isinstance(event, tuple)]
+    assert len(waits) == 2 and waits[0] == 3000 and 2199 <= waits[1] <= 2200
+    assert state.events.count('connect') == state.events.count('write') == 1
+
+
+@pytest.mark.parametrize('phase', ['write', 'flush', 'drain'])
+@pytest.mark.parametrize('cost', [3.0, 3.1])
+def test_full_frame_or_empty_queue_at_or_after_deadline_is_not_success(endpoint, phase, cost):
+    clock, state, guard = endpoint
+    state.ready_at = 10.0
+    setattr(state, phase + '_cost', cost)
+    state.pending = 9 if phase == 'drain' else 0
+    assert not guard.notify_existing()
+    assert state.pending == 0
+    assert guard._notification_diagnostics['accepted_bytes'] == 9
+    assert guard._notification_diagnostics['phase'] != 'submitted'
+    assert state.events.count('connect') == state.events.count('write') == 1
+
+
+@pytest.mark.parametrize('pending_after', [9, 4])
+def test_undrained_write_times_out_once_without_claiming_delivery_or_replaying(endpoint, pending_after):
+    clock, state, guard = endpoint
+    state.ready_at = 10.0
+    state.pending = 9
+    state.pending_after = pending_after
+    state.wait_result = False
+    state.drain_cost = 3.0
+    assert not guard.notify_existing()
+    assert state.pending == pending_after
+    assert state.events.count('connect') == state.events.count('write') == 1
+    assert state.events.count(('wait', 3000)) == 1
+    assert state.events[-1] == 'disconnect'
+    assert guard._notification_diagnostics['elapsed_ms'] == 3000
 
 
 def test_expired_budget_after_write_does_not_claim_success(endpoint):

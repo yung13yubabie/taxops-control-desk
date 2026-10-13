@@ -210,3 +210,68 @@ self-termination, recovery, 18-check suite or kit export.
 The captured reports do not identify the exact connection phase. A potential gap
 between lock acquisition and socket listening is under review; no return code,
 notification requirement or readiness assertion is relaxed to mask the failure.
+
+
+## Later source pass and transport-phase evidence
+
+[Run 38330485769](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38330485769)
+checked out `315db2d2b18400b97abf4129b4c54d86ba1c9969`, tree
+`6bd72a98c84c4b7d18f2b6f270a2da44ef73d135`. All 159 source files / 4136 tests
+passed, with no failures, errors, skips or unrun files and raw branch coverage
+91.17232302340885%. The actual newly built EXE is 45,110,608 bytes, SHA-256
+`b34c3819e412b8ea01c52c7cd101a804f20ebf40782c061597f6cf39a9f827d0`.
+Its payload and dependency gates passed; synchronized startup remained failed.
+
+The losing process connected on its first attempt and Qt accepted nine bytes,
+but the `drain` phase ended after 500 ms with submission false and no recorded
+socket error. Its observed outer exit was 1; the inner exit was not directly
+observed. The winner reported a shown schema-28 window and zero activations.
+The gate retained failure cleanup; the later termination/recovery, 18-check
+suite and kit export did not run. This result must remain failed.
+
+The separate [source transport diagnostic, run 38334298605](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38334298605)
+uses the unchanged sender implementation with five controlled real Windows
+Qt/PySide 6.10.2 receiver/sender pairs. Its 30 contract tests and diagnostic
+execution completed; that status does not mean every notification succeeded.
+Immediate acceptance succeeded, with nine bytes written and one activation.
+An 800 ms pre-accept hold reproduced failure at approximately 516 ms: nine
+bytes remained queued, no `bytesWritten` signal, and no socket error. A peer
+already accepted before an 800 ms dispatch hold completed the write, with
+activation delivered after dispatch resumed. Never accepting kept the nine
+bytes pending and failed; closing the peer emptied the queue with an error and
+an invalid connection, correctly remaining failed. Timing has the granularity
+of this Windows Python monotonic clock; a recorded zero is not zero duration.
+
+These controls establish that listening alone does not guarantee an active
+native reader. They do not establish the exact frozen winner's per-phase
+causality. The minimal candidate removes only the extra 500 ms write sub-deadline
+and uses the existing entry-time 3000 ms budget throughout. It retains one
+write, remaining-budget accounting, complete draining, valid connected state,
+error rejection and rejection of completion observed after the deadline. A
+false result after submission is not proof that the peer received no bytes and
+never permits replay. Qt's synchronous native connect may itself overrun the
+budget; this is not a hard real-time bound. New controlled-source and strict
+frozen evidence are both required before claiming the startup failure closed.
+
+
+[Fixed-source diagnostic run 38335606087](https://github.com/yung13yubabie/taxops-control-desk/actions/runs/38335606087)
+checked out `02a336eac35c0b45df5d65b6943c8fccd07f5474`, tree
+`34b25b0ec47929036df184d98883f7cff9048d35`. It used the unchanged five-case
+probe against the corrected production notifier. The delayed-accept case now
+completed in the observed 797 ms with nine bytes written, zero pending bytes
+and exactly one received activation. Immediate and accepted-but-not-dispatching
+controls also succeeded once. Never-accept remained false with nine bytes pending
+at the observed 3016 ms; peer-close remained false with a socket error, invalid
+connection and empty queue. All senders issued one write only. The 30 probe
+contracts passed and all ten actors exited normally; failed negative-control
+notifications remain failed. The actual Windows source hashes matched the reviewed
+product and probe after exact checkout line-ending conversion. This establishes
+controlled source transport repair, not a repaired or accepted frozen executable.
+
+The independent Linux full matrix at local `fcc61c3c6d50566bc58f49b7990ae40449c6201c`
+(tree `1c89411e328621e5236ec0665ee7a1babd45b057`) ran all 159 files / 4148 cases:
+4141 passed, six existing local IPC-environment cases failed, and one existing
+Windows-shell case skipped; no errors or unrun files. Raw branch coverage was
+91.1310288633301% and the source remained unchanged. Its overall result is failed.
+Later documentation-only changes are not represented as that matrix's source tree;
+the next Windows run must test and package its own exact checkout anew.
