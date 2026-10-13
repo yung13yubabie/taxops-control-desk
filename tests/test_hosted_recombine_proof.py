@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import tempfile
 import unittest
@@ -56,6 +57,17 @@ def fixture(change=None):
               "EXE_SHA": proof.digest(b"synthetic exe"), "PROVENANCE_SHA": proof.digest(provenance), "SOURCE_FILES": 4,
               "MATERIAL_SHA": proof.digest(json.dumps(material, sort_keys=True, separators=(",", ":")).encode())}
     return outer, values
+
+
+def job_environment_context_violations(text):
+    # Target the job-env block in this workflow's deliberately fixed indentation.
+    # GitHub context availability explicitly excludes runner/env/job/steps here:
+    # https://docs.github.com/en/actions/reference/workflows-and-actions/contexts
+    allowed = {"github", "needs", "strategy", "matrix", "vars", "secrets", "inputs"}
+    blocks = re.findall(r"(?m)^    env:\n((?:      [^\n]*\n)*)", text)
+    return [context for block in blocks
+            for context in re.findall(r"\$\{\{\s*([a-zA-Z_][a-zA-Z_0-9]*)[.\[]", block)
+            if context not in allowed]
 
 
 class HostedProofTests(unittest.TestCase):
@@ -336,6 +348,18 @@ class HostedProofTests(unittest.TestCase):
         self.assertEqual(names, {"EVIDENCE-INVENTORY.json", "recombined-onefile/onefile-provenance.json",
             "recombined-onefile/current-host-native-proof/windows-final-staging-input.json",
             "recombined-onefile/shell-baseline/report.json", "recombined-onefile/shell-baseline/stderr.bin"})
+
+    def test_runner_context_is_only_used_in_step_environments(self):
+        text = (Path(__file__).parents[1] / ".github/workflows/hosted-recombine-proof.yml").read_text()
+        self.assertEqual(job_environment_context_violations(text), [])
+        self.assertEqual(text.count("PROOF_ROOT: ${{ runner.temp }}"), 3)
+        self.assertEqual(text.count("          PROOF_ROOT: ${{ runner.temp }}"), 3)
+        for context in ("runner", "env", "job", "steps"):
+            invalid = text.replace("    env:\n", "    env:\n      BAD: ${{ " + context + ".value }}\n", 1)
+            self.assertEqual(job_environment_context_violations(invalid), [context])
+        for context in ("github", "needs", "strategy", "matrix", "vars", "secrets", "inputs"):
+            valid = text.replace("    env:\n", "    env:\n      GOOD: ${{ " + context + ".value }}\n", 1)
+            self.assertEqual(job_environment_context_violations(valid), [])
 
     def test_workflow_is_bounded_read_only_and_does_not_run_new_checkout_as_product(self):
         workflow = Path(__file__).parents[1] / ".github/workflows/hosted-recombine-proof.yml"
